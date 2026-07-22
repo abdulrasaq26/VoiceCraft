@@ -467,16 +467,30 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     pitchControl.classList.toggle('unsupported', !caps.pitch);
     rateControl.title = caps.rate ? '' : 'Google’s API rejects speed control for this voice family';
     pitchControl.title = caps.pitch ? '' : 'Google’s API rejects pitch control for this voice family';
-    ssmlToggle.disabled = v ? !caps.ssml : false;
-    if (v && !caps.ssml && ssmlToggle.checked) ssmlToggle.checked = false;
+    const cantSsml = Boolean(v) && !caps.ssml;
+    ssmlToggle.disabled = cantSsml;
+    if (cantSsml && ssmlToggle.checked) ssmlToggle.checked = false;
+    const ssmlLabel = ssmlToggle.closest('.ssml-toggle');
+    if (ssmlLabel) {
+      ssmlLabel.title = cantSsml
+        ? `${v.family} voices only accept plain text — Google rejects SSML for this voice family. Pick a Neural2, WaveNet, Studio, or Standard voice to use SSML.`
+        : 'Treat input as SSML markup (pauses, pronunciation, emphasis, etc.)';
+    }
 
     if (capsNote) {
-      const limits = [];
-      if (!caps.rate) limits.push('speed');
-      if (!caps.pitch) limits.push('pitch');
-      if (v && limits.length) {
-        const range = caps.rate && rateMax < 4 ? ` Speed is available up to ${rateMax}× for this voice.` : '';
-        capsNote.textContent = `${v.name} (${v.family}) doesn’t accept ${limits.join(' or ')} adjustments — Google’s API rejects the request if they’re sent, so they’re disabled here.${range}`;
+      // Collect everything Google won't accept for this voice family so the
+      // disabled controls (sliders + SSML) are explained in one place.
+      const adjustments = [];
+      if (!caps.rate) adjustments.push('speed');
+      if (!caps.pitch) adjustments.push('pitch');
+      const parts = [];
+      if (adjustments.length) parts.push(`${adjustments.join(' or ')} adjustments`);
+      if (cantSsml) parts.push('SSML input');
+      const range = caps.rate && rateMax < 4 ? ` Speed is available up to ${rateMax}× for this voice.` : '';
+
+      if (v && parts.length) {
+        const plural = parts.length > 1;
+        capsNote.textContent = `${v.name} (${v.family}) doesn’t accept ${parts.join(' or ')} — Google’s API rejects ${plural ? 'them' : 'it'} for this voice family, so ${plural ? 'they’re' : 'it’s'} disabled here.${range}`;
         capsNote.hidden = false;
       } else if (v && caps.rate && rateMax < 4) {
         capsNote.textContent = `Google limits ${v.family} voices to ${rateMax}× speed.`;
