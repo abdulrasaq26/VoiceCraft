@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Blvck TTS — Text to Speech</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d0d0f'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle' fill='%23e8b64c' font-family='sans-serif' font-weight='bold'%3EB%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -15,6 +15,16 @@
     </header>
 
     <main class="card">
+      <!-- Presets -->
+      <section class="presets-bar">
+        <select id="preset-select" title="Apply a saved preset">
+          <option value="">Presets…</option>
+        </select>
+        <button id="preset-save-btn" class="btn ghost small" type="button">Save preset</button>
+        <button id="preset-manage-btn" class="btn ghost small" type="button">Manage</button>
+      </section>
+
+      <!-- Text input -->
       <section class="input-section">
         <div class="input-header">
           <label for="text-input">Your text</label>
@@ -28,21 +38,28 @@
         </div>
         <textarea
           id="text-input"
-          rows="7"
+          rows="6"
           maxlength="5000"
           placeholder="Type or paste the text you want to hear…"
         ></textarea>
       </section>
 
+      <!-- Voice + language + format -->
       <section class="controls">
         <div class="control">
           <label for="language-select">Language</label>
           <select id="language-select"></select>
         </div>
-        <div class="control">
-          <label for="voice-select">Voice</label>
+        <div class="control voice-control">
+          <label>Voice</label>
           <div class="voice-row">
-            <select id="voice-select"></select>
+            <button id="voice-card" class="voice-card" type="button" aria-haspopup="dialog">
+              <span class="voice-card-main">
+                <span id="voice-card-name" class="voice-card-name">Loading voices…</span>
+                <span id="voice-card-desc" class="voice-card-desc"></span>
+              </span>
+              <span class="voice-card-chevron">▾</span>
+            </button>
             <button id="preview-btn" class="btn icon" type="button" title="Preview this voice" aria-label="Preview this voice">
               <span class="preview-icon">▶</span>
               <span class="spinner small" hidden></span>
@@ -59,16 +76,34 @@
         </div>
       </section>
 
+      <!-- Voice instructions -->
+      <section class="instructions-section">
+        <div class="input-header">
+          <label for="instructions-input">Voice instructions</label>
+          <select id="template-select" title="Apply a delivery style template">
+            <option value="">Style templates…</option>
+          </select>
+        </div>
+        <textarea
+          id="instructions-input"
+          rows="2"
+          maxlength="500"
+          placeholder="e.g. Speak slowly and clearly, like a calm bedtime storyteller…"
+        ></textarea>
+        <p id="instructions-note" class="field-note"></p>
+      </section>
+
+      <!-- Delivery sliders -->
       <section class="sliders">
-        <div class="slider-control">
+        <div class="slider-control" id="rate-control">
           <label for="rate-slider">Speed <output id="rate-value">1.0×</output></label>
           <input type="range" id="rate-slider" min="0.25" max="4" step="0.05" value="1" />
         </div>
-        <div class="slider-control">
+        <div class="slider-control" id="pitch-control">
           <label for="pitch-slider">Pitch <output id="pitch-value">0.0</output></label>
           <input type="range" id="pitch-slider" min="-20" max="20" step="0.5" value="0" />
         </div>
-        <div class="slider-control">
+        <div class="slider-control" id="volume-control">
           <label for="volume-slider">Volume gain <output id="volume-value">0.0 dB</output></label>
           <input type="range" id="volume-slider" min="-20" max="16" step="0.5" value="0" />
         </div>
@@ -85,8 +120,11 @@
       <div id="status" class="status" hidden></div>
 
       <section id="player-section" class="player" hidden>
-        <audio id="audio-player" controls></audio>
-        <a id="download-link" class="btn ghost" download>Download</a>
+        <div class="player-row">
+          <audio id="audio-player" controls></audio>
+          <a id="download-link" class="btn ghost" download>Download</a>
+        </div>
+        <canvas id="waveform" width="1200" height="80" hidden></canvas>
       </section>
     </main>
 
@@ -97,6 +135,58 @@
         Configure credentials on the server — see the README.
       </p>
     </footer>
+  </div>
+
+  <!-- Voice browser -->
+  <div id="voice-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Choose a voice">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>Choose a voice</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <input id="voice-search" class="voice-search" type="search" placeholder="Search by name, style, or voice ID…" />
+      <div class="filter-rows">
+        <div class="chip-row" id="tier-filters">
+          <button class="chip active" data-tier="all" type="button">All tiers</button>
+          <button class="chip" data-tier="elite" type="button">⭐ Elite</button>
+          <button class="chip" data-tier="premium" type="button">Premium</button>
+          <button class="chip" data-tier="standard" type="button">Standard</button>
+          <button class="chip" data-tier="experimental" type="button">Experimental</button>
+        </div>
+        <div class="chip-row" id="gender-filters">
+          <button class="chip active" data-gender="all" type="button">Any gender</button>
+          <button class="chip" data-gender="FEMALE" type="button">Female</button>
+          <button class="chip" data-gender="MALE" type="button">Male</button>
+        </div>
+      </div>
+      <div id="voice-list" class="voice-list"></div>
+    </div>
+  </div>
+
+  <!-- Preset manager -->
+  <div id="preset-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Manage presets">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>Presets</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <form id="preset-save-form" class="preset-save-form" hidden>
+        <input id="preset-name-input" type="text" placeholder="Preset name (e.g. Documentary Narrator)" maxlength="60" required />
+        <input id="preset-project-input" type="text" placeholder="Project (optional)" maxlength="60" />
+        <div class="preset-save-actions">
+          <button class="btn primary small" type="submit">Save current settings</button>
+          <button class="btn ghost small" type="button" id="preset-save-cancel">Cancel</button>
+        </div>
+      </form>
+      <div class="preset-toolbar">
+        <select id="project-filter" hidden>
+          <option value="">All projects</option>
+        </select>
+      </div>
+      <div id="preset-list" class="preset-list"></div>
+    </div>
   </div>
 
   <script src="app.js"></script>

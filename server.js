@@ -1,26 +1,19 @@
-require('dotenv').config();
+'use strict';
 
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+
+const tts = require('./lib/google-tts');
+const { enrichVoices, capabilitiesFor, promptCapable } = require('./lib/voice-catalog');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const API_KEY = process.env.GOOGLE_TTS_API_KEY || '';
-const GOOGLE_TTS_BASE = 'https://texttospeech.googleapis.com/v1';
-
-// The official client library is only used when no API key is configured,
-// falling back to Application Default Credentials / a service account file.
-let ttsClient = null;
-function getTtsClient() {
-  if (!ttsClient) {
-    const textToSpeech = require('@google-cloud/text-to-speech');
-    ttsClient = new textToSpeech.TextToSpeechClient();
-  }
-  return ttsClient;
-}
-
 const MAX_INPUT_BYTES = 5000; // Google Cloud TTS per-request limit
+const MAX_INSTRUCTION_CHARS = 500;
+const VOICES_CACHE_TTL_MS = 10 * 60 * 1000;
+const VOICE_NAME_PATTERN = /^[A-Za-z0-9._-]{1,80}$/;
 
 const AUDIO_FORMATS = {
   MP3: { encoding: 'MP3', mime: 'audio/mpeg', ext: 'mp3' },
@@ -31,53 +24,73 @@ const AUDIO_FORMATS = {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-function credentialsConfigured() {
-  return Boolean(
-    API_KEY ||
-      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-      process.env.GOOGLE_CLOUD_PROJECT ||
-      process.env.GCLOUD_PROJECT
-  );
+// --- Voice health -------------------------------------------------------
+// Voices listed in voice-blocklist.json (written by `npm run verify-voices`)
+// or that fail a live preview are hidden from the catalog so users only
+// ever see voices that can actually speak.
+
+const BLOCKLIST_PATH = path.join(__dirname, 'voice-blocklist.json');
+let staticBlocklist = new Set();
+try {
+  if (fs.existsSync(BLOCKLIST_PATH)) {
+    const entries = JSON.parse(fs.readFileSync(BLOCKLIST_PATH, 'utf8'));
+    staticBlocklist = new Set(Array.isArray(entries) ? entries : []);
+    if (staticBlocklist.size) {
+      console.log(`Loaded voice blocklist: ${staticBlocklist.size} voice(s) hidden`);
+    }
+  }
+} catch (err) {
+  console.warn('Could not read voice-blocklist.json:', err.message);
+}
+const runtimeBlocked = new Set();
+
+function isBlocked(voiceName) {
+  return staticBlocklist.has(voiceName) || runtimeBlocked.has(voiceName);
+}
+
+function markVoiceFailed(voiceName, reason) {
+  if (!runtimeBlocked.has(voiceName)) {
+    runtimeBlocked.add(voiceName);
+    voicesCache.at = 0; // force catalog refresh so the voice disappears
+    console.warn(`Voice "${voiceName}" hidden after failure: ${reason}`);
+  }
+}
+
+// --- Voice catalog ------------------------------------------------------
+
+const voicesCache = { at: 0, voices: null };
+
+async function getCatalog() {
+  if (voicesCache.voices && Date.now() - voicesCache.at < VOICES_CACHE_TTL_MS) {
+    return voicesCache.voices;
+  }
+  const raw = await tts.listVoices();
+  const enriched = enrichVoices(raw).filter((v) => !isBlocked(v.id));
+  voicesCache.voices = enriched;
+  voicesCache.at = Date.now();
+  return enriched;
 }
 
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
-    authMode: API_KEY ? 'api-key' : 'application-default-credentials',
-    credentialsConfigured: credentialsConfigured()
+    authMode: tts.authMode(),
+    credentialsConfigured: tts.credentialsConfigured(),
+    hiddenVoices: staticBlocklist.size + runtimeBlocked.size
   });
 });
 
-// List available voices, optionally filtered by language code.
 app.get('/api/voices', async (req, res) => {
-  const languageCode = (req.query.languageCode || '').trim();
   try {
-    let voices;
-    if (API_KEY) {
-      const url = new URL(`${GOOGLE_TTS_BASE}/voices`);
-      if (languageCode) url.searchParams.set('languageCode', languageCode);
-      url.searchParams.set('key', API_KEY);
-      const response = await fetch(url);
-      const body = await response.json();
-      if (!response.ok) {
-        throw httpError(response.status, body?.error?.message || 'Failed to list voices');
-      }
-      voices = body.voices || [];
-    } else {
-      const [result] = await getTtsClient().listVoices(
-        languageCode ? { languageCode } : {}
-      );
-      voices = result.voices || [];
-    }
-
-    voices.sort((a, b) => a.name.localeCompare(b.name));
+    const voices = await getCatalog();
     res.json({ voices });
   } catch (err) {
     sendApiError(res, err, 'Unable to fetch voices from Google Cloud TTS');
   }
 });
 
-// Short sample phrases for voice previews, keyed by language prefix.
+// --- Voice preview ------------------------------------------------------
+
 const PREVIEW_PHRASES = {
   en: 'Hello! This is a preview of my voice.',
   es: '¡Hola! Esta es una muestra de mi voz.',
@@ -116,49 +129,44 @@ function previewPhrase(languageCode) {
   return PREVIEW_PHRASES[prefix] || PREVIEW_PHRASES.en;
 }
 
-// Cached voice previews so repeated listens don't re-bill the API.
+// Generated previews are cached (LRU) so repeat listens are free, and
+// concurrent requests for the same voice share one API call.
 const previewCache = new Map();
-const PREVIEW_CACHE_MAX = 200;
+const PREVIEW_CACHE_MAX = 300;
+const previewInFlight = new Map();
 
-// Play a short sample of a voice without consuming the user's text.
 app.get('/api/preview', async (req, res) => {
   const voiceName = (req.query.voiceName || '').trim();
   const languageCode = (req.query.languageCode || '').trim() || 'en-US';
-  if (!voiceName) {
-    return res.status(400).json({ error: 'voiceName is required.' });
+  if (!voiceName || !VOICE_NAME_PATTERN.test(voiceName)) {
+    return res.status(400).json({ error: 'A valid voiceName is required.' });
+  }
+  if (isBlocked(voiceName)) {
+    return res.status(410).json({ error: 'This voice is currently unavailable.' });
   }
 
   const cached = previewCache.get(voiceName);
   if (cached) {
-    // Refresh recency so hot voices stay cached.
-    previewCache.delete(voiceName);
+    previewCache.delete(voiceName); // refresh recency
     previewCache.set(voiceName, cached);
     return sendPreview(res, cached);
   }
 
-  const request = {
-    input: { text: previewPhrase(languageCode) },
-    voice: { name: voiceName, languageCode },
-    audioConfig: { audioEncoding: 'MP3' }
-  };
-
   try {
-    let audioBuffer;
-    if (API_KEY) {
-      const response = await fetch(`${GOOGLE_TTS_BASE}/text:synthesize?key=${API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request)
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        throw httpError(response.status, body?.error?.message || 'Preview synthesis failed');
-      }
-      audioBuffer = Buffer.from(body.audioContent, 'base64');
-    } else {
-      const [response] = await getTtsClient().synthesizeSpeech(request);
-      audioBuffer = Buffer.from(response.audioContent);
+    let pending = previewInFlight.get(voiceName);
+    if (!pending) {
+      // Previews send only the audio encoding — every voice family
+      // accepts that, regardless of its other capability limits.
+      pending = tts
+        .synthesize({
+          input: { text: previewPhrase(languageCode) },
+          voice: { name: voiceName, languageCode },
+          audioConfig: { audioEncoding: 'MP3' }
+        })
+        .finally(() => previewInFlight.delete(voiceName));
+      previewInFlight.set(voiceName, pending);
     }
+    const audioBuffer = await pending;
 
     previewCache.set(voiceName, audioBuffer);
     if (previewCache.size > PREVIEW_CACHE_MAX) {
@@ -166,20 +174,26 @@ app.get('/api/preview', async (req, res) => {
     }
     sendPreview(res, audioBuffer);
   } catch (err) {
+    // The preview request is fully server-controlled, so a 400/404 means
+    // the voice itself is bad — hide it from the catalog.
+    if (tts.credentialsConfigured() && (err.status === 400 || err.status === 404)) {
+      markVoiceFailed(voiceName, err.message);
+    }
     sendApiError(res, err, 'Voice preview failed');
   }
 });
 
 function sendPreview(res, audioBuffer) {
   res.set({
-    'Content-Type': 'audio/mpeg',
+    'Content-Type': tts.MOCK ? 'audio/wav' : 'audio/mpeg',
     'Content-Length': audioBuffer.length,
     'Cache-Control': 'private, max-age=86400'
   });
   res.send(audioBuffer);
 }
 
-// Synthesize speech from text or SSML.
+// --- Synthesis ----------------------------------------------------------
+
 app.post('/api/synthesize', async (req, res) => {
   const {
     text = '',
@@ -189,7 +203,8 @@ app.post('/api/synthesize', async (req, res) => {
     audioFormat = 'MP3',
     speakingRate = 1.0,
     pitch = 0.0,
-    volumeGainDb = 0.0
+    volumeGainDb = 0.0,
+    instructions = ''
   } = req.body || {};
 
   const input = String(text).trim();
@@ -201,48 +216,51 @@ app.post('/api/synthesize', async (req, res) => {
       error: `Input exceeds the ${MAX_INPUT_BYTES}-byte limit imposed by Google Cloud TTS. Split the text into smaller chunks.`
     });
   }
+  if (voiceName && !VOICE_NAME_PATTERN.test(voiceName)) {
+    return res.status(400).json({ error: 'Invalid voice name.' });
+  }
+
+  const caps = voiceName ? capabilitiesFor(voiceName) : { rate: true, pitch: true, ssml: true };
+  if (ssml && !caps.ssml) {
+    return res.status(400).json({
+      error: 'This voice does not support SSML input. Turn off SSML or choose a Premium or Standard voice.'
+    });
+  }
 
   const format = AUDIO_FORMATS[audioFormat] || AUDIO_FORMATS.MP3;
-  const rate = clamp(Number(speakingRate) || 1.0, 0.25, 4.0);
-  const pitchValue = clamp(Number(pitch) || 0.0, -20.0, 20.0);
-  const gain = clamp(Number(volumeGainDb) || 0.0, -96.0, 16.0);
+  const inputPayload = ssml ? { ssml: input } : { text: input };
+
+  // Free-text delivery instructions are only understood by prompt-capable
+  // voices; for everything else the client applies them via rate/pitch.
+  const styleInstructions = String(instructions || '').trim().slice(0, MAX_INSTRUCTION_CHARS);
+  const applyPrompt = Boolean(styleInstructions) && voiceName && promptCapable(voiceName);
+  if (applyPrompt) inputPayload.prompt = styleInstructions;
+
+  // Only send the parameters this voice family accepts — unsupported
+  // parameters make Google reject the entire request.
+  const audioConfig = {
+    audioEncoding: format.encoding,
+    volumeGainDb: clamp(Number(volumeGainDb) || 0.0, -96.0, 16.0)
+  };
+  if (caps.rate) audioConfig.speakingRate = clamp(Number(speakingRate) || 1.0, 0.25, 4.0);
+  if (caps.pitch) audioConfig.pitch = clamp(Number(pitch) || 0.0, -20.0, 20.0);
 
   const request = {
-    input: ssml ? { ssml: input } : { text: input },
+    input: inputPayload,
     voice: voiceName
       ? { name: voiceName, languageCode: languageCode || voiceName.split('-').slice(0, 2).join('-') }
       : { languageCode: languageCode || 'en-US' },
-    audioConfig: {
-      audioEncoding: format.encoding,
-      speakingRate: rate,
-      pitch: pitchValue,
-      volumeGainDb: gain
-    }
+    audioConfig
   };
 
   try {
-    let audioBuffer;
-    if (API_KEY) {
-      const response = await fetch(`${GOOGLE_TTS_BASE}/text:synthesize?key=${API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request)
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        throw httpError(response.status, body?.error?.message || 'Synthesis failed');
-      }
-      audioBuffer = Buffer.from(body.audioContent, 'base64');
-    } else {
-      const [response] = await getTtsClient().synthesizeSpeech(request);
-      audioBuffer = Buffer.from(response.audioContent);
-    }
-
+    const audioBuffer = await tts.synthesize(request, { beta: applyPrompt });
     res.set({
-      'Content-Type': format.mime,
+      'Content-Type': tts.MOCK ? 'audio/wav' : format.mime,
       'Content-Length': audioBuffer.length,
       'Content-Disposition': `inline; filename="speech.${format.ext}"`,
-      'Cache-Control': 'no-store'
+      'Cache-Control': 'no-store',
+      'X-Instructions-Applied': applyPrompt ? '1' : '0'
     });
     res.send(audioBuffer);
   } catch (err) {
@@ -250,37 +268,36 @@ app.post('/api/synthesize', async (req, res) => {
   }
 });
 
+// --- Helpers ------------------------------------------------------------
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function httpError(status, message) {
-  const err = new Error(message);
-  err.status = status;
-  return err;
-}
-
 function sendApiError(res, err, fallbackMessage) {
   console.error(`${fallbackMessage}:`, err.message);
-  const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 502;
+  const isTimeout = err.name === 'TimeoutError' || err.code === 'ABORT_ERR';
+  const status = isTimeout
+    ? 504
+    : err.status && err.status >= 400 && err.status < 600
+      ? err.status
+      : 502;
   let hint;
-  if (!credentialsConfigured()) {
+  if (!tts.credentialsConfigured()) {
     hint =
       'No Google Cloud credentials detected. Set GOOGLE_TTS_API_KEY or GOOGLE_APPLICATION_CREDENTIALS — see README.md for setup steps.';
+  } else if (isTimeout) {
+    hint = 'The Google TTS API did not respond in time. Please try again.';
   }
   res.status(status).json({ error: err.message || fallbackMessage, hint });
 }
 
 app.listen(PORT, () => {
   console.log(`Blvck TTS running at http://localhost:${PORT}`);
-  console.log(
-    API_KEY
-      ? 'Auth mode: API key (GOOGLE_TTS_API_KEY)'
-      : 'Auth mode: Application Default Credentials / service account'
-  );
-  if (!credentialsConfigured()) {
+  console.log(`Auth mode: ${tts.authMode()}`);
+  if (!tts.credentialsConfigured()) {
     console.warn(
-      'Warning: no Google Cloud credentials configured. Requests to /api/voices and /api/synthesize will fail until you set them up (see README.md).'
+      'Warning: no Google Cloud credentials configured. Requests will fail until you set them up (see README.md), or start with MOCK_TTS=1 for UI development.'
     );
   }
 });
