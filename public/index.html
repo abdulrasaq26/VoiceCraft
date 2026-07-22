@@ -41,7 +41,13 @@
         </div>
         <div class="control">
           <label for="voice-select">Voice</label>
-          <select id="voice-select"></select>
+          <div class="voice-row">
+            <select id="voice-select"></select>
+            <button id="preview-btn" class="btn icon" type="button" title="Preview this voice" aria-label="Preview this voice">
+              <span class="preview-icon">▶</span>
+              <span class="spinner small" hidden></span>
+            </button>
+          </div>
         </div>
         <div class="control">
           <label for="format-select">Format</label>

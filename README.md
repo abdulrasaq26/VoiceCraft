@@ -8,6 +8,7 @@ Type or paste text (or SSML), pick from hundreds of Google voices across dozens 
 
 - 🎙️ **All Google Cloud voices** — Neural2, Studio, WaveNet, Journey, Chirp, and Standard tiers, grouped by quality in the voice picker
 - 🌍 **Language filter** — voices filtered by language, with human-readable language names
+- 🔊 **Voice preview** — hear a short sample of any voice before generating; previews are cached server-side so repeat listens don't hit your quota
 - 🎛️ **Audio controls** — speaking rate (0.25×–4×), pitch (±20 semitones), volume gain (−20 to +16 dB)
 - 📝 **SSML support** — toggle to send raw SSML markup instead of plain text
 - 💾 **Download** — export generated audio as MP3, OGG (Opus), or WAV
@@ -67,6 +68,7 @@ The Express server exposes a small JSON API that the frontend uses (and you can 
 | --- | --- | --- |
 | `GET` | `/api/health` | Server status and detected auth mode |
 | `GET` | `/api/voices?languageCode=en-US` | List available voices (language filter optional) |
+| `GET` | `/api/preview?voiceName=en-US-Neural2-C&languageCode=en-US` | Short MP3 sample of a voice (cached server-side) |
 | `POST` | `/api/synthesize` | Generate audio; returns the audio bytes |
 
 `POST /api/synthesize` body:

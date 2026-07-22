@@ -11,6 +11,9 @@
   const rateValue = document.getElementById('rate-value');
   const pitchValue = document.getElementById('pitch-value');
   const volumeValue = document.getElementById('volume-value');
+  const previewBtn = document.getElementById('preview-btn');
+  const previewIcon = previewBtn.querySelector('.preview-icon');
+  const previewSpinner = previewBtn.querySelector('.spinner');
   const speakBtn = document.getElementById('speak-btn');
   const resetBtn = document.getElementById('reset-btn');
   const statusBox = document.getElementById('status');
@@ -25,6 +28,9 @@
 
   let allVoices = [];
   let currentAudioUrl = null;
+  const previewAudio = new Audio();
+  let previewUrl = null;
+  let previewLoading = false;
 
   const LANGUAGE_NAMES = (() => {
     try {
@@ -197,6 +203,66 @@
     }
   }
 
+  function setPreviewState(state) {
+    // state: 'idle' | 'loading' | 'playing'
+    previewLoading = state === 'loading';
+    previewBtn.disabled = previewLoading;
+    previewSpinner.hidden = state !== 'loading';
+    previewIcon.hidden = state === 'loading';
+    previewIcon.textContent = state === 'playing' ? '■' : '▶';
+    previewBtn.title = state === 'playing' ? 'Stop preview' : 'Preview this voice';
+  }
+
+  function stopPreview() {
+    previewAudio.pause();
+    previewAudio.removeAttribute('src');
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      previewUrl = null;
+    }
+    setPreviewState('idle');
+  }
+
+  async function previewVoice() {
+    if (previewLoading) return;
+    if (!previewAudio.paused) {
+      stopPreview();
+      return;
+    }
+
+    const voiceName = voiceSelect.value;
+    if (!voiceName) {
+      showStatus('Select a voice to preview.');
+      return;
+    }
+
+    clearStatus();
+    setPreviewState('loading');
+
+    try {
+      const params = new URLSearchParams({
+        voiceName,
+        languageCode: languageSelect.value
+      });
+      const response = await fetch(`/api/preview?${params}`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.hint ? `${body.error} — ${body.hint}` : body.error || `Preview failed (${response.status})`);
+      }
+      const blob = await response.blob();
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(blob);
+      previewAudio.src = previewUrl;
+      await previewAudio.play();
+      setPreviewState('playing');
+    } catch (err) {
+      showStatus(`Voice preview failed: ${err.message}`);
+      stopPreview();
+    }
+  }
+
+  previewAudio.addEventListener('ended', () => setPreviewState('idle'));
+
   function resetForm() {
     textInput.value = '';
     ssmlToggle.checked = false;
@@ -221,7 +287,12 @@
   }
 
   textInput.addEventListener('input', updateCharCount);
-  languageSelect.addEventListener('change', populateVoices);
+  languageSelect.addEventListener('change', () => {
+    stopPreview();
+    populateVoices();
+  });
+  voiceSelect.addEventListener('change', stopPreview);
+  previewBtn.addEventListener('click', previewVoice);
   [rateSlider, pitchSlider, volumeSlider].forEach((slider) =>
     slider.addEventListener('input', updateSliderOutputs)
   );

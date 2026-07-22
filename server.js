@@ -77,6 +77,108 @@ app.get('/api/voices', async (req, res) => {
   }
 });
 
+// Short sample phrases for voice previews, keyed by language prefix.
+const PREVIEW_PHRASES = {
+  en: 'Hello! This is a preview of my voice.',
+  es: '¡Hola! Esta es una muestra de mi voz.',
+  fr: 'Bonjour ! Voici un aperçu de ma voix.',
+  de: 'Hallo! Dies ist eine Vorschau meiner Stimme.',
+  it: 'Ciao! Questa è un’anteprima della mia voce.',
+  pt: 'Olá! Esta é uma amostra da minha voz.',
+  nl: 'Hallo! Dit is een voorbeeld van mijn stem.',
+  pl: 'Cześć! To jest próbka mojego głosu.',
+  ru: 'Привет! Это образец моего голоса.',
+  ja: 'こんにちは。これは私の声のプレビューです。',
+  ko: '안녕하세요! 제 목소리 미리듣기입니다.',
+  zh: '你好！这是我的声音预览。',
+  cmn: '你好！这是我的声音预览。',
+  yue: '你好！呢個係我把聲嘅預覽。',
+  hi: 'नमस्ते! यह मेरी आवाज़ का एक नमूना है।',
+  ar: 'مرحباً! هذه معاينة لصوتي.',
+  tr: 'Merhaba! Bu, sesimin bir önizlemesidir.',
+  vi: 'Xin chào! Đây là bản xem trước giọng nói của tôi.',
+  th: 'สวัสดี! นี่คือตัวอย่างเสียงของฉัน',
+  id: 'Halo! Ini adalah pratinjau suara saya.',
+  sv: 'Hej! Det här är en förhandsvisning av min röst.',
+  da: 'Hej! Dette er en prøve på min stemme.',
+  nb: 'Hei! Dette er en forhåndsvisning av stemmen min.',
+  fi: 'Hei! Tämä on esikatselu äänestäni.',
+  uk: 'Привіт! Це зразок мого голосу.',
+  el: 'Γεια σας! Αυτή είναι μια προεπισκόπηση της φωνής μου.',
+  cs: 'Ahoj! Toto je ukázka mého hlasu.',
+  he: 'שלום! זוהי תצוגה מקדימה של הקול שלי.',
+  bn: 'নমস্কার! এটি আমার কণ্ঠস্বরের একটি নমুনা।',
+  ta: 'வணக்கம்! இது என் குரலின் மாதிரி.'
+};
+
+function previewPhrase(languageCode) {
+  const prefix = (languageCode || 'en').split('-')[0].toLowerCase();
+  return PREVIEW_PHRASES[prefix] || PREVIEW_PHRASES.en;
+}
+
+// Cached voice previews so repeated listens don't re-bill the API.
+const previewCache = new Map();
+const PREVIEW_CACHE_MAX = 200;
+
+// Play a short sample of a voice without consuming the user's text.
+app.get('/api/preview', async (req, res) => {
+  const voiceName = (req.query.voiceName || '').trim();
+  const languageCode = (req.query.languageCode || '').trim() || 'en-US';
+  if (!voiceName) {
+    return res.status(400).json({ error: 'voiceName is required.' });
+  }
+
+  const cached = previewCache.get(voiceName);
+  if (cached) {
+    // Refresh recency so hot voices stay cached.
+    previewCache.delete(voiceName);
+    previewCache.set(voiceName, cached);
+    return sendPreview(res, cached);
+  }
+
+  const request = {
+    input: { text: previewPhrase(languageCode) },
+    voice: { name: voiceName, languageCode },
+    audioConfig: { audioEncoding: 'MP3' }
+  };
+
+  try {
+    let audioBuffer;
+    if (API_KEY) {
+      const response = await fetch(`${GOOGLE_TTS_BASE}/text:synthesize?key=${API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw httpError(response.status, body?.error?.message || 'Preview synthesis failed');
+      }
+      audioBuffer = Buffer.from(body.audioContent, 'base64');
+    } else {
+      const [response] = await getTtsClient().synthesizeSpeech(request);
+      audioBuffer = Buffer.from(response.audioContent);
+    }
+
+    previewCache.set(voiceName, audioBuffer);
+    if (previewCache.size > PREVIEW_CACHE_MAX) {
+      previewCache.delete(previewCache.keys().next().value);
+    }
+    sendPreview(res, audioBuffer);
+  } catch (err) {
+    sendApiError(res, err, 'Voice preview failed');
+  }
+});
+
+function sendPreview(res, audioBuffer) {
+  res.set({
+    'Content-Type': 'audio/mpeg',
+    'Content-Length': audioBuffer.length,
+    'Cache-Control': 'private, max-age=86400'
+  });
+  res.send(audioBuffer);
+}
+
 // Synthesize speech from text or SSML.
 app.post('/api/synthesize', async (req, res) => {
   const {
