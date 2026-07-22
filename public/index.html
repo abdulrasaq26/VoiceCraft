@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blvck TTS — Text to Speech</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Blvck<span class="accent">TTS</span></h1>
+      <p class="tagline">Text to speech powered by Google Cloud</p>
+    </header>
+
+    <main class="card">
+      <section class="input-section">
+        <div class="input-header">
+          <label for="text-input">Your text</label>
+          <div class="input-tools">
+            <label class="ssml-toggle" title="Treat input as SSML markup">
+              <input type="checkbox" id="ssml-toggle" />
+              <span>SSML</span>
+            </label>
+            <span id="char-count" class="char-count">0 / 5000</span>
+          </div>
+        </div>
+        <textarea
+          id="text-input"
+          rows="7"
+          maxlength="5000"
+          placeholder="Type or paste the text you want to hear…"
+        ></textarea>
+      </section>
+
+      <section class="controls">
+        <div class="control">
+          <label for="language-select">Language</label>
+          <select id="language-select"></select>
+        </div>
+        <div class="control">
+          <label for="voice-select">Voice</label>
+          <select id="voice-select"></select>
+        </div>
+        <div class="control">
+          <label for="format-select">Format</label>
+          <select id="format-select">
+            <option value="MP3" selected>MP3</option>
+            <option value="OGG_OPUS">OGG (Opus)</option>
+            <option value="LINEAR16">WAV</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="sliders">
+        <div class="slider-control">
+          <label for="rate-slider">Speed <output id="rate-value">1.0×</output></label>
+          <input type="range" id="rate-slider" min="0.25" max="4" step="0.05" value="1" />
+        </div>
+        <div class="slider-control">
+          <label for="pitch-slider">Pitch <output id="pitch-value">0.0</output></label>
+          <input type="range" id="pitch-slider" min="-20" max="20" step="0.5" value="0" />
+        </div>
+        <div class="slider-control">
+          <label for="volume-slider">Volume gain <output id="volume-value">0.0 dB</output></label>
+          <input type="range" id="volume-slider" min="-20" max="16" step="0.5" value="0" />
+        </div>
+      </section>
+
+      <section class="actions">
+        <button id="speak-btn" class="btn primary">
+          <span class="btn-label">Generate speech</span>
+          <span class="spinner" hidden></span>
+        </button>
+        <button id="reset-btn" class="btn ghost" type="button">Reset</button>
+      </section>
+
+      <div id="status" class="status" hidden></div>
+
+      <section id="player-section" class="player" hidden>
+        <audio id="audio-player" controls></audio>
+        <a id="download-link" class="btn ghost" download>Download</a>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>
+        Uses the
+        <a href="https://cloud.google.com/text-to-speech" target="_blank" rel="noopener">Google Cloud Text-to-Speech API</a>.
+        Configure credentials on the server — see the README.
+      </p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

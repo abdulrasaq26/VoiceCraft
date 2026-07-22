@@ -1,0 +1,26 @@
+{
+  "name": "blvck-tts",
+  "version": "1.0.0",
+  "description": "Text-to-speech web app powered by the Google Cloud Text-to-Speech API",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "tts",
+    "text-to-speech",
+    "google-cloud",
+    "express"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@google-cloud/text-to-speech": "^5.3.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
