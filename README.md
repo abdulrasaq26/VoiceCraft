@@ -109,7 +109,7 @@ Synthesizes a tiny sample with every voice in the catalog (~3 characters per voi
 ```
 
 - `audioFormat`: `MP3`, `OGG_OPUS`, or `LINEAR16` (WAV)
-- Input is limited to 1,500 characters per request (capped below Google's 5,000-byte hard limit to keep synthesis quality high on longer passages)
+- Input is limited to 1,000 characters per request (capped below Google's 5,000-byte hard limit to keep synthesis quality high on longer passages)
 - Parameters a voice doesn't support are stripped server-side rather than sent (Google rejects whole requests otherwise); the `X-Instructions-Applied` response header reports whether the voice consumed the free-text instructions directly
 
 ## How voice capabilities are handled

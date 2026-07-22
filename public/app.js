@@ -259,7 +259,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     statusBox.hidden = true;
   }
 
-  const MAX_CHARS = 1500;
+  const MAX_CHARS = 1000;
   function updateCharCount() {
     charCount.textContent = `${textInput.value.length} / ${MAX_CHARS}`;
   }
