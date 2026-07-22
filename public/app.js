@@ -7,6 +7,9 @@
 
   const textInput = $('text-input');
   const charCount = $('char-count');
+  const titleInput = $('title-input');
+  const namingNote = $('naming-note');
+  const filenameNote = $('filename-note');
   const ssmlToggle = $('ssml-toggle');
   const languageSelect = $('language-select');
   const formatSelect = $('format-select');
@@ -63,8 +66,11 @@
     settings: 'blvck-tts:settings',
     presets: 'blvck-tts:presets',
     favorites: 'blvck-tts:favorites',
-    recents: 'blvck-tts:recents'
+    recents: 'blvck-tts:recents',
+    narration: 'blvck-tts:narration'
   };
+
+  const DEFAULT_TITLE = 'blvck-tts';
 
   // Templates tune real API parameters (speed/pitch) alongside the
   // free-text instruction, so they shape delivery on every voice.
@@ -219,6 +225,9 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   let favorites = new Set(store.get(LS.favorites, []));
   let recents = store.get(LS.recents, []);
   let presets = store.get(LS.presets, []);
+  // narration: { title, counts: { <normalized title>: <last number used> } }
+  const narration = store.get(LS.narration, { title: '', counts: {} });
+  if (!narration.counts) narration.counts = {};
   const filters = { search: '', tier: 'all', gender: 'all' };
   let currentAudioUrl = null;
 
@@ -250,8 +259,51 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     statusBox.hidden = true;
   }
 
+  const MAX_CHARS = 1500;
   function updateCharCount() {
-    charCount.textContent = `${textInput.value.length} / 5000`;
+    charCount.textContent = `${textInput.value.length} / ${MAX_CHARS}`;
+  }
+
+  // --- Narration naming --------------------------------------------------
+
+  // Strip characters that are invalid in filenames; collapse whitespace.
+  function sanitizeName(name) {
+    return name
+      .replace(/[\\/:*?"<>|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 60);
+  }
+
+  function currentTitle() {
+    return sanitizeName(titleInput.value) || DEFAULT_TITLE;
+  }
+
+  function saveNarration() {
+    narration.title = titleInput.value;
+    store.set(LS.narration, narration);
+  }
+
+  // The next sequential number this title will use on the next generation.
+  function nextNumberFor(title) {
+    const key = title.toLowerCase();
+    return (narration.counts[key] || 0) + 1;
+  }
+
+  // Reserve and persist the next number, returning the numbered base name.
+  function claimNextName() {
+    const title = currentTitle();
+    const key = title.toLowerCase();
+    const n = (narration.counts[key] || 0) + 1;
+    narration.counts[key] = n;
+    saveNarration();
+    updateNamingNote();
+    return `${title} ${n}`;
+  }
+
+  function updateNamingNote() {
+    const title = currentTitle();
+    namingNote.textContent = `Downloads are auto-numbered under this name — next file: “${title} ${nextNumberFor(title)}”.`;
   }
 
   function updateSliderOutputs() {
@@ -755,8 +807,12 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       currentAudioUrl = URL.createObjectURL(blob);
       audioPlayer.src = currentAudioUrl;
       const ext = FORMAT_EXT[formatSelect.value] || 'mp3';
+      const baseName = claimNextName();
+      const fileName = `${baseName}.${ext}`;
       downloadLink.href = currentAudioUrl;
-      downloadLink.download = `blvck-tts-${Date.now()}.${ext}`;
+      downloadLink.download = fileName;
+      filenameNote.textContent = `Saved as “${fileName}”`;
+      filenameNote.hidden = false;
       playerSection.hidden = false;
       audioPlayer.play().catch(() => {
         /* Autoplay may be blocked; user can press play manually. */
@@ -951,6 +1007,11 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   textInput.addEventListener('input', updateCharCount);
 
+  titleInput.addEventListener('input', () => {
+    saveNarration();
+    updateNamingNote();
+  });
+
   languageSelect.addEventListener('change', () => {
     stopPreview();
     const v = currentVoice();
@@ -1040,6 +1101,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     clearStatus();
     stopPreview();
     playerSection.hidden = true;
+    filenameNote.hidden = true;
     waveformCanvas.hidden = true;
     audioPlayer.pause();
     if (currentAudioUrl) {
@@ -1112,6 +1174,8 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   // --- Init --------------------------------------------------------------
 
+  titleInput.value = narration.title || '';
+  updateNamingNote();
   updateCharCount();
   updateSliderOutputs();
   renderPresetSelect();

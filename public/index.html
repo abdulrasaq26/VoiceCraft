@@ -24,6 +24,13 @@
         <button id="preset-manage-btn" class="btn ghost small" type="button">Manage</button>
       </section>
 
+      <!-- Narration name -->
+      <section class="naming-section">
+        <label for="title-input">Narration name</label>
+        <input id="title-input" type="text" maxlength="60" placeholder="e.g. people" />
+        <p id="naming-note" class="field-note">Downloads are auto-numbered under this name — “people 1”, “people 2”, …</p>
+      </section>
+
       <!-- Text input -->
       <section class="input-section">
         <div class="input-header">
@@ -33,13 +40,13 @@
               <input type="checkbox" id="ssml-toggle" />
               <span>SSML</span>
             </label>
-            <span id="char-count" class="char-count">0 / 5000</span>
+            <span id="char-count" class="char-count">0 / 1500</span>
           </div>
         </div>
         <textarea
           id="text-input"
           rows="6"
-          maxlength="5000"
+          maxlength="1500"
           placeholder="Type or paste the text you want to hear…"
         ></textarea>
       </section>
@@ -125,6 +132,7 @@
           <audio id="audio-player" controls></audio>
           <a id="download-link" class="btn ghost" download>Download</a>
         </div>
+        <p id="filename-note" class="field-note" hidden></p>
         <canvas id="waveform" width="1200" height="80" hidden></canvas>
       </section>
     </main>
