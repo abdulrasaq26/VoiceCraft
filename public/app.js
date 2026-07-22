@@ -50,15 +50,17 @@
   const selectAllToggle = $('select-all');
   const queueList = $('queue-list');
   const rowAudio = $('row-audio');
-  const trViewBtn = $('tr-view-btn');
-  const trCopyBtn = $('tr-copy-btn');
-  const trDownloadBtn = $('tr-download-btn');
-  const transcriptOnlyBtn = $('transcript-only-btn');
-  const transcriptModal = $('transcript-modal');
-  const transcriptTitle = $('transcript-title');
-  const transcriptView = $('transcript-view');
-  const transcriptCopy = $('transcript-copy');
-  const transcriptDownload = $('transcript-download');
+  const subPreviewBtn = $('sub-preview-btn');
+  const subSrtBtn = $('sub-srt-btn');
+  const subVttBtn = $('sub-vtt-btn');
+  const subCopyBtn = $('sub-copy-btn');
+  const subtitleOnlyBtn = $('subtitle-only-btn');
+  const subtitleModal = $('subtitle-modal');
+  const subtitleTitle = $('subtitle-title');
+  const subtitleView = $('subtitle-view');
+  const subtitleCopy = $('subtitle-copy');
+  const subtitleSrt = $('subtitle-srt');
+  const subtitleVtt = $('subtitle-vtt');
 
   const voiceModal = $('voice-modal');
   const voiceSearch = $('voice-search');
@@ -250,7 +252,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   // narration: { title } — remembers the last project name entered
   const narration = store.get(LS.narration, { title: '' });
   const filters = { search: '', tier: 'all', gender: 'all' };
-  let activeTranscript = null; // { project, content } currently shown in the modal
+  let activeSubtitles = null; // { project, cues } currently shown in the modal
 
   // --- Small helpers -----------------------------------------------------
 
@@ -284,8 +286,6 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   const CHUNK_TARGET = 1000; // aim for ~1000 chars per audio part
   const CHUNK_HARD_MAX = 1800; // a lone long sentence may fill a whole part up to here
-  const TRANSCRIPT_TARGET = 500; // ~500 chars per transcript section
-  const TRANSCRIPT_HARD_MAX = 900;
 
   // Split a paragraph into sentence-like units, keeping the terminal
   // punctuation attached so nothing is cut mid-sentence.
@@ -388,42 +388,14 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     }
   }
 
-  // --- Transcript --------------------------------------------------------
-
   function pad2(n) {
     return String(n).padStart(2, '0');
   }
 
-  // Organizational (not audio-accurate) markers: 00-30, 31-60, 61-90, …
-  function transcriptLabel(section) {
-    const start = section === 1 ? 0 : (section - 1) * 30 + 1;
-    const end = section * 30;
-    return `${pad2(start)}-${pad2(end)}`;
-  }
-
-  // Build a single timestamped transcript for the whole script, re-split into
-  // ~500-char sentence-aware sections.
-  function buildTranscript(script) {
-    const sections = chunkScript(String(script).trim(), TRANSCRIPT_TARGET, TRANSCRIPT_HARD_MAX);
-    if (!sections.length) return '';
-    return sections.map((text, i) => `${transcriptLabel(i + 1)}\n${text}`).join('\n\n') + '\n';
-  }
-
-  function transcriptFileName(project) {
-    return `${project} Transcript.txt`;
-  }
-
-  function downloadTranscript(project, content) {
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    downloadBlobUrl(url, transcriptFileName(project));
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-  }
-
-  async function copyText(text) {
+  async function copyText(text, label = 'Subtitles') {
     try {
       await navigator.clipboard.writeText(text);
-      showStatus('Transcript copied to clipboard.', 'info');
+      showStatus(`${label} copied to clipboard.`, 'info');
       return;
     } catch {
       /* clipboard API unavailable or blocked — fall back below */
@@ -436,18 +408,233 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     ta.select();
     try {
       document.execCommand('copy');
-      showStatus('Transcript copied to clipboard.', 'info');
+      showStatus(`${label} copied to clipboard.`, 'info');
     } catch {
-      showStatus('Could not copy automatically — open “View” and copy manually.');
+      showStatus('Could not copy automatically — open “Preview” and copy manually.');
     }
     ta.remove();
   }
 
-  function openTranscriptModal(project, content) {
-    transcriptTitle.textContent = transcriptFileName(project);
-    transcriptView.textContent = content;
-    activeTranscript = { project, content };
-    openModal(transcriptModal);
+  // --- Subtitles ---------------------------------------------------------
+  // Real SRT/VTT subtitles whose timing comes from the actual generated
+  // audio: each part's decoded duration is distributed across its cues, and
+  // a running offset keeps one continuous timeline across the whole project.
+  // When no audio is available (standalone use), timing is estimated from
+  // character count and the speaking rate.
+
+  const SUB_MAX_LINE = 42; // chars per line (readable on mobile)
+  const SUB_MAX_CUE = 84; // chars per cue (≈ 2 lines)
+  const SUB_CHARS_PER_SEC = 14; // estimation baseline at speaking rate 1.0
+  const SUB_MIN_CUE_MS = 900; // keep very short cues on screen long enough
+
+  let subtitleCache = { key: null, cues: null };
+
+  // Decode the true duration (seconds) of an audio blob.
+  async function audioDuration(blob) {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+        const d = decoded.duration;
+        ctx.close();
+        if (isFinite(d) && d > 0) return d;
+      }
+    } catch {
+      /* fall back to the media element below */
+    }
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(blob);
+      const a = new Audio();
+      a.preload = 'metadata';
+      a.onloadedmetadata = () => {
+        const d = a.duration;
+        URL.revokeObjectURL(url);
+        resolve(isFinite(d) && d > 0 ? d : 0);
+      };
+      a.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(0);
+      };
+      a.src = url;
+    });
+  }
+
+  function estimateDurationSec(text, rate) {
+    const cps = SUB_CHARS_PER_SEC * (Number(rate) || 1);
+    return Math.max(0.6, text.replace(/\s+/g, ' ').trim().length / cps);
+  }
+
+  // Wrap a cue's text into 1–2 balanced lines without splitting words.
+  function wrapLines(text) {
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (t.length <= SUB_MAX_LINE) return [t];
+    const mid = Math.floor(t.length / 2);
+    let best = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < t.length; i++) {
+      if (t[i] !== ' ') continue;
+      const first = i;
+      const second = t.length - (i + 1);
+      if (first <= SUB_MAX_LINE && second <= SUB_MAX_LINE) {
+        const dist = Math.abs(i - mid);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = i;
+        }
+      }
+    }
+    if (best === -1) {
+      const idx = t.lastIndexOf(' ', SUB_MAX_LINE);
+      if (idx <= 0) return [t];
+      return [t.slice(0, idx).trim(), t.slice(idx + 1).trim()];
+    }
+    return [t.slice(0, best).trim(), t.slice(best + 1).trim()];
+  }
+
+  function packUnits(units, max) {
+    const out = [];
+    let cur = '';
+    for (const unit of units) {
+      const cand = cur ? `${cur} ${unit}` : unit;
+      if (cand.length <= max) {
+        cur = cand;
+      } else {
+        if (cur) out.push(cur);
+        cur = unit;
+      }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+
+  // Split one segment's text into cue-sized text blocks on natural boundaries.
+  function splitIntoCueTexts(text) {
+    const cues = [];
+    for (const sentence of splitSentences(text.replace(/\s+/g, ' ').trim())) {
+      if (sentence.length <= SUB_MAX_CUE) {
+        cues.push(sentence);
+        continue;
+      }
+      // Break long sentences on clause punctuation, then pack; if a phrase is
+      // still too long, pack its words.
+      const phrases = sentence.split(/(?<=[,;:—])\s+/).map((s) => s.trim()).filter(Boolean);
+      const expanded = [];
+      for (const phrase of phrases) {
+        if (phrase.length <= SUB_MAX_CUE) expanded.push(phrase);
+        else expanded.push(...packUnits(phrase.split(/\s+/), SUB_MAX_CUE));
+      }
+      cues.push(...packUnits(expanded, SUB_MAX_CUE));
+    }
+    return cues;
+  }
+
+  // segments: [{ text, durationSec }] in order. Returns numbered cues with a
+  // continuous timeline.
+  function cuesFromSegments(segments) {
+    const cues = [];
+    let offsetMs = 0;
+    for (const seg of segments) {
+      const texts = splitIntoCueTexts(seg.text);
+      const totalChars = texts.reduce((a, t) => a + t.length, 0) || 1;
+      const segDurMs = Math.max(0, seg.durationSec * 1000);
+      let acc = 0;
+      for (const text of texts) {
+        const dur = segDurMs * (text.length / totalChars);
+        const startMs = Math.round(offsetMs + acc);
+        const endMs = Math.round(offsetMs + acc + dur);
+        cues.push({ startMs, endMs, lines: wrapLines(text) });
+        acc += dur;
+      }
+      offsetMs += segDurMs;
+    }
+    // Enforce a readable minimum without breaking continuity (only pushes the
+    // very last cue's end out; interior cues stay aligned to the audio).
+    for (let i = 0; i < cues.length; i++) {
+      if (cues[i].endMs - cues[i].startMs < SUB_MIN_CUE_MS) {
+        const wanted = cues[i].startMs + SUB_MIN_CUE_MS;
+        if (i + 1 < cues.length) cues[i].endMs = Math.min(wanted, cues[i + 1].startMs);
+        else cues[i].endMs = wanted;
+      }
+    }
+    return cues.map((c, i) => ({ index: i + 1, ...c }));
+  }
+
+  async function computeCues() {
+    if (batch) {
+      const key = `${batch.id}:${batch.items.filter((i) => i.status === 'done').length}:${batch.settings.speakingRate}`;
+      if (subtitleCache.key === key && subtitleCache.cues) return subtitleCache.cues;
+      const rate = batch.settings.speakingRate;
+      const segments = [];
+      for (const item of batch.items) {
+        const blob = memBlobs.get(item.index);
+        let dur = blob ? await audioDuration(blob) : 0;
+        if (!dur) dur = estimateDurationSec(item.text, rate);
+        segments.push({ text: item.text, durationSec: dur });
+      }
+      const cues = cuesFromSegments(segments);
+      subtitleCache = { key, cues };
+      return cues;
+    }
+    // Standalone: estimate from the pasted script.
+    const text = textInput.value.trim();
+    if (!text) return [];
+    return cuesFromSegments([{ text, durationSec: estimateDurationSec(text, Number(rateSlider.value)) }]);
+  }
+
+  function fmtTime(ms, sep) {
+    const total = Math.max(0, Math.round(ms));
+    const h = Math.floor(total / 3600000);
+    const m = Math.floor((total % 3600000) / 60000);
+    const s = Math.floor((total % 60000) / 1000);
+    const millis = total % 1000;
+    return `${pad2(h)}:${pad2(m)}:${pad2(s)}${sep}${String(millis).padStart(3, '0')}`;
+  }
+
+  function toSRT(cues) {
+    return (
+      cues
+        .map((c) => `${c.index}\n${fmtTime(c.startMs, ',')} --> ${fmtTime(c.endMs, ',')}\n${c.lines.join('\n')}`)
+        .join('\n\n') + '\n'
+    );
+  }
+
+  function toVTT(cues) {
+    return (
+      'WEBVTT\n\n' +
+      cues
+        .map((c) => `${c.index}\n${fmtTime(c.startMs, '.')} --> ${fmtTime(c.endMs, '.')}\n${c.lines.join('\n')}`)
+        .join('\n\n') +
+      '\n'
+    );
+  }
+
+  function toPlainText(cues) {
+    return cues.map((c) => c.lines.join('\n')).join('\n\n') + '\n';
+  }
+
+  function subtitleProject() {
+    return batch ? batch.project : currentProject();
+  }
+
+  function downloadText(filename, content, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    downloadBlobUrl(url, filename);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  async function openSubtitleModal() {
+    const cues = await computeCues();
+    if (!cues.length) {
+      showStatus('There’s nothing to caption yet.');
+      return;
+    }
+    const project = subtitleProject();
+    activeSubtitles = { project, cues };
+    subtitleTitle.textContent = `${project} — subtitles (${cues.length} cues)`;
+    subtitleView.textContent = toSRT(cues);
+    openModal(subtitleModal);
   }
 
   function updateSliderOutputs() {
@@ -768,7 +955,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   function closeModal(modal) {
     modal.hidden = true;
-    if (voiceModal.hidden && presetModal.hidden && transcriptModal.hidden) {
+    if (voiceModal.hidden && presetModal.hidden && subtitleModal.hidden) {
       document.body.classList.remove('modal-open');
     }
   }
@@ -1029,7 +1216,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     return {
       id: `batch-${Date.now()}`,
       project: currentProject(),
-      script, // original full text, used for the transcript
+      script, // original full text (kept for future features: translation, etc.)
       ext: FORMAT_EXT[formatSelect.value] || 'mp3',
       audioFormat: formatSelect.value,
       createdAt: Date.now(),
@@ -1287,7 +1474,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     }
   }
 
-  async function zipDownload(items, { includeTranscript = false } = {}) {
+  async function zipDownload(items, { includeSubtitles = false } = {}) {
     if (!items.length) return;
     const files = [];
     for (const item of items) {
@@ -1296,10 +1483,12 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       files.push({ name: itemFileName(item), data: new Uint8Array(await blob.arrayBuffer()) });
     }
     if (!files.length) return;
-    if (includeTranscript && batch.script) {
-      const content = buildTranscript(batch.script);
-      if (content) {
-        files.push({ name: transcriptFileName(batch.project), data: new TextEncoder().encode(content) });
+    if (includeSubtitles) {
+      const cues = await computeCues();
+      if (cues.length) {
+        const enc = new TextEncoder();
+        files.push({ name: `${batch.project}.srt`, data: enc.encode(toSRT(cues)) });
+        files.push({ name: `${batch.project}.vtt`, data: enc.encode(toVTT(cues)) });
       }
     }
     const zipBlob = window.BlvckZip.create(files);
@@ -1593,7 +1782,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   });
 
   zipBtn.addEventListener('click', () => {
-    if (batch) zipDownload(batch.items.filter((i) => i.status === 'done'), { includeTranscript: true });
+    if (batch) zipDownload(batch.items.filter((i) => i.status === 'done'), { includeSubtitles: true });
   });
   zipSelectedBtn.addEventListener('click', () => {
     if (batch) zipDownload(batch.items.filter((i) => i.status === 'done' && selected.has(i.index)));
@@ -1609,40 +1798,47 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     renderQueue();
   });
 
-  // Transcript (from the batch's original script)
-  trViewBtn.addEventListener('click', () => {
-    if (batch) openTranscriptModal(batch.project, buildTranscript(batch.script));
-  });
-  trCopyBtn.addEventListener('click', () => {
-    if (batch) copyText(buildTranscript(batch.script));
-  });
-  trDownloadBtn.addEventListener('click', () => {
-    if (batch) downloadTranscript(batch.project, buildTranscript(batch.script));
+  // Subtitles (timed from the batch's generated audio)
+  async function downloadSubtitles(kind) {
+    const cues = await computeCues();
+    if (!cues.length) {
+      showStatus('There’s nothing to caption yet.');
+      return;
+    }
+    const project = subtitleProject();
+    if (kind === 'srt') downloadText(`${project}.srt`, toSRT(cues), 'application/x-subrip');
+    else if (kind === 'vtt') downloadText(`${project}.vtt`, toVTT(cues), 'text/vtt');
+    else if (kind === 'txt') downloadText(`${project}.txt`, toPlainText(cues), 'text/plain;charset=utf-8');
+  }
+
+  subPreviewBtn.addEventListener('click', openSubtitleModal);
+  subSrtBtn.addEventListener('click', () => downloadSubtitles('srt'));
+  subVttBtn.addEventListener('click', () => downloadSubtitles('vtt'));
+  subCopyBtn.addEventListener('click', async () => {
+    const cues = await computeCues();
+    if (cues.length) copyText(toSRT(cues));
+    else showStatus('There’s nothing to caption yet.');
   });
 
-  // Transcript modal actions
-  transcriptCopy.addEventListener('click', () => {
-    if (activeTranscript) copyText(activeTranscript.content);
+  // Subtitle preview modal actions
+  subtitleCopy.addEventListener('click', () => {
+    if (activeSubtitles) copyText(toSRT(activeSubtitles.cues));
   });
-  transcriptDownload.addEventListener('click', () => {
-    if (activeTranscript) downloadTranscript(activeTranscript.project, activeTranscript.content);
+  subtitleSrt.addEventListener('click', () => {
+    if (activeSubtitles) downloadText(`${activeSubtitles.project}.srt`, toSRT(activeSubtitles.cues), 'application/x-subrip');
+  });
+  subtitleVtt.addEventListener('click', () => {
+    if (activeSubtitles) downloadText(`${activeSubtitles.project}.vtt`, toVTT(activeSubtitles.cues), 'text/vtt');
   });
 
-  // Manual: build a transcript from the pasted script alone (no audio) and
-  // open it in the viewer, where it can be copied or downloaded.
-  transcriptOnlyBtn.addEventListener('click', () => {
-    const text = textInput.value.trim();
-    if (!text) {
-      showStatus('Paste a script first to generate its transcript.');
+  // Standalone: subtitles from the pasted script (timing estimated, no audio).
+  subtitleOnlyBtn.addEventListener('click', () => {
+    if (!textInput.value.trim()) {
+      showStatus('Paste a script first to generate subtitles.');
       textInput.focus();
       return;
     }
-    const content = buildTranscript(text);
-    if (!content) {
-      showStatus('There’s nothing to transcribe yet.');
-      return;
-    }
-    openTranscriptModal(currentProject(), content);
+    openSubtitleModal();
   });
 
   resetBtn.addEventListener('click', () => {
@@ -1708,7 +1904,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   projectFilter.addEventListener('change', renderPresetList);
 
-  [voiceModal, presetModal, transcriptModal].forEach((modal) => {
+  [voiceModal, presetModal, subtitleModal].forEach((modal) => {
     modal.addEventListener('click', (e) => {
       if (e.target.closest('[data-close]')) closeModal(modal);
     });
@@ -1718,7 +1914,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     if (e.key === 'Escape') {
       if (!voiceModal.hidden) closeModal(voiceModal);
       if (!presetModal.hidden) closeModal(presetModal);
-      if (!transcriptModal.hidden) closeModal(transcriptModal);
+      if (!subtitleModal.hidden) closeModal(subtitleModal);
     }
   });
 
