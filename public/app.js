@@ -1628,7 +1628,8 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     if (activeTranscript) downloadTranscript(activeTranscript.project, activeTranscript.content);
   });
 
-  // Standalone: transcript from the pasted script only, no audio needed.
+  // Manual: build a transcript from the pasted script alone (no audio) and
+  // open it in the viewer, where it can be copied or downloaded.
   transcriptOnlyBtn.addEventListener('click', () => {
     const text = textInput.value.trim();
     if (!text) {
@@ -1636,10 +1637,12 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       textInput.focus();
       return;
     }
-    const project = currentProject();
     const content = buildTranscript(text);
-    downloadTranscript(project, content);
-    showStatus(`Transcript downloaded: “${transcriptFileName(project)}”.`, 'info');
+    if (!content) {
+      showStatus('There’s nothing to transcribe yet.');
+      return;
+    }
+    openTranscriptModal(currentProject(), content);
   });
 
   resetBtn.addEventListener('click', () => {
