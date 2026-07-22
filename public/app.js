@@ -1287,7 +1287,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     }
   }
 
-  async function zipDownload(items) {
+  async function zipDownload(items, { includeTranscript = false } = {}) {
     if (!items.length) return;
     const files = [];
     for (const item of items) {
@@ -1296,6 +1296,12 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       files.push({ name: itemFileName(item), data: new Uint8Array(await blob.arrayBuffer()) });
     }
     if (!files.length) return;
+    if (includeTranscript && batch.script) {
+      const content = buildTranscript(batch.script);
+      if (content) {
+        files.push({ name: transcriptFileName(batch.project), data: new TextEncoder().encode(content) });
+      }
+    }
     const zipBlob = window.BlvckZip.create(files);
     const url = URL.createObjectURL(zipBlob);
     downloadBlobUrl(url, `${batch.project}.zip`);
@@ -1587,7 +1593,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   });
 
   zipBtn.addEventListener('click', () => {
-    if (batch) zipDownload(batch.items.filter((i) => i.status === 'done'));
+    if (batch) zipDownload(batch.items.filter((i) => i.status === 'done'), { includeTranscript: true });
   });
   zipSelectedBtn.addEventListener('click', () => {
     if (batch) zipDownload(batch.items.filter((i) => i.status === 'done' && selected.has(i.index)));
