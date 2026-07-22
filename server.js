@@ -10,7 +10,11 @@ const { enrichVoices, capabilitiesFor, promptCapable } = require('./lib/voice-ca
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const MAX_INPUT_CHARS = 1000; // capped below Google's 5000-byte limit for quality
+// Per-request limit. The client chunks long scripts into ~1000-char,
+// sentence-aware pieces; this ceiling gives headroom for a chunk that runs
+// a little over to finish a long sentence, while staying under Google's
+// 5000-byte hard limit for typical text.
+const MAX_INPUT_CHARS = 2000;
 const MAX_INPUT_BYTES = 5000; // Google Cloud TTS per-request hard limit
 const MAX_INSTRUCTION_CHARS = 2500;
 const VOICES_CACHE_TTL_MS = 10 * 60 * 1000;

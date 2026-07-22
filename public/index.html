@@ -24,30 +24,29 @@
         <button id="preset-manage-btn" class="btn ghost small" type="button">Manage</button>
       </section>
 
-      <!-- Narration name -->
+      <!-- Project name -->
       <section class="naming-section">
-        <label for="title-input">Narration name</label>
-        <input id="title-input" type="text" maxlength="60" placeholder="e.g. people" />
-        <p id="naming-note" class="field-note">Downloads are auto-numbered under this name — “people 1”, “people 2”, …</p>
+        <label for="title-input">Project name</label>
+        <input id="title-input" type="text" maxlength="60" placeholder="e.g. Medieval Peasant Life" />
+        <p id="naming-note" class="field-note">Outputs are named “Project Part 1”, “Project Part 2”, …</p>
       </section>
 
       <!-- Text input -->
       <section class="input-section">
         <div class="input-header">
-          <label for="text-input">Your text</label>
+          <label for="text-input">Your script</label>
           <div class="input-tools">
             <label class="ssml-toggle" title="Treat input as SSML markup">
               <input type="checkbox" id="ssml-toggle" />
               <span>SSML</span>
             </label>
-            <span id="char-count" class="char-count">0 / 1000</span>
+            <span id="char-count" class="char-count">0 characters</span>
           </div>
         </div>
         <textarea
           id="text-input"
-          rows="6"
-          maxlength="1000"
-          placeholder="Type or paste the text you want to hear…"
+          rows="8"
+          placeholder="Paste an entire script, chapter, or article — no length limit. It’s automatically split into ~1,000-character parts on sentence boundaries and generated in sequence…"
         ></textarea>
       </section>
 
@@ -127,13 +126,35 @@
 
       <div id="status" class="status" hidden></div>
 
-      <section id="player-section" class="player" hidden>
-        <div class="player-row">
-          <audio id="audio-player" controls></audio>
-          <a id="download-link" class="btn ghost" download>Download</a>
+      <!-- Batch generation queue -->
+      <section id="queue-section" class="queue" hidden>
+        <div class="queue-head">
+          <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+          <div class="queue-stats-row">
+            <span id="queue-stats" class="queue-stats"></span>
+            <span id="queue-eta" class="queue-eta"></span>
+          </div>
         </div>
-        <p id="filename-note" class="field-note" hidden></p>
-        <canvas id="waveform" width="1200" height="80" hidden></canvas>
+
+        <div class="queue-controls">
+          <button id="pause-btn" class="btn ghost small" type="button" hidden>Pause</button>
+          <button id="resume-btn" class="btn primary small" type="button" hidden>Resume</button>
+          <button id="retry-btn" class="btn ghost small" type="button" hidden>Retry failed</button>
+          <button id="cancel-btn" class="btn ghost small" type="button" hidden>Cancel</button>
+          <button id="clear-btn" class="btn ghost small" type="button">Clear</button>
+        </div>
+
+        <div class="queue-downloads">
+          <button id="zip-btn" class="btn primary small" type="button" disabled>Download all as ZIP</button>
+          <button id="zip-selected-btn" class="btn ghost small" type="button" disabled>Download selected</button>
+          <button id="download-each-btn" class="btn ghost small" type="button" disabled>Download each</button>
+          <label class="select-all-label">
+            <input type="checkbox" id="select-all" /> Select all
+          </label>
+        </div>
+
+        <div id="queue-list" class="queue-list"></div>
+        <audio id="row-audio" class="row-audio" controls hidden></audio>
       </section>
     </main>
 
@@ -198,6 +219,7 @@
     </div>
   </div>
 
+  <script src="zip.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
