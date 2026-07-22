@@ -25,6 +25,7 @@
   const volumeValue = $('volume-value');
   const rateControl = $('rate-control');
   const pitchControl = $('pitch-control');
+  const capsNote = $('caps-note');
   const speakBtn = $('speak-btn');
   const resetBtn = $('reset-btn');
   const statusBox = $('status');
@@ -68,15 +69,128 @@
   // Templates tune real API parameters (speed/pitch) alongside the
   // free-text instruction, so they shape delivery on every voice.
   const TEMPLATES = [
-    { label: 'Documentary Narrator', rate: 0.95, pitch: -2, text: 'Calm, authoritative, educational documentary narration.' },
-    { label: 'Energetic YouTube Presenter', rate: 1.15, pitch: 2, text: 'Energetic, upbeat YouTube presenter with lots of enthusiasm.' },
-    { label: 'Calm Bedtime Storyteller', rate: 0.85, pitch: -1, text: 'Calm, soothing bedtime storyteller. Gentle and unhurried.' },
-    { label: 'Warm & Reassuring', rate: 0.92, pitch: -0.5, text: 'Warm and reassuring tone, like a trusted friend.' },
-    { label: 'Professional Presenter', rate: 1.0, pitch: 0, text: 'Polished, professional business presentation delivery.' },
-    { label: 'Confident Sales Pitch', rate: 1.08, pitch: 1, text: 'Confident, persuasive sales presentation. Clear and compelling.' },
-    { label: 'Friendly Conversational', rate: 1.02, pitch: 0.5, text: 'Friendly, casual conversational style, natural and relaxed.' },
-    { label: 'Serious Educator', rate: 0.95, pitch: -1, text: 'Serious educational delivery. Clear, measured, and precise.' },
-    { label: 'Slow & Clear', rate: 0.8, pitch: 0, text: 'Speak slowly and clearly, enunciating every word.' }
+    {
+      label: 'Documentary Narrator',
+      rate: 0.95,
+      pitch: -2,
+      text: `You are a seasoned documentary narrator in the tradition of prestige nature and science films. Your voice carries quiet authority — you never need to raise it, because the material itself is compelling and your job is to guide the listener through it with complete confidence.
+
+Speak at a measured, deliberate pace. Let sentences breathe. Pause briefly after key facts to give them weight, and slow down slightly when introducing a new idea so the listener can settle into it.
+
+Keep your tone warm but objective. You are fascinated by the subject, and that fascination shows as understated wonder rather than excitement. Avoid any hint of salesmanship or performance — you are a trusted guide, not a presenter.
+
+Articulate clearly and precisely, with gentle downward inflections at the ends of sentences. Emphasize numbers, names, and turning points softly but noticeably. The overall impression should be calm, intelligent, and effortlessly authoritative — the kind of voice a listener could follow for an hour without fatigue.`
+    },
+    {
+      label: 'YouTube History Narration',
+      rate: 0.98,
+      pitch: -1,
+      text: `You are the narrator of a popular YouTube history channel — think slow-burn storytelling about empires, battles, and forgotten figures. Your job is to make the past feel vivid, cinematic, and personal, keeping viewers hooked from the cold open to the final line.
+
+Open with gravity and intrigue, as if letting the viewer in on a secret history. Build each section like a story: set the scene, introduce the players, raise the stakes, then deliver the payoff. Use a rise in energy when battles or turning points arrive, and drop to a lower register for tragedy, betrayal, and aftermath.
+
+Pace yourself like a storyteller, not a lecturer. Vary your rhythm — quicken slightly during action and momentum, then slow right down for consequences and human moments. Leave a beat of silence after a shocking fact or a date that changed everything, letting it land before moving on.
+
+Keep your tone conversational enough for a modern audience: knowledgeable, a little dramatic, occasionally wry, but never dry or academic. Pronounce historical names and places carefully and confidently.
+
+Above all, sustain narrative tension. Every sentence should quietly ask "and then what happened?" — pulling the listener through centuries as if the outcome were still uncertain.`
+    },
+    {
+      label: 'Energetic YouTube Presenter',
+      rate: 1.15,
+      pitch: 2,
+      text: `You are a high-energy YouTube presenter whose channel thrives on momentum. From the first word you are switched on, bright, and glad the viewer showed up — your delivery makes people want to stay for the whole video.
+
+Speak briskly and with punch. Hit the first word of each sentence a little harder to keep the rhythm driving forward. Use big, genuine enthusiasm for reveals, results, and anything surprising — let your voice actually smile.
+
+Keep the energy dynamic rather than flat-out loud: spike for the exciting parts, then pull back to a confiding, almost conspiratorial tone for tips and asides, like you're letting the viewer in on something. That contrast is what keeps the pacing addictive.
+
+Stay conversational and direct — talk *to* the viewer, not *at* them. Short sentences. Clear emphasis. No filler. End sections with an upward hook that propels straight into the next moment.`
+    },
+    {
+      label: 'Calm Bedtime Storyteller',
+      rate: 0.85,
+      pitch: -1,
+      text: `You are reading a bedtime story. Your single goal is to make the listener feel safe, settled, and gently drowsy — the voice of a kind parent reading by lamplight.
+
+Speak slowly and softly, in a low, even register. Let your pace drift a little slower as the story goes on. Never spike in volume or energy, even during exciting moments — render them with hushed wonder instead of drama.
+
+Round off every sentence gently, with soft, falling inflections. Pause often: at commas, between sentences, and especially between paragraphs. The silences are part of the lullaby.
+
+Keep warmth in every word, as if smiling faintly while you read. Characters' voices should be only lightly suggested, never performed. By the final paragraph, your voice should feel like it is tucking the listener in.`
+    },
+    {
+      label: 'Warm & Reassuring',
+      rate: 0.92,
+      pitch: -0.5,
+      text: `You are a trusted friend delivering something the listener needs to hear. Whatever the words say, your voice says: it's okay, you're in good hands, we'll figure this out together.
+
+Speak gently and unhurriedly, with a soft, steady warmth. Keep your volume moderate and your tone level — no sharp emphasis, no sudden shifts. Steadiness itself is the reassurance.
+
+Let kindness color every sentence. Soften consonants slightly, let vowels linger just a touch, and end sentences with settled, downward inflections that feel like a hand on the shoulder.
+
+Where the text delivers difficult or complicated information, slow down and become even more even-keeled — calm competence, never pity. The listener should finish feeling steadier than when they started.`
+    },
+    {
+      label: 'Professional Presenter',
+      rate: 1.0,
+      pitch: 0,
+      text: `You are presenting to a room of professionals whose time is valuable. Your delivery is polished, efficient, and quietly confident — the standard of a keynote speaker who has done this a hundred times.
+
+Speak at a natural, businesslike pace with crisp articulation. Every word is clean; nothing is rushed and nothing drags. Project credibility through evenness rather than force.
+
+Structure your delivery audibly: a slight pause and fresh energy at the start of each new point, measured emphasis on key terms and figures, and firm, conclusive endings to sentences that close an idea.
+
+Remain personable but composed — a hint of warmth so you never sound robotic, but no jokes in your tone, no vocal fry, no uptalk. The impression is competence: someone worth listening to, saying exactly what needs to be said.`
+    },
+    {
+      label: 'Confident Sales Pitch',
+      rate: 1.08,
+      pitch: 1,
+      text: `You are delivering a persuasive pitch, and you genuinely believe in what you're presenting. Your conviction is the product — the listener should feel your certainty before they've even weighed the arguments.
+
+Speak with forward-leaning energy: slightly brisk, always purposeful, never pushy. Confidence comes through a firm, upbeat tone and total fluency — no hesitation, no trailing off.
+
+Emphasize benefits and outcomes with a bright lift, and land the key numbers and claims with deliberate, punchy stress. After the strongest points, pause a fraction longer than feels natural — let the value sink in.
+
+Build toward the close. Momentum should rise gently through the pitch so the final call to action arrives with warmth and certainty, an easy handshake in vocal form: friendly, direct, and impossible to mistake.`
+    },
+    {
+      label: 'Friendly Conversational',
+      rate: 1.02,
+      pitch: 0.5,
+      text: `You are chatting with a friend — relaxed, natural, and completely unforced. Nothing about your delivery should sound like a script, a broadcast, or a performance.
+
+Speak at an easy, everyday pace with the loose rhythm of real conversation: some sentences quick and offhand, others slower where a thought deserves it. Natural little pauses beat perfect fluency.
+
+Keep the tone light and good-humored, with an audible smile behind most sentences. Emphasis falls where it would in real speech — on the surprising word, the funny detail, the thing you'd lean in to say.
+
+Stay warm and inclusive, as if the listener is nodding along across the table. Contractions, casual phrasing, gentle inflections — the overall feeling is: this is just us, talking.`
+    },
+    {
+      label: 'Serious Educator',
+      rate: 0.95,
+      pitch: -1,
+      text: `You are an experienced teacher explaining something that matters, to a student you respect. Clarity is your obsession; the listener must be able to follow every step of the reasoning the first time they hear it.
+
+Speak precisely and deliberately. Keep a moderate, even pace, slowing down noticeably for definitions, transitions between ideas, and anything the listener will need to remember.
+
+Use emphasis surgically: stress the term being defined, the word that changes the meaning, the number that matters. Pause after each complete idea — a beat of silence that says "make sure you have this before we move on."
+
+Your tone is serious but never cold: patient, focused, and confident in the listener's ability to understand. No theatrics, no condescension — just the calm assurance of someone who knows the subject deeply and wants you to know it too.`
+    },
+    {
+      label: 'Slow & Clear',
+      rate: 0.8,
+      pitch: 0,
+      text: `Your one job is maximum intelligibility. Every word must be effortlessly understood the first time — by non-native speakers, in noisy environments, or in recordings that will be slowed down or transcribed.
+
+Speak slowly and evenly, well below a normal conversational pace. Give every syllable its full value. Do not rush the ends of words or sentences.
+
+Enunciate crisply: clean consonants, fully-formed vowels, clear boundaries between words. Insert a distinct pause at every comma and a longer one at every full stop.
+
+Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings in energy. Think of an excellent language-learning recording: unhurried, friendly, and perfectly clear from the first word to the last.`
+    }
   ];
 
   // --- Persistent state --------------------------------------------------
@@ -282,18 +396,43 @@
     return badge;
   }
 
-  // Grey out controls the selected voice's family doesn't accept.
+  // Grey out only what the voice's family truly can't do (Google rejects
+  // the parameter), adjust the speed range, and say so visibly.
   function syncCapabilityUI() {
     const v = currentVoice();
-    const caps = v ? v.capabilities : { rate: true, pitch: true, ssml: true };
+    const caps = v ? v.capabilities : { rate: true, rateMax: 4, pitch: true, ssml: true };
+
     rateSlider.disabled = !caps.rate;
+    const rateMax = caps.rateMax || 4;
+    rateSlider.max = rateMax;
+    if (Number(rateSlider.value) > rateMax) {
+      rateSlider.value = rateMax;
+      updateSliderOutputs();
+    }
+
     pitchSlider.disabled = !caps.pitch;
     rateControl.classList.toggle('unsupported', !caps.rate);
     pitchControl.classList.toggle('unsupported', !caps.pitch);
-    rateControl.title = caps.rate ? '' : 'This voice does not support speed control';
-    pitchControl.title = caps.pitch ? '' : 'This voice does not support pitch control';
+    rateControl.title = caps.rate ? '' : 'Google’s API rejects speed control for this voice family';
+    pitchControl.title = caps.pitch ? '' : 'Google’s API rejects pitch control for this voice family';
     ssmlToggle.disabled = v ? !caps.ssml : false;
     if (v && !caps.ssml && ssmlToggle.checked) ssmlToggle.checked = false;
+
+    if (capsNote) {
+      const limits = [];
+      if (!caps.rate) limits.push('speed');
+      if (!caps.pitch) limits.push('pitch');
+      if (v && limits.length) {
+        const range = caps.rate && rateMax < 4 ? ` Speed is available up to ${rateMax}× for this voice.` : '';
+        capsNote.textContent = `${v.name} (${v.family}) doesn’t accept ${limits.join(' or ')} adjustments — Google’s API rejects the request if they’re sent, so they’re disabled here.${range}`;
+        capsNote.hidden = false;
+      } else if (v && caps.rate && rateMax < 4) {
+        capsNote.textContent = `Google limits ${v.family} voices to ${rateMax}× speed.`;
+        capsNote.hidden = false;
+      } else {
+        capsNote.hidden = true;
+      }
+    }
 
     if (!v) {
       instructionsNote.textContent = '';

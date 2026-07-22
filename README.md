@@ -117,11 +117,13 @@ Google's voice families accept different parameters; sending an unsupported one 
 
 | Family | Tier | Speed | Pitch | SSML |
 | --- | --- | --- | --- | --- |
-| Chirp3-HD / Chirp-HD | ⭐ Elite | — | — | — |
+| Chirp3-HD / Chirp-HD | ⭐ Elite | ✓ (up to 2×) | — | — |
 | Studio | ⭐ Elite | ✓ | — | ✓ |
 | Neural2 / WaveNet | Premium | ✓ | ✓ | ✓ |
 | Standard | Standard | ✓ | ✓ | ✓ |
 | News / Casual / Polyglot | Experimental | ✓ | ✓ | ✓ |
+
+Controls a voice can't use are disabled with a visible note explaining why (Google rejects the whole request if the parameter is sent). As a safety net, if Google still rejects a delivery parameter, the server strips it and retries once instead of failing the generation.
 
 The UI greys out controls the selected voice can't use, so users can't build a failing request.
 

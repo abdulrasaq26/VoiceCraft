@@ -11,7 +11,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const MAX_INPUT_BYTES = 5000; // Google Cloud TTS per-request limit
-const MAX_INSTRUCTION_CHARS = 500;
+const MAX_INSTRUCTION_CHARS = 2500;
 const VOICES_CACHE_TTL_MS = 10 * 60 * 1000;
 const VOICE_NAME_PATTERN = /^[A-Za-z0-9._-]{1,80}$/;
 
@@ -242,7 +242,9 @@ app.post('/api/synthesize', async (req, res) => {
     audioEncoding: format.encoding,
     volumeGainDb: clamp(Number(volumeGainDb) || 0.0, -96.0, 16.0)
   };
-  if (caps.rate) audioConfig.speakingRate = clamp(Number(speakingRate) || 1.0, 0.25, 4.0);
+  if (caps.rate) {
+    audioConfig.speakingRate = clamp(Number(speakingRate) || 1.0, 0.25, caps.rateMax || 4.0);
+  }
   if (caps.pitch) audioConfig.pitch = clamp(Number(pitch) || 0.0, -20.0, 20.0);
 
   const request = {
@@ -254,7 +256,22 @@ app.post('/api/synthesize', async (req, res) => {
   };
 
   try {
-    const audioBuffer = await tts.synthesize(request, { beta: applyPrompt });
+    let audioBuffer;
+    try {
+      audioBuffer = await tts.synthesize(request, { beta: applyPrompt });
+    } catch (err) {
+      // Safety net: if Google still rejects a delivery parameter for this
+      // voice, strip rate/pitch and retry once rather than failing the user.
+      const parameterRejected =
+        err.status === 400 &&
+        /does not support|not supported|invalid.*(rate|pitch)/i.test(err.message || '') &&
+        ('speakingRate' in audioConfig || 'pitch' in audioConfig);
+      if (!parameterRejected) throw err;
+      delete request.audioConfig.speakingRate;
+      delete request.audioConfig.pitch;
+      console.warn(`Retrying "${voiceName}" without rate/pitch: ${err.message}`);
+      audioBuffer = await tts.synthesize(request, { beta: applyPrompt });
+    }
     res.set({
       'Content-Type': tts.MOCK ? 'audio/wav' : format.mime,
       'Content-Length': audioBuffer.length,
