@@ -86,9 +86,9 @@
         </div>
         <textarea
           id="instructions-input"
-          rows="2"
-          maxlength="500"
-          placeholder="e.g. Speak slowly and clearly, like a calm bedtime storyteller…"
+          rows="5"
+          maxlength="2500"
+          placeholder="Describe in detail how the voice should sound — persona, tone, pacing, emphasis, emotion. Pick a style template for a full multi-paragraph starting point, then edit it freely…"
         ></textarea>
         <p id="instructions-note" class="field-note"></p>
       </section>
@@ -108,6 +108,7 @@
           <input type="range" id="volume-slider" min="-20" max="16" step="0.5" value="0" />
         </div>
       </section>
+      <p id="caps-note" class="field-note" hidden></p>
 
       <section class="actions">
         <button id="speak-btn" class="btn primary">
