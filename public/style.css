@@ -497,30 +497,185 @@ input[type="range"]:disabled {
   color: var(--success);
 }
 
-.player {
+/* --- Batch queue --- */
+
+.queue {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  padding: 1.1rem;
+  background: var(--panel);
 }
 
-.player-row {
+.queue-head {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.progress-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.queue-stats-row {
+  display: flex;
+  justify-content: space-between;
   gap: 1rem;
+  font-size: 0.85rem;
   flex-wrap: wrap;
 }
 
-.player-row audio {
-  flex: 1;
-  min-width: 240px;
+.queue-stats {
+  font-weight: 600;
 }
 
-#waveform {
-  width: 100%;
-  height: 56px;
+.queue-eta {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-controls,
+.queue-downloads {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.queue-downloads {
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--card-border);
+}
+
+.select-all-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.btn.small:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 360px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
   border-radius: 10px;
-  background: var(--panel);
   border: 1px solid var(--card-border);
+  background: var(--card);
+}
+
+.queue-item.is-generating {
+  border-color: rgba(232, 182, 76, 0.5);
+}
+
+.queue-item.is-error {
+  border-color: rgba(224, 108, 108, 0.5);
+}
+
+.queue-item input[type="checkbox"] {
+  flex-shrink: 0;
+}
+
+.queue-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.queue-item-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-item-preview {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-item-status {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.status-pending { background: rgba(155, 155, 163, 0.15); color: var(--text-dim); }
+.status-generating { background: rgba(232, 182, 76, 0.16); color: var(--accent); }
+.status-done { background: rgba(108, 201, 143, 0.14); color: var(--success); }
+.status-error { background: rgba(224, 108, 108, 0.16); color: var(--danger); }
+
+.queue-item-actions {
+  display: flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.queue-item-actions button {
+  background: none;
+  border: 1px solid var(--card-border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.queue-item-actions button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.queue-item-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.row-audio {
+  width: 100%;
+  margin-top: 0.25rem;
 }
 
 /* --- Modals --- */

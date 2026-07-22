@@ -18,11 +18,17 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 - 🎛️ **Sliders** — speaking rate (0.25×–4×), pitch (±20 semitones), volume gain; controls a voice doesn't support are greyed out instead of causing errors
 - 🗣️ **SSML support** — toggle to send raw SSML (blocked with a clear message on voices that don't accept it)
 
+### Long-form scripts
+- ♾️ **Unlimited input** — paste an entire script, chapter, or article in one go; there's no length cap on the box
+- ✂️ **Sentence-aware auto-chunking** — the script is split into ~1,000-character parts on sentence boundaries, so no part ever cuts a sentence in half (a lone long sentence fills its own part, up to a safe limit)
+- 🔁 **Automated generation queue** — every part is generated in sequence automatically, with a live progress bar showing the current part (“Part 7 of 32”), count complete, percentage, and estimated time remaining
+- ⏯️ **Full queue control** — pause, resume, cancel, and retry-failed-parts; the batch is saved to the browser (IndexedDB), so a refresh restores it and you can continue where you left off
+- 🏷️ **Auto-named parts** — outputs are named from the project name: `Medieval Peasant Life Part 1.mp3`, `… Part 2.mp3`, …
+- 📦 **Batch downloads** — download all parts as a single ZIP, download each part individually, or tick specific parts and download just those
+
 ### Creator workflow
 - 💾 **Presets** — save complete configurations (voice, instructions, speed, pitch, volume, format); rename, duplicate, delete, set a default, organize by project, and apply with one click
-- 🕘 **Last-used memory** — all settings persist across sessions; the app reopens exactly as you left it
-- 🏷️ **Named, auto-numbered downloads** — name a narration (e.g. *people*) and each generation downloads as `people 1`, `people 2`, `people 3`… so a series of clips stays grouped and ordered
-- 📈 **Waveform + download** — see the generated audio's waveform, replay it, and export as MP3 / OGG (Opus) / WAV
+- 🕘 **Last-used memory** — all settings and the project name persist across sessions; the app reopens exactly as you left it
 
 ### Infrastructure
 - 🔐 **Two auth modes** — simple API key, or service-account / Application Default Credentials
@@ -109,7 +115,7 @@ Synthesizes a tiny sample with every voice in the catalog (~3 characters per voi
 ```
 
 - `audioFormat`: `MP3`, `OGG_OPUS`, or `LINEAR16` (WAV)
-- Input is limited to 1,500 characters per request (capped below Google's 5,000-byte hard limit to keep synthesis quality high on longer passages)
+- `/api/synthesize` accepts up to 2,000 characters per request. Longer scripts are chunked client-side into ~1,000-character, sentence-aware parts, each sent as its own request and assembled into the download queue — so there's no practical limit on the script you paste into the app.
 - Parameters a voice doesn't support are stripped server-side rather than sent (Google rejects whole requests otherwise); the `X-Instructions-Applied` response header reports whether the voice consumed the free-text instructions directly
 
 ## How voice capabilities are handled
@@ -140,7 +146,10 @@ The UI greys out controls the selected voice can't use, so users can't build a f
 ├── public/
 │   ├── index.html          # UI
 │   ├── style.css           # Styling
-│   └── app.js              # Voice browser, presets, previews, synthesis
+│   ├── zip.js              # Dependency-free ZIP writer for batch downloads
+│   └── app.js              # Voice browser, presets, previews, chunking + batch queue
+├── Dockerfile              # Lean container build
+├── railway.json            # Railway build/deploy config
 ├── .env.example            # Credential configuration template
 └── package.json
 ```

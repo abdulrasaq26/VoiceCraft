@@ -9,7 +9,6 @@
   const charCount = $('char-count');
   const titleInput = $('title-input');
   const namingNote = $('naming-note');
-  const filenameNote = $('filename-note');
   const ssmlToggle = $('ssml-toggle');
   const languageSelect = $('language-select');
   const formatSelect = $('format-select');
@@ -32,12 +31,25 @@
   const speakBtn = $('speak-btn');
   const resetBtn = $('reset-btn');
   const statusBox = $('status');
-  const playerSection = $('player-section');
-  const audioPlayer = $('audio-player');
-  const downloadLink = $('download-link');
-  const waveformCanvas = $('waveform');
   const speakSpinner = speakBtn.querySelector('.spinner');
   const speakLabel = speakBtn.querySelector('.btn-label');
+
+  // Batch queue elements
+  const queueSection = $('queue-section');
+  const progressFill = $('progress-fill');
+  const queueStats = $('queue-stats');
+  const queueEta = $('queue-eta');
+  const pauseBtn = $('pause-btn');
+  const resumeBtn = $('resume-btn');
+  const retryBtn = $('retry-btn');
+  const cancelBtn = $('cancel-btn');
+  const clearBtn = $('clear-btn');
+  const zipBtn = $('zip-btn');
+  const zipSelectedBtn = $('zip-selected-btn');
+  const downloadEachBtn = $('download-each-btn');
+  const selectAllToggle = $('select-all');
+  const queueList = $('queue-list');
+  const rowAudio = $('row-audio');
 
   const voiceModal = $('voice-modal');
   const voiceSearch = $('voice-search');
@@ -67,7 +79,8 @@
     presets: 'blvck-tts:presets',
     favorites: 'blvck-tts:favorites',
     recents: 'blvck-tts:recents',
-    narration: 'blvck-tts:narration'
+    narration: 'blvck-tts:narration',
+    batch: 'blvck-tts:batch'
   };
 
   const DEFAULT_TITLE = 'blvck-tts';
@@ -225,11 +238,9 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   let favorites = new Set(store.get(LS.favorites, []));
   let recents = store.get(LS.recents, []);
   let presets = store.get(LS.presets, []);
-  // narration: { title, counts: { <normalized title>: <last number used> } }
-  const narration = store.get(LS.narration, { title: '', counts: {} });
-  if (!narration.counts) narration.counts = {};
+  // narration: { title } — remembers the last project name entered
+  const narration = store.get(LS.narration, { title: '' });
   const filters = { search: '', tier: 'all', gender: 'all' };
-  let currentAudioUrl = null;
 
   // --- Small helpers -----------------------------------------------------
 
@@ -259,12 +270,79 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     statusBox.hidden = true;
   }
 
-  const MAX_CHARS = 1500;
-  function updateCharCount() {
-    charCount.textContent = `${textInput.value.length} / ${MAX_CHARS}`;
+  // --- Script chunking ---------------------------------------------------
+
+  const CHUNK_TARGET = 1000; // aim for ~1000 chars per part
+  const CHUNK_HARD_MAX = 1800; // a lone long sentence may fill a whole part up to here
+
+  // Split a paragraph into sentence-like units, keeping the terminal
+  // punctuation attached so nothing is cut mid-sentence.
+  function splitSentences(paragraph) {
+    const matches = paragraph.match(/[^.!?…]*[.!?…]+(?=\s|$)|[^.!?…]+$/g);
+    return (matches || [paragraph]).map((s) => s.trim()).filter(Boolean);
   }
 
-  // --- Narration naming --------------------------------------------------
+  // Fallback for a single sentence longer than the hard max: break on clause
+  // punctuation, then on spaces, never exceeding the hard max.
+  function splitLongSentence(sentence) {
+    const parts = [];
+    let rest = sentence.trim();
+    while (rest.length > CHUNK_HARD_MAX) {
+      let cut = -1;
+      for (const punct of ['; ', ', ', ': ', ' — ', ' ']) {
+        cut = rest.lastIndexOf(punct, CHUNK_HARD_MAX);
+        if (cut > CHUNK_HARD_MAX * 0.5) {
+          cut += punct.length;
+          break;
+        }
+      }
+      if (cut <= 0) cut = CHUNK_HARD_MAX; // no boundary found: hard cut
+      parts.push(rest.slice(0, cut).trim());
+      rest = rest.slice(cut).trim();
+    }
+    if (rest) parts.push(rest);
+    return parts;
+  }
+
+  // Chunk an entire script into ~CHUNK_TARGET-char parts on sentence
+  // boundaries. Paragraph breaks are respected as hard boundaries.
+  function chunkScript(text) {
+    const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const units = [];
+    for (const para of paragraphs) {
+      for (const sentence of splitSentences(para)) {
+        if (sentence.length > CHUNK_HARD_MAX) units.push(...splitLongSentence(sentence));
+        else units.push(sentence);
+      }
+    }
+
+    const chunks = [];
+    let current = '';
+    for (const unit of units) {
+      const candidate = current ? `${current} ${unit}` : unit;
+      if (candidate.length <= CHUNK_TARGET) {
+        current = candidate;
+      } else {
+        if (current) chunks.push(current);
+        current = unit;
+      }
+    }
+    if (current) chunks.push(current);
+    return chunks;
+  }
+
+  function estimateChunks(text) {
+    const trimmed = text.trim();
+    return trimmed ? chunkScript(trimmed).length : 0;
+  }
+
+  function updateCharCount() {
+    const len = textInput.value.length;
+    const parts = estimateChunks(textInput.value);
+    charCount.textContent = parts > 1 ? `${len} characters · ~${parts} parts` : `${len} characters`;
+  }
+
+  // --- Project naming ----------------------------------------------------
 
   // Strip characters that are invalid in filenames; collapse whitespace.
   function sanitizeName(name) {
@@ -275,7 +353,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       .slice(0, 60);
   }
 
-  function currentTitle() {
+  function currentProject() {
     return sanitizeName(titleInput.value) || DEFAULT_TITLE;
   }
 
@@ -284,26 +362,18 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     store.set(LS.narration, narration);
   }
 
-  // The next sequential number this title will use on the next generation.
-  function nextNumberFor(title) {
-    const key = title.toLowerCase();
-    return (narration.counts[key] || 0) + 1;
-  }
-
-  // Reserve and persist the next number, returning the numbered base name.
-  function claimNextName() {
-    const title = currentTitle();
-    const key = title.toLowerCase();
-    const n = (narration.counts[key] || 0) + 1;
-    narration.counts[key] = n;
-    saveNarration();
-    updateNamingNote();
-    return `${title} ${n}`;
+  function partName(project, part) {
+    return `${project} Part ${part}`;
   }
 
   function updateNamingNote() {
-    const title = currentTitle();
-    namingNote.textContent = `Downloads are auto-numbered under this name — next file: “${title} ${nextNumberFor(title)}”.`;
+    const project = currentProject();
+    const parts = estimateChunks(textInput.value);
+    if (parts > 1) {
+      namingNote.textContent = `Outputs: “${partName(project, 1)}”, “${partName(project, 2)}”, … (${parts} parts).`;
+    } else {
+      namingNote.textContent = `Output: “${partName(project, 1)}”. Longer scripts are split into numbered parts automatically.`;
+    }
   }
 
   function updateSliderOutputs() {
@@ -467,16 +537,30 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     pitchControl.classList.toggle('unsupported', !caps.pitch);
     rateControl.title = caps.rate ? '' : 'Google’s API rejects speed control for this voice family';
     pitchControl.title = caps.pitch ? '' : 'Google’s API rejects pitch control for this voice family';
-    ssmlToggle.disabled = v ? !caps.ssml : false;
-    if (v && !caps.ssml && ssmlToggle.checked) ssmlToggle.checked = false;
+    const cantSsml = Boolean(v) && !caps.ssml;
+    ssmlToggle.disabled = cantSsml;
+    if (cantSsml && ssmlToggle.checked) ssmlToggle.checked = false;
+    const ssmlLabel = ssmlToggle.closest('.ssml-toggle');
+    if (ssmlLabel) {
+      ssmlLabel.title = cantSsml
+        ? `${v.family} voices only accept plain text — Google rejects SSML for this voice family. Pick a Neural2, WaveNet, Studio, or Standard voice to use SSML.`
+        : 'Treat input as SSML markup (pauses, pronunciation, emphasis, etc.)';
+    }
 
     if (capsNote) {
-      const limits = [];
-      if (!caps.rate) limits.push('speed');
-      if (!caps.pitch) limits.push('pitch');
-      if (v && limits.length) {
-        const range = caps.rate && rateMax < 4 ? ` Speed is available up to ${rateMax}× for this voice.` : '';
-        capsNote.textContent = `${v.name} (${v.family}) doesn’t accept ${limits.join(' or ')} adjustments — Google’s API rejects the request if they’re sent, so they’re disabled here.${range}`;
+      // Collect everything Google won't accept for this voice family so the
+      // disabled controls (sliders + SSML) are explained in one place.
+      const adjustments = [];
+      if (!caps.rate) adjustments.push('speed');
+      if (!caps.pitch) adjustments.push('pitch');
+      const parts = [];
+      if (adjustments.length) parts.push(`${adjustments.join(' or ')} adjustments`);
+      if (cantSsml) parts.push('SSML input');
+      const range = caps.rate && rateMax < 4 ? ` Speed is available up to ${rateMax}× for this voice.` : '';
+
+      if (v && parts.length) {
+        const plural = parts.length > 1;
+        capsNote.textContent = `${v.name} (${v.family}) doesn’t accept ${parts.join(' or ')} — Google’s API rejects ${plural ? 'them' : 'it'} for this voice family, so ${plural ? 'they’re' : 'it’s'} disabled here.${range}`;
         capsNote.hidden = false;
       } else if (v && caps.rate && rateMax < 4) {
         capsNote.textContent = `Google limits ${v.family} voices to ${rateMax}× speed.`;
@@ -733,38 +817,167 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     store.set(LS.recents, recents);
   }
 
-  // --- Synthesis ---------------------------------------------------------
+  // --- Audio persistence (IndexedDB, with in-memory mirror) --------------
 
-  let generateTimer = null;
-  function setGenerating(loading, voice) {
-    speakBtn.disabled = loading;
-    speakSpinner.hidden = !loading;
-    if (generateTimer) {
-      clearInterval(generateTimer);
-      generateTimer = null;
-    }
-    if (!loading) {
-      speakLabel.textContent = 'Generate speech';
-      return;
-    }
-    speakLabel.textContent = 'Generating…';
-    // HD/Elite voices are slower — show a live counter so it doesn't feel
-    // frozen, and reassure the user for long-running requests.
-    const started = Date.now();
-    const isHd = voice && voice.tier === 'elite';
-    generateTimer = setInterval(() => {
-      const secs = Math.round((Date.now() - started) / 1000);
-      speakLabel.textContent = `Generating… ${secs}s`;
-      if (isHd && secs === 8) {
-        showStatus('High-definition voices take a little longer to render — hang tight.', 'info');
-      }
-    }, 1000);
+  const DB_NAME = 'blvck-tts';
+  const DB_STORE = 'audio';
+  const memBlobs = new Map(); // index -> Blob (session source of truth)
+  const urls = new Map(); // index -> object URL
+
+  function idbOpen() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) return reject(new Error('IndexedDB unavailable'));
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(DB_STORE)) req.result.createObjectStore(DB_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
   }
 
-  async function synthesize() {
+  async function idbPut(key, blob) {
+    try {
+      const db = await idbOpen();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).put(blob, key);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    } catch {
+      /* persistence is best-effort; the in-memory mirror still works */
+    }
+  }
+
+  async function idbGet(key) {
+    try {
+      const db = await idbOpen();
+      const value = await new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readonly');
+        const rq = tx.objectStore(DB_STORE).get(key);
+        rq.onsuccess = () => resolve(rq.result || null);
+        rq.onerror = () => reject(rq.error);
+      });
+      db.close();
+      return value;
+    } catch {
+      return null;
+    }
+  }
+
+  async function idbDeletePrefix(prefix) {
+    try {
+      const db = await idbOpen();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        const store = tx.objectStore(DB_STORE);
+        const rq = store.openCursor();
+        rq.onsuccess = () => {
+          const cursor = rq.result;
+          if (cursor) {
+            if (String(cursor.key).startsWith(prefix)) cursor.delete();
+            cursor.continue();
+          }
+        };
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // --- Batch generation queue --------------------------------------------
+
+  let batch = null; // { id, project, ext, audioFormat, settings, items[] }
+  let running = false;
+  let paused = false;
+  let cancelRequested = false;
+  const durations = []; // ms per completed part, for ETA
+  const selected = new Set(); // selected item indices
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function itemFileName(item) {
+    return `${partName(batch.project, item.part)}.${batch.ext}`;
+  }
+
+  // Persist batch metadata (no blobs — those live in IndexedDB).
+  function persistBatch() {
+    if (!batch) {
+      localStorage.removeItem(LS.batch);
+      return;
+    }
+    store.set(LS.batch, batch);
+  }
+
+  async function clearBatch() {
+    urls.forEach((url) => URL.revokeObjectURL(url));
+    urls.clear();
+    memBlobs.clear();
+    selected.clear();
+    durations.length = 0;
+    if (batch) await idbDeletePrefix(`${batch.id}:`);
+    batch = null;
+    persistBatch();
+    queueSection.hidden = true;
+    rowAudio.hidden = true;
+    rowAudio.pause();
+  }
+
+  async function synthesizeChunk(text, s) {
+    const response = await fetch('/api/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        ssml: s.ssml,
+        voiceName: s.voiceId,
+        languageCode: s.languageCode,
+        audioFormat: s.audioFormat,
+        speakingRate: s.speakingRate,
+        pitch: s.pitch,
+        volumeGainDb: s.volumeGainDb,
+        instructions: s.instructions
+      })
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.hint ? `${body.error} — ${body.hint}` : body.error || `Request failed (${response.status})`);
+    }
+    return response.blob();
+  }
+
+  function buildBatch(v, chunks) {
+    return {
+      id: `batch-${Date.now()}`,
+      project: currentProject(),
+      ext: FORMAT_EXT[formatSelect.value] || 'mp3',
+      audioFormat: formatSelect.value,
+      createdAt: Date.now(),
+      settings: {
+        voiceId: v.id,
+        promptCapable: v.promptCapable,
+        languageCode: languageSelect.value,
+        ssml: ssmlToggle.checked,
+        audioFormat: formatSelect.value,
+        speakingRate: Number(rateSlider.value),
+        pitch: Number(pitchSlider.value),
+        volumeGainDb: Number(volumeSlider.value),
+        instructions: instructionsInput.value.trim()
+      },
+      items: chunks.map((text, i) => ({ index: i, part: i + 1, text, status: 'pending', error: null }))
+    };
+  }
+
+  async function startGeneration() {
+    if (running) return;
     const text = textInput.value.trim();
     if (!text) {
-      showStatus('Enter some text first.');
+      showStatus('Enter a script first.');
       textInput.focus();
       return;
     }
@@ -776,98 +989,268 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
     clearStatus();
     stopPreview();
-    setGenerating(true, v);
+    await clearBatch();
 
-    try {
-      const response = await fetch('/api/synthesize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          ssml: ssmlToggle.checked,
-          voiceName: v.id,
-          languageCode: languageSelect.value,
-          audioFormat: formatSelect.value,
-          speakingRate: Number(rateSlider.value),
-          pitch: Number(pitchSlider.value),
-          volumeGainDb: Number(volumeSlider.value),
-          instructions: instructionsInput.value.trim()
-        })
-      });
+    // SSML must not be split (tags would break across parts); send as one part.
+    const chunks = ssmlToggle.checked ? [text] : chunkScript(text);
+    batch = buildBatch(v, chunks);
+    persistBatch();
+    recordRecent(v.id);
+    persistSettings();
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(
-          body.hint ? `${body.error} — ${body.hint}` : body.error || `Request failed (${response.status})`
-        );
+    queueSection.hidden = false;
+    renderQueue();
+    runQueue();
+  }
+
+  async function runQueue() {
+    if (running || !batch) return;
+    running = true;
+    paused = false;
+    cancelRequested = false;
+    speakBtn.disabled = true;
+    speakLabel.textContent = 'Generating…';
+    speakSpinner.hidden = false;
+    updateControls();
+
+    for (const item of batch.items) {
+      if (cancelRequested) break;
+      if (item.status === 'done') continue;
+
+      while (paused && !cancelRequested) await sleep(200);
+      if (cancelRequested) break;
+
+      item.status = 'generating';
+      item.error = null;
+      persistBatch();
+      renderQueue();
+
+      const t0 = performance.now();
+      try {
+        const blob = await synthesizeChunk(item.text, batch.settings);
+        memBlobs.set(item.index, blob);
+        if (urls.has(item.index)) URL.revokeObjectURL(urls.get(item.index));
+        urls.set(item.index, URL.createObjectURL(blob));
+        await idbPut(`${batch.id}:${item.index}`, blob);
+        item.status = 'done';
+        durations.push(performance.now() - t0);
+      } catch (err) {
+        item.status = 'error';
+        item.error = err.message;
       }
+      persistBatch();
+      renderQueue();
+    }
 
-      const blob = await response.blob();
-      if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
-      currentAudioUrl = URL.createObjectURL(blob);
-      audioPlayer.src = currentAudioUrl;
-      const ext = FORMAT_EXT[formatSelect.value] || 'mp3';
-      const baseName = claimNextName();
-      const fileName = `${baseName}.${ext}`;
-      downloadLink.href = currentAudioUrl;
-      downloadLink.download = fileName;
-      filenameNote.textContent = `Saved as “${fileName}”`;
-      filenameNote.hidden = false;
-      playerSection.hidden = false;
-      audioPlayer.play().catch(() => {
-        /* Autoplay may be blocked; user can press play manually. */
-      });
+    running = false;
+    speakBtn.disabled = false;
+    speakLabel.textContent = 'Generate speech';
+    speakSpinner.hidden = true;
+    updateControls();
+    renderQueue();
 
-      drawWaveform(blob);
-      recordRecent(v.id);
-      persistSettings();
-
-      const instructionsSent = instructionsInput.value.trim();
-      if (instructionsSent && response.headers.get('X-Instructions-Applied') === '0' && !v.promptCapable) {
-        showStatus(
-          'Generated. Note: this voice doesn’t take free-text instructions directly — your speed and pitch settings shaped the delivery instead.',
-          'info'
-        );
-      } else {
-        // Clear any in-progress "hang tight" notice on success.
-        clearStatus();
-      }
-    } catch (err) {
-      showStatus(err.message);
-    } finally {
-      setGenerating(false);
+    const remaining = batch.items.filter((i) => i.status !== 'done').length;
+    const errors = batch.items.filter((i) => i.status === 'error').length;
+    if (cancelRequested) {
+      showStatus(`Cancelled. ${batch.items.length - remaining} of ${batch.items.length} parts completed.`, 'info');
+    } else if (errors) {
+      showStatus(`${errors} part(s) failed. Use “Retry failed” to try them again.`);
+    } else if (!remaining) {
+      showStatus(`All ${batch.items.length} part(s) generated.`, 'info');
     }
   }
 
-  async function drawWaveform(blob) {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const audioBuf = await ctx.decodeAudioData(await blob.arrayBuffer());
-      const data = audioBuf.getChannelData(0);
-      const canvas = waveformCanvas;
-      const g = canvas.getContext('2d');
-      const { width, height } = canvas;
-      g.clearRect(0, 0, width, height);
-      const bars = 240;
-      const samplesPerBar = Math.max(1, Math.floor(data.length / bars));
-      g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8b64c';
-      for (let i = 0; i < bars; i++) {
-        let peak = 0;
-        const startIdx = i * samplesPerBar;
-        for (let j = startIdx; j < startIdx + samplesPerBar && j < data.length; j += 16) {
-          const abs = Math.abs(data[j]);
-          if (abs > peak) peak = abs;
+  // --- Progress + rendering ----------------------------------------------
+
+  function formatDuration(ms) {
+    const secs = Math.round(ms / 1000);
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  function updateProgress() {
+    if (!batch) return;
+    const total = batch.items.length;
+    const done = batch.items.filter((i) => i.status === 'done').length;
+    const errors = batch.items.filter((i) => i.status === 'error').length;
+    const generating = batch.items.find((i) => i.status === 'generating');
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    progressFill.style.width = `${pct}%`;
+
+    if (generating) {
+      queueStats.textContent = `Generating ${partName(batch.project, generating.part)} — ${generating.part} of ${total} · ${pct}%`;
+    } else {
+      queueStats.textContent = `${done} of ${total} complete · ${pct}%${errors ? ` · ${errors} failed` : ''}`;
+    }
+
+    const remaining = batch.items.filter((i) => i.status === 'pending' || i.status === 'generating').length;
+    if (running && remaining && durations.length) {
+      const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+      queueEta.textContent = `~${formatDuration(avg * remaining)} remaining`;
+    } else {
+      queueEta.textContent = '';
+    }
+  }
+
+  function updateControls() {
+    const hasDone = batch && batch.items.some((i) => i.status === 'done');
+    const hasError = batch && batch.items.some((i) => i.status === 'error');
+    const hasPending = batch && batch.items.some((i) => i.status === 'pending');
+
+    pauseBtn.hidden = !(running && !paused);
+    resumeBtn.hidden = !((running && paused) || (!running && hasPending));
+    resumeBtn.textContent = running ? 'Resume' : 'Continue';
+    cancelBtn.hidden = !running;
+    retryBtn.hidden = !(!running && hasError);
+    clearBtn.hidden = !batch;
+
+    zipBtn.disabled = !hasDone;
+    downloadEachBtn.disabled = !hasDone;
+    zipSelectedBtn.disabled = selected.size === 0;
+  }
+
+  function renderQueue() {
+    if (!batch) {
+      queueSection.hidden = true;
+      return;
+    }
+    updateProgress();
+    updateControls();
+
+    queueList.innerHTML = '';
+    for (const item of batch.items) {
+      const row = document.createElement('div');
+      row.className = 'queue-item';
+      if (item.status === 'generating') row.classList.add('is-generating');
+      if (item.status === 'error') row.classList.add('is-error');
+
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.checked = selected.has(item.index);
+      check.disabled = item.status !== 'done';
+      check.addEventListener('change', () => {
+        if (check.checked) selected.add(item.index);
+        else selected.delete(item.index);
+        syncSelectAll();
+        updateControls();
+      });
+
+      const info = document.createElement('div');
+      info.className = 'queue-item-info';
+      const name = document.createElement('div');
+      name.className = 'queue-item-name';
+      name.textContent = itemFileName(item);
+      const preview = document.createElement('div');
+      preview.className = 'queue-item-preview';
+      preview.textContent = item.status === 'error' ? item.error : `${item.text.slice(0, 90)}${item.text.length > 90 ? '…' : ''}`;
+      info.append(name, preview);
+
+      const badge = document.createElement('span');
+      const label = { pending: 'Queued', generating: 'Generating…', done: 'Ready', error: 'Failed' }[item.status];
+      badge.className = `queue-item-status status-${item.status}`;
+      badge.textContent = label;
+
+      const actions = document.createElement('div');
+      actions.className = 'queue-item-actions';
+      const playBtn = document.createElement('button');
+      playBtn.type = 'button';
+      playBtn.textContent = '▶';
+      playBtn.title = 'Play';
+      playBtn.disabled = item.status !== 'done';
+      playBtn.addEventListener('click', () => playItem(item));
+      const dl = document.createElement('button');
+      dl.type = 'button';
+      dl.textContent = '↓';
+      dl.title = 'Download';
+      dl.disabled = item.status !== 'done';
+      dl.addEventListener('click', () => downloadItem(item));
+      actions.append(playBtn, dl);
+
+      row.append(check, info, badge, actions);
+      queueList.appendChild(row);
+    }
+    syncSelectAll();
+  }
+
+  function syncSelectAll() {
+    if (!batch) return;
+    const doneItems = batch.items.filter((i) => i.status === 'done');
+    selectAllToggle.checked = doneItems.length > 0 && doneItems.every((i) => selected.has(i.index));
+    selectAllToggle.disabled = doneItems.length === 0;
+  }
+
+  // --- Playback + downloads ----------------------------------------------
+
+  function playItem(item) {
+    const url = urls.get(item.index);
+    if (!url) return;
+    rowAudio.src = url;
+    rowAudio.hidden = false;
+    rowAudio.play().catch(() => {});
+  }
+
+  function downloadBlobUrl(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function downloadItem(item) {
+    const url = urls.get(item.index);
+    if (url) downloadBlobUrl(url, itemFileName(item));
+  }
+
+  async function downloadEach() {
+    const done = batch.items.filter((i) => i.status === 'done');
+    for (const item of done) {
+      downloadItem(item);
+      await sleep(400); // stagger so browsers don't block the batch
+    }
+  }
+
+  async function zipDownload(items) {
+    if (!items.length) return;
+    const files = [];
+    for (const item of items) {
+      const blob = memBlobs.get(item.index) || (await idbGet(`${batch.id}:${item.index}`));
+      if (!blob) continue;
+      files.push({ name: itemFileName(item), data: new Uint8Array(await blob.arrayBuffer()) });
+    }
+    if (!files.length) return;
+    const zipBlob = window.BlvckZip.create(files);
+    const url = URL.createObjectURL(zipBlob);
+    downloadBlobUrl(url, `${batch.project}.zip`);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  // --- Restore an in-progress batch after refresh ------------------------
+
+  async function restoreBatch() {
+    const saved = store.get(LS.batch, null);
+    if (!saved || !saved.items || !saved.items.length) return;
+    batch = saved;
+    for (const item of batch.items) {
+      if (item.status === 'generating') item.status = 'pending'; // was interrupted
+      if (item.status === 'done') {
+        const blob = await idbGet(`${batch.id}:${item.index}`);
+        if (blob) {
+          memBlobs.set(item.index, blob);
+          urls.set(item.index, URL.createObjectURL(blob));
+        } else {
+          item.status = 'pending'; // audio lost — regenerate
         }
-        const barHeight = Math.max(2, peak * height * 0.9);
-        const x = (i / bars) * width;
-        g.fillRect(x, (height - barHeight) / 2, Math.max(2, width / bars - 2), barHeight);
       }
-      canvas.hidden = false;
-      ctx.close();
-    } catch {
-      waveformCanvas.hidden = true;
+    }
+    persistBatch();
+    queueSection.hidden = false;
+    renderQueue();
+    const pending = batch.items.filter((i) => i.status !== 'done').length;
+    if (pending) {
+      showStatus(`Restored a batch with ${pending} part(s) left. Click “Continue” to finish.`, 'info');
     }
   }
 
@@ -1005,7 +1388,10 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   // --- Events ------------------------------------------------------------
 
-  textInput.addEventListener('input', updateCharCount);
+  textInput.addEventListener('input', () => {
+    updateCharCount();
+    updateNamingNote();
+  });
 
   titleInput.addEventListener('input', () => {
     saveNarration();
@@ -1084,9 +1470,62 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     el.addEventListener('change', persistSettings)
   );
 
-  speakBtn.addEventListener('click', synthesize);
+  speakBtn.addEventListener('click', startGeneration);
   textInput.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') synthesize();
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') startGeneration();
+  });
+
+  // Queue controls
+  pauseBtn.addEventListener('click', () => {
+    paused = true;
+    updateControls();
+    showStatus('Paused. The current part finishes, then generation waits.', 'info');
+  });
+  resumeBtn.addEventListener('click', () => {
+    if (running) {
+      paused = false;
+      updateControls();
+      clearStatus();
+    } else {
+      clearStatus();
+      runQueue();
+    }
+  });
+  cancelBtn.addEventListener('click', () => {
+    cancelRequested = true;
+    paused = false;
+  });
+  retryBtn.addEventListener('click', () => {
+    if (!batch) return;
+    batch.items.forEach((i) => {
+      if (i.status === 'error') i.status = 'pending';
+    });
+    persistBatch();
+    clearStatus();
+    runQueue();
+  });
+  clearBtn.addEventListener('click', async () => {
+    if (running) return;
+    if (!confirm('Clear this batch and its generated audio?')) return;
+    await clearBatch();
+    clearStatus();
+  });
+
+  zipBtn.addEventListener('click', () => {
+    if (batch) zipDownload(batch.items.filter((i) => i.status === 'done'));
+  });
+  zipSelectedBtn.addEventListener('click', () => {
+    if (batch) zipDownload(batch.items.filter((i) => i.status === 'done' && selected.has(i.index)));
+  });
+  downloadEachBtn.addEventListener('click', () => {
+    if (batch) downloadEach();
+  });
+  selectAllToggle.addEventListener('change', () => {
+    if (!batch) return;
+    const doneItems = batch.items.filter((i) => i.status === 'done');
+    if (selectAllToggle.checked) doneItems.forEach((i) => selected.add(i.index));
+    else selected.clear();
+    renderQueue();
   });
 
   resetBtn.addEventListener('click', () => {
@@ -1098,16 +1537,9 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     volumeSlider.value = 0;
     updateSliderOutputs();
     updateCharCount();
+    updateNamingNote();
     clearStatus();
     stopPreview();
-    playerSection.hidden = true;
-    filenameNote.hidden = true;
-    waveformCanvas.hidden = true;
-    audioPlayer.pause();
-    if (currentAudioUrl) {
-      URL.revokeObjectURL(currentAudioUrl);
-      currentAudioUrl = null;
-    }
     persistSettings();
   });
 
@@ -1180,4 +1612,5 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   updateSliderOutputs();
   renderPresetSelect();
   loadVoices();
+  restoreBatch();
 })();
