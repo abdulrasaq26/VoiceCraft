@@ -158,11 +158,14 @@ app.get('/api/preview', async (req, res) => {
       // Previews send only the audio encoding — every voice family
       // accepts that, regardless of its other capability limits.
       pending = tts
-        .synthesize({
-          input: { text: previewPhrase(languageCode) },
-          voice: { name: voiceName, languageCode },
-          audioConfig: { audioEncoding: 'MP3' }
-        })
+        .synthesize(
+          {
+            input: { text: previewPhrase(languageCode) },
+            voice: { name: voiceName, languageCode },
+            audioConfig: { audioEncoding: 'MP3' }
+          },
+          { preview: true }
+        )
         .finally(() => previewInFlight.delete(voiceName));
       previewInFlight.set(voiceName, pending);
     }

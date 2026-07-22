@@ -683,10 +683,30 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   // --- Synthesis ---------------------------------------------------------
 
-  function setGenerating(loading) {
+  let generateTimer = null;
+  function setGenerating(loading, voice) {
     speakBtn.disabled = loading;
     speakSpinner.hidden = !loading;
-    speakLabel.textContent = loading ? 'Generating…' : 'Generate speech';
+    if (generateTimer) {
+      clearInterval(generateTimer);
+      generateTimer = null;
+    }
+    if (!loading) {
+      speakLabel.textContent = 'Generate speech';
+      return;
+    }
+    speakLabel.textContent = 'Generating…';
+    // HD/Elite voices are slower — show a live counter so it doesn't feel
+    // frozen, and reassure the user for long-running requests.
+    const started = Date.now();
+    const isHd = voice && voice.tier === 'elite';
+    generateTimer = setInterval(() => {
+      const secs = Math.round((Date.now() - started) / 1000);
+      speakLabel.textContent = `Generating… ${secs}s`;
+      if (isHd && secs === 8) {
+        showStatus('High-definition voices take a little longer to render — hang tight.', 'info');
+      }
+    }, 1000);
   }
 
   async function synthesize() {
@@ -704,7 +724,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
     clearStatus();
     stopPreview();
-    setGenerating(true);
+    setGenerating(true, v);
 
     try {
       const response = await fetch('/api/synthesize', {
@@ -752,6 +772,9 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
           'Generated. Note: this voice doesn’t take free-text instructions directly — your speed and pitch settings shaped the delivery instead.',
           'info'
         );
+      } else {
+        // Clear any in-progress "hang tight" notice on success.
+        clearStatus();
       }
     } catch (err) {
       showStatus(err.message);

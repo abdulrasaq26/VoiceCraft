@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+*.log
+service-account.json
+*-credentials.json
+voice-blocklist.json
+.DS_Store
+scratchpad
+README.md
