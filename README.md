@@ -25,6 +25,7 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 - ⏯️ **Full queue control** — pause, resume, cancel, and retry-failed-parts; the batch is saved to the browser (IndexedDB), so a refresh restores it and you can continue where you left off
 - 🏷️ **Auto-named parts** — outputs are named from the project name: `Medieval Peasant Life Part 1.mp3`, `… Part 2.mp3`, …
 - 📦 **Batch downloads** — download all parts as a single ZIP, download each part individually, or tick specific parts and download just those
+- 📄 **Automatic transcript** — every project also produces one timestamped transcript built from the *original* script (re-split into ~500-char, sentence-safe sections with `00-30`, `31-60`, … markers). View it, copy it, or download `Medieval Peasant Life Transcript.txt`. A **Download transcript** button also generates one from any pasted script without running TTS
 
 ### Creator workflow
 - 💾 **Presets** — save complete configurations (voice, instructions, speed, pitch, volume, format); rename, duplicate, delete, set a default, organize by project, and apply with one click
