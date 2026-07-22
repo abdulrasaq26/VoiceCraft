@@ -152,6 +152,25 @@ textarea:focus {
   line-height: 1.45;
 }
 
+.naming-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.naming-section > label {
+  font-weight: 600;
+}
+
+.naming-section input {
+  width: 100%;
+}
+
+#filename-note {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
 .controls {
   display: grid;
   grid-template-columns: 0.9fr 1.6fr 0.7fr;

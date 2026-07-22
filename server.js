@@ -10,7 +10,8 @@ const { enrichVoices, capabilitiesFor, promptCapable } = require('./lib/voice-ca
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const MAX_INPUT_BYTES = 5000; // Google Cloud TTS per-request limit
+const MAX_INPUT_CHARS = 1500; // capped below Google's 5000-byte limit for quality
+const MAX_INPUT_BYTES = 5000; // Google Cloud TTS per-request hard limit
 const MAX_INSTRUCTION_CHARS = 2500;
 const VOICES_CACHE_TTL_MS = 10 * 60 * 1000;
 const VOICE_NAME_PATTERN = /^[A-Za-z0-9._-]{1,80}$/;
@@ -213,6 +214,11 @@ app.post('/api/synthesize', async (req, res) => {
   const input = String(text).trim();
   if (!input) {
     return res.status(400).json({ error: 'Text is required.' });
+  }
+  if (input.length > MAX_INPUT_CHARS) {
+    return res.status(400).json({
+      error: `Input exceeds the ${MAX_INPUT_CHARS}-character limit. Split the text into smaller chunks for the best quality.`
+    });
   }
   if (Buffer.byteLength(input, 'utf8') > MAX_INPUT_BYTES) {
     return res.status(400).json({

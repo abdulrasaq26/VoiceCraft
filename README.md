@@ -21,6 +21,7 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 ### Creator workflow
 - 💾 **Presets** — save complete configurations (voice, instructions, speed, pitch, volume, format); rename, duplicate, delete, set a default, organize by project, and apply with one click
 - 🕘 **Last-used memory** — all settings persist across sessions; the app reopens exactly as you left it
+- 🏷️ **Named, auto-numbered downloads** — name a narration (e.g. *people*) and each generation downloads as `people 1`, `people 2`, `people 3`… so a series of clips stays grouped and ordered
 - 📈 **Waveform + download** — see the generated audio's waveform, replay it, and export as MP3 / OGG (Opus) / WAV
 
 ### Infrastructure
@@ -108,7 +109,7 @@ Synthesizes a tiny sample with every voice in the catalog (~3 characters per voi
 ```
 
 - `audioFormat`: `MP3`, `OGG_OPUS`, or `LINEAR16` (WAV)
-- Input is limited to 5,000 bytes per request (a Google Cloud TTS limit)
+- Input is limited to 1,500 characters per request (capped below Google's 5,000-byte hard limit to keep synthesis quality high on longer passages)
 - Parameters a voice doesn't support are stripped server-side rather than sent (Google rejects whole requests otherwise); the `X-Instructions-Applied` response header reports whether the voice consumed the free-text instructions directly
 
 ## How voice capabilities are handled
