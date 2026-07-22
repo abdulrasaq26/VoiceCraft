@@ -50,6 +50,15 @@
   const selectAllToggle = $('select-all');
   const queueList = $('queue-list');
   const rowAudio = $('row-audio');
+  const trViewBtn = $('tr-view-btn');
+  const trCopyBtn = $('tr-copy-btn');
+  const trDownloadBtn = $('tr-download-btn');
+  const transcriptOnlyBtn = $('transcript-only-btn');
+  const transcriptModal = $('transcript-modal');
+  const transcriptTitle = $('transcript-title');
+  const transcriptView = $('transcript-view');
+  const transcriptCopy = $('transcript-copy');
+  const transcriptDownload = $('transcript-download');
 
   const voiceModal = $('voice-modal');
   const voiceSearch = $('voice-search');
@@ -241,6 +250,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   // narration: { title } — remembers the last project name entered
   const narration = store.get(LS.narration, { title: '' });
   const filters = { search: '', tier: 'all', gender: 'all' };
+  let activeTranscript = null; // { project, content } currently shown in the modal
 
   // --- Small helpers -----------------------------------------------------
 
@@ -272,8 +282,10 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   // --- Script chunking ---------------------------------------------------
 
-  const CHUNK_TARGET = 1000; // aim for ~1000 chars per part
+  const CHUNK_TARGET = 1000; // aim for ~1000 chars per audio part
   const CHUNK_HARD_MAX = 1800; // a lone long sentence may fill a whole part up to here
+  const TRANSCRIPT_TARGET = 500; // ~500 chars per transcript section
+  const TRANSCRIPT_HARD_MAX = 900;
 
   // Split a paragraph into sentence-like units, keeping the terminal
   // punctuation attached so nothing is cut mid-sentence.
@@ -284,19 +296,19 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   // Fallback for a single sentence longer than the hard max: break on clause
   // punctuation, then on spaces, never exceeding the hard max.
-  function splitLongSentence(sentence) {
+  function splitLongSentence(sentence, hardMax) {
     const parts = [];
     let rest = sentence.trim();
-    while (rest.length > CHUNK_HARD_MAX) {
+    while (rest.length > hardMax) {
       let cut = -1;
       for (const punct of ['; ', ', ', ': ', ' — ', ' ']) {
-        cut = rest.lastIndexOf(punct, CHUNK_HARD_MAX);
-        if (cut > CHUNK_HARD_MAX * 0.5) {
+        cut = rest.lastIndexOf(punct, hardMax);
+        if (cut > hardMax * 0.5) {
           cut += punct.length;
           break;
         }
       }
-      if (cut <= 0) cut = CHUNK_HARD_MAX; // no boundary found: hard cut
+      if (cut <= 0) cut = hardMax; // no boundary found: hard cut
       parts.push(rest.slice(0, cut).trim());
       rest = rest.slice(cut).trim();
     }
@@ -304,14 +316,14 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     return parts;
   }
 
-  // Chunk an entire script into ~CHUNK_TARGET-char parts on sentence
-  // boundaries. Paragraph breaks are respected as hard boundaries.
-  function chunkScript(text) {
+  // Chunk an entire script into ~target-char parts on sentence boundaries.
+  // Paragraph breaks are respected as hard boundaries.
+  function chunkScript(text, target = CHUNK_TARGET, hardMax = CHUNK_HARD_MAX) {
     const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
     const units = [];
     for (const para of paragraphs) {
       for (const sentence of splitSentences(para)) {
-        if (sentence.length > CHUNK_HARD_MAX) units.push(...splitLongSentence(sentence));
+        if (sentence.length > hardMax) units.push(...splitLongSentence(sentence, hardMax));
         else units.push(sentence);
       }
     }
@@ -320,7 +332,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     let current = '';
     for (const unit of units) {
       const candidate = current ? `${current} ${unit}` : unit;
-      if (candidate.length <= CHUNK_TARGET) {
+      if (candidate.length <= target) {
         current = candidate;
       } else {
         if (current) chunks.push(current);
@@ -374,6 +386,68 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     } else {
       namingNote.textContent = `Output: “${partName(project, 1)}”. Longer scripts are split into numbered parts automatically.`;
     }
+  }
+
+  // --- Transcript --------------------------------------------------------
+
+  function pad2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  // Organizational (not audio-accurate) markers: 00-30, 31-60, 61-90, …
+  function transcriptLabel(section) {
+    const start = section === 1 ? 0 : (section - 1) * 30 + 1;
+    const end = section * 30;
+    return `${pad2(start)}-${pad2(end)}`;
+  }
+
+  // Build a single timestamped transcript for the whole script, re-split into
+  // ~500-char sentence-aware sections.
+  function buildTranscript(script) {
+    const sections = chunkScript(String(script).trim(), TRANSCRIPT_TARGET, TRANSCRIPT_HARD_MAX);
+    if (!sections.length) return '';
+    return sections.map((text, i) => `${transcriptLabel(i + 1)}\n${text}`).join('\n\n') + '\n';
+  }
+
+  function transcriptFileName(project) {
+    return `${project} Transcript.txt`;
+  }
+
+  function downloadTranscript(project, content) {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    downloadBlobUrl(url, transcriptFileName(project));
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showStatus('Transcript copied to clipboard.', 'info');
+      return;
+    } catch {
+      /* clipboard API unavailable or blocked — fall back below */
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      showStatus('Transcript copied to clipboard.', 'info');
+    } catch {
+      showStatus('Could not copy automatically — open “View” and copy manually.');
+    }
+    ta.remove();
+  }
+
+  function openTranscriptModal(project, content) {
+    transcriptTitle.textContent = transcriptFileName(project);
+    transcriptView.textContent = content;
+    activeTranscript = { project, content };
+    openModal(transcriptModal);
   }
 
   function updateSliderOutputs() {
@@ -694,7 +768,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   function closeModal(modal) {
     modal.hidden = true;
-    if (voiceModal.hidden && presetModal.hidden) {
+    if (voiceModal.hidden && presetModal.hidden && transcriptModal.hidden) {
       document.body.classList.remove('modal-open');
     }
   }
@@ -951,10 +1025,11 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     return response.blob();
   }
 
-  function buildBatch(v, chunks) {
+  function buildBatch(v, chunks, script) {
     return {
       id: `batch-${Date.now()}`,
       project: currentProject(),
+      script, // original full text, used for the transcript
       ext: FORMAT_EXT[formatSelect.value] || 'mp3',
       audioFormat: formatSelect.value,
       createdAt: Date.now(),
@@ -993,7 +1068,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
     // SSML must not be split (tags would break across parts); send as one part.
     const chunks = ssmlToggle.checked ? [text] : chunkScript(text);
-    batch = buildBatch(v, chunks);
+    batch = buildBatch(v, chunks, text);
     persistBatch();
     recordRecent(v.id);
     persistSettings();
@@ -1212,7 +1287,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     }
   }
 
-  async function zipDownload(items) {
+  async function zipDownload(items, { includeTranscript = false } = {}) {
     if (!items.length) return;
     const files = [];
     for (const item of items) {
@@ -1221,6 +1296,12 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       files.push({ name: itemFileName(item), data: new Uint8Array(await blob.arrayBuffer()) });
     }
     if (!files.length) return;
+    if (includeTranscript && batch.script) {
+      const content = buildTranscript(batch.script);
+      if (content) {
+        files.push({ name: transcriptFileName(batch.project), data: new TextEncoder().encode(content) });
+      }
+    }
     const zipBlob = window.BlvckZip.create(files);
     const url = URL.createObjectURL(zipBlob);
     downloadBlobUrl(url, `${batch.project}.zip`);
@@ -1512,7 +1593,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   });
 
   zipBtn.addEventListener('click', () => {
-    if (batch) zipDownload(batch.items.filter((i) => i.status === 'done'));
+    if (batch) zipDownload(batch.items.filter((i) => i.status === 'done'), { includeTranscript: true });
   });
   zipSelectedBtn.addEventListener('click', () => {
     if (batch) zipDownload(batch.items.filter((i) => i.status === 'done' && selected.has(i.index)));
@@ -1526,6 +1607,39 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     if (selectAllToggle.checked) doneItems.forEach((i) => selected.add(i.index));
     else selected.clear();
     renderQueue();
+  });
+
+  // Transcript (from the batch's original script)
+  trViewBtn.addEventListener('click', () => {
+    if (batch) openTranscriptModal(batch.project, buildTranscript(batch.script));
+  });
+  trCopyBtn.addEventListener('click', () => {
+    if (batch) copyText(buildTranscript(batch.script));
+  });
+  trDownloadBtn.addEventListener('click', () => {
+    if (batch) downloadTranscript(batch.project, buildTranscript(batch.script));
+  });
+
+  // Transcript modal actions
+  transcriptCopy.addEventListener('click', () => {
+    if (activeTranscript) copyText(activeTranscript.content);
+  });
+  transcriptDownload.addEventListener('click', () => {
+    if (activeTranscript) downloadTranscript(activeTranscript.project, activeTranscript.content);
+  });
+
+  // Standalone: transcript from the pasted script only, no audio needed.
+  transcriptOnlyBtn.addEventListener('click', () => {
+    const text = textInput.value.trim();
+    if (!text) {
+      showStatus('Paste a script first to generate its transcript.');
+      textInput.focus();
+      return;
+    }
+    const project = currentProject();
+    const content = buildTranscript(text);
+    downloadTranscript(project, content);
+    showStatus(`Transcript downloaded: “${transcriptFileName(project)}”.`, 'info');
   });
 
   resetBtn.addEventListener('click', () => {
@@ -1591,7 +1705,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   projectFilter.addEventListener('change', renderPresetList);
 
-  [voiceModal, presetModal].forEach((modal) => {
+  [voiceModal, presetModal, transcriptModal].forEach((modal) => {
     modal.addEventListener('click', (e) => {
       if (e.target.closest('[data-close]')) closeModal(modal);
     });
@@ -1601,6 +1715,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     if (e.key === 'Escape') {
       if (!voiceModal.hidden) closeModal(voiceModal);
       if (!presetModal.hidden) closeModal(presetModal);
+      if (!transcriptModal.hidden) closeModal(transcriptModal);
     }
   });
 

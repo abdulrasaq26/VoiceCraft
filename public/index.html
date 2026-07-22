@@ -121,6 +121,7 @@
           <span class="btn-label">Generate speech</span>
           <span class="spinner" hidden></span>
         </button>
+        <button id="transcript-only-btn" class="btn ghost" type="button" title="Build and download a transcript from the pasted script, without generating audio">Download transcript</button>
         <button id="reset-btn" class="btn ghost" type="button">Reset</button>
       </section>
 
@@ -144,13 +145,25 @@
           <button id="clear-btn" class="btn ghost small" type="button">Clear</button>
         </div>
 
-        <div class="queue-downloads">
-          <button id="zip-btn" class="btn primary small" type="button" disabled>Download all as ZIP</button>
-          <button id="zip-selected-btn" class="btn ghost small" type="button" disabled>Download selected</button>
-          <button id="download-each-btn" class="btn ghost small" type="button" disabled>Download each</button>
-          <label class="select-all-label">
-            <input type="checkbox" id="select-all" /> Select all
-          </label>
+        <div class="queue-group">
+          <span class="queue-group-label">Audio outputs</span>
+          <div class="queue-downloads">
+            <button id="zip-btn" class="btn primary small" type="button" title="ZIP of all audio parts plus the transcript .txt" disabled>Download all as ZIP</button>
+            <button id="zip-selected-btn" class="btn ghost small" type="button" disabled>Download selected</button>
+            <button id="download-each-btn" class="btn ghost small" type="button" disabled>Download each</button>
+            <label class="select-all-label">
+              <input type="checkbox" id="select-all" /> Select all
+            </label>
+          </div>
+        </div>
+
+        <div class="queue-group">
+          <span class="queue-group-label">Transcript</span>
+          <div class="queue-downloads">
+            <button id="tr-view-btn" class="btn ghost small" type="button">View</button>
+            <button id="tr-copy-btn" class="btn ghost small" type="button">Copy</button>
+            <button id="tr-download-btn" class="btn primary small" type="button">Download .txt</button>
+          </div>
         </div>
 
         <div id="queue-list" class="queue-list"></div>
@@ -216,6 +229,22 @@
         </select>
       </div>
       <div id="preset-list" class="preset-list"></div>
+    </div>
+  </div>
+
+  <!-- Transcript viewer -->
+  <div id="transcript-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Transcript">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2 id="transcript-title">Transcript</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <div class="transcript-actions">
+        <button id="transcript-copy" class="btn ghost small" type="button">Copy</button>
+        <button id="transcript-download" class="btn primary small" type="button">Download .txt</button>
+      </div>
+      <pre id="transcript-view" class="transcript-view"></pre>
     </div>
   </div>
 
