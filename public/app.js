@@ -9,7 +9,6 @@
   const charCount = $('char-count');
   const titleInput = $('title-input');
   const namingNote = $('naming-note');
-  const ssmlToggle = $('ssml-toggle');
   const languageSelect = $('language-select');
   const formatSelect = $('format-select');
   const voiceCard = $('voice-card');
@@ -19,14 +18,14 @@
   const instructionsInput = $('instructions-input');
   const instructionsNote = $('instructions-note');
   const templateSelect = $('template-select');
-  const rateSlider = $('rate-slider');
-  const pitchSlider = $('pitch-slider');
-  const volumeSlider = $('volume-slider');
-  const rateValue = $('rate-value');
-  const pitchValue = $('pitch-value');
-  const volumeValue = $('volume-value');
-  const rateControl = $('rate-control');
-  const pitchControl = $('pitch-control');
+  // ElevenLabs voice_settings (0–100 in UI, sent as 0–1 to Puter).
+  const stabilitySlider = $('stability-slider');
+  const similaritySlider = $('similarity-slider');
+  const styleSlider = $('style-slider');
+  const speakerBoostToggle = $('speaker-boost-toggle');
+  const stabilityValue = $('stability-value');
+  const similarityValue = $('similarity-value');
+  const styleValue = $('style-value');
   const capsNote = $('caps-note');
   const speakBtn = $('speak-btn');
   const resetBtn = $('reset-btn');
@@ -112,9 +111,7 @@
     family: 'ElevenLabs',
     gender,
     language: 'en-US',
-    languageCodes: ['en-US'],
-    capabilities: { rate: false, rateMax: 4, pitch: false, ssml: false },
-    promptCapable: false
+    languageCodes: ['en-US']
   }));
 
   const LS = {
@@ -596,9 +593,10 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   // button), even when a completed audio batch exists.
   async function computeCues(forceScript = false) {
     if (!forceScript && batch) {
-      const key = `${batch.id}:${batch.items.filter((i) => i.status === 'done').length}:${batch.settings.speakingRate}`;
+      const key = `${batch.id}:${batch.items.filter((i) => i.status === 'done').length}`;
       if (subtitleCache.key === key && subtitleCache.cues) return subtitleCache.cues;
-      const rate = batch.settings.speakingRate;
+      // ElevenLabs has no per-request speaking-rate; assume 1× for estimation.
+      const rate = 1;
       const segments = [];
       for (const item of batch.items) {
         const blob = memBlobs.get(item.index);
@@ -614,7 +612,8 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     // edits to the script are always reflected).
     const text = textInput.value.trim();
     if (!text) return [];
-    return cuesFromSegments([{ text, durationSec: estimateDurationSec(text, Number(rateSlider.value)) }]);
+    // Rate is fixed at 1× for ElevenLabs (no per-request speaking-rate knob).
+    return cuesFromSegments([{ text, durationSec: estimateDurationSec(text, 1) }]);
   }
 
   function fmtTime(ms, sep) {
@@ -674,9 +673,28 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   }
 
   function updateSliderOutputs() {
-    rateValue.textContent = `${Number(rateSlider.value).toFixed(2).replace(/0$/, '')}×`;
-    pitchValue.textContent = Number(pitchSlider.value).toFixed(1);
-    volumeValue.textContent = `${Number(volumeSlider.value).toFixed(1)} dB`;
+    stabilityValue.textContent = String(Math.round(Number(stabilitySlider.value)));
+    similarityValue.textContent = String(Math.round(Number(similaritySlider.value)));
+    styleValue.textContent = String(Math.round(Number(styleSlider.value)));
+  }
+
+  // Read the ElevenLabs voice_settings from the UI (0–1 range).
+  function collectVoiceSettings() {
+    return {
+      stability: Number(stabilitySlider.value) / 100,
+      similarity_boost: Number(similaritySlider.value) / 100,
+      style: Number(styleSlider.value) / 100,
+      use_speaker_boost: Boolean(speakerBoostToggle.checked)
+    };
+  }
+
+  function applyVoiceSettings(vs) {
+    if (!vs) return;
+    if (Number.isFinite(vs.stability)) stabilitySlider.value = Math.round(vs.stability * 100);
+    if (Number.isFinite(vs.similarity_boost)) similaritySlider.value = Math.round(vs.similarity_boost * 100);
+    if (Number.isFinite(vs.style)) styleSlider.value = Math.round(vs.style * 100);
+    if (typeof vs.use_speaker_boost === 'boolean') speakerBoostToggle.checked = vs.use_speaker_boost;
+    updateSliderOutputs();
   }
 
   function genderText(gender) {
@@ -696,11 +714,8 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       voiceId: currentVoiceId,
       language: languageSelect.value,
       instructions: instructionsInput.value,
-      rate: Number(rateSlider.value),
-      pitch: Number(pitchSlider.value),
-      volume: Number(volumeSlider.value),
-      format: formatSelect.value,
-      ssml: ssmlToggle.checked
+      voice_settings: collectVoiceSettings(),
+      format: formatSelect.value
     };
   }
 
@@ -721,11 +736,8 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       }
     }
     if (typeof s.instructions === 'string') instructionsInput.value = s.instructions;
-    if (Number.isFinite(s.rate)) rateSlider.value = s.rate;
-    if (Number.isFinite(s.pitch)) pitchSlider.value = s.pitch;
-    if (Number.isFinite(s.volume)) volumeSlider.value = s.volume;
+    applyVoiceSettings(s.voice_settings);
     if (s.format && FORMAT_EXT[s.format]) formatSelect.value = s.format;
-    ssmlToggle.checked = Boolean(s.ssml);
     updateSliderOutputs();
     renderVoiceCard();
     persistSettings();
@@ -810,66 +822,17 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     return badge;
   }
 
-  // Grey out only what the voice's family truly can't do (Google rejects
-  // the parameter), adjust the speed range, and say so visibly.
+  // Every ElevenLabs voice accepts the same voice_settings and free-text
+  // delivery instructions, so this only refreshes the note below the card.
   function syncCapabilityUI() {
+    if (capsNote) capsNote.hidden = true;
     const v = currentVoice();
-    const caps = v ? v.capabilities : { rate: true, rateMax: 4, pitch: true, ssml: true };
-
-    rateSlider.disabled = !caps.rate;
-    const rateMax = caps.rateMax || 4;
-    rateSlider.max = rateMax;
-    if (Number(rateSlider.value) > rateMax) {
-      rateSlider.value = rateMax;
-      updateSliderOutputs();
-    }
-
-    pitchSlider.disabled = !caps.pitch;
-    rateControl.classList.toggle('unsupported', !caps.rate);
-    pitchControl.classList.toggle('unsupported', !caps.pitch);
-    rateControl.title = caps.rate ? '' : 'This voice doesn’t support speed control';
-    pitchControl.title = caps.pitch ? '' : 'This voice doesn’t support pitch control';
-    const cantSsml = Boolean(v) && !caps.ssml;
-    ssmlToggle.disabled = cantSsml;
-    if (cantSsml && ssmlToggle.checked) ssmlToggle.checked = false;
-    const ssmlLabel = ssmlToggle.closest('.ssml-toggle');
-    if (ssmlLabel) {
-      ssmlLabel.title = cantSsml
-        ? `${v.family} voices only accept plain text — SSML isn’t available for this voice family. On Google, pick a Neural2, WaveNet, Studio, or Standard voice to use SSML.`
-        : 'Treat input as SSML markup (pauses, pronunciation, emphasis, etc.)';
-    }
-
-    if (capsNote) {
-      // Collect everything Google won't accept for this voice family so the
-      // disabled controls (sliders + SSML) are explained in one place.
-      const adjustments = [];
-      if (!caps.rate) adjustments.push('speed');
-      if (!caps.pitch) adjustments.push('pitch');
-      const parts = [];
-      if (adjustments.length) parts.push(`${adjustments.join(' or ')} adjustments`);
-      if (cantSsml) parts.push('SSML input');
-      const range = caps.rate && rateMax < 4 ? ` Speed is available up to ${rateMax}× for this voice.` : '';
-
-      if (v && parts.length) {
-        const plural = parts.length > 1;
-        capsNote.textContent = `${v.name} (${v.family}) doesn’t support ${parts.join(' or ')}, so ${plural ? 'they’re' : 'it’s'} disabled here.${range}`;
-        capsNote.hidden = false;
-      } else if (v && caps.rate && rateMax < 4) {
-        capsNote.textContent = `Google limits ${v.family} voices to ${rateMax}× speed.`;
-        capsNote.hidden = false;
-      } else {
-        capsNote.hidden = true;
-      }
-    }
-
     if (!v) {
       instructionsNote.textContent = '';
-    } else if (v.promptCapable) {
-      instructionsNote.textContent = 'This voice understands free-text instructions and will follow them directly.';
-    } else {
-      instructionsNote.textContent =
-        'This voice family doesn’t take free-text instructions directly — style templates shape its delivery through speed and pitch instead.';
+      return;
     }
+    instructionsNote.textContent =
+      'ElevenLabs listens to natural-language delivery cues in the prompt — describe emotion, pacing, emphasis, and pauses directly.';
   }
 
   // --- Voice preview -----------------------------------------------------
@@ -935,8 +898,9 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     setPreviewButtonState('loading');
 
     // ElevenLabs runs client-side; fetch the sample as a blob then play.
+    // Previews use the LIVE voice_settings so users hear their own tuning.
     const phrase = 'Hello! This is a preview of my voice.';
-    window.BlvckAI.speak(phrase, v.id)
+    window.BlvckAI.speak(phrase, v.id, { voice_settings: collectVoiceSettings() })
       .then((blob) => {
         if (previewVoiceId !== voiceId) return;
         if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -1245,13 +1209,10 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       createdAt: Date.now(),
       settings: {
         voiceId: v.id,
-        promptCapable: v.promptCapable,
         languageCode: languageSelect.value,
-        ssml: ssmlToggle.checked,
         audioFormat: formatSelect.value,
-        speakingRate: Number(rateSlider.value),
-        pitch: Number(pitchSlider.value),
-        volumeGainDb: Number(volumeSlider.value),
+        voice_settings: collectVoiceSettings(),
+        ttsModel: null, // reserved for future per-batch model overrides
         instructions: instructionsInput.value.trim()
       },
       items: chunks.map((text, i) => ({ index: i, part: i + 1, text, status: 'pending', error: null }))
@@ -1276,8 +1237,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     stopPreview();
     await clearBatch();
 
-    // SSML must not be split (tags would break across parts); send as one part.
-    const chunks = ssmlToggle.checked ? [text] : chunkScript(text);
+    const chunks = chunkScript(text);
     batch = buildBatch(v, chunks, text);
     persistBatch();
     recordRecent(v.id);
@@ -1558,7 +1518,13 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     const v = voiceById.get(p.settings.voiceId);
     const parts = [];
     if (v) parts.push(`Voice: ${v.name}`);
-    if (Number.isFinite(p.settings.rate) && p.settings.rate !== 1) parts.push(`${p.settings.rate}× speed`);
+    const vs = p.settings.voice_settings;
+    if (vs) {
+      const s = Math.round((vs.stability ?? 0.5) * 100);
+      const sim = Math.round((vs.similarity_boost ?? 0.85) * 100);
+      const st = Math.round((vs.style ?? 0.1) * 100);
+      parts.push(`Stab ${s} · Sim ${sim} · Style ${st}${vs.use_speaker_boost === false ? '' : ' · Boost'}`);
+    }
     if (p.settings.instructions) parts.push(p.settings.instructions.slice(0, 60));
     if (p.project) parts.push(`Project: ${p.project}`);
     return parts.join(' · ') || '—';
@@ -1745,21 +1711,22 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     const t = TEMPLATES[Number(templateSelect.value)];
     if (!t) return;
     instructionsInput.value = t.text;
-    const caps = currentVoice()?.capabilities || { rate: true, pitch: true };
-    if (caps.rate) rateSlider.value = t.rate;
-    if (caps.pitch) pitchSlider.value = t.pitch;
+    // Templates may carry recommended ElevenLabs voice_settings; if omitted,
+    // leave the sliders where the user set them.
+    if (t.voice_settings) applyVoiceSettings(t.voice_settings);
     updateSliderOutputs();
     persistSettings();
     templateSelect.value = '';
   });
 
-  [rateSlider, pitchSlider, volumeSlider].forEach((slider) =>
+  [stabilitySlider, similaritySlider, styleSlider].forEach((slider) =>
     slider.addEventListener('input', () => {
       updateSliderOutputs();
       persistSettings();
     })
   );
-  [instructionsInput, formatSelect, ssmlToggle].forEach((el) =>
+  speakerBoostToggle.addEventListener('change', persistSettings);
+  [instructionsInput, formatSelect].forEach((el) =>
     el.addEventListener('change', persistSettings)
   );
 
@@ -1868,11 +1835,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   resetBtn.addEventListener('click', () => {
     textInput.value = '';
     instructionsInput.value = '';
-    ssmlToggle.checked = false;
-    rateSlider.value = 1;
-    pitchSlider.value = 0;
-    volumeSlider.value = 0;
-    updateSliderOutputs();
+    applyVoiceSettings({ stability: 0.5, similarity_boost: 0.85, style: 0.1, use_speaker_boost: true });
     updateCharCount();
     updateNamingNote();
     clearStatus();

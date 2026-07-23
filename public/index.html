@@ -42,10 +42,6 @@
         <div class="input-header">
           <label for="text-input">Your script</label>
           <div class="input-tools">
-            <label class="ssml-toggle" title="Treat input as SSML markup">
-              <input type="checkbox" id="ssml-toggle" />
-              <span>SSML</span>
-            </label>
             <span id="char-count" class="char-count">0 characters</span>
           </div>
         </div>
@@ -105,19 +101,34 @@
         <p id="instructions-note" class="field-note"></p>
       </section>
 
-      <!-- Delivery sliders -->
-      <section class="sliders">
-        <div class="slider-control" id="rate-control">
-          <label for="rate-slider">Speed <output id="rate-value">1.0×</output></label>
-          <input type="range" id="rate-slider" min="0.25" max="4" step="0.05" value="1" />
+      <!-- ElevenLabs voice_settings -->
+      <section class="sliders vs-sliders">
+        <div class="slider-control" id="stability-control">
+          <label for="stability-slider">
+            Stability <output id="stability-value">50</output>
+            <span class="vs-hint" title="Lower = more expressive & variable delivery. Higher = more consistent, monotone.">?</span>
+          </label>
+          <input type="range" id="stability-slider" min="0" max="100" step="1" value="50" />
         </div>
-        <div class="slider-control" id="pitch-control">
-          <label for="pitch-slider">Pitch <output id="pitch-value">0.0</output></label>
-          <input type="range" id="pitch-slider" min="-20" max="20" step="0.5" value="0" />
+        <div class="slider-control" id="similarity-control">
+          <label for="similarity-slider">
+            Similarity <output id="similarity-value">85</output>
+            <span class="vs-hint" title="How closely the output should match the original voice character. Higher = closer to source.">?</span>
+          </label>
+          <input type="range" id="similarity-slider" min="0" max="100" step="1" value="85" />
         </div>
-        <div class="slider-control" id="volume-control">
-          <label for="volume-slider">Volume gain <output id="volume-value">0.0 dB</output></label>
-          <input type="range" id="volume-slider" min="-20" max="16" step="0.5" value="0" />
+        <div class="slider-control" id="style-control">
+          <label for="style-slider">
+            Style <output id="style-value">10</output>
+            <span class="vs-hint" title="Style exaggeration. Higher = more stylistic delivery, but can introduce artifacts.">?</span>
+          </label>
+          <input type="range" id="style-slider" min="0" max="100" step="1" value="10" />
+        </div>
+        <div class="slider-control speaker-boost-control">
+          <label class="ssml-toggle" title="Enhance similarity to the original speaker. Small performance cost.">
+            <input type="checkbox" id="speaker-boost-toggle" checked />
+            <span>Speaker boost</span>
+          </label>
         </div>
       </section>
       <p id="caps-note" class="field-note" hidden></p>

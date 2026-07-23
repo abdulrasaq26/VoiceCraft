@@ -482,6 +482,28 @@ input[type="search"]:focus {
   gap: 1.25rem;
 }
 
+.vs-sliders {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.vs-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  margin-left: 0.35em;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+  font-size: 0.75em;
+  cursor: help;
+}
+
+.speaker-boost-control {
+  justify-content: center;
+}
+
 .slider-control {
   display: flex;
   flex-direction: column;
