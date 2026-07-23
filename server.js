@@ -118,10 +118,12 @@ app.post('/api/image', async (req, res) => {
     console.error('Image generation failed:', err.message);
     const isTimeout = err.name === 'TimeoutError' || err.code === 'ABORT_ERR';
     const status = isTimeout ? 504 : err.status && err.status >= 400 && err.status < 600 ? err.status : 502;
-    res.status(status).json({
-      error: err.message || 'Image generation failed',
-      hint: isTimeout ? 'The image API did not respond in time. Please try again.' : undefined
-    });
+    let hint;
+    if (isTimeout) hint = 'The image API did not respond in time. Please try again.';
+    else if (status === 429) {
+      hint = 'Gemini image quota exceeded. Enable billing on your API key or wait for the free-tier quota to reset.';
+    }
+    res.status(status).json({ error: err.message || 'Image generation failed', hint });
   }
 });
 

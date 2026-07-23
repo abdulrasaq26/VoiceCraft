@@ -323,10 +323,15 @@
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.hint ? `${body.error} — ${body.hint}` : body.error || `Request failed (${res.status})`);
+      const err = new Error(body.error || `Request failed (${res.status})`);
+      err.status = res.status;
+      err.quota = res.status === 429 || /quota|exceeded|rate limit|billing/i.test(body.error || '');
+      throw err;
     }
     return res.blob();
   }
+
+  const THROTTLE_MS = 600; // gentle pacing to ease per-minute rate limits
 
   async function runImageQueue() {
     if (running) return;
@@ -336,6 +341,7 @@
     progressWrap.hidden = false;
     updateControls();
 
+    let quotaHit = false;
     for (const scene of scenes) {
       if (cancelRequested) break;
       if (scene.status === 'done') continue;
@@ -351,21 +357,42 @@
         scene.status = 'done';
         durations.push(performance.now() - t0);
       } catch (err) {
+        if (err.quota) {
+          // Don't burn through the rest of the batch — stop and let the user
+          // resume once the quota resets or billing is enabled. Keep the
+          // scene queued (not failed) so "Continue" picks up where it left off.
+          scene.status = 'pending';
+          quotaHit = true;
+          saveProject();
+          renderScenes();
+          break;
+        }
         scene.status = 'error';
         scene.error = err.message;
       }
       saveProject();
       renderScenes();
       updateProgress();
+      if (!cancelRequested) await sleep(THROTTLE_MS);
     }
 
     running = false;
     updateControls();
     updateProgress();
+    const done = scenes.filter((s) => s.status === 'done').length;
     const remaining = scenes.filter((s) => s.status !== 'done').length;
-    if (cancelRequested) showStatus('Cancelled. Completed scenes are saved.', 'info');
-    else if (remaining) showStatus(`${remaining} scene(s) failed. Regenerate them individually.`);
-    else showStatus(`Storyboard complete — ${scenes.length} scenes generated.`, 'info');
+    if (quotaHit) {
+      showStatus(
+        `Image quota reached — Google returned "quota exceeded". ${done} of ${scenes.length} scenes generated. ` +
+          'Enable billing on your Gemini API key, or wait for the free-tier quota to reset, then click “Continue”.'
+      );
+    } else if (cancelRequested) {
+      showStatus('Cancelled. Completed scenes are saved.', 'info');
+    } else if (remaining) {
+      showStatus(`${remaining} scene(s) failed. Regenerate them individually.`);
+    } else {
+      showStatus(`Storyboard complete — ${scenes.length} scenes generated.`, 'info');
+    }
   }
 
   function storeImage(index, blob) {
