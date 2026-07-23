@@ -209,6 +209,55 @@
       </div>
     </section>
 
+    <!-- AI Storyboard (revealed when GEMINI_API_KEY is configured) -->
+    <section id="storyboard-card" class="card" hidden>
+      <div class="input-header">
+        <label>AI Storyboard</label>
+        <span class="badge elite">⭐ Born Back Then</span>
+      </div>
+      <p class="field-note">
+        Upload subtitles (.srt / .vtt / timestamped .txt) plus optional script, visual-style,
+        character-reference and instruction files. The AI reads the whole story, builds character
+        and location profiles, then generates one still image per scene — no prompt writing needed.
+      </p>
+      <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt" />
+      <div id="sb-filelist" class="sb-filelist"></div>
+
+      <div class="actions">
+        <button id="sb-analyze" class="btn primary">
+          <span class="btn-label">Analyze &amp; generate</span>
+          <span class="spinner" hidden></span>
+        </button>
+        <button id="sb-clear" class="btn ghost" type="button">Clear</button>
+      </div>
+
+      <div id="sb-status" class="status" hidden></div>
+
+      <div id="sb-progress" class="queue-head" hidden>
+        <div class="progress-track"><div id="sb-progress-fill" class="progress-fill"></div></div>
+        <div class="queue-stats-row">
+          <span id="sb-stats" class="queue-stats"></span>
+          <span id="sb-eta" class="queue-eta"></span>
+        </div>
+        <div class="queue-controls">
+          <button id="sb-pause" class="btn ghost small" type="button" hidden>Pause</button>
+          <button id="sb-resume" class="btn primary small" type="button" hidden>Resume</button>
+          <button id="sb-cancel" class="btn ghost small" type="button" hidden>Cancel</button>
+        </div>
+      </div>
+
+      <div id="sb-bible" class="sb-bible" hidden></div>
+
+      <div id="sb-exports" class="queue-downloads" hidden>
+        <button id="sb-zip" class="btn primary small" type="button">Download ZIP</button>
+        <button id="sb-prompts" class="btn ghost small" type="button">Download prompts</button>
+        <button id="sb-json" class="btn ghost small" type="button">Scene JSON</button>
+        <button id="sb-pdf" class="btn ghost small" type="button">Storyboard PDF</button>
+      </div>
+
+      <div id="sb-scenes" class="sb-scenes"></div>
+    </section>
+
     <footer class="footer">
       <p>
         Uses the
@@ -288,7 +337,9 @@
   </div>
 
   <script src="zip.js"></script>
+  <script src="pdf.js"></script>
   <script src="app.js"></script>
   <script src="images.js"></script>
+  <script src="storyboard.js"></script>
 </body>
 </html>

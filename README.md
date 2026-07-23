@@ -33,6 +33,7 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 
 ### Images (optional)
 - 🖼️ **AI image generator** — a built-in panel that generates still 2D images from a text prompt via Google's **Gemini image API**, with an aspect-ratio selector, inline preview, and download. Disabled until a `GEMINI_API_KEY` is set, then it appears automatically. Great for thumbnails or per-scene visuals to pair with narration.
+- 🎞️ **AI Storyboard** — upload subtitles (`.srt` / `.vtt` / timestamped `.txt`) plus optional script, visual-style, character-reference and instruction files; the AI reads the *whole* story, builds a story bible (characters, locations, period, tone), then automatically writes one image prompt per scene and generates a still image for each — no manual prompt writing. Camera shots vary for visual interest, the "Born Back Then" channel style is injected into every prompt, and character/location descriptions are locked for consistency. Batch queue with progress, pause/resume, per-scene regenerate, refresh-persistence, and exports: **ZIP** (images + prompts + JSON), **prompts.txt**, **scenes.json**, and a **storyboard PDF**.
 
 ### Infrastructure
 - 🔐 **Two auth modes** — simple API key, or service-account / Application Default Credentials
@@ -102,6 +103,8 @@ Synthesizes a tiny sample with every voice in the catalog (~3 characters per voi
 | `GET` | `/api/preview?voiceName=en-US-Neural2-C&languageCode=en-US` | Short MP3 sample of a voice (cached, deduped server-side) |
 | `POST` | `/api/synthesize` | Generate audio; returns the audio bytes |
 | `POST` | `/api/image` | Generate a still image from `{ prompt, aspect }` via the Gemini image API; returns image bytes (requires `GEMINI_API_KEY`) |
+| `POST` | `/api/storyboard/bible` | Analyze the full story (`{ context }`) into a story bible: characters, locations, period, tone |
+| `POST` | `/api/storyboard/scenes` | Turn a batch of cues into scene prompts (`{ bible, cues, style, instructions, priorSummaries }`) |
 
 `POST /api/synthesize` body:
 
@@ -175,6 +178,13 @@ free limits there, since Google adjusts them. To use Imagen or a newer model,
 set `GEMINI_IMAGE_MODEL`. The key is used server-side only and never reaches the
 browser. For local UI testing without a key, run with `MOCK_IMAGE=1` (or the
 general `MOCK_TTS=1`) to get placeholder images.
+
+The same `GEMINI_API_KEY` also powers the **AI Storyboard** (story analysis uses
+the text model `gemini-2.5-flash`, overridable via `GEMINI_TEXT_MODEL`). Note
+that character consistency is enforced by locking each character's visual
+description in the story bible and injecting it into every prompt — it's strong
+but, with a text-only image API, not pixel-perfect across images; reference-image
+conditioning would be the next step for exact face locking.
 
 ## Notes
 
