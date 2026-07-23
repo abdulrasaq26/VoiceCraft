@@ -96,135 +96,90 @@
     favorites: 'blvck-tts:favorites',
     recents: 'blvck-tts:recents',
     narration: 'blvck-tts:narration',
-    batch: 'blvck-tts:batch'
+    batch: 'blvck-tts:batch',
+    instructionPresets: 'blvck-tts:instruction-presets'
   };
 
   const DEFAULT_TITLE = 'blvck-tts';
 
-  // Templates tune real API parameters (speed/pitch) alongside the
-  // free-text instruction, so they shape delivery on every voice.
-  const TEMPLATES = [
+  // ElevenLabs-optimized instruction presets. Unlike Google TTS, ElevenLabs
+  // has no speaking-rate / pitch knobs — delivery is shaped by (a) the
+  // natural-language cues in the prompt itself and (b) the voice_settings.
+  // Each preset therefore carries recommended voice_settings alongside a
+  // performance brief written the way ElevenLabs responds to best:
+  // concrete emotional direction, explicit pacing, emphasis, and pauses.
+  const BUILTIN_TEMPLATES = [
     {
       label: 'Documentary Narrator',
-      rate: 0.95,
-      pitch: -2,
-      text: `You are a seasoned documentary narrator in the tradition of prestige nature and science films. Your voice carries quiet authority — you never need to raise it, because the material itself is compelling and your job is to guide the listener through it with complete confidence.
+      voice_settings: { stability: 0.6, similarity_boost: 0.85, style: 0.1, use_speaker_boost: true },
+      text: `Perform this as a seasoned documentary narrator in the tradition of prestige nature and science films. Carry quiet authority — never raised, never rushed. The material is compelling on its own; your job is to guide the listener through it with complete confidence.
 
-Speak at a measured, deliberate pace. Let sentences breathe. Pause briefly after key facts to give them weight, and slow down slightly when introducing a new idea so the listener can settle into it.
+Delivery: measured and deliberate. Let sentences breathe. Take a short pause after each key fact so it lands, and slow slightly when introducing a new idea. Emphasis: place gentle, deliberate stress on numbers, names, and turning points — noticeable but never theatrical. Emotion: understated wonder — fascinated by the subject, but composed.
 
-Keep your tone warm but objective. You are fascinated by the subject, and that fascination shows as understated wonder rather than excitement. Avoid any hint of salesmanship or performance — you are a trusted guide, not a presenter.
-
-Articulate clearly and precisely, with gentle downward inflections at the ends of sentences. Emphasize numbers, names, and turning points softly but noticeably. The overall impression should be calm, intelligent, and effortlessly authoritative — the kind of voice a listener could follow for an hour without fatigue.`
+End sentences with soft downward inflections. Sustain a calm, intelligent, effortlessly authoritative tone the listener could follow for an hour without fatigue.`
     },
     {
-      label: 'YouTube History Narration',
-      rate: 0.98,
-      pitch: -1,
-      text: `You are the narrator of a popular YouTube history channel — think slow-burn storytelling about empires, battles, and forgotten figures. Your job is to make the past feel vivid, cinematic, and personal, keeping viewers hooked from the cold open to the final line.
+      label: 'Historical Storyteller',
+      voice_settings: { stability: 0.5, similarity_boost: 0.85, style: 0.25, use_speaker_boost: true },
+      text: `Perform this as the narrator of a slow-burn history channel — empires, battles, forgotten figures. Make the past feel vivid, cinematic, and personal, holding the listener from the first line to the last.
 
-Open with gravity and intrigue, as if letting the viewer in on a secret history. Build each section like a story: set the scene, introduce the players, raise the stakes, then deliver the payoff. Use a rise in energy when battles or turning points arrive, and drop to a lower register for tragedy, betrayal, and aftermath.
+Open with gravity and intrigue, as if letting them in on a secret history. Build like a story: set the scene, introduce the players, raise the stakes, deliver the payoff. Pacing: vary your rhythm — quicken slightly through action and momentum, then slow right down for consequences and human moments. Pauses: leave a full beat of silence after a shocking fact or a date that changed everything, and let it land before moving on.
 
-Pace yourself like a storyteller, not a lecturer. Vary your rhythm — quicken slightly during action and momentum, then slow right down for consequences and human moments. Leave a beat of silence after a shocking fact or a date that changed everything, letting it land before moving on.
-
-Keep your tone conversational enough for a modern audience: knowledgeable, a little dramatic, occasionally wry, but never dry or academic. Pronounce historical names and places carefully and confidently.
-
-Above all, sustain narrative tension. Every sentence should quietly ask "and then what happened?" — pulling the listener through centuries as if the outcome were still uncertain.`
+Emotion: lift with energy at turning points; drop to a low, hushed register for tragedy and betrayal. Tone: knowledgeable, a little dramatic, occasionally wry — never dry or academic. Pronounce historical names and places carefully and confidently. Above all, sustain tension: every sentence should quietly ask "and then what happened?"`
     },
     {
-      label: 'Energetic YouTube Presenter',
-      rate: 1.15,
-      pitch: 2,
-      text: `You are a high-energy YouTube presenter whose channel thrives on momentum. From the first word you are switched on, bright, and glad the viewer showed up — your delivery makes people want to stay for the whole video.
+      label: 'Calm Educator',
+      voice_settings: { stability: 0.7, similarity_boost: 0.8, style: 0.05, use_speaker_boost: true },
+      text: `Perform this as an experienced teacher explaining something that matters to a student you respect. Clarity is the obsession: the listener must follow every step of the reasoning the first time they hear it.
 
-Speak briskly and with punch. Hit the first word of each sentence a little harder to keep the rhythm driving forward. Use big, genuine enthusiasm for reveals, results, and anything surprising — let your voice actually smile.
+Delivery: precise and deliberate, at a moderate, even pace. Slow down noticeably for definitions, transitions between ideas, and anything the listener needs to remember. Emphasis: surgical — stress the term being defined, the word that changes the meaning, the number that matters. Pauses: rest for a beat after each complete idea — a silence that says "make sure you have this before we move on."
 
-Keep the energy dynamic rather than flat-out loud: spike for the exciting parts, then pull back to a confiding, almost conspiratorial tone for tips and asides, like you're letting the viewer in on something. That contrast is what keeps the pacing addictive.
-
-Stay conversational and direct — talk *to* the viewer, not *at* them. Short sentences. Clear emphasis. No filler. End sections with an upward hook that propels straight into the next moment.`
+Emotion: patient, focused, warm but serious — confident in the listener's ability to understand. No theatrics, no condescension, no swings in energy. Just the calm assurance of someone who knows the subject deeply and wants you to know it too.`
     },
     {
-      label: 'Calm Bedtime Storyteller',
-      rate: 0.85,
-      pitch: -1,
-      text: `You are reading a bedtime story. Your single goal is to make the listener feel safe, settled, and gently drowsy — the voice of a kind parent reading by lamplight.
+      label: 'YouTube Explainer',
+      voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true },
+      text: `Perform this as a sharp, high-retention YouTube explainer host. From the first word you're switched on, bright, and genuinely glad the viewer showed up — your delivery makes them want to stay for the whole video.
 
-Speak slowly and softly, in a low, even register. Let your pace drift a little slower as the story goes on. Never spike in volume or energy, even during exciting moments — render them with hushed wonder instead of drama.
+Delivery: brisk and punchy. Hit the first word of each sentence a little harder to keep momentum driving forward. Dynamics: spike with real enthusiasm for reveals, results, and anything surprising — let the voice actually smile — then pull back to a confiding, almost conspiratorial tone for tips and asides. That contrast is what makes the pacing addictive. Emphasis: land the key word in every sentence hard and clear.
 
-Round off every sentence gently, with soft, falling inflections. Pause often: at commas, between sentences, and especially between paragraphs. The silences are part of the lullaby.
-
-Keep warmth in every word, as if smiling faintly while you read. Characters' voices should be only lightly suggested, never performed. By the final paragraph, your voice should feel like it is tucking the listener in.`
+Talk TO the viewer, not AT them. Short sentences. No filler. End each section on an upward hook that pulls straight into the next moment.`
     },
     {
-      label: 'Warm & Reassuring',
-      rate: 0.92,
-      pitch: -0.5,
-      text: `You are a trusted friend delivering something the listener needs to hear. Whatever the words say, your voice says: it's okay, you're in good hands, we'll figure this out together.
+      label: 'Cinematic Narrator',
+      voice_settings: { stability: 0.45, similarity_boost: 0.9, style: 0.3, use_speaker_boost: true },
+      text: `Perform this as a cinematic trailer narrator — the voice over the teaser for a prestige film. Every line carries weight and inevitability.
 
-Speak gently and unhurriedly, with a soft, steady warmth. Keep your volume moderate and your tone level — no sharp emphasis, no sudden shifts. Steadiness itself is the reassurance.
+Delivery: deep, deliberate, and controlled, with a low resonant register. Pacing: slow and spacious — let long pauses hang between phrases so tension builds in the silence. Emphasis: drop hard, deliberate stress onto the pivotal word of each line. Dynamics: start restrained and intimate, then swell in gravity toward the climactic line before pulling back to a near-whisper for the final beat.
 
-Let kindness color every sentence. Soften consonants slightly, let vowels linger just a touch, and end sentences with settled, downward inflections that feel like a hand on the shoulder.
-
-Where the text delivers difficult or complicated information, slow down and become even more even-keeled — calm competence, never pity. The listener should finish feeling steadier than when they started.`
+Emotion: awe, foreboding, grandeur. Never chipper, never fast. The listener should feel the scale of what's coming in their chest.`
     },
     {
-      label: 'Professional Presenter',
-      rate: 1.0,
-      pitch: 0,
-      text: `You are presenting to a room of professionals whose time is valuable. Your delivery is polished, efficient, and quietly confident — the standard of a keynote speaker who has done this a hundred times.
+      label: 'Audiobook Style',
+      voice_settings: { stability: 0.65, similarity_boost: 0.85, style: 0.15, use_speaker_boost: true },
+      text: `Perform this as a professional audiobook narrator settling a listener in for a long session. Sustainable, immersive, and effortless to follow for hours.
 
-Speak at a natural, businesslike pace with crisp articulation. Every word is clean; nothing is rushed and nothing drags. Project credibility through evenness rather than force.
+Delivery: smooth and even, at a comfortable reading pace — never rushed, never dragging. Keep energy swings gentle so the listener can drift into the story without jolts. Characters: suggest each voice lightly through subtle shifts in pace and warmth rather than broad impressions. Pauses: breathe naturally at commas, rest a beat between sentences, and rest longer between paragraphs and scene changes.
 
-Structure your delivery audibly: a slight pause and fresh energy at the start of each new point, measured emphasis on key terms and figures, and firm, conclusive endings to sentences that close an idea.
-
-Remain personable but composed — a hint of warmth so you never sound robotic, but no jokes in your tone, no vocal fry, no uptalk. The impression is competence: someone worth listening to, saying exactly what needs to be said.`
+Emphasis: soft and natural, falling where a thoughtful reader would place it. Emotion: present but restrained — color the prose without ever overpowering it. The listener should forget they're being read to.`
     },
     {
-      label: 'Confident Sales Pitch',
-      rate: 1.08,
-      pitch: 1,
-      text: `You are delivering a persuasive pitch, and you genuinely believe in what you're presenting. Your conviction is the product — the listener should feel your certainty before they've even weighed the arguments.
+      label: 'Dramatic Storytelling',
+      voice_settings: { stability: 0.3, similarity_boost: 0.85, style: 0.5, use_speaker_boost: true },
+      text: `Perform this with full dramatic commitment — a gifted storyteller performing around a fire, holding the room. This is a performance, not a reading.
 
-Speak with forward-leaning energy: slightly brisk, always purposeful, never pushy. Confidence comes through a firm, upbeat tone and total fluency — no hesitation, no trailing off.
+Dynamics: use the whole range. Drop to a tense, urgent near-whisper for suspense and secrets; rise to real intensity at the climax; pull back sharply for the aftermath. Pacing: rush breathlessly through danger and action, then slam on the brakes for the moment that matters. Pauses: use silence as a weapon — a long, loaded pause right before the reveal.
 
-Emphasize benefits and outcomes with a bright lift, and land the key numbers and claims with deliberate, punchy stress. After the strongest points, pause a fraction longer than feels natural — let the value sink in.
-
-Build toward the close. Momentum should rise gently through the pitch so the final call to action arrives with warmth and certainty, an easy handshake in vocal form: friendly, direct, and impossible to mistake.`
+Emotion: lean all the way in — fear, awe, grief, triumph, whatever the moment demands, felt and audible. Emphasis: hit the charged words hard. Keep the listener on the edge of their seat, never sure what's coming next.`
     },
     {
-      label: 'Friendly Conversational',
-      rate: 1.02,
-      pitch: 0.5,
-      text: `You are chatting with a friend — relaxed, natural, and completely unforced. Nothing about your delivery should sound like a script, a broadcast, or a performance.
+      label: 'Conversational',
+      voice_settings: { stability: 0.45, similarity_boost: 0.75, style: 0.2, use_speaker_boost: true },
+      text: `Perform this as if chatting with a friend — relaxed, natural, completely unforced. Nothing should sound like a script, a broadcast, or a performance.
 
-Speak at an easy, everyday pace with the loose rhythm of real conversation: some sentences quick and offhand, others slower where a thought deserves it. Natural little pauses beat perfect fluency.
+Delivery: easy, everyday pace with the loose rhythm of real conversation — some sentences quick and offhand, others slower where a thought deserves it. Natural little pauses beat perfect fluency. Emphasis: falls where it would in real speech — on the surprising word, the funny detail, the thing you'd lean in to say.
 
-Keep the tone light and good-humored, with an audible smile behind most sentences. Emphasis falls where it would in real speech — on the surprising word, the funny detail, the thing you'd lean in to say.
-
-Stay warm and inclusive, as if the listener is nodding along across the table. Contractions, casual phrasing, gentle inflections — the overall feeling is: this is just us, talking.`
-    },
-    {
-      label: 'Serious Educator',
-      rate: 0.95,
-      pitch: -1,
-      text: `You are an experienced teacher explaining something that matters, to a student you respect. Clarity is your obsession; the listener must be able to follow every step of the reasoning the first time they hear it.
-
-Speak precisely and deliberately. Keep a moderate, even pace, slowing down noticeably for definitions, transitions between ideas, and anything the listener will need to remember.
-
-Use emphasis surgically: stress the term being defined, the word that changes the meaning, the number that matters. Pause after each complete idea — a beat of silence that says "make sure you have this before we move on."
-
-Your tone is serious but never cold: patient, focused, and confident in the listener's ability to understand. No theatrics, no condescension — just the calm assurance of someone who knows the subject deeply and wants you to know it too.`
-    },
-    {
-      label: 'Slow & Clear',
-      rate: 0.8,
-      pitch: 0,
-      text: `Your one job is maximum intelligibility. Every word must be effortlessly understood the first time — by non-native speakers, in noisy environments, or in recordings that will be slowed down or transcribed.
-
-Speak slowly and evenly, well below a normal conversational pace. Give every syllable its full value. Do not rush the ends of words or sentences.
-
-Enunciate crisply: clean consonants, fully-formed vowels, clear boundaries between words. Insert a distinct pause at every comma and a longer one at every full stop.
-
-Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings in energy. Think of an excellent language-learning recording: unhurried, friendly, and perfectly clear from the first word to the last.`
+Emotion: light and good-humored, with an audible smile behind most sentences. Warm and inclusive, as if the listener is nodding along across the table. Contractions, casual phrasing, gentle inflections — the overall feeling is: this is just us, talking.`
     }
   ];
 
@@ -1722,23 +1677,111 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     });
   }
 
-  TEMPLATES.forEach((t, i) => {
-    const option = document.createElement('option');
-    option.value = String(i);
-    option.textContent = t.label;
-    templateSelect.appendChild(option);
-  });
+  // Custom instruction presets: the user's own delivery briefs, saved as a
+  // reusable starting point (text + recommended voice_settings), shown in the
+  // same dropdown under a "My presets" group.
+  let customTemplates = store.get(LS.instructionPresets, []);
 
-  templateSelect.addEventListener('change', () => {
-    const t = TEMPLATES[Number(templateSelect.value)];
+  function saveCustomTemplates() {
+    store.set(LS.instructionPresets, customTemplates);
+  }
+
+  function renderTemplateSelect() {
+    templateSelect.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Instruction presets…';
+    templateSelect.appendChild(placeholder);
+
+    const builtinGroup = document.createElement('optgroup');
+    builtinGroup.label = 'Built-in presets';
+    BUILTIN_TEMPLATES.forEach((t, i) => {
+      const o = document.createElement('option');
+      o.value = `builtin:${i}`;
+      o.textContent = t.label;
+      builtinGroup.appendChild(o);
+    });
+    templateSelect.appendChild(builtinGroup);
+
+    if (customTemplates.length) {
+      const myGroup = document.createElement('optgroup');
+      myGroup.label = 'My presets';
+      customTemplates.forEach((t) => {
+        const o = document.createElement('option');
+        o.value = `custom:${t.id}`;
+        o.textContent = t.label;
+        myGroup.appendChild(o);
+      });
+      templateSelect.appendChild(myGroup);
+    }
+
+    const actionGroup = document.createElement('optgroup');
+    actionGroup.label = 'Actions';
+    const saveOpt = document.createElement('option');
+    saveOpt.value = '__save__';
+    saveOpt.textContent = '＋ Save current instructions as preset…';
+    actionGroup.appendChild(saveOpt);
+    if (customTemplates.length) {
+      const delOpt = document.createElement('option');
+      delOpt.value = '__delete__';
+      delOpt.textContent = '🗑 Delete a custom preset…';
+      actionGroup.appendChild(delOpt);
+    }
+    templateSelect.appendChild(actionGroup);
+  }
+
+  function applyTemplate(t) {
     if (!t) return;
     instructionsInput.value = t.text;
-    // Templates may carry recommended ElevenLabs voice_settings; if omitted,
-    // leave the sliders where the user set them.
     if (t.voice_settings) applyVoiceSettings(t.voice_settings);
     updateSliderOutputs();
     persistSettings();
+  }
+
+  function saveCurrentAsTemplate() {
+    const text = instructionsInput.value.trim();
+    if (!text) {
+      showStatus('Write some voice instructions first, then save them as a preset.');
+      return;
+    }
+    const name = (window.prompt('Name this instruction preset:', '') || '').trim();
+    if (!name) return;
+    customTemplates.push({
+      id: `tpl-${Date.now()}`,
+      label: name,
+      text,
+      voice_settings: collectVoiceSettings()
+    });
+    saveCustomTemplates();
+    renderTemplateSelect();
+    showStatus(`Instruction preset “${name}” saved.`, 'info');
+  }
+
+  function deleteCustomTemplate() {
+    if (!customTemplates.length) return;
+    const list = customTemplates.map((t, i) => `${i + 1}. ${t.label}`).join('\n');
+    const answer = (window.prompt(`Delete which preset? Enter its number:\n\n${list}`, '') || '').trim();
+    const idx = Number(answer) - 1;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= customTemplates.length) return;
+    const [removed] = customTemplates.splice(idx, 1);
+    saveCustomTemplates();
+    renderTemplateSelect();
+    showStatus(`Deleted “${removed.label}”.`, 'info');
+  }
+
+  renderTemplateSelect();
+
+  templateSelect.addEventListener('change', () => {
+    const val = templateSelect.value;
     templateSelect.value = '';
+    if (!val) return;
+    if (val === '__save__') return saveCurrentAsTemplate();
+    if (val === '__delete__') return deleteCustomTemplate();
+    if (val.startsWith('builtin:')) {
+      applyTemplate(BUILTIN_TEMPLATES[Number(val.slice(8))]);
+    } else if (val.startsWith('custom:')) {
+      applyTemplate(customTemplates.find((t) => t.id === val.slice(7)));
+    }
   });
 
   [stabilitySlider, similaritySlider, styleSlider].forEach((slider) =>
