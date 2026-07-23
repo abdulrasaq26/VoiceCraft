@@ -12,20 +12,12 @@
     <div class="topbar">
       <button id="projects-open" class="btn ghost small" type="button">☰ Projects</button>
       <span class="topbar-project">Project: <strong id="active-project-name">—</strong></span>
-      <select id="ai-provider" class="topbar-provider" title="AI provider for storyboard, SEO and image generation">
-        <option value="gemini">AI: Gemini</option>
-        <option value="puter">AI: Qwen (free)</option>
-      </select>
-      <input id="qwen-model" class="topbar-model" type="text" placeholder="qwen3.6-flash" title="Qwen model id (Puter)" hidden />
-      <select id="tts-provider" class="topbar-provider" title="Voice engine for text-to-speech">
-        <option value="google">TTS: Google</option>
-        <option value="elevenlabs">TTS: ElevenLabs (free)</option>
-      </select>
+      <span class="topbar-badge" title="Every AI call runs through Puter — free, no API keys, no billing">⚡ Puter · ElevenLabs</span>
       <button id="project-new" class="btn ghost small" type="button">+ New</button>
     </div>
     <header class="header">
       <h1>Blvck<span class="accent">TTS</span></h1>
-      <p class="tagline">Text to speech powered by Google Cloud</p>
+      <p class="tagline">Serverless AI voice, images, video &amp; scripts — powered by Puter + ElevenLabs</p>
     </header>
 
     <main class="card">
@@ -186,7 +178,7 @@
       </section>
     </main>
 
-    <!-- Image generator (revealed when GEMINI_API_KEY is configured) -->
+    <!-- Image generator (Puter txt2img) -->
     <section id="image-card" class="card image-card" hidden>
       <div class="input-header">
         <label for="image-prompt">Image generator</label>
@@ -223,7 +215,7 @@
       </div>
     </section>
 
-    <!-- AI Storyboard (revealed when GEMINI_API_KEY is configured) -->
+    <!-- AI Storyboard (Puter chat + txt2img) -->
     <section id="storyboard-card" class="card" hidden>
       <div class="input-header">
         <label>AI Storyboard</label>

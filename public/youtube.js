@@ -503,9 +503,6 @@
 
   (async () => {
     try {
-      const res = await fetch('/api/health');
-      const body = await res.json();
-      if (!body.seoConfigured && window.BlvckAI.provider() !== 'puter') return;
       card.hidden = false;
       loadChannel();
       projectNameEl.textContent = `Project: ${projectTitle()}`;

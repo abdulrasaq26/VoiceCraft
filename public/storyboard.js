@@ -316,7 +316,7 @@
   }
 
   async function generateSceneImage(scene) {
-    // Routes to Gemini (/api/image) or Qwen (Puter txt2img) per the provider.
+    // Puter txt2img.
     return window.BlvckAI.generateImage(scene.prompt, ASPECT);
   }
 
@@ -748,12 +748,8 @@
 
   (async () => {
     try {
-      const res = await fetch('/api/health');
-      const body = await res.json();
-      if (body.storyboardConfigured || window.BlvckAI.provider() === 'puter') {
-        card.hidden = false;
-        restoreProject();
-      }
+      card.hidden = false;
+      restoreProject();
     } catch {
       /* leave hidden */
     }

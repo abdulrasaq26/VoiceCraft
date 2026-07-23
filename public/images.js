@@ -41,14 +41,8 @@
     );
   }
 
-  async function reveal() {
-    try {
-      const res = await fetch('/api/health');
-      const body = await res.json();
-      if (body.imageConfigured || window.BlvckAI.provider() === 'puter') card.hidden = false;
-    } catch {
-      /* leave the panel hidden if health can't be read */
-    }
+  function reveal() {
+    card.hidden = false;
   }
 
   async function generate() {

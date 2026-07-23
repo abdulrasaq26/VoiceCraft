@@ -735,23 +735,12 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   async function loadVoices() {
     try {
-      // ElevenLabs (via Puter) uses a curated client-side voice list; Google
-      // fetches its full catalog from the server.
-      if (window.BlvckAI && window.BlvckAI.isElevenLabs()) {
-        allVoices = ELEVEN_VOICES.slice();
-      } else {
-        const response = await fetch('/api/voices');
-        const body = await response.json();
-        if (!response.ok) {
-          throw new Error(body.hint || body.error || 'Failed to load voices');
-        }
-        allVoices = body.voices || [];
-      }
+      allVoices = ELEVEN_VOICES.slice();
       voiceById.clear();
       allVoices.forEach((v) => voiceById.set(v.id, v));
       if (!allVoices.length) {
         voiceCardName.textContent = 'No voices available';
-        showStatus('The API returned no voices. Check that the Text-to-Speech API is enabled in your Google Cloud project.');
+        showStatus('The ElevenLabs voice catalog is empty.');
         return;
       }
 
@@ -884,7 +873,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   }
 
   // --- Voice preview -----------------------------------------------------
-  // The audio element streams /api/preview directly and play() is called
+  // The audio element streams the ElevenLabs blob URL and play() is called
   // synchronously inside the tap handler, which keeps previews working
   // under mobile autoplay policies (iOS Safari, Chrome for Android).
 
@@ -945,36 +934,25 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     activePreviewButtons = previewButtonsFor(voiceId);
     setPreviewButtonState('loading');
 
-    if (window.BlvckAI && window.BlvckAI.isElevenLabs()) {
-      // ElevenLabs runs client-side; fetch the sample as a blob then play.
-      const phrase = 'Hello! This is a preview of my voice.';
-      window.BlvckAI.speak(phrase, v.id)
-        .then((blob) => {
-          if (previewVoiceId !== voiceId) return;
-          if (previewUrl) URL.revokeObjectURL(previewUrl);
-          previewUrl = URL.createObjectURL(blob);
-          previewAudio.src = previewUrl;
-          return previewAudio.play();
-        })
-        .catch((err) => {
-          if (previewVoiceId !== voiceId) return;
+    // ElevenLabs runs client-side; fetch the sample as a blob then play.
+    const phrase = 'Hello! This is a preview of my voice.';
+    window.BlvckAI.speak(phrase, v.id)
+      .then((blob) => {
+        if (previewVoiceId !== voiceId) return;
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        previewUrl = URL.createObjectURL(blob);
+        previewAudio.src = previewUrl;
+        return previewAudio.play();
+      })
+      .catch((err) => {
+        if (previewVoiceId !== voiceId) return;
+        if (err && err.name === 'NotAllowedError') {
+          showStatus('Your browser blocked audio playback. Tap the preview button again to allow it.');
+        } else {
           showStatus(`Voice preview failed: ${err.message}`);
-          stopPreview();
-        });
-      return;
-    }
-
-    const params = new URLSearchParams({ voiceName: v.id, languageCode: v.language });
-    previewAudio.src = `/api/preview?${params}`;
-    // play() must be called synchronously in the gesture handler.
-    previewAudio.play().catch((err) => {
-      if (previewVoiceId !== voiceId) return; // superseded by another action
-      if (err.name === 'NotAllowedError') {
-        showStatus('Your browser blocked audio playback. Tap the preview button again to allow it.');
+        }
         stopPreview();
-      }
-      // Other failures (e.g. server error) are handled by the 'error' event.
-    });
+      });
   }
 
   previewAudio.addEventListener('playing', () => {
@@ -1251,30 +1229,10 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   }
 
   async function synthesizeChunk(text, s) {
-    // ElevenLabs (via Puter) is client-side and uses just text + voice id.
-    if (window.BlvckAI && window.BlvckAI.isElevenLabs()) {
-      return window.BlvckAI.speak(text, s.voiceId);
-    }
-    const response = await fetch('/api/synthesize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text,
-        ssml: s.ssml,
-        voiceName: s.voiceId,
-        languageCode: s.languageCode,
-        audioFormat: s.audioFormat,
-        speakingRate: s.speakingRate,
-        pitch: s.pitch,
-        volumeGainDb: s.volumeGainDb,
-        instructions: s.instructions
-      })
+    return window.BlvckAI.speak(text, s.voiceId, {
+      voice_settings: s.voice_settings,
+      model: s.ttsModel
     });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body.hint ? `${body.error} — ${body.hint}` : body.error || `Request failed (${response.status})`);
-    }
-    return response.blob();
   }
 
   function buildBatch(v, chunks, script) {
