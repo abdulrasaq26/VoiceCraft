@@ -121,7 +121,7 @@
           <span class="btn-label">Generate speech</span>
           <span class="spinner" hidden></span>
         </button>
-        <button id="transcript-only-btn" class="btn ghost" type="button" title="Build a transcript from the pasted script (no audio) — view, copy, or download it">Generate transcript</button>
+        <button id="subtitle-only-btn" class="btn ghost" type="button" title="Build subtitles from the pasted script (timing estimated from voice speed) — preview, copy, or download SRT/VTT">Generate subtitles</button>
         <button id="reset-btn" class="btn ghost" type="button">Reset</button>
       </section>
 
@@ -148,7 +148,7 @@
         <div class="queue-group">
           <span class="queue-group-label">Audio outputs</span>
           <div class="queue-downloads">
-            <button id="zip-btn" class="btn primary small" type="button" title="ZIP of all audio parts plus the transcript .txt" disabled>Download all as ZIP</button>
+            <button id="zip-btn" class="btn primary small" type="button" title="ZIP of all audio parts plus the .srt and .vtt subtitles" disabled>Download all as ZIP</button>
             <button id="zip-selected-btn" class="btn ghost small" type="button" disabled>Download selected</button>
             <button id="download-each-btn" class="btn ghost small" type="button" disabled>Download each</button>
             <label class="select-all-label">
@@ -158,11 +158,12 @@
         </div>
 
         <div class="queue-group">
-          <span class="queue-group-label">Transcript</span>
+          <span class="queue-group-label">Subtitles</span>
           <div class="queue-downloads">
-            <button id="tr-view-btn" class="btn ghost small" type="button">View</button>
-            <button id="tr-copy-btn" class="btn ghost small" type="button">Copy</button>
-            <button id="tr-download-btn" class="btn primary small" type="button">Download .txt</button>
+            <button id="sub-srt-btn" class="btn primary small" type="button">Download SRT</button>
+            <button id="sub-vtt-btn" class="btn ghost small" type="button">Download VTT</button>
+            <button id="sub-copy-btn" class="btn ghost small" type="button">Copy</button>
+            <button id="sub-preview-btn" class="btn ghost small" type="button">Preview</button>
           </div>
         </div>
 
@@ -232,19 +233,20 @@
     </div>
   </div>
 
-  <!-- Transcript viewer -->
-  <div id="transcript-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Transcript">
+  <!-- Subtitle preview -->
+  <div id="subtitle-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Subtitle preview">
     <div class="modal-backdrop" data-close></div>
     <div class="modal-panel">
       <div class="modal-header">
-        <h2 id="transcript-title">Transcript</h2>
+        <h2 id="subtitle-title">Subtitles</h2>
         <button class="modal-close" type="button" data-close aria-label="Close">×</button>
       </div>
       <div class="transcript-actions">
-        <button id="transcript-copy" class="btn ghost small" type="button">Copy</button>
-        <button id="transcript-download" class="btn primary small" type="button">Download .txt</button>
+        <button id="subtitle-srt" class="btn primary small" type="button">Download SRT</button>
+        <button id="subtitle-vtt" class="btn ghost small" type="button">Download VTT</button>
+        <button id="subtitle-copy" class="btn ghost small" type="button">Copy</button>
       </div>
-      <pre id="transcript-view" class="transcript-view"></pre>
+      <pre id="subtitle-view" class="transcript-view"></pre>
     </div>
   </div>
 
