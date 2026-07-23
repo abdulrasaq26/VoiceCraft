@@ -1595,6 +1595,31 @@ input[type="range"]:disabled {
   text-overflow: ellipsis;
 }
 
+.voice-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+.voice-meta-origin {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-transform: capitalize;
+}
+
+.voice-style-tag {
+  font-size: 0.66rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.35rem;
+  background: rgba(232, 182, 76, 0.12);
+  color: var(--accent);
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
 .voice-empty {
   text-align: center;
   color: var(--text-dim);

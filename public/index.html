@@ -432,19 +432,23 @@
         <h2>Choose a voice</h2>
         <button class="modal-close" type="button" data-close aria-label="Close">×</button>
       </div>
-      <input id="voice-search" class="voice-search" type="search" placeholder="Search by name, style, or voice ID…" />
+      <input id="voice-search" class="voice-search" type="search" placeholder="Search by name, accent, style, or voice ID…" />
       <div class="filter-rows">
         <div class="chip-row" id="tier-filters">
           <button class="chip active" data-tier="all" type="button">All tiers</button>
           <button class="chip" data-tier="elite" type="button">⭐ Elite</button>
           <button class="chip" data-tier="premium" type="button">Premium</button>
-          <button class="chip" data-tier="standard" type="button">Standard</button>
-          <button class="chip" data-tier="experimental" type="button">Experimental</button>
+          <button class="chip" data-tier="standard" type="button">Character</button>
         </div>
         <div class="chip-row" id="gender-filters">
           <button class="chip active" data-gender="all" type="button">Any gender</button>
           <button class="chip" data-gender="FEMALE" type="button">Female</button>
           <button class="chip" data-gender="MALE" type="button">Male</button>
+          <button class="chip" data-gender="NEUTRAL" type="button">Neutral</button>
+        </div>
+        <div class="chip-row" id="style-filters">
+          <button class="chip active" data-style="all" type="button">All styles</button>
+          <!-- style chips injected from ELEVEN_STYLES -->
         </div>
       </div>
       <div id="voice-list" class="voice-list"></div>
@@ -516,6 +520,7 @@
   </div>
 
   <script src="ai-provider.js"></script>
+  <script src="eleven-voices.js"></script>
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>

@@ -66,6 +66,7 @@
   const voiceList = $('voice-list');
   const tierFilters = $('tier-filters');
   const genderFilters = $('gender-filters');
+  const styleFilters = $('style-filters');
 
   const presetSelect = $('preset-select');
   const presetSaveBtn = $('preset-save-btn');
@@ -84,35 +85,10 @@
   const DEFAULT_LANGUAGE = 'en-US';
   const RECENTS_MAX = 6;
 
-  // Curated ElevenLabs voices (used when the TTS provider is ElevenLabs/Puter).
-  // If a specific voice ID isn't available on your Puter access, pick another.
-  const ELEVEN_VOICES = [
-    ['21m00Tcm4TlvDq8ikWAM', 'Rachel', 'FEMALE', 'Calm Female Narrator'],
-    ['EXAVITQu4vr4xnSDxMaL', 'Sarah', 'FEMALE', 'Soft News Female'],
-    ['XrExE9yKIg1WjnnlVkGX', 'Matilda', 'FEMALE', 'Warm Female Storyteller'],
-    ['XB0fDUnXU5powFXDhCwa', 'Charlotte', 'FEMALE', 'Expressive Female'],
-    ['pFZP5JQG7iQjIQuC4Bku', 'Lily', 'FEMALE', 'British Female Narrator'],
-    ['AZnzlk1XvdvUeBnXmlld', 'Domi', 'FEMALE', 'Strong Female'],
-    ['pNInz6obpgDQGcFmaJgB', 'Adam', 'MALE', 'Deep Male Narrator'],
-    ['onwK4e9ZLuTAKqWW03F9', 'Daniel', 'MALE', 'British News Anchor'],
-    ['JBFqnCBsd6RMkjVDRZzb', 'George', 'MALE', 'Warm British Male'],
-    ['ErXwobaYiN019PkySvjV', 'Antoni', 'MALE', 'Well-Rounded Male'],
-    ['VR6AewLTigWG4xSOukaG', 'Arnold', 'MALE', 'Crisp Documentary Male'],
-    ['TxGEqnHWrfWFTfGW9XjX', 'Josh', 'MALE', 'Deep Young Male'],
-    ['N2lVS1w4EtoT3dr4eOWO', 'Callum', 'MALE', 'Intense Male'],
-    ['yoZ06aMxZJJ28mfd3POQ', 'Sam', 'MALE', 'Raspy Male']
-  ].map(([id, name, gender, descriptor]) => ({
-    id,
-    name,
-    descriptor,
-    tier: 'elite',
-    tierLabel: 'Elite',
-    badge: '⭐ Elite',
-    family: 'ElevenLabs',
-    gender,
-    language: 'en-US',
-    languageCodes: ['en-US']
-  }));
+  // The curated ElevenLabs catalog lives in `eleven-voices.js` (loaded before
+  // this script). It exposes window.ELEVEN_VOICES and window.ELEVEN_STYLES.
+  const ELEVEN_VOICES = window.ELEVEN_VOICES || [];
+  const ELEVEN_STYLES = window.ELEVEN_STYLES || [];
 
   const LS = {
     settings: 'blvck-tts:settings',
@@ -280,7 +256,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   let presets = store.get(LS.presets, []);
   // narration: { title } — remembers the last project name entered
   const narration = store.get(LS.narration, { title: '' });
-  const filters = { search: '', tier: 'all', gender: 'all' };
+  const filters = { search: '', tier: 'all', gender: 'all', style: 'all' };
   let activeSubtitles = null; // { project, cues } currently shown in the modal
 
   // --- Small helpers -----------------------------------------------------
@@ -966,8 +942,9 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   function matchesFilters(v) {
     if (filters.tier !== 'all' && v.tier !== filters.tier) return false;
     if (filters.gender !== 'all' && v.gender !== filters.gender) return false;
+    if (filters.style !== 'all' && !(v.styles || []).includes(filters.style)) return false;
     if (filters.search) {
-      const haystack = `${v.name} ${v.descriptor} ${v.id}`.toLowerCase();
+      const haystack = `${v.name} ${v.descriptor} ${v.accent || ''} ${v.age || ''} ${(v.styles || []).join(' ')} ${v.id}`.toLowerCase();
       if (!haystack.includes(filters.search)) return false;
     }
     return true;
@@ -1003,9 +980,9 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
     appendSection('★ Favorites', favSection);
     appendSection('Recently used', recentSection);
-    for (const tier of ['elite', 'premium', 'standard', 'experimental']) {
+    for (const tier of ['elite', 'premium', 'standard']) {
       appendSection(
-        { elite: '⭐ Elite Voices', premium: 'Premium Voices', standard: 'Standard Voices', experimental: 'Experimental Voices' }[tier],
+        { elite: '⭐ Elite Voices', premium: 'Premium Voices', standard: 'Character & Specialty Voices' }[tier],
         inLanguage.filter((v) => v.tier === tier)
       );
     }
@@ -1039,10 +1016,31 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       chip.textContent = gender;
       nameLine.appendChild(chip);
     }
+
     const desc = document.createElement('div');
     desc.className = 'voice-item-desc';
-    desc.textContent = `${v.descriptor} · ${v.id}`;
-    info.append(nameLine, desc);
+    desc.textContent = v.descriptor;
+
+    // Metadata line: accent · age · styles.
+    const meta = document.createElement('div');
+    meta.className = 'voice-item-meta';
+    const metaBits = [];
+    if (v.accent) metaBits.push(v.accent);
+    if (v.age) metaBits.push(v.age);
+    if (metaBits.length) {
+      const origin = document.createElement('span');
+      origin.className = 'voice-meta-origin';
+      origin.textContent = metaBits.join(' · ');
+      meta.appendChild(origin);
+    }
+    (v.styles || []).slice(0, 3).forEach((s) => {
+      const tag = document.createElement('span');
+      tag.className = 'voice-style-tag';
+      tag.textContent = s;
+      meta.appendChild(tag);
+    });
+
+    info.append(nameLine, desc, meta);
 
     const preview = document.createElement('button');
     preview.type = 'button';
@@ -1699,6 +1697,30 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     genderFilters.querySelectorAll('.chip').forEach((c) => c.classList.toggle('active', c === chip));
     renderVoiceList();
   });
+
+  // Build the style-filter chips from the catalog's style vocabulary.
+  if (styleFilters) {
+    const styleLabels = {
+      narration: 'Narration', documentary: 'Documentary', storytelling: 'Storytelling',
+      educational: 'Educational', character: 'Character', conversational: 'Conversational',
+      cinematic: 'Cinematic', audiobook: 'Audiobook', dramatic: 'Dramatic', asmr: 'ASMR'
+    };
+    ELEVEN_STYLES.forEach((s) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.dataset.style = s;
+      chip.textContent = styleLabels[s] || s;
+      styleFilters.appendChild(chip);
+    });
+    styleFilters.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      filters.style = chip.dataset.style;
+      styleFilters.querySelectorAll('.chip').forEach((c) => c.classList.toggle('active', c === chip));
+      renderVoiceList();
+    });
+  }
 
   TEMPLATES.forEach((t, i) => {
     const option = document.createElement('option');
