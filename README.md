@@ -27,6 +27,9 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 - 📦 **Batch downloads** — download all parts as a single ZIP (the `.srt` and `.vtt` subtitles are bundled in too), download each part individually, or tick specific parts and download just those
 - 🎬 **Automatic subtitles (SRT/VTT)** — every project produces broadcast-style subtitles whose timing comes from the **actual generated audio**: each part's decoded duration is distributed across cues on sentence/phrase boundaries, with a running offset so the timeline is continuous across the whole project (never restarts per part). Cues wrap to 1–2 lines of ≤42 chars, never splitting a word. Preview, copy, or download `Medieval Peasant Life.srt` / `.vtt` — ready for YouTube, CapCut, Premiere, DaVinci Resolve, etc. A **Generate subtitles** button also works on any pasted script alone (timing estimated from the voice speed) with no audio run
 
+### Projects
+- 🗂️ **Project dashboard** — every project (e.g. *Born Back Then – Medieval Peasant*) is a first-class saved workspace that bundles its script, voice/style settings, audio, subtitles, image prompts, generated images, and video timeline. Open the **Projects** dashboard from the top bar to **create, open, rename, duplicate, archive, search and sort** projects. Switching a project swaps the entire asset set — each project's audio and images are fully isolated (snapshotted in IndexedDB), so opening one restores exactly where you left it.
+
 ### Creator workflow
 - 💾 **Presets** — save complete configurations (voice, instructions, speed, pitch, volume, format); rename, duplicate, delete, set a default, organize by project, and apply with one click
 - 🕘 **Last-used memory** — all settings and the project name persist across sessions; the app reopens exactly as you left it

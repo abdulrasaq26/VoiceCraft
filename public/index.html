@@ -9,6 +9,11 @@
 </head>
 <body>
   <div class="app">
+    <div class="topbar">
+      <button id="projects-open" class="btn ghost small" type="button">☰ Projects</button>
+      <span class="topbar-project">Project: <strong id="active-project-name">—</strong></span>
+      <button id="project-new" class="btn ghost small" type="button">+ New</button>
+    </div>
     <header class="header">
       <h1>Blvck<span class="accent">TTS</span></h1>
       <p class="tagline">Text to speech powered by Google Cloud</p>
@@ -407,11 +412,34 @@
     </div>
   </div>
 
+  <!-- Projects dashboard -->
+  <div id="projects-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Projects">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>Projects</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <div class="proj-toolbar">
+        <input id="proj-search" type="search" placeholder="Search projects…" />
+        <select id="proj-sort">
+          <option value="updated">Recently updated</option>
+          <option value="created">Newest</option>
+          <option value="name">Name A–Z</option>
+        </select>
+        <label class="ssml-toggle"><input type="checkbox" id="proj-archived" /> <span>Show archived</span></label>
+        <button id="proj-new" class="btn primary small" type="button">+ New project</button>
+      </div>
+      <div id="proj-list" class="proj-list"></div>
+    </div>
+  </div>
+
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>
   <script src="images.js"></script>
   <script src="storyboard.js"></script>
   <script src="editor.js"></script>
+  <script src="projects.js"></script>
 </body>
 </html>
