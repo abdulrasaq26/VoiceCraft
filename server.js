@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 
 const tts = require('./lib/google-tts');
+const gimg = require('./lib/gemini-image');
 const { enrichVoices, capabilitiesFor, promptCapable } = require('./lib/voice-catalog');
 
 const app = express();
@@ -81,8 +82,45 @@ app.get('/api/health', (req, res) => {
     ok: true,
     authMode: tts.authMode(),
     credentialsConfigured: tts.credentialsConfigured(),
-    hiddenVoices: staticBlocklist.size + runtimeBlocked.size
+    hiddenVoices: staticBlocklist.size + runtimeBlocked.size,
+    imageConfigured: gimg.configured(),
+    imageModel: gimg.configured() ? gimg.MODEL : null
   });
+});
+
+// Generate a still image from a text prompt via the Gemini image API.
+app.post('/api/image', async (req, res) => {
+  const prompt = String(req.body?.prompt || '').trim();
+  const aspect = String(req.body?.aspect || '').trim();
+  if (!prompt) {
+    return res.status(400).json({ error: 'An image prompt is required.' });
+  }
+  if (prompt.length > 2000) {
+    return res.status(400).json({ error: 'Prompt exceeds the 2000-character limit.' });
+  }
+  if (!gimg.configured()) {
+    return res.status(400).json({
+      error: 'Image generation is not configured.',
+      hint: 'Set GEMINI_API_KEY on the server to enable it — see README.md.'
+    });
+  }
+  try {
+    const { buffer, mime } = await gimg.generateImage(prompt, { aspect });
+    res.set({
+      'Content-Type': mime,
+      'Content-Length': buffer.length,
+      'Cache-Control': 'no-store'
+    });
+    res.send(buffer);
+  } catch (err) {
+    console.error('Image generation failed:', err.message);
+    const isTimeout = err.name === 'TimeoutError' || err.code === 'ABORT_ERR';
+    const status = isTimeout ? 504 : err.status && err.status >= 400 && err.status < 600 ? err.status : 502;
+    res.status(status).json({
+      error: err.message || 'Image generation failed',
+      hint: isTimeout ? 'The image API did not respond in time. Please try again.' : undefined
+    });
+  }
 });
 
 app.get('/api/voices', async (req, res) => {

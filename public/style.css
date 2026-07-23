@@ -711,6 +711,26 @@ input[type="range"]:disabled {
   margin-top: 0.25rem;
 }
 
+/* --- Image generator --- */
+
+.image-controls {
+  grid-template-columns: minmax(180px, 240px);
+}
+
+.image-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.image-result img {
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--panel);
+}
+
 /* --- Modals --- */
 
 .modal {
