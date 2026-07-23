@@ -46,6 +46,7 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 
 ### Video editor (optional)
 - 🎬 **AI Video Editor** — auto-assembles your storyboard images, subtitle timing and narration into a synchronized rough cut: each scene becomes a clip whose duration comes from its subtitle timing, with an automatically-assigned **Ken Burns motion** effect (zoom / pan / push / pull / drift / focus-shift) and **burned-in subtitles** (font, size, position, colour). Live canvas preview, and a timeline you can edit — reorder, change duration, change motion, replace an image, or delete clips.
+- 📥 **Manual mode** — the editor is also a standalone tool: **upload your own images, narration audio, and subtitles** (`.srt`/`.vtt`) and "Build timeline from uploads" — no storyboard required. Images become scenes (sorted by filename), subtitles set per-scene timing and captions, and your audio is the soundtrack. Everything is saved to the project like generated assets.
 - 📤 **Export** — an in-browser **WebM** render (720p/1080p, video + narration muxed via Web Audio; YouTube accepts WebM), plus an **editor package ZIP** (scene images + narration parts + an SRT matching the timeline + `edl.json` with scene order/durations/effects) to finish a **4K MP4** in Premiere / DaVinci Resolve / CapCut or a one-line ffmpeg script. *(True 4K MP4/MOV can't be encoded inside a browser — that's what the package is for.)*
 
 ### Infrastructure
