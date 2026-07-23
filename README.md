@@ -180,7 +180,8 @@ browser. For local UI testing without a key, run with `MOCK_IMAGE=1` (or the
 general `MOCK_TTS=1`) to get placeholder images.
 
 The same `GEMINI_API_KEY` also powers the **AI Storyboard** (story analysis uses
-the text model `gemini-2.5-flash`, overridable via `GEMINI_TEXT_MODEL`). Note
+the text model `gemini-3.6-flash`, overridable via `GEMINI_TEXT_MODEL` — set this
+if Google retires the default). Note
 that character consistency is enforced by locking each character's visual
 description in the story bible and injecting it into every prompt — it's strong
 but, with a text-only image API, not pixel-perfect across images; reference-image
