@@ -172,6 +172,43 @@
       </section>
     </main>
 
+    <!-- Image generator (revealed when GEMINI_API_KEY is configured) -->
+    <section id="image-card" class="card image-card" hidden>
+      <div class="input-header">
+        <label for="image-prompt">Image generator</label>
+        <span class="badge premium">Gemini</span>
+      </div>
+      <textarea
+        id="image-prompt"
+        rows="3"
+        maxlength="2000"
+        placeholder="Describe the image… e.g. a medieval peasant village at dawn, cinematic lighting, highly detailed"
+      ></textarea>
+      <section class="controls image-controls">
+        <div class="control">
+          <label for="image-aspect">Aspect</label>
+          <select id="image-aspect">
+            <option value="1:1">Square · 1:1</option>
+            <option value="16:9" selected>Wide · 16:9</option>
+            <option value="9:16">Tall · 9:16</option>
+            <option value="4:3">Landscape · 4:3</option>
+            <option value="3:4">Portrait · 3:4</option>
+          </select>
+        </div>
+      </section>
+      <div class="actions">
+        <button id="image-generate" class="btn primary">
+          <span class="btn-label">Generate image</span>
+          <span class="spinner" hidden></span>
+        </button>
+      </div>
+      <div id="image-status" class="status" hidden></div>
+      <div id="image-result" class="image-result" hidden>
+        <img id="image-output" alt="Generated image" />
+        <a id="image-download" class="btn ghost" download>Download image</a>
+      </div>
+    </section>
+
     <footer class="footer">
       <p>
         Uses the
@@ -252,5 +289,6 @@
 
   <script src="zip.js"></script>
   <script src="app.js"></script>
+  <script src="images.js"></script>
 </body>
 </html>

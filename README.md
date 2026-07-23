@@ -31,6 +31,9 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 - 💾 **Presets** — save complete configurations (voice, instructions, speed, pitch, volume, format); rename, duplicate, delete, set a default, organize by project, and apply with one click
 - 🕘 **Last-used memory** — all settings and the project name persist across sessions; the app reopens exactly as you left it
 
+### Images (optional)
+- 🖼️ **AI image generator** — a built-in panel that generates still 2D images from a text prompt via Google's **Gemini image API**, with an aspect-ratio selector, inline preview, and download. Disabled until a `GEMINI_API_KEY` is set, then it appears automatically. Great for thumbnails or per-scene visuals to pair with narration.
+
 ### Infrastructure
 - 🔐 **Two auth modes** — simple API key, or service-account / Application Default Credentials
 - 🛡️ **Server-side proxy** — your Google credentials never reach the browser
@@ -98,6 +101,7 @@ Synthesizes a tiny sample with every voice in the catalog (~3 characters per voi
 | `GET` | `/api/voices` | Enriched voice catalog: human names, descriptors, tiers, capabilities |
 | `GET` | `/api/preview?voiceName=en-US-Neural2-C&languageCode=en-US` | Short MP3 sample of a voice (cached, deduped server-side) |
 | `POST` | `/api/synthesize` | Generate audio; returns the audio bytes |
+| `POST` | `/api/image` | Generate a still image from `{ prompt, aspect }` via the Gemini image API; returns image bytes (requires `GEMINI_API_KEY`) |
 
 `POST /api/synthesize` body:
 
@@ -154,6 +158,23 @@ The UI greys out controls the selected voice can't use, so users can't build a f
 ├── .env.example            # Credential configuration template
 └── package.json
 ```
+
+## Image generation (optional)
+
+To enable the image panel, add a **Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey):
+
+```env
+GEMINI_API_KEY=your-gemini-key
+# Optional — override the model (default gemini-2.5-flash-image):
+# GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
+```
+
+The panel appears automatically once the key is set. The default model
+(`gemini-2.5-flash-image`) has a free tier on Google AI Studio; verify current
+free limits there, since Google adjusts them. To use Imagen or a newer model,
+set `GEMINI_IMAGE_MODEL`. The key is used server-side only and never reaches the
+browser. For local UI testing without a key, run with `MOCK_IMAGE=1` (or the
+general `MOCK_TTS=1`) to get placeholder images.
 
 ## Notes
 
