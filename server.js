@@ -6,6 +6,7 @@ const fs = require('fs');
 
 const tts = require('./lib/google-tts');
 const gimg = require('./lib/gemini-image');
+const storyboard = require('./lib/storyboard');
 const { enrichVoices, capabilitiesFor, promptCapable } = require('./lib/voice-catalog');
 
 const app = express();
@@ -27,7 +28,7 @@ const AUDIO_FORMATS = {
   LINEAR16: { encoding: 'LINEAR16', mime: 'audio/wav', ext: 'wav' }
 };
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Voice health -------------------------------------------------------
@@ -84,7 +85,8 @@ app.get('/api/health', (req, res) => {
     credentialsConfigured: tts.credentialsConfigured(),
     hiddenVoices: staticBlocklist.size + runtimeBlocked.size,
     imageConfigured: gimg.configured(),
-    imageModel: gimg.configured() ? gimg.MODEL : null
+    imageModel: gimg.configured() ? gimg.MODEL : null,
+    storyboardConfigured: storyboard.configured()
   });
 });
 
@@ -120,6 +122,50 @@ app.post('/api/image', async (req, res) => {
       error: err.message || 'Image generation failed',
       hint: isTimeout ? 'The image API did not respond in time. Please try again.' : undefined
     });
+  }
+});
+
+function sendGenError(res, err, fallback) {
+  console.error(`${fallback}:`, err.message);
+  const isTimeout = err.name === 'TimeoutError' || err.code === 'ABORT_ERR';
+  const status = isTimeout ? 504 : err.status && err.status >= 400 && err.status < 600 ? err.status : 502;
+  res.status(status).json({ error: err.message || fallback });
+}
+
+// Story analysis: build the shared story bible from all uploaded context.
+app.post('/api/storyboard/bible', async (req, res) => {
+  if (!storyboard.configured()) {
+    return res.status(400).json({ error: 'Storyboard needs GEMINI_API_KEY — see README.md.' });
+  }
+  const context = req.body?.context || {};
+  if (!context.script && !context.subtitles) {
+    return res.status(400).json({ error: 'Provide subtitles or a script first.' });
+  }
+  try {
+    const bible = await storyboard.buildBible(context);
+    res.json({ bible });
+  } catch (err) {
+    sendGenError(res, err, 'Story analysis failed');
+  }
+});
+
+// Generate storyboard scenes (prompts) for a batch of cues.
+app.post('/api/storyboard/scenes', async (req, res) => {
+  if (!storyboard.configured()) {
+    return res.status(400).json({ error: 'Storyboard needs GEMINI_API_KEY — see README.md.' });
+  }
+  const { bible, cues, style, instructions, priorSummaries } = req.body || {};
+  if (!bible || !Array.isArray(cues) || !cues.length) {
+    return res.status(400).json({ error: 'A story bible and cues are required.' });
+  }
+  if (cues.length > 40) {
+    return res.status(400).json({ error: 'Send at most 40 cues per batch.' });
+  }
+  try {
+    const result = await storyboard.buildScenes({ bible, cues, style, instructions, priorSummaries });
+    res.json(result);
+  } catch (err) {
+    sendGenError(res, err, 'Scene generation failed');
   }
 });
 
