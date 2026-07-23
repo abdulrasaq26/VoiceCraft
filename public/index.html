@@ -9,6 +9,11 @@
 </head>
 <body>
   <div class="app">
+    <div class="topbar">
+      <button id="projects-open" class="btn ghost small" type="button">☰ Projects</button>
+      <span class="topbar-project">Project: <strong id="active-project-name">—</strong></span>
+      <button id="project-new" class="btn ghost small" type="button">+ New</button>
+    </div>
     <header class="header">
       <h1>Blvck<span class="accent">TTS</span></h1>
       <p class="tagline">Text to speech powered by Google Cloud</p>
@@ -258,6 +263,77 @@
       <div id="sb-scenes" class="sb-scenes"></div>
     </section>
 
+    <!-- AI Video Editor -->
+    <section id="editor-card" class="card" hidden>
+      <div class="input-header">
+        <label>AI Video Editor</label>
+        <span class="badge premium">Auto-assemble</span>
+      </div>
+      <p class="field-note">
+        Assembles your storyboard images, subtitle timing and narration into a synchronized rough cut
+        with automatic camera motion and burned-in subtitles. Preview it, tweak the timeline, then export.
+      </p>
+      <div class="actions">
+        <button id="ed-assemble" class="btn primary" type="button">Auto-assemble from project</button>
+        <span id="ed-summary" class="field-note"></span>
+      </div>
+      <div id="ed-status" class="status" hidden></div>
+
+      <div id="ed-stage" hidden>
+        <canvas id="ed-canvas" width="1280" height="720" class="ed-canvas"></canvas>
+        <div class="ed-transport">
+          <button id="ed-play" class="btn primary small" type="button">▶ Play</button>
+          <input id="ed-seek" type="range" min="0" max="1000" value="0" class="ed-seek" />
+          <span id="ed-time" class="queue-eta">0:00 / 0:00</span>
+        </div>
+
+        <div class="controls ed-subs">
+          <div class="control">
+            <label for="ed-sub-font">Subtitle font</label>
+            <select id="ed-sub-font">
+              <option value="Arial, sans-serif">Sans (Arial)</option>
+              <option value="Georgia, serif">Serif (Georgia)</option>
+              <option value="Impact, sans-serif">Impact</option>
+              <option value="'Courier New', monospace">Monospace</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="ed-sub-size">Size <output id="ed-sub-size-val">42</output></label>
+            <input id="ed-sub-size" type="range" min="20" max="72" step="2" value="42" />
+          </div>
+          <div class="control">
+            <label for="ed-sub-pos">Position</label>
+            <select id="ed-sub-pos">
+              <option value="bottom" selected>Bottom</option>
+              <option value="center">Center</option>
+              <option value="top">Top</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="ed-sub-color">Color</label>
+            <input id="ed-sub-color" type="color" value="#ffffff" />
+          </div>
+          <div class="control">
+            <label class="ssml-toggle"><input type="checkbox" id="ed-sub-on" checked /> <span>Burn subtitles</span></label>
+          </div>
+        </div>
+
+        <div class="queue-downloads">
+          <div class="control" style="min-width:150px">
+            <label for="ed-res">Export resolution</label>
+            <select id="ed-res">
+              <option value="720">720p (WebM)</option>
+              <option value="1080" selected>1080p (WebM)</option>
+            </select>
+          </div>
+          <button id="ed-export-video" class="btn primary small" type="button">Export video (WebM)</button>
+          <button id="ed-export-package" class="btn ghost small" type="button">Export editor package (ZIP)</button>
+        </div>
+
+        <div id="ed-timeline" class="ed-timeline"></div>
+      </div>
+    </section>
+
     <footer class="footer">
       <p>
         Uses the
@@ -336,10 +412,34 @@
     </div>
   </div>
 
+  <!-- Projects dashboard -->
+  <div id="projects-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Projects">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>Projects</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <div class="proj-toolbar">
+        <input id="proj-search" type="search" placeholder="Search projects…" />
+        <select id="proj-sort">
+          <option value="updated">Recently updated</option>
+          <option value="created">Newest</option>
+          <option value="name">Name A–Z</option>
+        </select>
+        <label class="ssml-toggle"><input type="checkbox" id="proj-archived" /> <span>Show archived</span></label>
+        <button id="proj-new" class="btn primary small" type="button">+ New project</button>
+      </div>
+      <div id="proj-list" class="proj-list"></div>
+    </div>
+  </div>
+
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>
   <script src="images.js"></script>
   <script src="storyboard.js"></script>
+  <script src="editor.js"></script>
+  <script src="projects.js"></script>
 </body>
 </html>
