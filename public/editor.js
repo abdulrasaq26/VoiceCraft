@@ -23,6 +23,10 @@
   const exportVideoBtn = $('ed-export-video');
   const exportPkgBtn = $('ed-export-package');
   const titleInput = $('title-input');
+  const upImages = $('ed-up-images');
+  const upAudio = $('ed-up-audio');
+  const upSubs = $('ed-up-subs');
+  const buildManualBtn = $('ed-build-manual');
 
   const SB_LS = 'blvck-tts:storyboard';
   const SB_DB = 'blvck-storyboard';
@@ -31,6 +35,11 @@
   const AUDIO_DB = 'blvck-tts';
   const AUDIO_STORE = 'audio';
   const ED_LS = 'blvck-tts:editor';
+  // Manually-uploaded narration lives in its own store so it's part of the
+  // project snapshot without clashing with generated TTS audio.
+  const MANUAL_DB = 'blvck-editor';
+  const MANUAL_STORE = 'audio';
+  const MANUAL_KEY = 'narration';
 
   const EFFECTS = ['zoom-in', 'zoom-out', 'push-in', 'pull-back', 'pan-left', 'pan-right', 'drift', 'focus-shift'];
   const EFFECT_LABELS = {
@@ -100,6 +109,71 @@
     });
   }
 
+  // Write a blob, creating the store (and bumping the DB version) if needed.
+  async function idbPut(dbName, store, key, blob) {
+    function rawOpen(version) {
+      return new Promise((resolve, reject) => {
+        const req = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
+        req.onupgradeneeded = () => {
+          if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store);
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    try {
+      let db = await rawOpen();
+      if (!db.objectStoreNames.contains(store)) {
+        const v = db.version + 1;
+        db.close();
+        db = await rawOpen(v);
+      }
+      await new Promise((res, rej) => {
+        const tx = db.transaction(store, 'readwrite');
+        tx.objectStore(store).put(blob, key);
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+      db.close();
+    } catch {
+      /* best effort */
+    }
+  }
+
+  async function nextManualKey() {
+    // Continue numbering after any existing scene image keys.
+    let max = 0;
+    try {
+      const db = await new Promise((resolve, reject) => {
+        const req = indexedDB.open(SB_DB);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      if (db.objectStoreNames.contains(SB_STORE)) {
+        const keys = await new Promise((resolve) => {
+          const out = [];
+          const rq = db.transaction(SB_STORE, 'readonly').objectStore(SB_STORE).openKeyCursor();
+          rq.onsuccess = () => {
+            const c = rq.result;
+            if (c) {
+              out.push(c.key);
+              c.continue();
+            } else resolve(out);
+          };
+          rq.onerror = () => resolve(out);
+        });
+        for (const k of keys) {
+          const n = parseInt(String(k).replace(/\D/g, ''), 10);
+          if (Number.isFinite(n)) max = Math.max(max, n);
+        }
+      }
+      db.close();
+    } catch {
+      /* ignore */
+    }
+    return max;
+  }
+
   // --- Timeline math -----------------------------------------------------
 
   function hmsToSec(s) {
@@ -148,6 +222,23 @@
 
   async function loadAudio() {
     audio = { buffers: [], offsets: [], totalMs: 0 };
+    const ctx = () => (audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)());
+
+    // 1. Manually uploaded narration takes priority.
+    const manual = await idbGet(MANUAL_DB, MANUAL_STORE, MANUAL_KEY);
+    if (manual) {
+      try {
+        const buf = await ctx().decodeAudioData(await manual.arrayBuffer());
+        audio.buffers = [buf];
+        audio.offsets = [0];
+        audio.totalMs = buf.duration * 1000;
+        return;
+      } catch {
+        /* fall through to generated audio */
+      }
+    }
+
+    // 2. Otherwise the generated TTS batch.
     let meta;
     try {
       meta = JSON.parse(localStorage.getItem(AUDIO_LS) || 'null');
@@ -155,13 +246,12 @@
       meta = null;
     }
     if (!meta || !meta.items) return;
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     let acc = 0;
     for (const item of meta.items) {
       const blob = await idbGet(AUDIO_DB, AUDIO_STORE, `${meta.id}:${item.index}`);
       if (!blob) continue;
       try {
-        const buf = await audioCtx.decodeAudioData(await blob.arrayBuffer());
+        const buf = await ctx().decodeAudioData(await blob.arrayBuffer());
         audio.buffers.push(buf);
         audio.offsets.push(acc);
         acc += buf.duration * 1000;
@@ -170,6 +260,86 @@
       }
     }
     audio.totalMs = acc;
+  }
+
+  // Parse SRT/VTT into [{ durationSec, text }].
+  function parseSubs(content) {
+    const text = String(content).replace(/^﻿/, '').replace(/\r/g, '');
+    const re = /(\d{1,2}:\d{2}:\d{2}[.,]\d{1,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[.,]\d{1,3})[^\n]*\n([\s\S]*?)(?=\n\s*\n|\n*$)/g;
+    const toSec = (t) => {
+      const m = t.match(/(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})/);
+      return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000 : 0;
+    };
+    const out = [];
+    let m;
+    while ((m = re.exec(text))) {
+      const body = m[3]
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !/^\d+$/.test(l) && !/-->/.test(l))
+        .join(' ')
+        .trim();
+      const dur = toSec(m[2]) - toSec(m[1]);
+      out.push({ durationSec: dur > 0 ? dur : 4, text: body });
+    }
+    return out;
+  }
+
+  async function buildFromManual() {
+    clearStatus();
+    const imageFiles = [...(upImages.files || [])].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    if (!imageFiles.length) {
+      showStatus('Add at least one image — images become the scenes.');
+      return;
+    }
+    buildManualBtn.disabled = true;
+    summaryEl.textContent = 'Building…';
+
+    // Subtitles → per-scene timing + captions.
+    let cues = [];
+    if (upSubs.files && upSubs.files[0]) {
+      cues = parseSubs(await upSubs.files[0].text());
+    }
+
+    // Manual audio → dedicated store.
+    if (upAudio.files && upAudio.files[0]) {
+      await idbPut(MANUAL_DB, MANUAL_STORE, MANUAL_KEY, upAudio.files[0]);
+    }
+
+    let base = await nextManualKey();
+    clips = [];
+    for (let i = 0; i < imageFiles.length; i++) {
+      const f = imageFiles[i];
+      const key = `manual-${++base}`;
+      await idbPut(SB_DB, SB_STORE, key, f);
+      const img = await loadImage(f);
+      const cue = cues[i];
+      clips.push({
+        sceneIndex: key,
+        subtitle: cue ? cue.text : '',
+        camera: '',
+        durationSec: cue ? Math.min(30, Math.max(1, cue.durationSec)) : 4,
+        effect: autoEffect(i, ''),
+        img
+      });
+    }
+
+    await loadAudio();
+    buildManualBtn.disabled = false;
+    stage.hidden = false;
+    offsetMs = 0;
+    saveTimeline();
+    renderTimeline();
+    drawFrame(0);
+    const secs = Math.round(totalMs() / 1000);
+    summaryEl.textContent = `${clips.length} scenes · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${
+      audio.totalMs ? ' · narration loaded' : ' · no audio'
+    }`;
+    showStatus('Timeline built from your uploads. Press play to preview, then export.', 'info');
+    // Clear the file inputs so re-building doesn't double-add.
+    upImages.value = '';
+    upAudio.value = '';
+    upSubs.value = '';
   }
 
   async function assemble() {
@@ -418,7 +588,7 @@
 
       const num = document.createElement('div');
       num.className = 'ed-clip-num';
-      num.innerHTML = `<span>Scene ${clip.sceneIndex}</span><span>${clip.camera}</span>`;
+      num.innerHTML = `<span>Scene ${i + 1}</span><span>${clip.camera || ''}</span>`;
 
       const img = document.createElement('img');
       if (clip.img) img.src = clip.img.src;
@@ -495,7 +665,12 @@
     input.addEventListener('change', async () => {
       const f = input.files[0];
       if (!f) return;
+      // Persist under a fresh key so the replacement survives refresh/export.
+      const key = `manual-${(await nextManualKey()) + 1}`;
+      await idbPut(SB_DB, SB_STORE, key, f);
+      clip.sceneIndex = key;
       clip.img = await loadImage(f);
+      saveTimeline();
       renderTimeline();
       drawFrame(0);
     });
@@ -647,17 +822,23 @@
         files.push({ name: `images/scene-${String(i + 1).padStart(3, '0')}.png`, data: new Uint8Array(await blob.arrayBuffer()) });
       }
     }
-    // Narration audio parts
-    try {
-      const meta = JSON.parse(localStorage.getItem(AUDIO_LS) || 'null');
-      if (meta && meta.items) {
-        for (const item of meta.items) {
-          const blob = await idbGet(AUDIO_DB, AUDIO_STORE, `${meta.id}:${item.index}`);
-          if (blob) files.push({ name: `audio/part-${String(item.part).padStart(3, '0')}.${meta.ext || 'mp3'}`, data: new Uint8Array(await blob.arrayBuffer()) });
+    // Narration audio — manually uploaded track first, else the TTS parts.
+    const manualAudio = await idbGet(MANUAL_DB, MANUAL_STORE, MANUAL_KEY);
+    if (manualAudio) {
+      const ext = (manualAudio.type && manualAudio.type.split('/')[1]) || 'mp3';
+      files.push({ name: `audio/narration.${ext}`, data: new Uint8Array(await manualAudio.arrayBuffer()) });
+    } else {
+      try {
+        const meta = JSON.parse(localStorage.getItem(AUDIO_LS) || 'null');
+        if (meta && meta.items) {
+          for (const item of meta.items) {
+            const blob = await idbGet(AUDIO_DB, AUDIO_STORE, `${meta.id}:${item.index}`);
+            if (blob) files.push({ name: `audio/part-${String(item.part).padStart(3, '0')}.${meta.ext || 'mp3'}`, data: new Uint8Array(await blob.arrayBuffer()) });
+          }
         }
+      } catch {
+        /* no audio */
       }
-    } catch {
-      /* no audio */
     }
     const edl = {
       project: project(),
@@ -698,6 +879,7 @@
   // --- Events ------------------------------------------------------------
 
   assembleBtn.addEventListener('click', assemble);
+  buildManualBtn.addEventListener('click', buildFromManual);
   playBtn.addEventListener('click', () => (playing ? pause() : play()));
   seek.addEventListener('input', () => {
     pause();
@@ -733,25 +915,12 @@
   exportVideoBtn.addEventListener('click', exportVideo);
   exportPkgBtn.addEventListener('click', exportPackage);
 
-  function storyboardReady() {
-    let sb = null;
-    try {
-      sb = JSON.parse(localStorage.getItem(SB_LS) || 'null');
-    } catch {
-      sb = null;
-    }
-    return Boolean(sb && sb.scenes && sb.scenes.some((s) => s.status === 'done'));
-  }
-
-  // Reveal the editor as soon as the storyboard produces images this session.
-  window.addEventListener('blvck-storyboard-updated', () => {
-    if (card.hidden && storyboardReady()) card.hidden = false;
-  });
+  // The editor is a standalone tool (upload your own images/audio/subtitles),
+  // so it's always available — no storyboard required.
 
   // --- Init --------------------------------------------------------------
 
   (async () => {
-    if (!storyboardReady() && !localStorage.getItem(ED_LS)) return;
     card.hidden = false;
     await restoreTimeline();
   })();

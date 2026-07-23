@@ -28,7 +28,8 @@
   const LIVE_STORES = [
     { db: 'blvck-tts', store: 'audio' },
     { db: 'blvck-storyboard', store: 'images' },
-    { db: 'blvck-thumbnails', store: 'images' }
+    { db: 'blvck-thumbnails', store: 'images' },
+    { db: 'blvck-editor', store: 'audio' }
   ];
   const SNAP_DB = 'blvck-projects';
   const SNAP_STORE = 'snapshots';

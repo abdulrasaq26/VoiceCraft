@@ -1070,6 +1070,41 @@ input[type="range"]:disabled {
   display: block;
 }
 
+.ed-manual {
+  border: 1px dashed var(--card-border);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.25rem;
+}
+
+.ed-manual-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.ed-manual-inputs label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.ed-manual-inputs input[type="file"] {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+@media (max-width: 640px) {
+  .ed-manual-inputs {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ed-transport {
   display: flex;
   align-items: center;
