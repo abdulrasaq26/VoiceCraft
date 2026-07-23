@@ -283,7 +283,7 @@
     setAnalyzing(true, 'Reading the story…');
     try {
       // 1. Story bible
-      const bibleRes = await postJson('/api/storyboard/bible', { context: ctx });
+      const bibleRes = await window.BlvckAI.generateJSON('/api/storyboard/bible', { context: ctx });
       bible = bibleRes.bible;
       renderBible();
 
@@ -293,7 +293,7 @@
       for (let i = 0; i < cues.length; i += SCENE_BATCH) {
         const batch = cues.slice(i, i + SCENE_BATCH);
         const prior = scenes.slice(-3).map((s) => `${s.camera}: ${s.sceneSummary}`);
-        const res = await postJson('/api/storyboard/scenes', {
+        const res = await window.BlvckAI.generateJSON('/api/storyboard/scenes', {
           bible,
           cues: batch,
           style: ctx.style,
@@ -316,19 +316,8 @@
   }
 
   async function generateSceneImage(scene) {
-    const res = await fetch('/api/image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: scene.prompt, aspect: ASPECT })
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const err = new Error(body.error || `Request failed (${res.status})`);
-      err.status = res.status;
-      err.quota = res.status === 429 || /quota|exceeded|rate limit|billing/i.test(body.error || '');
-      throw err;
-    }
-    return res.blob();
+    // Routes to Gemini (/api/image) or Qwen (Puter txt2img) per the provider.
+    return window.BlvckAI.generateImage(scene.prompt, ASPECT);
   }
 
   const THROTTLE_MS = 600; // gentle pacing to ease per-minute rate limits
@@ -761,7 +750,7 @@
     try {
       const res = await fetch('/api/health');
       const body = await res.json();
-      if (body.storyboardConfigured) {
+      if (body.storyboardConfigured || window.BlvckAI.provider() === 'puter') {
         card.hidden = false;
         restoreProject();
       }

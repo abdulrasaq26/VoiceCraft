@@ -151,13 +151,7 @@
     clearStatus();
     setGenerating(true);
     try {
-      const res = await fetch('/api/seo/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project: ctx, channel: collectChannel() })
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.hint ? `${body.error} — ${body.hint}` : body.error || `Request failed (${res.status})`);
+      const body = await window.BlvckAI.generateJSON('/api/seo/generate', { project: ctx, channel: collectChannel() });
       seo = body.seo;
       thumbs = [];
       thumbUrls.forEach((u) => URL.revokeObjectURL(u));
@@ -316,19 +310,7 @@
     showStatus(`Generating ${count} thumbnail(s) for Version ${concept.version}…`, 'info');
     for (let n = 0; n < count; n++) {
       try {
-        const res = await fetch('/api/image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: thumbPrompt(concept), aspect: '16:9' })
-        });
-        if (!res.ok) {
-          const b = await res.json().catch(() => ({}));
-          const quota = res.status === 429 || /quota|exceeded|billing/i.test(b.error || '');
-          showStatus(`${quota ? 'Image quota reached' : 'Thumbnail failed'}: ${b.error || res.status}. ${count > 1 ? `${n} generated.` : ''}`.trim());
-          if (quota) break;
-          continue;
-        }
-        const blob = await res.blob();
+        const blob = await window.BlvckAI.generateImage(thumbPrompt(concept), '16:9');
         const id = ++thumbCounter;
         thumbUrls.set(id, URL.createObjectURL(blob));
         await idbPut(String(id), blob);
@@ -336,6 +318,10 @@
         persist();
         renderThumbs();
       } catch (err) {
+        if (err.quota) {
+          showStatus(`Image quota reached: ${err.message}. ${count > 1 ? `${n} generated.` : ''}`.trim());
+          break;
+        }
         showStatus(`Thumbnail failed: ${err.message}`);
         break;
       }
@@ -519,7 +505,7 @@
     try {
       const res = await fetch('/api/health');
       const body = await res.json();
-      if (!body.seoConfigured) return;
+      if (!body.seoConfigured && window.BlvckAI.provider() !== 'puter') return;
       card.hidden = false;
       loadChannel();
       projectNameEl.textContent = `Project: ${projectTitle()}`;

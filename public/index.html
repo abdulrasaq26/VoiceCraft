@@ -12,6 +12,11 @@
     <div class="topbar">
       <button id="projects-open" class="btn ghost small" type="button">☰ Projects</button>
       <span class="topbar-project">Project: <strong id="active-project-name">—</strong></span>
+      <select id="ai-provider" class="topbar-provider" title="AI provider for storyboard, SEO and image generation">
+        <option value="gemini">AI: Gemini</option>
+        <option value="puter">AI: Qwen (free)</option>
+      </select>
+      <input id="qwen-model" class="topbar-model" type="text" placeholder="qwen3.6-flash" title="Qwen model id (Puter)" hidden />
       <button id="project-new" class="btn ghost small" type="button">+ New</button>
     </div>
     <header class="header">
@@ -503,6 +508,7 @@
     </div>
   </div>
 
+  <script src="ai-provider.js"></script>
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>

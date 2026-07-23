@@ -50,6 +50,9 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 - 🎞️ **Default crossfade transitions** between scenes (toggleable), applied in both the preview and the exported video.
 - 📤 **Export** — an in-browser **WebM** render (720p/1080p, video + narration muxed via Web Audio; YouTube accepts WebM), plus an **editor package ZIP** (scene images + narration parts + an SRT matching the timeline + `edl.json` with scene order/durations/effects) to finish a **4K MP4** in Premiere / DaVinci Resolve / CapCut or a one-line ffmpeg script. *(True 4K MP4/MOV can't be encoded inside a browser — that's what the package is for.)*
 
+### AI provider
+- 🔁 **Gemini or Qwen (Puter)** — a top-bar switch chooses the AI backend for storyboard analysis, SEO, and image generation. **Gemini** runs server-side with your `GEMINI_API_KEY`. **Qwen (free)** uses [Puter.js](https://developer.puter.com/) — a client-side, "user-pays" SDK that needs **no API key and no billing** (you sign into Puter in the browser), which sidesteps the Gemini image quota. Prompt-building and result-parsing stay server-side either way; only the model call moves to the browser under Qwen. The Qwen model id is editable in the top bar (default `qwen3.6-flash`). Puter's SDK is loaded lazily — only when you actually select Qwen.
+
 ### Infrastructure
 - 🔐 **Two auth modes** — simple API key, or service-account / Application Default Credentials
 - 🛡️ **Server-side proxy** — your Google credentials never reach the browser
