@@ -560,8 +560,10 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     return cues.map((c, i) => ({ index: i + 1, ...c }));
   }
 
-  async function computeCues() {
-    if (batch) {
+  // forceScript: always caption the pasted script (used by the standalone
+  // button), even when a completed audio batch exists.
+  async function computeCues(forceScript = false) {
+    if (!forceScript && batch) {
       const key = `${batch.id}:${batch.items.filter((i) => i.status === 'done').length}:${batch.settings.speakingRate}`;
       if (subtitleCache.key === key && subtitleCache.cues) return subtitleCache.cues;
       const rate = batch.settings.speakingRate;
@@ -576,7 +578,8 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
       subtitleCache = { key, cues };
       return cues;
     }
-    // Standalone: estimate from the pasted script.
+    // Standalone: estimate from the pasted script (recomputed every time so
+    // edits to the script are always reflected).
     const text = textInput.value.trim();
     if (!text) return [];
     return cuesFromSegments([{ text, durationSec: estimateDurationSec(text, Number(rateSlider.value)) }]);
@@ -624,15 +627,16 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
 
-  async function openSubtitleModal() {
-    const cues = await computeCues();
+  async function openSubtitleModal(forceScript = false) {
+    const cues = await computeCues(forceScript);
     if (!cues.length) {
       showStatus('There’s nothing to caption yet.');
       return;
     }
-    const project = subtitleProject();
+    const project = forceScript ? currentProject() : subtitleProject();
+    const source = !forceScript && batch ? 'from generated audio' : 'estimated from script';
     activeSubtitles = { project, cues };
-    subtitleTitle.textContent = `${project} — subtitles (${cues.length} cues)`;
+    subtitleTitle.textContent = `${project} — subtitles (${cues.length} cues, ${source})`;
     subtitleView.textContent = toSRT(cues);
     openModal(subtitleModal);
   }
@@ -1811,7 +1815,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     else if (kind === 'txt') downloadText(`${project}.txt`, toPlainText(cues), 'text/plain;charset=utf-8');
   }
 
-  subPreviewBtn.addEventListener('click', openSubtitleModal);
+  subPreviewBtn.addEventListener('click', () => openSubtitleModal(false));
   subSrtBtn.addEventListener('click', () => downloadSubtitles('srt'));
   subVttBtn.addEventListener('click', () => downloadSubtitles('vtt'));
   subCopyBtn.addEventListener('click', async () => {
@@ -1831,14 +1835,15 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     if (activeSubtitles) downloadText(`${activeSubtitles.project}.vtt`, toVTT(activeSubtitles.cues), 'text/vtt');
   });
 
-  // Standalone: subtitles from the pasted script (timing estimated, no audio).
+  // Standalone: subtitles from the currently pasted script (timing estimated,
+  // no audio) — always uses the current textarea, even if a batch exists.
   subtitleOnlyBtn.addEventListener('click', () => {
     if (!textInput.value.trim()) {
       showStatus('Paste a script first to generate subtitles.');
       textInput.focus();
       return;
     }
-    openSubtitleModal();
+    openSubtitleModal(true);
   });
 
   resetBtn.addEventListener('click', () => {
