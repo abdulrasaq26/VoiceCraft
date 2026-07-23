@@ -273,19 +273,24 @@
         Assembles your storyboard images, subtitle timing and narration into a synchronized rough cut
         with automatic camera motion and burned-in subtitles. Preview it, tweak the timeline, then export.
       </p>
-      <div class="ed-manual">
-        <span class="queue-group-label">Manual assets — upload your own (optional)</span>
+      <p class="field-note"><strong>Recommended:</strong> generate a storyboard first, then auto-assemble — the storyboard provides scene order, timing and image assignments. Or open the manual editor to work with your own assets.</p>
+      <div class="actions">
+        <button id="ed-assemble" class="btn primary" type="button">Auto-assemble from project</button>
+        <button id="ed-manual-toggle" class="btn ghost" type="button">Open Manual Editor</button>
+        <span id="ed-summary" class="field-note"></span>
+      </div>
+
+      <div id="ed-manual" class="ed-manual" hidden>
+        <span class="queue-group-label">Manual Editor — upload your own assets (no storyboard required)</span>
         <div class="ed-manual-inputs">
           <label>Images (scenes, sorted by filename)<input id="ed-up-images" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
           <label>Narration audio<input id="ed-up-audio" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/*" /></label>
           <label>Subtitles (.srt/.vtt) — sets timing &amp; captions<input id="ed-up-subs" type="file" accept=".srt,.vtt,.txt" /></label>
         </div>
-      </div>
-
-      <div class="actions">
-        <button id="ed-build-manual" class="btn primary" type="button">Build timeline from uploads</button>
-        <button id="ed-assemble" class="btn ghost" type="button">Auto-assemble from project</button>
-        <span id="ed-summary" class="field-note"></span>
+        <div class="actions">
+          <button id="ed-build-manual" class="btn primary" type="button">Auto Assemble uploads</button>
+          <span class="field-note">Reads subtitle timestamps, matches images to timing, sets durations, and syncs audio into a draft timeline.</span>
+        </div>
       </div>
       <div id="ed-status" class="status" hidden></div>
 
@@ -325,6 +330,9 @@
           </div>
           <div class="control">
             <label class="ssml-toggle"><input type="checkbox" id="ed-sub-on" checked /> <span>Burn subtitles</span></label>
+          </div>
+          <div class="control">
+            <label class="ssml-toggle"><input type="checkbox" id="ed-crossfade" checked /> <span>Crossfade transitions</span></label>
           </div>
         </div>
 

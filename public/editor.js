@@ -27,6 +27,9 @@
   const upAudio = $('ed-up-audio');
   const upSubs = $('ed-up-subs');
   const buildManualBtn = $('ed-build-manual');
+  const manualToggle = $('ed-manual-toggle');
+  const manualPanel = $('ed-manual');
+  const crossfadeToggle = $('ed-crossfade');
 
   const SB_LS = 'blvck-tts:storyboard';
   const SB_DB = 'blvck-storyboard';
@@ -55,6 +58,8 @@
 
   let clips = []; // { sceneIndex, subtitle, camera, durationSec, effect, img }
   const subStyle = { font: 'Arial, sans-serif', size: 42, pos: 'bottom', color: '#ffffff', on: true };
+  let transitionsOn = true;
+  const TRANSITION_MS = 500; // default crossfade duration between scenes
   let audio = { buffers: [], offsets: [], totalMs: 0 };
 
   // Playback state
@@ -476,14 +481,32 @@
     }
   }
 
+  function renderClipVisual(g, cw, ch, clip, localMs) {
+    const p = Math.max(0, Math.min(1, localMs / (clip.durationSec * 1000)));
+    const t = effectTransform(clip.effect, p);
+    drawCover(g, clip.img, cw, ch, t.scale, t.tx, t.ty);
+  }
+
   function renderTo(g, cw, ch, ms) {
     g.fillStyle = '#000';
     g.fillRect(0, 0, cw, ch);
     const at = clipAt(ms);
     if (!at) return;
-    const p = Math.max(0, Math.min(1, at.localMs / (at.clip.durationSec * 1000)));
-    const t = effectTransform(at.clip.effect, p);
-    drawCover(g, at.clip.img, cw, ch, t.scale, t.tx, t.ty);
+    renderClipVisual(g, cw, ch, at.clip, at.localMs);
+
+    // Default crossfade: dissolve into the next clip during this clip's tail.
+    if (transitionsOn) {
+      const idx = clips.indexOf(at.clip);
+      const next = clips[idx + 1];
+      const remaining = at.clip.durationSec * 1000 - at.localMs;
+      if (next && next.img && remaining < TRANSITION_MS) {
+        g.save();
+        g.globalAlpha = 1 - remaining / TRANSITION_MS;
+        renderClipVisual(g, cw, ch, next, TRANSITION_MS - remaining);
+        g.restore();
+      }
+    }
+
     drawSubs(g, cw, ch, at.clip.subtitle);
   }
 
@@ -686,6 +709,7 @@
         JSON.stringify({
           project: project(),
           subStyle,
+          transitionsOn,
           clips: clips.map((c) => ({ sceneIndex: c.sceneIndex, subtitle: c.subtitle, camera: c.camera, durationSec: c.durationSec, effect: c.effect }))
         })
       );
@@ -703,6 +727,7 @@
     }
     if (!saved || !saved.clips || !saved.clips.length) return false;
     Object.assign(subStyle, saved.subStyle || {});
+    if (typeof saved.transitionsOn === 'boolean') transitionsOn = saved.transitionsOn;
     applySubControls();
     clips = [];
     for (const c of saved.clips) {
@@ -874,12 +899,22 @@
     subPos.value = subStyle.pos;
     subColor.value = subStyle.color;
     subOn.checked = subStyle.on;
+    crossfadeToggle.checked = transitionsOn;
   }
 
   // --- Events ------------------------------------------------------------
 
   assembleBtn.addEventListener('click', assemble);
   buildManualBtn.addEventListener('click', buildFromManual);
+  manualToggle.addEventListener('click', () => {
+    manualPanel.hidden = !manualPanel.hidden;
+    manualToggle.textContent = manualPanel.hidden ? 'Open Manual Editor' : 'Hide Manual Editor';
+  });
+  crossfadeToggle.addEventListener('change', () => {
+    transitionsOn = crossfadeToggle.checked;
+    saveTimeline();
+    drawFrame(offsetMs);
+  });
   playBtn.addEventListener('click', () => (playing ? pause() : play()));
   seek.addEventListener('input', () => {
     pause();
