@@ -85,6 +85,38 @@
   const DEFAULT_LANGUAGE = 'en-US';
   const RECENTS_MAX = 6;
 
+  // Curated ElevenLabs voices (used when the TTS provider is ElevenLabs/Puter).
+  // If a specific voice ID isn't available on your Puter access, pick another.
+  const ELEVEN_VOICES = [
+    ['21m00Tcm4TlvDq8ikWAM', 'Rachel', 'FEMALE', 'Calm Female Narrator'],
+    ['EXAVITQu4vr4xnSDxMaL', 'Sarah', 'FEMALE', 'Soft News Female'],
+    ['XrExE9yKIg1WjnnlVkGX', 'Matilda', 'FEMALE', 'Warm Female Storyteller'],
+    ['XB0fDUnXU5powFXDhCwa', 'Charlotte', 'FEMALE', 'Expressive Female'],
+    ['pFZP5JQG7iQjIQuC4Bku', 'Lily', 'FEMALE', 'British Female Narrator'],
+    ['AZnzlk1XvdvUeBnXmlld', 'Domi', 'FEMALE', 'Strong Female'],
+    ['pNInz6obpgDQGcFmaJgB', 'Adam', 'MALE', 'Deep Male Narrator'],
+    ['onwK4e9ZLuTAKqWW03F9', 'Daniel', 'MALE', 'British News Anchor'],
+    ['JBFqnCBsd6RMkjVDRZzb', 'George', 'MALE', 'Warm British Male'],
+    ['ErXwobaYiN019PkySvjV', 'Antoni', 'MALE', 'Well-Rounded Male'],
+    ['VR6AewLTigWG4xSOukaG', 'Arnold', 'MALE', 'Crisp Documentary Male'],
+    ['TxGEqnHWrfWFTfGW9XjX', 'Josh', 'MALE', 'Deep Young Male'],
+    ['N2lVS1w4EtoT3dr4eOWO', 'Callum', 'MALE', 'Intense Male'],
+    ['yoZ06aMxZJJ28mfd3POQ', 'Sam', 'MALE', 'Raspy Male']
+  ].map(([id, name, gender, descriptor]) => ({
+    id,
+    name,
+    descriptor,
+    tier: 'elite',
+    tierLabel: 'Elite',
+    badge: '⭐ Elite',
+    family: 'ElevenLabs',
+    gender,
+    language: 'en-US',
+    languageCodes: ['en-US'],
+    capabilities: { rate: false, rateMax: 4, pitch: false, ssml: false },
+    promptCapable: false
+  }));
+
   const LS = {
     settings: 'blvck-tts:settings',
     presets: 'blvck-tts:presets',
@@ -703,12 +735,18 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
   async function loadVoices() {
     try {
-      const response = await fetch('/api/voices');
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.hint || body.error || 'Failed to load voices');
+      // ElevenLabs (via Puter) uses a curated client-side voice list; Google
+      // fetches its full catalog from the server.
+      if (window.BlvckAI && window.BlvckAI.isElevenLabs()) {
+        allVoices = ELEVEN_VOICES.slice();
+      } else {
+        const response = await fetch('/api/voices');
+        const body = await response.json();
+        if (!response.ok) {
+          throw new Error(body.hint || body.error || 'Failed to load voices');
+        }
+        allVoices = body.voices || [];
       }
-      allVoices = body.voices || [];
       voiceById.clear();
       allVoices.forEach((v) => voiceById.set(v.id, v));
       if (!allVoices.length) {
@@ -800,15 +838,15 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     pitchSlider.disabled = !caps.pitch;
     rateControl.classList.toggle('unsupported', !caps.rate);
     pitchControl.classList.toggle('unsupported', !caps.pitch);
-    rateControl.title = caps.rate ? '' : 'Google’s API rejects speed control for this voice family';
-    pitchControl.title = caps.pitch ? '' : 'Google’s API rejects pitch control for this voice family';
+    rateControl.title = caps.rate ? '' : 'This voice doesn’t support speed control';
+    pitchControl.title = caps.pitch ? '' : 'This voice doesn’t support pitch control';
     const cantSsml = Boolean(v) && !caps.ssml;
     ssmlToggle.disabled = cantSsml;
     if (cantSsml && ssmlToggle.checked) ssmlToggle.checked = false;
     const ssmlLabel = ssmlToggle.closest('.ssml-toggle');
     if (ssmlLabel) {
       ssmlLabel.title = cantSsml
-        ? `${v.family} voices only accept plain text — Google rejects SSML for this voice family. Pick a Neural2, WaveNet, Studio, or Standard voice to use SSML.`
+        ? `${v.family} voices only accept plain text — SSML isn’t available for this voice family. On Google, pick a Neural2, WaveNet, Studio, or Standard voice to use SSML.`
         : 'Treat input as SSML markup (pauses, pronunciation, emphasis, etc.)';
     }
 
@@ -825,7 +863,7 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
 
       if (v && parts.length) {
         const plural = parts.length > 1;
-        capsNote.textContent = `${v.name} (${v.family}) doesn’t accept ${parts.join(' or ')} — Google’s API rejects ${plural ? 'them' : 'it'} for this voice family, so ${plural ? 'they’re' : 'it’s'} disabled here.${range}`;
+        capsNote.textContent = `${v.name} (${v.family}) doesn’t support ${parts.join(' or ')}, so ${plural ? 'they’re' : 'it’s'} disabled here.${range}`;
         capsNote.hidden = false;
       } else if (v && caps.rate && rateMax < 4) {
         capsNote.textContent = `Google limits ${v.family} voices to ${rateMax}× speed.`;
@@ -906,6 +944,25 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
     previewState = 'loading';
     activePreviewButtons = previewButtonsFor(voiceId);
     setPreviewButtonState('loading');
+
+    if (window.BlvckAI && window.BlvckAI.isElevenLabs()) {
+      // ElevenLabs runs client-side; fetch the sample as a blob then play.
+      const phrase = 'Hello! This is a preview of my voice.';
+      window.BlvckAI.speak(phrase, v.id)
+        .then((blob) => {
+          if (previewVoiceId !== voiceId) return;
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          previewUrl = URL.createObjectURL(blob);
+          previewAudio.src = previewUrl;
+          return previewAudio.play();
+        })
+        .catch((err) => {
+          if (previewVoiceId !== voiceId) return;
+          showStatus(`Voice preview failed: ${err.message}`);
+          stopPreview();
+        });
+      return;
+    }
 
     const params = new URLSearchParams({ voiceName: v.id, languageCode: v.language });
     previewAudio.src = `/api/preview?${params}`;
@@ -1194,6 +1251,10 @@ Keep the tone neutral, pleasant, and steady — no dramatic emphasis, no swings 
   }
 
   async function synthesizeChunk(text, s) {
+    // ElevenLabs (via Puter) is client-side and uses just text + voice id.
+    if (window.BlvckAI && window.BlvckAI.isElevenLabs()) {
+      return window.BlvckAI.speak(text, s.voiceId);
+    }
     const response = await fetch('/api/synthesize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

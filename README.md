@@ -7,6 +7,7 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 ## Features
 
 ### Voices
+- 🔀 **Google or ElevenLabs** — a top-bar TTS switch chooses the speech backend. **Google** runs server-side with your credentials (the full human-named catalog below). **ElevenLabs (free)** uses [Puter.js](https://developer.puter.com/tutorials/free-unlimited-elevenlabs-api/) — a client-side, "user-pays" SDK that needs **no API key and no billing** (you sign into Puter in the browser). It exposes a curated set of ElevenLabs voices (Adam, Rachel, …) for preview, single, and long-form batch generation. The Puter SDK is loaded lazily — only when you actually select ElevenLabs.
 - 🎙️ **Human-named voices** — every voice gets a realistic name and descriptor (e.g. *Sarah — Warm Female Narrator*, *James — Deep Professional Male Voice*) instead of `en-US-Neural2-C`
 - 🏆 **Quality tiers with badges** — ⭐ Elite (Chirp3-HD, Studio), Premium (Neural2, WaveNet), Standard, and Experimental voices, clearly labeled
 - 🔎 **Voice browser** — search by name, style, or voice ID; filter by tier and gender; favorites and recently-used sections; mobile-friendly full-screen browser
@@ -52,6 +53,7 @@ Type or paste text (or SSML), pick a voice by human name from a searchable voice
 
 ### AI provider
 - 🔁 **Gemini or Qwen (Puter)** — a top-bar switch chooses the AI backend for storyboard analysis, SEO, and image generation. **Gemini** runs server-side with your `GEMINI_API_KEY`. **Qwen (free)** uses [Puter.js](https://developer.puter.com/) — a client-side, "user-pays" SDK that needs **no API key and no billing** (you sign into Puter in the browser), which sidesteps the Gemini image quota. Prompt-building and result-parsing stay server-side either way; only the model call moves to the browser under Qwen. The Qwen model id is editable in the top bar (default `qwen3.6-flash`). Puter's SDK is loaded lazily — only when you actually select Qwen.
+- 🗣️ **Google or ElevenLabs TTS** — an independent top-bar switch chooses the speech backend (see **Voices** above). ElevenLabs also runs through Puter with no key; the entire Google voice system stays intact behind the switch.
 
 ### Infrastructure
 - 🔐 **Two auth modes** — simple API key, or service-account / Application Default Credentials

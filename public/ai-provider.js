@@ -8,6 +8,9 @@
   const PROVIDER_KEY = 'blvck-tts:aiprovider';
   const MODEL_KEY = 'blvck-tts:qwenmodel';
   const DEFAULT_MODEL = 'qwen3.6-flash';
+  const TTS_KEY = 'blvck-tts:ttsprovider';
+  const TTS_MODEL_KEY = 'blvck-tts:elevenmodel';
+  const DEFAULT_TTS_MODEL = 'eleven_multilingual_v2';
 
   async function postJson(url, body) {
     const res = await fetch(url, {
@@ -65,6 +68,37 @@
     },
     setModel(m) {
       localStorage.setItem(MODEL_KEY, m || DEFAULT_MODEL);
+    },
+
+    // --- Text-to-speech provider (Google server-side | ElevenLabs via Puter) ---
+    ttsProvider() {
+      return localStorage.getItem(TTS_KEY) || 'google';
+    },
+    isElevenLabs() {
+      return this.ttsProvider() === 'elevenlabs';
+    },
+    setTtsProvider(p) {
+      localStorage.setItem(TTS_KEY, p);
+    },
+    ttsModel() {
+      return localStorage.getItem(TTS_MODEL_KEY) || DEFAULT_TTS_MODEL;
+    },
+    setTtsModel(m) {
+      localStorage.setItem(TTS_MODEL_KEY, m || DEFAULT_TTS_MODEL);
+    },
+
+    // Synthesize speech with ElevenLabs via Puter; returns an audio Blob.
+    async speak(text, voice) {
+      await ensurePuter();
+      const audio = await window.puter.ai.txt2speech(text, {
+        provider: 'elevenlabs',
+        voice,
+        model: this.ttsModel()
+      });
+      const src = audio && (audio.src || (typeof audio === 'string' ? audio : null));
+      if (!src) throw new Error('ElevenLabs (Puter) returned no audio.');
+      const r = await fetch(src);
+      return r.blob();
     },
 
     // Run a JSON-producing generation. For Gemini, the server does it all.
@@ -135,5 +169,14 @@
     if (modelInput) {
       modelInput.addEventListener('change', () => BlvckAI.setModel(modelInput.value.trim()));
     }
+  }
+
+  const ttsSel = document.getElementById('tts-provider');
+  if (ttsSel) {
+    ttsSel.value = BlvckAI.ttsProvider();
+    ttsSel.addEventListener('change', () => {
+      BlvckAI.setTtsProvider(ttsSel.value);
+      location.reload();
+    });
   }
 })();
