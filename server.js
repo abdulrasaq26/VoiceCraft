@@ -7,6 +7,7 @@ const fs = require('fs');
 const tts = require('./lib/google-tts');
 const gimg = require('./lib/gemini-image');
 const storyboard = require('./lib/storyboard');
+const seo = require('./lib/youtube-seo');
 const { enrichVoices, capabilitiesFor, promptCapable } = require('./lib/voice-catalog');
 
 const app = express();
@@ -86,8 +87,27 @@ app.get('/api/health', (req, res) => {
     hiddenVoices: staticBlocklist.size + runtimeBlocked.size,
     imageConfigured: gimg.configured(),
     imageModel: gimg.configured() ? gimg.MODEL : null,
-    storyboardConfigured: storyboard.configured()
+    storyboardConfigured: storyboard.configured(),
+    seoConfigured: seo.configured()
   });
+});
+
+// Generate a full YouTube optimization package for a project.
+app.post('/api/seo/generate', async (req, res) => {
+  if (!seo.configured()) {
+    return res.status(400).json({ error: 'YouTube optimization needs GEMINI_API_KEY — see README.md.' });
+  }
+  const project = req.body?.project || {};
+  const channel = req.body?.channel || {};
+  if (!project.title && !project.script && !project.subtitles && !project.bible) {
+    return res.status(400).json({ error: 'The selected project has no story content to analyze yet.' });
+  }
+  try {
+    const pkg = await seo.buildSeo(project, channel);
+    res.json({ seo: pkg });
+  } catch (err) {
+    sendGenError(res, err, 'SEO generation failed');
+  }
 });
 
 // Generate a still image from a text prompt via the Gemini image API.

@@ -334,6 +334,57 @@
       </div>
     </section>
 
+    <!-- YouTube Optimization Center -->
+    <section id="youtube-card" class="card" hidden>
+      <div class="input-header">
+        <label>YouTube Optimization Center</label>
+        <span class="badge premium">SEO + Thumbnails</span>
+      </div>
+
+      <details class="yt-channel">
+        <summary>Channel profile &amp; knowledge base</summary>
+        <p class="field-note">Saved globally and inherited by every project, so your whole channel stays on-brand.</p>
+        <div class="controls yt-channel-form">
+          <div class="control"><label for="yt-ch-name">Channel name</label><input id="yt-ch-name" type="text" placeholder="Born Back Then" /></div>
+          <div class="control"><label for="yt-ch-type">Channel type</label><input id="yt-ch-type" type="text" placeholder="Historical storytelling" /></div>
+          <div class="control"><label for="yt-ch-audience">Audience</label><input id="yt-ch-audience" type="text" placeholder="Adults interested in immersive history" /></div>
+          <div class="control"><label for="yt-ch-tone">Tone</label><input id="yt-ch-tone" type="text" placeholder="Immersive, educational, documentary" /></div>
+          <div class="control"><label for="yt-ch-visual">Visual style</label><input id="yt-ch-visual" type="text" placeholder="Premium 2D historical illustrations" /></div>
+          <div class="control"><label for="yt-ch-thumb">Thumbnail style</label><input id="yt-ch-thumb" type="text" placeholder="Dark cinematic, warm lighting, bold readable text" /></div>
+          <div class="control"><label for="yt-ch-palette">Colour palette</label><input id="yt-ch-palette" type="text" placeholder="Warm amber, deep shadow, muted earth" /></div>
+          <div class="control"><label for="yt-ch-titles">Title structure</label><input id="yt-ch-titles" type="text" placeholder="Curiosity hook + subject + era" /></div>
+          <div class="control"><label for="yt-ch-seo">SEO focus</label><input id="yt-ch-seo" type="text" placeholder="History enthusiasts, educational viewers" /></div>
+          <div class="control"><label for="yt-ch-strategy">Content strategy</label><input id="yt-ch-strategy" type="text" placeholder="Weekly immersive medieval stories" /></div>
+        </div>
+        <div class="actions"><button id="yt-save-channel" class="btn ghost small" type="button">Save channel profile</button></div>
+      </details>
+
+      <div class="actions">
+        <button id="yt-generate" class="btn primary" type="button">
+          <span class="btn-label">Generate optimization for this project</span>
+          <span class="spinner" hidden></span>
+        </button>
+        <span id="yt-project-name" class="field-note"></span>
+      </div>
+      <div id="yt-status" class="status" hidden></div>
+
+      <div id="yt-results" hidden>
+        <div id="yt-recommended" class="yt-block"></div>
+        <div id="yt-titles" class="yt-block"></div>
+        <div id="yt-desc" class="yt-block"></div>
+        <div id="yt-keywords" class="yt-block"></div>
+        <div id="yt-tags" class="yt-block"></div>
+        <div id="yt-hashtags" class="yt-block"></div>
+        <div id="yt-thumbs" class="yt-block"></div>
+
+        <div class="queue-downloads">
+          <button id="yt-export-seo" class="btn primary small" type="button">SEO report (.md)</button>
+          <button id="yt-export-thumbs" class="btn ghost small" type="button">Thumbnail package (ZIP)</button>
+          <button id="yt-export-all" class="btn ghost small" type="button">Publishing package (ZIP)</button>
+        </div>
+      </div>
+    </section>
+
     <footer class="footer">
       <p>
         Uses the
@@ -440,6 +491,7 @@
   <script src="images.js"></script>
   <script src="storyboard.js"></script>
   <script src="editor.js"></script>
+  <script src="youtube.js"></script>
   <script src="projects.js"></script>
 </body>
 </html>

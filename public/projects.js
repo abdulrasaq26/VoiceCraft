@@ -20,12 +20,15 @@
     'blvck-tts:narration',
     'blvck-tts:batch',
     'blvck-tts:storyboard',
-    'blvck-tts:editor'
+    'blvck-tts:editor',
+    'blvck-tts:seo'
   ];
-  // IndexedDB blob stores that belong to a project.
+  // IndexedDB blob stores that belong to a project. (The channel knowledge
+  // base is global and intentionally NOT part of a project's working set.)
   const LIVE_STORES = [
     { db: 'blvck-tts', store: 'audio' },
-    { db: 'blvck-storyboard', store: 'images' }
+    { db: 'blvck-storyboard', store: 'images' },
+    { db: 'blvck-thumbnails', store: 'images' }
   ];
   const SNAP_DB = 'blvck-projects';
   const SNAP_STORE = 'snapshots';
