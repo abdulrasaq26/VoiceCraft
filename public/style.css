@@ -65,6 +65,16 @@ body.modal-open {
   text-overflow: ellipsis;
 }
 
+.topbar-provider,
+.topbar-model {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+.topbar-model {
+  width: 130px;
+}
+
 .topbar-project strong {
   color: var(--text);
 }

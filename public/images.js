@@ -45,7 +45,7 @@
     try {
       const res = await fetch('/api/health');
       const body = await res.json();
-      if (body.imageConfigured) card.hidden = false;
+      if (body.imageConfigured || window.BlvckAI.provider() === 'puter') card.hidden = false;
     } catch {
       /* leave the panel hidden if health can't be read */
     }
@@ -61,16 +61,7 @@
     clearStatus();
     setLoading(true);
     try {
-      const res = await fetch('/api/image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, aspect: aspectEl.value })
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.hint ? `${body.error} — ${body.hint}` : body.error || `Request failed (${res.status})`);
-      }
-      const blob = await res.blob();
+      const blob = await window.BlvckAI.generateImage(prompt, aspectEl.value);
       if (currentUrl) URL.revokeObjectURL(currentUrl);
       currentUrl = URL.createObjectURL(blob);
       output.src = currentUrl;
@@ -79,7 +70,7 @@
       downloadLink.download = `${slug(titleInput && titleInput.value)}-${Date.now()}.${ext}`;
       result.hidden = false;
     } catch (err) {
-      showStatus(err.message);
+      showStatus(err.hint ? `${err.message} — ${err.hint}` : err.message);
     } finally {
       setLoading(false);
     }

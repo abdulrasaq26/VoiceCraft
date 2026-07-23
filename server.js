@@ -94,13 +94,24 @@ app.get('/api/health', (req, res) => {
 
 // Generate a full YouTube optimization package for a project.
 app.post('/api/seo/generate', async (req, res) => {
-  if (!seo.configured()) {
-    return res.status(400).json({ error: 'YouTube optimization needs GEMINI_API_KEY — see README.md.' });
-  }
   const project = req.body?.project || {};
   const channel = req.body?.channel || {};
+  const { promptOnly, rawText } = req.body || {};
   if (!project.title && !project.script && !project.subtitles && !project.bible) {
     return res.status(400).json({ error: 'The selected project has no story content to analyze yet.' });
+  }
+  if (promptOnly) {
+    return res.json({ prompt: seo.seoPrompt(project, channel) });
+  }
+  if (typeof rawText === 'string') {
+    try {
+      return res.json({ seo: seo.parseSeo(rawText, project) });
+    } catch (err) {
+      return sendGenError(res, err, 'Could not parse the model output');
+    }
+  }
+  if (!seo.configured()) {
+    return res.status(400).json({ error: 'YouTube optimization needs GEMINI_API_KEY (or switch the AI provider to Qwen) — see README.md.' });
   }
   try {
     const pkg = await seo.buildSeo(project, channel);
@@ -155,17 +166,31 @@ function sendGenError(res, err, fallback) {
 }
 
 // Story analysis: build the shared story bible from all uploaded context.
+// promptOnly → return the prompt (for a client-side provider like Puter/Qwen).
+// rawText    → parse a client-run model's output. Neither needs a Gemini key.
 app.post('/api/storyboard/bible', async (req, res) => {
-  if (!storyboard.configured()) {
-    return res.status(400).json({ error: 'Storyboard needs GEMINI_API_KEY — see README.md.' });
+  const { context = {}, promptOnly, rawText } = req.body || {};
+  if (promptOnly) {
+    if (!context.script && !context.subtitles) {
+      return res.status(400).json({ error: 'Provide subtitles or a script first.' });
+    }
+    return res.json({ prompt: storyboard.biblePrompt(context) });
   }
-  const context = req.body?.context || {};
+  if (typeof rawText === 'string') {
+    try {
+      return res.json({ bible: storyboard.parseBible(rawText) });
+    } catch (err) {
+      return sendGenError(res, err, 'Could not parse the model output');
+    }
+  }
+  if (!storyboard.configured()) {
+    return res.status(400).json({ error: 'Storyboard needs GEMINI_API_KEY (or switch the AI provider to Qwen) — see README.md.' });
+  }
   if (!context.script && !context.subtitles) {
     return res.status(400).json({ error: 'Provide subtitles or a script first.' });
   }
   try {
-    const bible = await storyboard.buildBible(context);
-    res.json({ bible });
+    res.json({ bible: await storyboard.buildBible(context) });
   } catch (err) {
     sendGenError(res, err, 'Story analysis failed');
   }
@@ -173,19 +198,28 @@ app.post('/api/storyboard/bible', async (req, res) => {
 
 // Generate storyboard scenes (prompts) for a batch of cues.
 app.post('/api/storyboard/scenes', async (req, res) => {
-  if (!storyboard.configured()) {
-    return res.status(400).json({ error: 'Storyboard needs GEMINI_API_KEY — see README.md.' });
-  }
-  const { bible, cues, style, instructions, priorSummaries } = req.body || {};
+  const { bible, cues, style, instructions, priorSummaries, promptOnly, rawText } = req.body || {};
   if (!bible || !Array.isArray(cues) || !cues.length) {
     return res.status(400).json({ error: 'A story bible and cues are required.' });
   }
   if (cues.length > 40) {
     return res.status(400).json({ error: 'Send at most 40 cues per batch.' });
   }
+  if (promptOnly) {
+    return res.json({ prompt: storyboard.scenesPrompt({ bible, cues, style, instructions, priorSummaries }) });
+  }
+  if (typeof rawText === 'string') {
+    try {
+      return res.json(storyboard.parseScenes(rawText, cues));
+    } catch (err) {
+      return sendGenError(res, err, 'Could not parse the model output');
+    }
+  }
+  if (!storyboard.configured()) {
+    return res.status(400).json({ error: 'Storyboard needs GEMINI_API_KEY (or switch the AI provider to Qwen) — see README.md.' });
+  }
   try {
-    const result = await storyboard.buildScenes({ bible, cues, style, instructions, priorSummaries });
-    res.json(result);
+    res.json(await storyboard.buildScenes({ bible, cues, style, instructions, priorSummaries }));
   } catch (err) {
     sendGenError(res, err, 'Scene generation failed');
   }
