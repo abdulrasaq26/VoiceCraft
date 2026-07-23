@@ -561,6 +561,8 @@
     } catch {
       /* quota — non-fatal */
     }
+    // Let the video editor know new scenes/images are available.
+    window.dispatchEvent(new CustomEvent('blvck-storyboard-updated'));
   }
 
   async function restoreProject() {
