@@ -77,6 +77,45 @@
       <div id="director-status" class="status" hidden></div>
     </section>
 
+    <!-- Channel Brain — cross-project memory that learns and biases generation -->
+    <section id="brain-card" class="card brain-card" hidden>
+      <div class="input-header">
+        <label>🧠 Channel Brain</label>
+        <div class="input-header-actions">
+          <span class="badge premium">Cross-project memory</span>
+          <button class="btn ghost small clear-btn" type="button" data-clear="brain" title="Reset the channel memory (undoable)">🗑 Reset brain</button>
+        </div>
+      </div>
+      <p class="field-note">Learns your channel’s style, voice and tone across projects — and which title themes actually perform from stats you log — then biases every new script and SEO pack toward what works. It’s global: it survives project resets and gets smarter with every video.</p>
+
+      <div class="brain-grid">
+        <div class="brain-col">
+          <h4 class="brain-h">Learned preferences</h4>
+          <div id="brain-prefs" class="brain-prefs"></div>
+          <button id="brain-learn" class="btn ghost small" type="button">Learn from this project</button>
+        </div>
+        <div class="brain-col">
+          <h4 class="brain-h">What performs</h4>
+          <div id="brain-insights" class="brain-insights"></div>
+        </div>
+      </div>
+
+      <div class="brain-log">
+        <h4 class="brain-h">Log a published video</h4>
+        <p class="field-note">No YouTube connection needed yet — enter a video’s real numbers so the brain learns which themes win. Tag a theme (e.g. “mystery”, “daily life”) to compare.</p>
+        <div class="brain-log-row">
+          <input id="brain-perf-title" type="text" placeholder="Video title" />
+          <input id="brain-perf-theme" type="text" placeholder="Theme (e.g. mystery)" />
+          <input id="brain-perf-views" type="text" inputmode="numeric" placeholder="Views" />
+          <input id="brain-perf-ctr" type="text" inputmode="decimal" placeholder="CTR %" />
+          <input id="brain-perf-ret" type="text" inputmode="decimal" placeholder="Retention %" />
+          <button id="brain-perf-log" class="btn primary small" type="button">Log</button>
+        </div>
+        <div id="brain-perf-list" class="brain-perf-list" hidden></div>
+      </div>
+      <div id="brain-status" class="status" hidden></div>
+    </section>
+
     <main class="card">
       <!-- Presets -->
       <section class="presets-bar">
@@ -923,6 +962,7 @@
   <script src="model-registry.js"></script>
   <script src="ai-provider.js"></script>
   <script src="project-assets.js"></script>
+  <script src="brain.js"></script>
   <script src="data-manager.js"></script>
   <script src="eleven-voices.js"></script>
   <script src="tts-providers.js"></script>
@@ -941,6 +981,7 @@
   <script src="projects.js"></script>
   <script src="agent.js"></script>
   <script src="director.js"></script>
+  <script src="brain-ui.js"></script>
   <script src="pipeline.js"></script>
 </body>
 </html>

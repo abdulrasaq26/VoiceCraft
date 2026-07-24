@@ -32,7 +32,11 @@
     { id: 'agent', module: 'agent', label: 'AI agent chat history', ls: ['blvck-tts:agent'], cats: ['ai'] },
     { id: 'director', module: 'director', label: 'Production audit', ls: ['blvck-tts:director-audit'], cats: ['ai'] },
     { id: 'narration', module: 'project', label: 'Project name & narration', ls: ['blvck-tts:narration'], cats: [] },
-    { id: 'recents', module: 'cache', label: 'Recent & temporary items', ls: ['blvck-tts:recents'], cats: ['cache'] }
+    { id: 'recents', module: 'cache', label: 'Recent & temporary items', ls: ['blvck-tts:recents'], cats: ['cache'] },
+    // Channel Brain is cross-project memory — global:false keeps it out of the
+    // whole-project reset and the category smart-clears, but its own section
+    // Clear button still works (with confirm + undo).
+    { id: 'brain', module: 'brain', label: 'Channel Brain (cross-project memory)', ls: ['blvck-tts:brain'], cats: [], global: false }
   ];
 
   // Sections that own a Clear button but no distinct storage (their output is
@@ -42,7 +46,8 @@
   const MODULE_LABELS = {
     research: 'research brief', script: 'script', tts: 'audio & voice settings', subtitles: 'subtitles',
     storyboard: 'storyboard', images: 'generated image', editor: 'timeline & assets',
-    youtube: 'generated SEO assets', agent: 'chat history', director: 'production audit'
+    youtube: 'generated SEO assets', agent: 'chat history', director: 'production audit',
+    brain: 'Channel Brain memory'
   };
 
   // --- Module refresh registry -------------------------------------------
@@ -278,9 +283,10 @@
       return runClear({
         title: 'Reset the whole project?',
         message: 'This action will permanently remove all project data and cannot be undone. Are you sure you want to continue?',
-        items: ITEMS,
+        // Cross-project items (e.g. the Channel Brain) are intentionally kept.
+        items: ITEMS.filter((it) => it.global !== false),
         okLabel: 'Reset project',
-        doneMsg: 'Project reset — every section is now empty.'
+        doneMsg: 'Project reset — every section is now empty. Channel Brain kept.'
       });
     },
 

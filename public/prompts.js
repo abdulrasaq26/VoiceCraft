@@ -285,6 +285,7 @@ Give 10 titles in each of the three categories. The "long" description must incl
       parts.push(`RESEARCH KEYWORDS (weave these in): primary "${kw.primary || ''}", secondary ${JSON.stringify(kw.secondary || [])}, long-tail ${JSON.stringify(kw.longTail || [])}.`);
     }
     parts.push(`CHANNEL KNOWLEDGE BASE:\n${JSON.stringify(channel || {}, null, 2)}`);
+    if (project.channelMemory) parts.push(project.channelMemory);
     return { system: SEO_SYSTEM, user: parts.join('\n\n') };
   }
 
@@ -415,6 +416,7 @@ You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
     if (grounding) {
       lines.push(`\nGROUND THE SCRIPT IN THIS RESEARCH BRIEF (use these facts and angles; do not contradict them or invent conflicting specifics):\n${grounding}`);
     }
+    if (opts.channelMemory) lines.push(`\n${opts.channelMemory}`);
     if (opts.retention) {
       lines.push(
         'RETENTION: open with a strong hook, use open loops and pattern interrupts to sustain attention, and re-engage the listener at natural drop-off points. Keep momentum from the first word to the last.'

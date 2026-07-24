@@ -16,8 +16,14 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 - 💬 **Advisory chat** — ask it anything ("review my storyboard", "improve retention", "best voice", "optimize for YouTube") with one-click command shortcuts; replies stream live
 - 📊 **Quality audit** — a scored pre-export report (script / retention / storytelling / visual consistency / thumbnail / SEO / monetization / overall) with prioritized recommendations and a "do this next"
 - 🎚️ **Director Mode** — proactive next-step guidance across the pipeline
-- ▶️ **Auto-run pipeline** — opt-in autopilot that drives every stage for you (Script → Voice → Storyboard/Images → Video → YouTube), pausing at an **Approve / Skip / Stop** gate before each stage. Flip on **Hands-free** to run gate-free (Stop still works). It clicks each module's own button and waits for the project state to report the stage done, so it works on localhost and self-hosted Puter exactly like the manual flow
+- ▶️ **Auto-run pipeline** — opt-in autopilot that drives every stage for you (**Research → Script → Voice → Storyboard/Images → Video → YouTube**), pausing at an **Approve / Skip / Stop** gate before each stage. Flip on **Hands-free** to run gate-free (Stop still works). It starts by researching the topic and handing the brief to the script, then runs each stage on the model the router picks — the panel shows the active **objective** and a per-stage **`↳ model`** line so you can see which model runs each task. It clicks each module's own button and waits for the project state to report the stage done, so it works on localhost and self-hosted Puter exactly like the manual flow
 - 🧭 **Task-aware model routing** *(Director 2.0, slice 1)* — a model-capability registry scores every model your Puter instance offers and picks the **best one per task** (storytelling for scripts, coding for the agent, structure for SEO…) instead of one model for everything. A **cost objective** dial in ⚙ AI settings — *Maximum quality / Balanced / Lowest cost* — reweights every pick. Leave the chat model on **Auto** to let it route; set an explicit model to override. See [`ROADMAP.md`](ROADMAP.md)
+
+### 🧠 Channel Brain — cross-project memory
+- **Learns your channel** across projects — preferred visual style, voice and tone are remembered automatically and shown with usage counts
+- **Learns what performs** — log a published video's stats (title, theme, CTR, retention) and the brain derives insights like *"'mystery' titles outperform 'daily life' — avg CTR 12% vs 6%"* (no YouTube connection needed yet)
+- **Biases every new video** — a CHANNEL MEMORY block is injected into the script and SEO prompts, and into the Director, so generation leans toward what works
+- **Global & durable** — it's cross-project: a full project reset keeps it, and it gets smarter with every video (its own Reset button clears it, with undo)
 
 ### 🔎 AI Research — the factual spine
 - Turns a topic into a **structured research brief** — summary, angles, cold-open hooks, **key facts with confidence + "verify" flags**, entities, a timeline, and search keywords — via the strongest reasoning model (task-routed)

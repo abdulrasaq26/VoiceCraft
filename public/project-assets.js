@@ -123,6 +123,7 @@
       return {
         title: this.title(),
         channel: channel || null,
+        channelBrain: window.BlvckBrain ? window.BlvckBrain.snapshot() : null,
         research: research ? { summary: clip(research.summary, 500), angles: (research.angles || []).slice(0, 6), keyFactCount: (research.keyFacts || []).length, keywords: research.keywords } : null,
         scriptOptions: this.scriptOptions(),
         script: clip(this.script(), 6000),
