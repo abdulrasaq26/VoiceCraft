@@ -97,6 +97,16 @@
     return 'other';
   }
 
+  // Let the connection banner re-surface when a live call fails because the
+  // Puter session lapsed (auth expired / signed out in another tab).
+  function maybeFlagAuth(e) {
+    try {
+      if (classifyError(e) === 'authentication') {
+        window.dispatchEvent(new CustomEvent('blvck:ai-auth-error'));
+      }
+    } catch { /* ignore */ }
+  }
+
   // Normalise the various shapes puter.ai.chat can return into plain text.
   function chatText(resp) {
     if (resp == null) return '';
@@ -111,18 +121,28 @@
     return '';
   }
 
-  // Lazy-load Puter's SDK. Only fetched on first use.
+  // Lazy-load Puter's SDK. Only fetched on first use. Has a hard timeout so a
+  // blocked/slow js.puter.com can never leave the app hanging on "Loading…" —
+  // it rejects with a clear message instead, and a later retry can re-attempt.
   let puterLoading = null;
+  const SDK_TIMEOUT_MS = 20000;
   function ensurePuter() {
     if (typeof window.puter !== 'undefined') return Promise.resolve();
     if (puterLoading) return puterLoading;
     puterLoading = new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (fn, arg) => { if (!settled) { settled = true; fn(arg); } };
       const s = document.createElement('script');
       s.src = 'https://js.puter.com/v2/';
-      s.onload = () => (typeof window.puter !== 'undefined' ? resolve() : reject(new Error('Puter SDK loaded but unavailable.')));
-      s.onerror = () => reject(new Error('Could not load the Puter SDK (js.puter.com). Check your connection.'));
+      s.onload = () => (typeof window.puter !== 'undefined'
+        ? finish(resolve)
+        : finish(reject, new Error('Puter SDK loaded but unavailable.')));
+      s.onerror = () => finish(reject, new Error('Could not load the Puter SDK (js.puter.com). Check your connection or network policy.'));
       document.head.appendChild(s);
+      setTimeout(() => finish(reject, new Error('Timed out loading the Puter SDK (js.puter.com).')), SDK_TIMEOUT_MS);
     });
+    // On failure, forget the cached promise so a later Sign-in / retry can try again.
+    puterLoading.catch(() => { puterLoading = null; });
     return puterLoading;
   }
 
@@ -194,6 +214,58 @@
     setTtsModel(m) { if (m) localStorage.setItem(TTS_MODEL_KEY, m); else localStorage.removeItem(TTS_MODEL_KEY); },
     ttsProvider() { return localStorage.getItem(TTS_PROVIDER_KEY) || DEFAULT_TTS_PROVIDER; },
     setTtsProvider(p) { localStorage.setItem(TTS_PROVIDER_KEY, p || DEFAULT_TTS_PROVIDER); },
+
+    // --- Puter connection & auth ---
+    // Almost every "AI doesn't work" report on a deployed app is really "the
+    // Puter session isn't established" (not signed in, popup blocked, or the
+    // SDK can't load). These helpers let the UI detect that and offer a fix.
+
+    // Best-effort synchronous check — safe to call often (no network, no popup).
+    signedIn() {
+      try {
+        const a = window.puter && window.puter.auth;
+        return !!(a && typeof a.isSignedIn === 'function' && a.isSignedIn());
+      } catch { return false; }
+    },
+
+    // Full connection status: is the SDK loaded, is a user signed in, and who.
+    // Never throws — returns a structured report for the connection banner.
+    async status() {
+      const out = { sdk: false, signedIn: null, user: null, error: '' };
+      try { await ensurePuter(); out.sdk = true; }
+      catch (e) { out.error = errMsg(e); return out; }
+      try {
+        const a = window.puter.auth || {};
+        if (typeof a.isSignedIn === 'function') out.signedIn = await Promise.resolve(a.isSignedIn());
+        if (out.signedIn !== false && typeof a.getUser === 'function') {
+          try { out.user = await a.getUser(); } catch { /* getUser can fail while token refreshes */ }
+        }
+      } catch (e) { out.error = errMsg(e); }
+      return out;
+    },
+
+    // Open Puter's sign-in popup (must be called from a user gesture). On
+    // success the model cache is cleared so discovery re-runs under the new
+    // session. Returns the signed-in user (or null if unavailable).
+    async signIn(opts) {
+      await ensurePuter();
+      const a = window.puter.auth;
+      if (!a || typeof a.signIn !== 'function') {
+        throw new Error('This Puter instance does not expose an auth API to sign in with.');
+      }
+      await a.signIn(opts || {});
+      modelsCache = null;
+      let user = null;
+      try { user = await a.getUser(); } catch { /* ignore */ }
+      return user;
+    },
+
+    async signOut() {
+      try { await ensurePuter(); } catch { return; }
+      const a = window.puter.auth;
+      if (a && typeof a.signOut === 'function') { try { await a.signOut(); } catch { /* ignore */ } }
+      modelsCache = null;
+    },
 
     // Discover the chat models this Puter instance actually offers. Returns
     // [] if the instance is too old to support listModels — callers then let
@@ -272,9 +344,10 @@
           return text;
         } catch (e) {
           lastErr = e;
-          if (!isModelError(e)) throw e; // real failure (quota/network/etc.)
+          if (!isModelError(e)) { maybeFlagAuth(e); throw e; } // real failure (quota/network/auth)
         }
       }
+      maybeFlagAuth(lastErr);
       const err = new Error(errMsg(lastErr) || 'No chat model is available on this Puter instance.');
       err.cause = lastErr;
       throw err;
@@ -315,6 +388,7 @@
           err = new Error(msg || 'Speech synthesis failed.');
         }
         err.cause = e; // keep the original for diagnostics/classification
+        maybeFlagAuth(e);
         throw err;
       }
       const src = audio && (audio.src || (typeof audio === 'string' ? audio : null));

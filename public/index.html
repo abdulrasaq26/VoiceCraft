@@ -15,6 +15,22 @@
       <button id="ai-settings-open" class="topbar-badge" type="button" title="AI settings — models &amp; voice provider for this Puter instance">⚡ Puter AI ⚙</button>
       <button id="project-new" class="btn ghost small" type="button">+ New</button>
     </div>
+
+    <!-- Puter connection banner — surfaces "AI isn't connected / sign in" so a
+         deployed app never fails silently when the Puter session is missing. -->
+    <div id="ai-status-banner" class="ai-status-banner" role="status" hidden>
+      <span class="ai-status-icon">⚠️</span>
+      <div class="ai-status-text">
+        <strong id="ai-status-title">AI isn't connected yet</strong>
+        <span id="ai-status-detail">Sign in to your Puter account to enable scripts, voice, images, video and the agent.</span>
+      </div>
+      <div class="ai-status-actions">
+        <button id="ai-status-signin" class="btn primary small" type="button">Sign in to Puter</button>
+        <button id="ai-status-diag" class="btn ghost small" type="button">Diagnostics</button>
+        <button id="ai-status-dismiss" class="btn ghost small" type="button" aria-label="Dismiss" title="Dismiss">×</button>
+      </div>
+    </div>
+
     <header class="header">
       <h1>Blvck<span class="accent">TTS</span></h1>
       <p class="tagline">Serverless AI voice, images, video &amp; scripts — powered by Puter + ElevenLabs</p>
@@ -882,6 +898,7 @@
   <script src="tts-providers.js"></script>
   <script src="ai-settings.js"></script>
   <script src="diagnostics.js"></script>
+  <script src="ai-status.js"></script>
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>

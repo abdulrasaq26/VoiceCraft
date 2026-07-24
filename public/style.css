@@ -2320,3 +2320,26 @@ textarea.sb-scene-prompt:focus {
 }
 
 .input-header-actions { display: flex; align-items: center; gap: 0.5rem; }
+
+/* --- Puter connection banner -------------------------------------------- */
+.ai-status-banner {
+  display: flex; align-items: center; gap: 0.75rem;
+  margin: 0 0 0.9rem; padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(232, 182, 76, 0.5);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(232, 182, 76, 0.14), rgba(232, 182, 76, 0.06));
+}
+.ai-status-banner[hidden] { display: none; }
+.ai-status-icon { font-size: 1.3rem; flex: 0 0 auto; }
+.ai-status-text { display: flex; flex-direction: column; gap: 0.1rem; flex: 1 1 auto; min-width: 0; }
+.ai-status-text strong { font-size: 0.95rem; }
+.ai-status-text span { font-size: 0.82rem; color: var(--text-dim); }
+.ai-status-actions { display: flex; align-items: center; gap: 0.4rem; flex: 0 0 auto; }
+.ai-status-actions #ai-status-dismiss { padding: 0.2rem 0.5rem; font-size: 1.1rem; line-height: 1; }
+
+.topbar-badge.connected { border-color: rgba(53, 194, 107, 0.55); color: #7ee2a4; }
+
+@media (max-width: 640px) {
+  .ai-status-banner { flex-wrap: wrap; }
+  .ai-status-actions { width: 100%; justify-content: flex-start; }
+}

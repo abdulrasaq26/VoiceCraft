@@ -6,6 +6,11 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 
 ## Features
 
+### 🔌 Puter connection & sign-in
+- Because every AI feature runs through your Puter account, the app checks the connection on load and shows a **connection banner** if the Puter SDK can't load or you're **not signed in** — with a one-click **Sign in to Puter** button and a direct **Diagnostics** link, so nothing ever fails silently
+- The topbar badge shows **⚡ Puter AI ✓** once connected; a lapsed session (signed out in another tab, expired token) re-surfaces the banner automatically
+- SDK loading has a hard timeout, so a blocked `js.puter.com` reports a clear error instead of hanging on "Loading…"
+
 ### 🎬 AI Production Director (global intelligence layer)
 - 🧠 **Project-aware** — sits above every tool and sees the whole project (script, voice, story bible, scenes, images, SEO) via a central project-memory store
 - 💬 **Advisory chat** — ask it anything ("review my storyboard", "improve retention", "best voice", "optimize for YouTube") with one-click command shortcuts; replies stream live
