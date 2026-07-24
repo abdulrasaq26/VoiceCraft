@@ -599,7 +599,26 @@
       <div class="actions">
         <button id="ai-settings-save" class="btn primary" type="button">Save</button>
         <button id="ai-settings-refresh" class="btn ghost" type="button">Reload model list</button>
+        <button id="ai-diagnostics-open" class="btn ghost" type="button">🔧 Diagnostics</button>
       </div>
+    </div>
+  </div>
+
+  <!-- AI diagnostics -->
+  <div id="ai-diagnostics-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="AI diagnostics">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>AI diagnostics</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <p class="field-note">Runs live checks against your Puter instance and shows the exact cause of any failure (authentication, network/CORS, missing provider, unsupported model, or quota). The chat and voice tests make real calls.</p>
+      <label class="ssml-toggle"><input type="checkbox" id="diag-image" /> <span>Also test image generation (uses credits)</span></label>
+      <div class="actions">
+        <button id="diag-run" class="btn primary" type="button">Run diagnostics</button>
+        <button id="diag-copy" class="btn ghost" type="button" hidden>Copy report</button>
+      </div>
+      <div id="diag-results" class="diag-results"></div>
     </div>
   </div>
 
@@ -720,6 +739,7 @@
   <script src="eleven-voices.js"></script>
   <script src="tts-providers.js"></script>
   <script src="ai-settings.js"></script>
+  <script src="diagnostics.js"></script>
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>

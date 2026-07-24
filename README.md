@@ -105,6 +105,7 @@ public/                (this whole folder is the deployable app)
   prompts.js           BlvckPrompts: all LLM prompt build + parse (client-side, single source of truth)
   ai-provider.js       BlvckAI: Puter router (speak / chat / generateJSON / generateImage / generateVideo) + model discovery
   ai-settings.js       ⚙ AI settings modal (chat model / image model / TTS provider per instance)
+  diagnostics.js       🔧 AI diagnostics panel (live checks + precise failure causes)
   tts-providers.js     Multi-provider TTS catalog (ElevenLabs/Polly/OpenAI/Gemini/xAI) + per-provider options
   eleven-voices.js     Curated ElevenLabs voice catalog (48 voices + metadata)
   app.js               Core TTS UI (voices, queue, subtitles, profiles, instruction presets)
@@ -135,6 +136,7 @@ There is no API to call. Each AI feature builds its prompt with `window.BlvckPro
 
 ## Notes
 
+- **Diagnostics.** If anything fails, open **⚙ AI settings → 🔧 Diagnostics** and hit *Run*. It reports the API endpoint, whether you're signed into Puter, the resolved models/provider, `listModels()`, and a live test chat + test voice — labelling each failure with its real cause (**authentication**, **network / CORS**, **rate limit / quota**, **missing provider / voice**, or **unsupported / missing model**) and showing the provider's raw error. *Copy report* puts the whole thing on your clipboard to share.
 - **Which Puter instance?** The app adapts to whatever the running instance exposes. Chat **cycles through the models your instance reports** via `puter.ai.listModels()` (not a hardcoded list), so it works the same on **puter.com** and a **self-hosted Puter** with a completely different model roster — it tries the reported models best-first and remembers the one that works. Image generation falls back across known image models. If a call fails because a model/provider is missing, it self-heals to an available one.
   - On **puter.com**, everything is configured (ElevenLabs, 400+ models, `gpt-image-1`) but usage is billed to the signed-in user (Puter's user-pays model).
   - On a **self-hosted Puter**, only the models/providers *you* configured on the server exist. Chat and images adapt automatically; for **voice (TTS)**, open **⚙ AI settings → Voice provider** and pick whichever of the five your instance supports (Amazon Polly is Puter's default engine and the most likely to be available). Each provider ships its own voice catalog, so switching provider swaps the voices too.

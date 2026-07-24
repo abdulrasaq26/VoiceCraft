@@ -1927,3 +1927,67 @@ input[type="range"]:disabled {
   gap: 0.5rem;
   align-items: center;
 }
+
+/* --- AI diagnostics --- */
+.diag-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.diag-row {
+  border: 1px solid var(--card-border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+.diag-row.diag-ok { border-left-color: #35c26b; }
+.diag-row.diag-warn { border-left-color: #e8b64c; }
+.diag-row.diag-fail { border-left-color: #e5484d; }
+.diag-row.diag-info { border-left-color: #5b8def; }
+.diag-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+.diag-name { flex: 0 0 auto; }
+.diag-cat {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #e5484d;
+  background: rgba(229, 72, 77, 0.12);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+.diag-detail {
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+.diag-raw {
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  color: var(--text-dim);
+  max-height: 160px;
+  overflow: auto;
+}
+.diag-verdict {
+  margin-top: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.diag-verdict.good { background: rgba(53, 194, 107, 0.12); color: #35c26b; }
+.diag-verdict.bad { background: rgba(229, 72, 77, 0.12); color: #ff6b6f; }
