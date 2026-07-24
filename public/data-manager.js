@@ -19,6 +19,7 @@
   // (templates, presets, favorites, the channel knowledge base, saved
   // projects) are deliberately NOT listed — they are not current-project data.
   const ITEMS = [
+    { id: 'research', module: 'research', label: 'Research brief', ls: ['blvck-tts:research'], cats: ['generated', 'ai'] },
     { id: 'script', module: 'script', label: 'Script', ls: ['blvck-tts:script-last'], cats: ['generated', 'ai'] },
     { id: 'audio', module: 'tts', label: 'Generated audio', ls: ['blvck-tts:batch'], idb: [['blvck-tts', 'audio']], cats: ['generated', 'ai'] },
     { id: 'voice-settings', module: 'tts', label: 'Voice settings', ls: ['blvck-tts:settings'], cats: ['settings'] },
@@ -39,7 +40,7 @@
   const IN_MEMORY_MODULES = ['images'];
 
   const MODULE_LABELS = {
-    script: 'script', tts: 'audio & voice settings', subtitles: 'subtitles',
+    research: 'research brief', script: 'script', tts: 'audio & voice settings', subtitles: 'subtitles',
     storyboard: 'storyboard', images: 'generated image', editor: 'timeline & assets',
     youtube: 'generated SEO assets', agent: 'chat history', director: 'production audit'
   };

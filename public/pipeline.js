@@ -9,6 +9,7 @@
   if (!bar || !window.BlvckAssets) return;
 
   const STEPS = [
+    { key: 'research', label: 'Research', icon: '🔎', target: 'research-card' },
     { key: 'script', label: 'Script', icon: '📝', target: 'script-card' },
     { key: 'voice', label: 'Voice', icon: '🎙️', target: null }, // main voice studio (no id)
     { key: 'storyboard', label: 'Storyboard', icon: '🎬', target: 'storyboard-card' },

@@ -19,6 +19,11 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 - ▶️ **Auto-run pipeline** — opt-in autopilot that drives every stage for you (Script → Voice → Storyboard/Images → Video → YouTube), pausing at an **Approve / Skip / Stop** gate before each stage. Flip on **Hands-free** to run gate-free (Stop still works). It clicks each module's own button and waits for the project state to report the stage done, so it works on localhost and self-hosted Puter exactly like the manual flow
 - 🧭 **Task-aware model routing** *(Director 2.0, slice 1)* — a model-capability registry scores every model your Puter instance offers and picks the **best one per task** (storytelling for scripts, coding for the agent, structure for SEO…) instead of one model for everything. A **cost objective** dial in ⚙ AI settings — *Maximum quality / Balanced / Lowest cost* — reweights every pick. Leave the chat model on **Auto** to let it route; set an explicit model to override. See [`ROADMAP.md`](ROADMAP.md)
 
+### 🔎 AI Research — the factual spine
+- Turns a topic into a **structured research brief** — summary, angles, cold-open hooks, **key facts with confidence + "verify" flags**, entities, a timeline, and search keywords — via the strongest reasoning model (task-routed)
+- **Grounds the script and SEO** automatically: the brief is injected into the script prompt and its keywords into the SEO prompt, so your content is built on facts and real search terms instead of the model's memory
+- **Honest by design** — every brief carries a disclaimer and flags anything to double-check before publishing; one click hands the topic off to the Script studio
+
 ### 🪜 End-to-end production pipeline
 - Sections are ordered as a real workflow — **Script → Voice → Storyboard → Images → Video → YouTube → Agent** — with a sticky **progress tracker** showing where you are (click a step to jump to it)
 - **No file shuffling** — a project-memory layer passes data between stages; the storyboard's **⤵ Import from project** pulls the subtitles/script you already generated (no download/re-upload)

@@ -255,6 +255,27 @@
       </section>
     </main>
 
+    <!-- AI Research (sourced brief that grounds the script + SEO) -->
+    <section id="research-card" class="card research-card" hidden>
+      <div class="input-header">
+        <label for="research-topic">AI Research</label>
+        <div class="input-header-actions">
+          <span class="badge elite">⚡ Puter</span>
+          <button class="btn ghost small clear-btn" type="button" data-clear="research" title="Remove the research brief for this project (undoable)">🗑 Clear research</button>
+        </div>
+      </div>
+      <p class="field-note">Turn a topic into a structured research brief — facts (with confidence), angles, hooks, entities, a timeline and keywords — that grounds your script and SEO instead of relying on the model's memory. Verify anything flagged before publishing.</p>
+      <textarea id="research-topic" rows="2" placeholder="What should we research? e.g. 'Daily life of a 14th-century English village on the eve of the Black Death'"></textarea>
+      <section class="actions">
+        <button id="research-generate" class="btn primary" type="button">
+          <span class="btn-label">Research topic</span>
+          <span class="spinner" hidden></span>
+        </button>
+      </section>
+      <div id="research-status" class="status" hidden></div>
+      <div id="research-result" class="research-result" hidden></div>
+    </section>
+
     <!-- AI Script Generator (Puter chat) -->
     <section id="script-card" class="card script-card" hidden>
       <div class="input-header">
@@ -911,6 +932,7 @@
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>
+  <script src="research.js"></script>
   <script src="script.js"></script>
   <script src="images.js"></script>
   <script src="storyboard.js"></script>

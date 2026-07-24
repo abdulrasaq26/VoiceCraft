@@ -2350,3 +2350,36 @@ textarea.sb-scene-prompt:focus {
   .ai-status-banner { flex-wrap: wrap; }
   .ai-status-actions { width: 100%; justify-content: flex-start; }
 }
+
+/* --- AI Research -------------------------------------------------------- */
+.research-result { display: flex; flex-direction: column; gap: 0.9rem; margin-top: 0.4rem; }
+.rs-summary { font-size: 1rem; line-height: 1.55; }
+.rs-disclaimer {
+  font-size: 0.8rem; color: var(--text-dim);
+  background: rgba(232, 182, 76, 0.08); border: 1px solid rgba(232, 182, 76, 0.3);
+  border-radius: 8px; padding: 0.45rem 0.7rem;
+}
+.rs-block h4 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 0.4rem; }
+.rs-block ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.28rem; font-size: 0.92rem; }
+.rs-facts, .rs-timeline { list-style: none; padding-left: 0; }
+.rs-fact { display: flex; gap: 0.55rem; align-items: baseline; }
+.rs-fact-body { flex: 1; }
+.rs-conf {
+  flex: 0 0 auto; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 0.12rem 0.42rem; border-radius: 999px; margin-top: 0.1rem;
+}
+.rs-conf.high { background: rgba(108, 201, 143, 0.16); color: var(--success); }
+.rs-conf.medium { background: rgba(232, 182, 76, 0.16); color: var(--accent); }
+.rs-conf.low { background: rgba(224, 108, 108, 0.16); color: var(--danger); }
+.rs-verify { font-size: 0.72rem; color: var(--danger); white-space: nowrap; }
+.rs-timeline li { display: flex; gap: 0.6rem; font-size: 0.9rem; padding: 0.15rem 0; }
+.rs-when { font-family: ui-monospace, monospace; color: var(--accent); flex: 0 0 auto; min-width: 5rem; }
+.rs-ent-row { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin-bottom: 0.35rem; }
+.rs-ent-label { font-size: 0.72rem; color: var(--text-dim); min-width: 3.5rem; }
+.rs-chip { font-size: 0.78rem; background: var(--panel); border: 1px solid var(--card-border); border-radius: 999px; padding: 0.15rem 0.55rem; }
+.rs-chip.primary { border-color: var(--accent); color: var(--accent); }
+.rs-chip.dim { color: var(--text-dim); }
+.rs-kw { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.rs-caveats { font-size: 0.88rem; color: var(--text-dim); }
+.rs-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; padding-top: 0.4rem; border-top: 1px solid var(--card-border); }
+.rs-raw { background: var(--panel); border: 1px solid var(--card-border); border-radius: 8px; padding: 0.6rem; font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }

@@ -52,6 +52,7 @@
   // --- Next-step guidance (Director Mode) --------------------------------
 
   const STAGE_INFO = {
+    research: { label: 'Research the topic', target: 'research-card', tip: 'Ground the video in facts, angles and keywords before you write.' },
     script: { label: 'Generate a script', target: 'script-card', tip: 'Start with a script — a strong hook decides everything downstream.' },
     voice: { label: 'Generate the voiceover', target: null, tip: 'Turn your script into narration in the voice studio.' },
     storyboard: { label: 'Build the storyboard', target: 'storyboard-card', tip: 'Analyze the story into scenes with a fitting visual style.' },
@@ -59,7 +60,7 @@
     video: { label: 'Assemble the video', target: 'editor-card', tip: 'Auto-assemble scenes into a timeline with motion + subtitles.' },
     youtube: { label: 'Optimize for YouTube', target: 'youtube-card', tip: 'Generate titles, thumbnail, description and SEO.' }
   };
-  const STAGE_ORDER = ['script', 'voice', 'storyboard', 'images', 'video', 'youtube'];
+  const STAGE_ORDER = ['research', 'script', 'voice', 'storyboard', 'images', 'video', 'youtube'];
 
   function nextStage() {
     const st = window.BlvckAssets.status();

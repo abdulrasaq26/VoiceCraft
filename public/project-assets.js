@@ -11,6 +11,7 @@
   'use strict';
 
   const K = {
+    research: 'blvck-tts:research',
     scriptLast: 'blvck-tts:script-last',
     narration: 'blvck-tts:narration',
     subtitles: 'blvck-tts:subtitles',
@@ -92,10 +93,15 @@
     channel() { return read(K.channel); },
     editor() { return read(K.editor); },
 
+    // The research brief for this project (topic facts, angles, keywords).
+    research() { const r = read(K.research); return (r && r.brief) || null; },
+    researchTopic() { const r = read(K.research); return (r && r.topic) || ''; },
+
     // Per-stage completion for the pipeline tracker.
     status() {
       const scenes = this.scenes();
       return {
+        research: !!this.research(),
         script: !!this.script(),
         voice: this.hasAudio(),
         storyboard: scenes.length > 0,
@@ -113,9 +119,11 @@
       const seo = this.seo();
       const channel = this.channel();
       const clip = (s, n) => (s ? String(s).slice(0, n) : '');
+      const research = this.research();
       return {
         title: this.title(),
         channel: channel || null,
+        research: research ? { summary: clip(research.summary, 500), angles: (research.angles || []).slice(0, 6), keyFactCount: (research.keyFacts || []).length, keywords: research.keywords } : null,
         scriptOptions: this.scriptOptions(),
         script: clip(this.script(), 6000),
         subtitles: clip(this.subtitlesSRT(), 3000),

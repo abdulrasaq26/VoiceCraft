@@ -137,6 +137,9 @@
     } else if (sb && sb.scenes) {
       ctx.subtitles = sb.scenes.map((s) => s.subtitle).filter(Boolean).join(' ');
     }
+    // Feed research keywords into SEO so titles/tags reflect real search terms.
+    const research = window.BlvckAssets && window.BlvckAssets.research();
+    if (research) ctx.research = research;
     return ctx;
   }
 
