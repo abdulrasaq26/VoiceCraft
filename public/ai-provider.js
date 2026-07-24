@@ -72,6 +72,27 @@
     );
   }
 
+  // Categorise a failure so the diagnostics panel can name the real cause.
+  function classifyError(e) {
+    let raw = '';
+    try { raw = typeof e === 'string' ? e : JSON.stringify(e); } catch { raw = String(e); }
+    // Fold in the underlying error (attached as .cause) so wrapping doesn't
+    // hide the provider's original message.
+    let causeStr = '';
+    if (e && e.cause) {
+      try { causeStr = `${errMsg(e.cause)} ${typeof e.cause === 'string' ? e.cause : JSON.stringify(e.cause)}`; } catch { causeStr = String(e.cause); }
+    }
+    const s = `${errMsg(e)} ${raw} ${causeStr}`.toLowerCase();
+    const status = String((e && (e.status || e.statusCode || e.code)) || (e && e.cause && (e.cause.status || e.cause.statusCode)) || '');
+    if (status === '401' || /unauthorized|not signed in|not authenticated|auth token|login required|sign in/.test(s)) return 'authentication';
+    if (status === '403' || /forbidden|permission denied|not allowed/.test(s)) return 'forbidden / permissions';
+    if (status === '429' || /rate.?limit|too many requests|quota|exceeded|insufficient (funds|credit|balance)|payment/.test(s)) return 'rate limit / quota / billing';
+    if (/failed to fetch|networkerror|network error|cors|cross-origin|load failed|err_failed|connection refused|typeerror: (failed|network)/.test(s)) return 'network / CORS';
+    if (/provider not found|no such provider|unsupported provider|voice.*not found|not found.*voice|voice provider|isn.?t available/.test(s)) return 'missing provider / voice';
+    if (isModelError(e)) return 'unsupported / missing model';
+    return 'other';
+  }
+
   // Normalise the various shapes puter.ai.chat can return into plain text.
   function chatText(resp) {
     if (resp == null) return '';
@@ -163,8 +184,10 @@
     setChatModel(m) { if (m) localStorage.setItem(CHAT_MODEL_KEY, m); },
     imageModel() { return localStorage.getItem(IMAGE_MODEL_KEY) || DEFAULT_IMAGE_MODEL; },
     setImageModel(m) { if (m) localStorage.setItem(IMAGE_MODEL_KEY, m); },
-    ttsModel() { return localStorage.getItem(TTS_MODEL_KEY) || DEFAULT_TTS_MODEL; },
-    setTtsModel(m) { localStorage.setItem(TTS_MODEL_KEY, m || DEFAULT_TTS_MODEL); },
+    // Empty by default so each provider's buildOptions() supplies its own
+    // model/engine default (an ElevenLabs model must not leak to Polly, etc.).
+    ttsModel() { return localStorage.getItem(TTS_MODEL_KEY) || ''; },
+    setTtsModel(m) { if (m) localStorage.setItem(TTS_MODEL_KEY, m); else localStorage.removeItem(TTS_MODEL_KEY); },
     ttsProvider() { return localStorage.getItem(TTS_PROVIDER_KEY) || DEFAULT_TTS_PROVIDER; },
     setTtsProvider(p) { localStorage.setItem(TTS_PROVIDER_KEY, p || DEFAULT_TTS_PROVIDER); },
 
@@ -248,32 +271,47 @@
           if (!isModelError(e)) throw e; // real failure (quota/network/etc.)
         }
       }
-      throw new Error(errMsg(lastErr) || 'No chat model is available on this Puter instance.');
+      const err = new Error(errMsg(lastErr) || 'No chat model is available on this Puter instance.');
+      err.cause = lastErr;
+      throw err;
     },
 
-    // Synthesize speech (default: ElevenLabs) via Puter; returns an audio Blob.
+    // Synthesize speech via Puter's txt2speech, using whichever provider is
+    // selected (ElevenLabs, Amazon Polly, OpenAI, Gemini, or xAI). Each
+    // provider needs a different options shape — buildTtsOptions (from
+    // tts-providers.js) produces the right one. Returns an audio Blob.
+    // opts: { voice_settings?, instructions?, model?, language? }
     async speak(text, voice, opts = {}) {
       await ensurePuter();
       const provider = this.ttsProvider();
+      const ctx = {
+        voiceSettings: normalizeVoiceSettings(opts.voice_settings),
+        instructions: opts.instructions || '',
+        model: opts.model || this.ttsModel() || '',
+        language: opts.language || 'en-US'
+      };
+      const params = window.buildTtsOptions
+        ? window.buildTtsOptions(provider, voice, ctx)
+        : { provider, voice, model: ctx.model, voice_settings: ctx.voiceSettings };
+
       let audio;
       try {
-        audio = await window.puter.ai.txt2speech(text, {
-          provider,
-          voice,
-          model: opts.model || this.ttsModel(),
-          voice_settings: normalizeVoiceSettings(opts.voice_settings)
-        });
+        audio = await window.puter.ai.txt2speech(text, params);
       } catch (e) {
         const msg = errMsg(e);
-        if (/provider not found|not found:|no such provider|unsupported provider/i.test(msg)) {
+        let err;
+        if (/provider not found|not found:|no such provider|unsupported provider|voice.*not found|not found.*voice/i.test(msg)) {
           const avail = msg.match(/available[:\s]*(.+)$/i);
-          throw new Error(
-            `This Puter instance doesn't have the "${provider}" text-to-speech provider.` +
-            (avail ? ` Available: ${avail[1].trim()}.` : '') +
-            ' On puter.com ElevenLabs is available out of the box; a self-hosted Puter must have it configured, or switch the provider under AI settings.'
+          err = new Error(
+            `The "${provider}" voice provider (or this voice) isn't available on your Puter instance.` +
+            (avail ? ` Available providers: ${avail[1].trim()}.` : '') +
+            ' Switch the voice provider under ⚙ AI settings to one your instance supports.'
           );
+        } else {
+          err = new Error(msg || 'Speech synthesis failed.');
         }
-        throw new Error(msg || 'Speech synthesis failed.');
+        err.cause = e; // keep the original for diagnostics/classification
+        throw err;
       }
       const src = audio && (audio.src || (typeof audio === 'string' ? audio : null));
       if (!src) throw new Error('The TTS provider returned no audio.');
@@ -338,8 +376,114 @@
       if (!src) throw new Error('Puter returned no video.');
       const r = await fetch(src);
       return r.blob();
+    },
+
+    classifyError,
+
+    // --- Diagnostics ------------------------------------------------------
+    // Runs a battery of live checks and returns a structured report the UI
+    // renders. This is what turns "generation failed" into a precise cause
+    // (auth / CORS / missing provider / unsupported model / quota).
+    // opts: { image?: boolean } — image test is opt-in (it costs credits).
+    async diagnose(opts = {}) {
+      const steps = [];
+      const push = (name, status, detail, extra) => steps.push({ name, status, detail, ...(extra || {}) });
+
+      // 1. SDK
+      try {
+        await ensurePuter();
+        push('Puter SDK', 'ok', 'Loaded (js.puter.com).');
+      } catch (e) {
+        push('Puter SDK', 'fail', errMsg(e), { category: classifyError(e) });
+        return { steps, page: location.href };
+      }
+
+      // 2. Endpoint (best-effort — Puter keeps this internal)
+      let endpoint = 'unknown (SDK internal)';
+      try {
+        const pu = window.puter;
+        endpoint = pu.APIOrigin || pu.apiOrigin || pu.defaultAPIOrigin ||
+          (pu.env && (pu.env.api_origin || pu.env.origin)) || endpoint;
+      } catch { /* ignore */ }
+      push('API endpoint', 'info', String(endpoint));
+      push('App origin', 'info', `${location.origin} (${location.protocol.replace(':', '')})`);
+
+      // 3. Auth
+      try {
+        const auth = window.puter.auth || {};
+        let signedIn = null;
+        if (typeof auth.isSignedIn === 'function') signedIn = await Promise.resolve(auth.isSignedIn());
+        let user = null;
+        if (typeof auth.getUser === 'function') { try { user = await auth.getUser(); } catch { /* ignore */ } }
+        if (signedIn === false) {
+          push('Authentication', 'warn', 'Not signed in to Puter. AI calls will fail with an auth error until you sign in.');
+        } else {
+          push('Authentication', 'ok', user ? `Signed in as ${user.username || user.uuid || 'user'}.` : (signedIn === null ? 'Auth state unknown (older SDK).' : 'Signed in.'));
+        }
+      } catch (e) {
+        push('Authentication', 'warn', errMsg(e), { category: classifyError(e) });
+      }
+
+      // 4. Config snapshot
+      push('Chat model', 'info', this.chatModel() || '(auto / instance default)');
+      push('Image model', 'info', this.imageModel());
+      push('Voice provider', 'info', `${this.ttsProvider()}${this.ttsModel() ? ' · ' + this.ttsModel() : ''}`);
+
+      // 5. listModels
+      let models = [];
+      try {
+        models = await this.listModels(true);
+        push('listModels()', models.length ? 'ok' : 'warn',
+          models.length ? `${models.length} models. First: ${models.slice(0, 10).map((m) => m.id).join(', ')}` : 'Returned 0 models (instance may not expose a model list).');
+      } catch (e) {
+        push('listModels()', 'fail', errMsg(e), { category: classifyError(e) });
+      }
+
+      // 6. Live test chat
+      try {
+        const reply = await this.chat([{ role: 'user', content: 'Reply with exactly: OK' }]);
+        push('Test chat', 'ok', `model=${this.chatModel() || '(default)'} → "${String(reply).trim().slice(0, 80)}"`);
+      } catch (e) {
+        push('Test chat', 'fail', errMsg(e), { category: classifyError(e), raw: safeRaw(e) });
+      }
+
+      // 7. Live test voice (uses the current provider's first voice)
+      try {
+        const voices = (window.getTtsVoices ? window.getTtsVoices(this.ttsProvider()) : []) || [];
+        const voice = voices[0] && voices[0].id;
+        if (!voice) {
+          push('Test voice', 'warn', `No voices defined for provider "${this.ttsProvider()}".`);
+        } else {
+          const blob = await this.speak('Diagnostics test.', voice, {});
+          push('Test voice', 'ok', `${this.ttsProvider()} / ${voice} → ${blob.size} bytes of audio.`);
+        }
+      } catch (e) {
+        push('Test voice', 'fail', errMsg(e), { category: classifyError(e), raw: safeRaw(e) });
+      }
+
+      // 8. Optional live test image
+      if (opts.image) {
+        try {
+          const blob = await this.generateImage('a simple red circle on white', '1:1');
+          push('Test image', 'ok', `${this.imageModel()} → ${blob.size} bytes.`);
+        } catch (e) {
+          push('Test image', 'fail', errMsg(e), { category: classifyError(e), raw: safeRaw(e) });
+        }
+      }
+
+      return { steps, page: location.href, at: new Date().toISOString() };
     }
   };
+
+  function safeRaw(e) {
+    // Prefer the underlying cause (the provider's original error) if present.
+    const target = (e && e.cause) || e;
+    if (target instanceof Error) return target.stack || target.message;
+    try {
+      const s = typeof target === 'string' ? target : JSON.stringify(target);
+      return s === '{}' && e instanceof Error ? (e.stack || e.message) : s;
+    } catch { return String(target); }
+  }
 
   window.BlvckAI = BlvckAI;
 })();
