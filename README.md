@@ -22,10 +22,13 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 ### AI Script Generator
 - ✍️ **Seven script types** — YouTube, historical storytelling, documentary, educational, shorts, podcast, audiobook
 - 🎚️ Tone, length (~150–1500 words), target audience, and a retention-optimization toggle (hooks, open loops, re-engagement)
+- ⚡ **Live streaming** — the script writes itself token-by-token; a **Stop** button halts mid-generation
+- 🪄 **One-click AI refine** — Polish, Punch up, Shorten, Expand rewrite your draft in place (also streamed)
 - 💾 Saved prompt templates; editable output with live word count; **"Use in voice studio"** loads the script straight into the narrator
 
 ### AI Coding Agent
-- 🤖 **Chat-first coding assistant** (Claude / GPT / DeepSeek / Gemini via Puter) — generate, edit, analyze, and debug code
+- 🤖 **Chat-first coding assistant** (any Puter chat model) — generate, edit, analyze, and debug code
+- ⚡ **Streaming replies** with a **Stop** button; model list discovered from your instance
 - 📎 **Project context** — paste files so the agent understands your codebase; **Task mode** produces step-by-step plans
 - 💬 Conversation history persisted locally; code blocks with copy buttons; export the conversation as Markdown
 
@@ -45,11 +48,16 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 - 🗂️ **Project dashboard** — first-class projects with independent snapshots (scenes, images, subtitles, thumbnails, SEO, editor state)
 - 🔁 Switch, duplicate, archive, search
 
-### AI storyboards + text-to-video (Puter txt2img / txt2vid)
-- 🧠 **Story bible** — reads your subtitles/script and locks characters, locations, tone, period, colour grading
-- 🎬 **Per-scene prompts** with cinematic shot variety and continuity across batches
-- 🖼️/🎥 **Still, Video, or Mixed** — a "Scene assets" setting generates a still image (txt2img), a video clip (txt2vid), or a per-scene mix. In mixed mode each scene has a "Make video / Make image" toggle
-- 📤 **ZIP / prompts / JSON / PDF export** (ZIP packs the right extension per scene; PDF is an image contact sheet)
+### AI Visual Director — storyboards + text-to-video (Puter txt2img / txt2vid)
+- 🧠 **Content-driven** — analyzes the whole story and **infers the right visual style** (genre, era, setting, tone, audience, format). A finance script looks like modern finance visuals, not medieval art. Nothing is hardcoded
+- 🎨 **25 visual styles + Auto** — 2D/3D/Pixar/anime/realistic/cinematic/documentary/oil/watercolor/comic/storybook/isometric/explainer/infographic/motion-graphics/… selectable per project, plus **reusable visual presets** (save your own)
+- 🎞️ **Scene-beat merging** — adjacent subtitle lines are merged into ~1 image per 10/15/20s (selectable) instead of one per micro-caption — fewer, better scenes and much lower cost
+- 👤 **Character & location continuity** locked into every prompt from the project profile
+- 🎭 **Reference-image conditioning** — generate (or upload) a reference portrait per character; scenes featuring them are conditioned on it via Puter's `image_url` image-to-image on models that support it (Gemini image, GPT-Image-2, Ideogram Character, …), with automatic text-only fallback where they don't. References persist and can be toggled off
+- 🔍 **Prompt transparency** — each scene shows its detected action + visual goal and an **editable prompt**; **Prompt Review mode** stops before generation so you approve/edit first
+- 🛡️ **Robust JSON** — repairs fenced/messy model output and retries up to 3× for valid JSON, with a **View raw response** button on failure
+- 🖼️/🎥 **Still, Video, or Mixed** — generate a still image (txt2img), a video clip (txt2vid), or a per-scene mix
+- 📤 **ZIP / prompts / JSON / PDF export**
 
 ### YouTube Optimization Center (Puter chat + txt2img)
 - 🎯 **Titles × 30** — SEO / CTR / Balanced with per-title scores

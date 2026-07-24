@@ -21,6 +21,10 @@
   // Tried in order if the configured image model is rejected by the instance.
   // Includes open models a self-hosted instance is likely to have.
   const IMAGE_CANDIDATES = ['gpt-image-1', 'dall-e-3', 'gpt-image-1-mini', 'gpt-image-2', 'gpt-image-1.5', 'qwen/qwen-image-2.0'];
+  // Models that accept an input/reference image (image_url) for image-to-image
+  // and character consistency. Tried first when a reference is supplied; if the
+  // instance has none of them, generateImage falls back to text-only.
+  const REFERENCE_IMAGE_MODELS = ['google/gemini-3-pro-image-preview', 'google/flash-image-2.5', 'openai/gpt-image-2', 'gpt-image-2', 'gpt-image-1', 'ideogram-v3'];
   // Preference order when auto-picking a chat model from what's available.
   const CHAT_PREF = [/claude.*sonnet/i, /claude.*opus/i, /claude/i, /gpt-5/i, /gpt-4/i, /gemini/i, /deepseek/i, /qwen/i, /llama/i, /mistral/i, /grok/i, /glm/i, /kimi/i, /phi/i];
   // Last-resort chat model IDs for when discovery is unavailable AND the
@@ -320,47 +324,164 @@
     },
 
     // Run a JSON-producing generation entirely in the browser: build the
-    // prompt with BlvckPrompts, run the chat model via Puter, parse the
-    // output with BlvckPrompts. No backend involved.
-    async generateJSON(endpoint, payload) {
+    // prompt with BlvckPrompts, run the chat model via Puter, parse (with
+    // repair) via BlvckPrompts. If the model returns prose/markdown/invalid
+    // JSON, retry up to 3 times explicitly asking for JSON only. The raw
+    // response and attempt count are surfaced on failure (for "View raw").
+    // opts: { attempts?, onAttempt? }
+    async generateJSON(endpoint, payload, opts = {}) {
       if (!window.BlvckPrompts) throw new Error('Prompt module not loaded (prompts.js).');
       const prompt = window.BlvckPrompts.build(endpoint, payload);
-      const messages = [];
-      if (prompt.system) messages.push({ role: 'system', content: prompt.system });
-      messages.push({ role: 'user', content: prompt.user });
-      const rawText = await this._chatResilient(messages);
-      if (!rawText) throw new Error('The chat model returned an empty response.');
-      return window.BlvckPrompts.parse(endpoint, payload, rawText);
+      const base = [];
+      if (prompt.system) base.push({ role: 'system', content: prompt.system });
+      base.push({ role: 'user', content: prompt.user });
+
+      const maxAttempts = Math.max(1, opts.attempts || 3);
+      let messages = base;
+      let lastRaw = '';
+      let lastErr = null;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (opts.onAttempt) { try { opts.onAttempt(attempt, maxAttempts); } catch { /* ignore */ } }
+        let rawText = '';
+        try {
+          rawText = await this._chatResilient(messages);
+        } catch (e) {
+          lastErr = e; // model/transport error — not a JSON problem, stop.
+          break;
+        }
+        lastRaw = rawText || '';
+        this._lastRaw = lastRaw;
+        if (!rawText) {
+          lastErr = new Error('Empty response from the model.');
+        } else {
+          try {
+            return window.BlvckPrompts.parse(endpoint, payload, rawText);
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+        // Retry: show the model its output and demand strict JSON.
+        messages = base.concat([
+          { role: 'assistant', content: rawText || '(empty)' },
+          { role: 'user', content: 'Your previous reply was not valid JSON. Reply with ONLY the JSON object — no explanations, no markdown code fences, no comments, no trailing commas. It must start with { and end with }.' }
+        ]);
+      }
+
+      const err = new Error(`${(lastErr && lastErr.message) || 'Invalid response'} (after ${maxAttempts} attempt${maxAttempts > 1 ? 's' : ''}).`);
+      err.raw = (lastErr && lastErr.raw) || lastRaw;
+      err.category = classifyError(lastErr);
+      throw err;
     },
+
+    lastRawResponse() { return this._lastRaw || ''; },
 
     // Generic chat completion returning plain text (script generator, agent).
     async chat(messages, opts = {}) {
       return this._chatResilient(messages, opts.model);
     },
 
+    // Streaming chat: calls onToken(delta, full) as tokens arrive, returns the
+    // full text. Stops early if shouldStop() becomes true. Falls back to a
+    // non-streaming resilient call if the instance doesn't support streaming.
+    // opts: { model?, onToken?, shouldStop? }
+    async chatStream(messages, opts = {}) {
+      await ensurePuter();
+      const onToken = opts.onToken || (() => {});
+      const shouldStop = opts.shouldStop || (() => false);
+      const model = opts.model || (await this.resolveChatModel());
+      let full = '';
+      const consume = async (resp) => {
+        if (!resp || typeof resp[Symbol.asyncIterator] !== 'function') {
+          const t = chatText(resp);
+          if (t) { full += t; onToken(t, full); }
+          return;
+        }
+        for await (const part of resp) {
+          if (shouldStop()) break;
+          const t = (part && (part.text || (part.delta && part.delta.content) || (part.message && part.message.content))) || '';
+          if (t) { full += t; onToken(t, full); }
+        }
+      };
+      try {
+        const resp = await window.puter.ai.chat(messages, Object.assign({ stream: true }, model ? { model } : {}));
+        await consume(resp);
+        if (model) this.setChatModel(model);
+        return full;
+      } catch (e) {
+        if (full) throw e; // partial stream already delivered
+        // Streaming unsupported or model unavailable — fall back cleanly.
+        full = await this._chatResilient(messages, model);
+        onToken(full, full);
+        return full;
+      }
+    },
+
+    // Turn a rough idea into one rich, model-ready image prompt.
+    async enhanceImagePrompt(idea, styleHint) {
+      const sys = 'You turn a short idea into ONE rich, vivid image-generation prompt. Output ONLY the prompt text — no preamble, no quotes, no numbered options. Describe subject, setting, composition, camera/framing, lighting, color palette, mood and medium/art-style. Keep it under 80 words.';
+      const user = `Idea: ${String(idea || '').trim()}${styleHint ? `\nPreferred visual style: ${styleHint}` : ''}\nWrite the enhanced image prompt.`;
+      const out = await this.chat([{ role: 'system', content: sys }, { role: 'user', content: user }]);
+      return String(out).trim().replace(/^["'`]+|["'`]+$/g, '').trim();
+    },
+
+    // Rewrite a narration script in place: polish | punch | shorten | expand.
+    async refineScript(script, mode, opts = {}) {
+      const briefs = {
+        polish: 'Polish this narration: tighten wording, fix awkward phrasing, and improve flow and rhythm. Keep the meaning, length and voice.',
+        punch: 'Punch up this narration: a stronger hook, more vivid verbs, sharper rhythm and higher energy. Keep it roughly the same length and on the same topic.',
+        shorten: 'Shorten this narration by about 30%, keeping the strongest lines and the core message.',
+        expand: 'Expand this narration by about 40% with vivid, concrete detail and smoother transitions, keeping the same voice and topic.'
+      };
+      const sys = 'You are an elite script editor for spoken narration. Rewrite as instructed. Output ONLY the rewritten narration — no commentary, no markdown, no labels, no quotes.';
+      const user = `${briefs[mode] || briefs.polish}\n\nNARRATION:\n${String(script || '')}`;
+      const messages = [{ role: 'system', content: sys }, { role: 'user', content: user }];
+      if (opts.onToken || opts.shouldStop) return this.chatStream(messages, opts);
+      return this.chat(messages);
+    },
+
     // Generate an image, returning a Blob. Passes an explicit model (required
     // by current Puter) and falls back across known image models if needed.
-    async generateImage(prompt, aspect) {
+    // opts.imageUrl — a reference/input image (URL or data URL) for
+    // image-to-image / character consistency, used only on models that accept
+    // it; if none work, generation falls back to text-only so it never fails
+    // just because references aren't supported.
+    async generateImage(prompt, aspect, opts = {}) {
       await ensurePuter();
       const full = aspect ? `${prompt} (${aspect} aspect ratio)` : prompt;
+      const ref = opts.imageUrl || opts.reference || null;
       const configured = this.imageModel();
-      const tries = [configured, ...IMAGE_CANDIDATES.filter((m) => m !== configured)];
+
+      const tries = ref
+        ? [...REFERENCE_IMAGE_MODELS, configured].filter((v, i, a) => v && a.indexOf(v) === i)
+        : [configured, ...IMAGE_CANDIDATES.filter((m) => m !== configured)];
+
       let lastErr;
       for (const model of tries) {
         try {
-          const el = await window.puter.ai.txt2img(full, { model });
+          const params = { model };
+          if (ref) params.image_url = ref;
+          const el = await window.puter.ai.txt2img(full, params);
           const src = el && (el.src || (typeof el === 'string' ? el : null));
           if (!src) throw new Error('Puter returned no image.');
-          if (model !== configured) this.setImageModel(model); // remember what works
+          if (!ref && model !== configured) this.setImageModel(model); // remember what works
           const r = await fetch(src);
           return r.blob();
         } catch (e) {
           lastErr = e;
-          // Only walk the candidate list for model-availability errors; a real
-          // failure (quota, network) should surface immediately.
-          if (!isModelError(e)) throw new Error(errMsg(e) || 'Image generation failed.');
+          const cat = classifyError(e);
+          // A genuine failure (quota/network) should surface immediately.
+          if (cat === 'rate limit / quota / billing' || cat === 'network / CORS') {
+            throw new Error(errMsg(e) || 'Image generation failed.');
+          }
+          // For text-only mode, only walk the list on model-availability errors.
+          if (!ref && !isModelError(e)) throw new Error(errMsg(e) || 'Image generation failed.');
+          // For reference mode, keep trying other reference-capable models.
         }
       }
+      // Reference requested but unsupported everywhere → text-only fallback so
+      // the scene still generates (from its text description).
+      if (ref) return this.generateImage(prompt, aspect, {});
       throw new Error(errMsg(lastErr) || 'No available image model on this Puter instance.');
     },
 

@@ -253,6 +253,7 @@
           <span class="btn-label">Generate script</span>
           <span class="spinner" hidden></span>
         </button>
+        <button id="script-stop" class="btn ghost" type="button" hidden>■ Stop</button>
         <button id="script-save-template" class="btn ghost" type="button" title="Save the current type/tone/length/audience/topic as a reusable template">Save as template</button>
       </section>
 
@@ -260,6 +261,13 @@
 
       <section id="script-result" class="script-result" hidden>
         <textarea id="script-output" rows="14" spellcheck="false"></textarea>
+        <div class="script-refine-row">
+          <span class="refine-label">AI refine:</span>
+          <button class="btn ghost small" type="button" data-refine="polish" title="Tighten wording and improve flow">✨ Polish</button>
+          <button class="btn ghost small" type="button" data-refine="punch" title="Stronger hook, more energy">⚡ Punch up</button>
+          <button class="btn ghost small" type="button" data-refine="shorten" title="Cut ~30%">✂ Shorten</button>
+          <button class="btn ghost small" type="button" data-refine="expand" title="Add ~40% detail">➕ Expand</button>
+        </div>
         <div class="script-result-actions">
           <button id="script-use" class="btn primary small" type="button" title="Load this script into the voice studio above">Use in voice studio ↑</button>
           <button id="script-copy" class="btn ghost small" type="button">Copy</button>
@@ -280,8 +288,11 @@
         id="image-prompt"
         rows="3"
         maxlength="2000"
-        placeholder="Describe the image… e.g. a medieval peasant village at dawn, cinematic lighting, highly detailed"
+        placeholder="Describe the image, or jot a rough idea and hit ✨ Enhance… e.g. a lone lighthouse in a storm"
       ></textarea>
+      <div class="image-prompt-tools">
+        <button id="image-enhance" class="btn ghost small" type="button" title="Turn a rough idea into a rich, model-ready prompt">✨ Enhance prompt</button>
+      </div>
       <section class="controls image-controls">
         <div class="control">
           <label for="image-aspect">Aspect</label>
@@ -311,18 +322,33 @@
     <section id="storyboard-card" class="card" hidden>
       <div class="input-header">
         <label>AI Storyboard</label>
-        <span class="badge elite">⭐ Born Back Then</span>
+        <span class="badge elite">⭐ AI Visual Director</span>
       </div>
       <p class="field-note">
-        Upload subtitles (.srt / .vtt / timestamped .txt) plus optional script, visual-style,
-        character-reference and instruction files. The AI reads the whole story, builds character
-        and location profiles, then generates one asset per scene — still image, video clip (Puter
-        txt2vid), or a mix — no prompt writing needed.
+        Upload subtitles (.srt / .vtt / timestamped .txt) plus optional script, story bible,
+        character sheets, style guides or instructions. The AI reads the whole story, infers (or
+        follows) a visual style, builds character &amp; location profiles, merges lines into story
+        beats, and generates one asset per beat — still image, video clip (Puter txt2vid), or a mix.
       </p>
-      <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt" />
+      <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt,.md" title="Subtitles, script, story bible, character sheets, style guides, worldbuilding, scene instructions" />
       <div id="sb-filelist" class="sb-filelist"></div>
 
-      <section class="controls">
+      <section class="controls sb-controls">
+        <div class="control">
+          <label for="sb-style">Visual style</label>
+          <select id="sb-style" title="The look of every generated image — choose one or let the AI infer it from your content"></select>
+        </div>
+        <div class="control">
+          <label for="sb-preset">Style preset</label>
+          <select id="sb-preset" title="Reusable visual presets"></select>
+        </div>
+        <div class="control">
+          <label for="sb-mode">Mode</label>
+          <select id="sb-mode" title="How the storyboard runs">
+            <option value="auto" selected>Auto (analyze → generate)</option>
+            <option value="review">Prompt review (approve before images)</option>
+          </select>
+        </div>
         <div class="control">
           <label for="sb-asset-mode">Scene assets</label>
           <select id="sb-asset-mode" title="Generate still images, video clips (Puter txt2vid), or a mix">
@@ -331,13 +357,28 @@
             <option value="mixed">Mixed (per-scene)</option>
           </select>
         </div>
+        <div class="control">
+          <label for="sb-density">Scene pacing</label>
+          <select id="sb-density" title="How many images to make — merges subtitle lines into story beats">
+            <option value="20">Sparse · ~1 / 20s</option>
+            <option value="15" selected>Balanced · ~1 / 15s</option>
+            <option value="10">Dense · ~1 / 10s</option>
+            <option value="0">One per subtitle line</option>
+          </select>
+        </div>
       </section>
+      <div class="sb-preset-tools">
+        <input id="sb-style-notes" type="text" placeholder="Extra style notes (e.g. warm lighting, muted palette)…" />
+        <button id="sb-preset-save" class="btn ghost small" type="button">Save preset</button>
+      </div>
 
       <div class="actions">
         <button id="sb-analyze" class="btn primary">
           <span class="btn-label">Analyze &amp; generate</span>
           <span class="spinner" hidden></span>
         </button>
+        <button id="sb-generate-all" class="btn primary" type="button" hidden>Generate all images</button>
+        <button id="sb-raw" class="btn ghost" type="button" hidden>View raw response</button>
         <button id="sb-clear" class="btn ghost" type="button">Clear</button>
       </div>
 
@@ -357,6 +398,15 @@
       </div>
 
       <div id="sb-bible" class="sb-bible" hidden></div>
+
+      <div id="sb-cast" class="sb-cast" hidden>
+        <div class="sb-cast-head">
+          <strong>🎭 Character references</strong>
+          <label class="ssml-toggle" title="Condition scene generation on each character's reference image (on models that support it) so they stay consistent"><input type="checkbox" id="sb-use-refs" checked /> <span>Use references for scenes</span></label>
+        </div>
+        <p class="field-note">Lock each character's look: generate a reference portrait (or upload one). Scenes featuring that character are then conditioned on the reference — on image models that support it, with automatic text-only fallback otherwise.</p>
+        <div id="sb-cast-list" class="sb-cast-list"></div>
+      </div>
 
       <div id="sb-exports" class="queue-downloads" hidden>
         <button id="sb-zip" class="btn primary small" type="button">Download ZIP</button>
@@ -552,6 +602,7 @@
             <span class="btn-label">Send</span>
             <span class="spinner" hidden></span>
           </button>
+          <button id="agent-stop" class="btn ghost" type="button" hidden>■ Stop</button>
           <button id="agent-new" class="btn ghost small" type="button" title="Start a new conversation">New chat</button>
           <button id="agent-export" class="btn ghost small" type="button" title="Download the conversation as Markdown">Export</button>
         </div>

@@ -1,165 +1,258 @@
 // Client-side prompt scaffolding — the single source of truth for every
-// LLM prompt in Blvck-TTS. This lives in the browser (not on a server) so
-// the whole app is a pure static site: it runs on Puter hosting, GitHub
-// Pages, Netlify, or any file server, with no backend at all.
+// LLM prompt in Blvck-TTS. Lives in the browser so the app is a pure static
+// site (runs on Puter hosting, GitHub Pages, Netlify, any file server).
 //
 // window.BlvckPrompts exposes two methods keyed by a logical endpoint name
 // (kept identical to the old /api/* paths so callers don't change):
 //   build(endpoint, payload)          -> { system, user }
 //   parse(endpoint, payload, rawText) -> the normalised result object
+// window.VISUAL_STYLES — the selectable visual-style catalog for storyboards.
 (() => {
   'use strict';
 
-  // --- Shared -----------------------------------------------------------
+  // --- Robust JSON extraction / repair ----------------------------------
+  // Models sometimes wrap JSON in prose, code fences, comments, smart quotes
+  // or trailing commas. Repair the common cases before parsing.
+  function repairJson(text) {
+    let s = String(text == null ? '' : text).trim();
+    // Strip Markdown code fences (```json … ``` or ``` … ```).
+    s = s.replace(/^```[a-zA-Z]*\s*/,'').replace(/```\s*$/,'');
+    // Extract the largest {...} span (first { to last }).
+    const first = s.indexOf('{');
+    const last = s.lastIndexOf('}');
+    if (first !== -1 && last !== -1 && last > first) s = s.slice(first, last + 1);
+    // Normalise smart quotes to straight quotes.
+    s = s.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+    // Remove // line comments and /* */ block comments.
+    s = s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:"'])\/\/[^\n\r]*/g, '$1');
+    // Remove trailing commas before } or ].
+    s = s.replace(/,(\s*[}\]])/g, '$1');
+    return s.trim();
+  }
 
-  function extractJson(txt) {
+  function extractJson(text) {
     try {
-      return JSON.parse(txt);
+      return JSON.parse(text);
+    } catch { /* try repair */ }
+    const repaired = repairJson(text);
+    try {
+      return JSON.parse(repaired);
     } catch {
-      const match = String(txt).match(/\{[\s\S]*\}/);
-      if (match) {
-        try {
-          return JSON.parse(match[0]);
-        } catch {
-          /* fall through */
-        }
-      }
-      throw new Error('The model did not return valid JSON.');
+      const err = new Error('The model did not return valid JSON.');
+      err.raw = String(text || '');
+      throw err;
     }
   }
 
   const arr = (v) => (Array.isArray(v) ? v : []);
   const str = (v, d = '') => (v == null ? d : String(v));
 
-  // --- Storyboard: channel identity -------------------------------------
+  // --- Visual style catalog ---------------------------------------------
+  // Each style maps to a concrete render brief that gets embedded verbatim in
+  // every image prompt, plus a negative brief. "auto" lets the AI infer the
+  // right look from the content — no style is hardcoded into the pipeline.
+  const VISUAL_STYLES = {
+    auto: { label: 'Auto — infer from content', render: '', negative: '' },
+    '2d-animation': { label: '2D Animation', render: 'Flat 2D animation, clean bold linework, cel shading, vibrant saturated colors, expressive character design', negative: 'photorealistic, 3d render, live action' },
+    '3d-animation': { label: '3D Animation (Pixar-style)', render: 'Polished 3D animated feature-film style, soft global illumination, rounded appealing character design, subsurface skin, Pixar / DreamWorks quality', negative: 'flat 2d, sketch, photoreal' },
+    anime: { label: 'Anime', render: 'Modern anime style, crisp cel shading, dramatic lighting, detailed backgrounds, expressive eyes, Studio-quality key art', negative: 'western cartoon, 3d, photoreal' },
+    realistic: { label: 'Realistic', render: 'Realistic digital painting, accurate anatomy and materials, natural lighting, high detail', negative: 'cartoon, anime, low detail' },
+    cinematic: { label: 'Cinematic', render: 'Cinematic film still, dramatic lighting, shallow depth of field, filmic color grade, anamorphic composition, high production value', negative: 'flat lighting, snapshot, cartoon' },
+    photorealistic: { label: 'Photorealistic', render: 'Photorealistic photograph, 50mm lens, natural lighting, true-to-life detail, realistic textures and depth', negative: 'illustration, painting, cartoon, cgi look' },
+    documentary: { label: 'Documentary', render: 'Documentary photography style, natural available light, candid framing, authentic real-world detail', negative: 'staged, cartoon, over-stylized' },
+    'oil-painting': { label: 'Oil Painting', render: 'Traditional oil painting, visible brushwork, rich impasto texture, classical composition and lighting', negative: 'digital, flat, photographic' },
+    watercolor: { label: 'Watercolor', render: 'Soft watercolor illustration, delicate washes, bleeding pigments, paper texture, gentle palette', negative: 'harsh lines, 3d, photoreal' },
+    'comic-book': { label: 'Comic Book', render: 'Comic book art, bold ink outlines, halftone shading, dynamic action framing, punchy colors', negative: 'photoreal, soft painterly' },
+    storybook: { label: 'Storybook Illustration', render: 'Warm storybook illustration, soft painterly shapes, cozy inviting palette, gentle whimsical detail', negative: 'photoreal, gritty, harsh' },
+    'historical-illustration': { label: 'Historical Illustration', render: 'Premium semi-realistic 2D historical illustration, painterly artwork, era-accurate architecture, costume and props, warm atmospheric lighting, museum-quality detail', negative: 'modern objects, anachronisms, cartoon, text' },
+    'low-poly': { label: 'Low Poly 3D', render: 'Low-poly 3D render, faceted geometric forms, flat shading, clean minimal palette', negative: 'photoreal, high detail, painterly' },
+    isometric: { label: 'Isometric', render: 'Clean isometric illustration, 2:1 axonometric projection, tidy geometry, bright flat colors', negative: 'perspective distortion, photoreal' },
+    'concept-art': { label: 'Concept Art', render: 'Professional concept art, painterly rendering, strong value composition, atmospheric depth, cinematic scale', negative: 'flat, amateur, snapshot' },
+    'childrens-book': { label: "Children's Book", render: 'Friendly children’s book illustration, rounded shapes, bright cheerful colors, simple clear composition, gentle characters', negative: 'scary, gritty, photoreal, complex' },
+    'graphic-novel': { label: 'Graphic Novel', render: 'Graphic novel art, moody inking, textured shading, cinematic panels, restrained noir palette', negative: 'cheerful cartoon, photoreal' },
+    vintage: { label: 'Vintage Artwork', render: 'Vintage mid-century illustration, aged paper texture, muted retro palette, screen-print feel', negative: 'modern digital, photoreal, neon' },
+    'modern-digital': { label: 'Modern Digital Art', render: 'Modern digital illustration, clean vector-influenced shapes, confident color, contemporary editorial style', negative: 'photoreal, dated, painterly' },
+    'modern-explainer': { label: 'Modern Explainer Graphics', render: 'Clean modern explainer illustration, flat vector shapes, bold friendly colors, simple iconography, generous negative space, editorial infographic feel', negative: 'photoreal, historical, gritty, cluttered' },
+    infographic: { label: 'Infographic / Data Visual', render: 'Infographic visual storytelling, clean charts and icons, bold flat colors, clear hierarchy, modern data-viz aesthetic', negative: 'photoreal, painterly, cluttered' },
+    'motion-graphics': { label: 'Motion Graphics', render: 'Motion-graphics keyframe style, bold flat shapes, gradients, dynamic layout, sleek modern brand look', negative: 'photoreal, sketchy, historical' },
+    whiteboard: { label: 'Whiteboard Explainer', render: 'Whiteboard-style line illustration, hand-drawn marker look, simple black strokes on white, clear diagrammatic figures', negative: 'color-heavy, photoreal, painterly' },
+    'tech-ui': { label: 'Tech / UI Style', render: 'Modern tech illustration, sleek UI-inspired shapes, cool gradients, glassy surfaces, clean product-design aesthetic', negative: 'historical, painterly, photoreal grit' },
+    lifestyle: { label: 'Contemporary Lifestyle', render: 'Clean contemporary lifestyle photography, bright natural light, relatable modern settings, aspirational but authentic', negative: 'historical, cartoon, dark, staged studio' }
+  };
 
-  const CHANNEL_STYLE = [
-    'Premium 2D historical illustration, semi-realistic painterly artwork.',
-    'Cinematic storytelling composition with historical authenticity.',
-    'Warm atmospheric lighting, rich environmental detail, storybook-quality visuals.',
-    'Consistent color grading, "you-are-there" immersion, educational documentary feel.',
-    'No text, no captions, no watermarks, no modern objects.'
-  ].join(' ');
+  function styleBrief(id) {
+    const s = VISUAL_STYLES[id];
+    return s && s.render ? s : null;
+  }
 
-  const CHANNEL_NAME = 'Born Back Then';
+  // --- Storyboard: story + visual-profile analyzer ("bible") -------------
 
-  const CAMERAS = [
-    'Wide Shot', 'Medium Shot', 'Close-Up', 'Overhead View',
-    'Environment Shot', 'Object-Focused Shot', 'Crowd Scene', 'Character Scene'
-  ];
+  const BIBLE_SYSTEM = `You are a senior story analyst and visual director for AI-generated video. You will read ALL of the provided material and produce a project profile that drives consistent, on-topic image/video generation.
 
-  // --- Storyboard: story bible ------------------------------------------
+CRITICAL: Determine the visual identity FROM THE CONTENT. Do NOT assume the project is historical, medieval, 2D, or fiction. A finance explainer must look like modern finance visuals; a cooking video like food photography; a sci-fi story like cinematic sci-fi; a children's lesson like a children's book. Infer genre, era, setting, tone, audience and format (documentary vs narrative, educational vs entertainment) from what is actually written.
 
-  const BIBLE_SYSTEM = `You are an AI storyboard artist and story analyst for the faceless history YouTube channel "${CHANNEL_NAME}".
-Read the ENTIRE story provided and build a "story bible" that will keep every generated image consistent.
-Identify the main characters (with fixed, reusable visual descriptions covering face, hair, clothing, age, body type, and accessories), locations (with fixed architectural/lighting/weather descriptions), the historical period, the emotional tone, and recurring visual elements.
+Identify recurring characters with FIXED, reusable visual descriptions (face, hair, age, build, clothing, accessories) and locations with fixed architectural/lighting/weather descriptions, so they stay consistent across scenes.
+
 Respond ONLY with JSON of this exact shape:
 {
   "title": string,
-  "period": string,
+  "subject": string,
+  "genre": string,
+  "period": string,           // era / time; "Contemporary" if modern
+  "setting": string,
   "tone": string,
-  "colorGrading": string,
+  "audience": string,
+  "format": string,           // e.g. "documentary", "narrative", "educational explainer"
+  "visualStyle": {
+    "name": string,           // short label, e.g. "Modern explainer graphics"
+    "description": string,    // concrete render instructions to paste into every image prompt
+    "lighting": string,
+    "colorGrading": string,
+    "negative": string        // things to avoid (anachronisms, wrong medium, etc.)
+  },
   "characters": [{ "name": string, "description": string }],
   "locations": [{ "name": string, "description": string }],
-  "recurringElements": [string]
+  "recurringElements": [string],
+  "continuity": string        // notes to keep the look consistent across scenes
 }
 Descriptions must be concrete and visual so they can be pasted verbatim into image prompts.`;
 
   function buildContextBlock(context) {
     const parts = [];
     if (context.script) parts.push(`FULL SCRIPT:\n${context.script}`);
-    if (context.subtitles) parts.push(`SUBTITLES:\n${context.subtitles}`);
-    if (context.style) parts.push(`VISUAL STYLE GUIDE:\n${context.style}`);
-    if (context.characters) parts.push(`CHARACTER REFERENCE:\n${context.characters}`);
-    if (context.instructions) parts.push(`CUSTOM INSTRUCTIONS:\n${context.instructions}`);
+    if (context.subtitles) parts.push(`SUBTITLES / TIMED LINES:\n${context.subtitles}`);
+    if (context.style) parts.push(`VISUAL STYLE GUIDE (from uploaded file):\n${context.style}`);
+    if (context.characters) parts.push(`CHARACTER REFERENCE (from uploaded file):\n${context.characters}`);
+    if (context.instructions) parts.push(`CUSTOM INSTRUCTIONS (from uploaded file):\n${context.instructions}`);
+    // Style direction from the UI.
+    const chosen = styleBrief(context.styleChoice);
+    if (chosen) {
+      parts.push(`REQUIRED VISUAL STYLE (user-selected — build visualStyle around this and do not override it):\n${chosen.label}: ${chosen.render}${chosen.negative ? `\nAvoid: ${chosen.negative}` : ''}`);
+    } else {
+      parts.push('VISUAL STYLE: The user chose "Auto" — infer the single most fitting visual style for THIS content. Do not default to historical/medieval/2D unless the content is genuinely historical.');
+    }
+    if (context.styleNotes) parts.push(`EXTRA STYLE NOTES (preset):\n${context.styleNotes}`);
     return parts.join('\n\n');
   }
 
   function biblePrompt(context) {
-    return { system: BIBLE_SYSTEM, user: buildContextBlock(context) };
+    return { system: BIBLE_SYSTEM, user: buildContextBlock(context || {}) };
   }
 
   function normalizeBible(b) {
+    b = b || {};
+    const vs = b.visualStyle || {};
     return {
-      title: String((b && b.title) || 'Untitled Story'),
-      period: String((b && b.period) || ''),
-      tone: String((b && b.tone) || ''),
-      colorGrading: String((b && b.colorGrading) || ''),
-      characters: Array.isArray(b && b.characters) ? b.characters.slice(0, 30) : [],
-      locations: Array.isArray(b && b.locations) ? b.locations.slice(0, 30) : [],
-      recurringElements: Array.isArray(b && b.recurringElements) ? b.recurringElements.slice(0, 30) : []
+      title: str(b.title, 'Untitled Project'),
+      subject: str(b.subject),
+      genre: str(b.genre),
+      period: str(b.period),
+      setting: str(b.setting),
+      tone: str(b.tone),
+      audience: str(b.audience),
+      format: str(b.format),
+      visualStyle: {
+        name: str(vs.name, 'Cinematic'),
+        description: str(vs.description, 'Cohesive, high-quality visuals with consistent lighting and color.'),
+        lighting: str(vs.lighting),
+        colorGrading: str(vs.colorGrading),
+        negative: str(vs.negative)
+      },
+      characters: arr(b.characters).slice(0, 40),
+      locations: arr(b.locations).slice(0, 40),
+      recurringElements: arr(b.recurringElements).slice(0, 40).map(String),
+      continuity: str(b.continuity)
     };
   }
 
-  // --- Storyboard: scene prompts ----------------------------------------
+  // --- Storyboard: scene prompts (style comes from the bible) -------------
 
-  const SCENES_SYSTEM = `You are an AI storyboard artist for the faceless history channel "${CHANNEL_NAME}".
-You are given a story bible and a batch of subtitle cues (one scene each). For EACH cue, decide the best cinematic shot and write a complete, self-contained image prompt.
+  const SCENES_SYSTEM = `You are an expert storyboard artist and visual director. You are given a project profile (with a defined visual style, characters and locations) and a batch of story beats. For EACH beat, write a complete, self-contained image/video prompt.
+
 Rules:
-- Understand context across the whole story: resolve who "he"/"she"/"they" refer to using the bible, and place each scene in the correct location and era.
-- Maintain character consistency: when a character appears, paste their exact visual description from the bible into the prompt.
-- Maintain location continuity: reuse the same architecture, lighting, and weather for scenes in the same place.
-- Vary the camera across the batch (wide, medium, close-up, overhead, environment, object, crowd, character) to maximise visual interest. Avoid repeating the same shot back-to-back.
-- Every prompt MUST embed the channel style verbatim: "${CHANNEL_STYLE}"
-- Faceless channel: prefer atmospheric, environmental and over-the-shoulder framing; avoid clear modern faces staring at camera.
+- Depict what actually happens in the beat. Resolve who "he/she/they" refer to using the profile; place each beat in the correct location and era.
+- Embed the project's visual style VERBATIM in every prompt (its description, lighting and color grading). Never substitute a different style. Never add historical/medieval styling unless the profile says so.
+- Maintain character consistency: when a character appears, paste their exact description from the profile.
+- Maintain location continuity: reuse the same architecture, lighting and weather for the same place.
+- Vary the camera across the batch (wide, medium, close-up, over-the-shoulder, overhead, detail, establishing) to keep visual interest.
+- Honor the profile's negative guidance (things to avoid).
 Respond ONLY with JSON:
 {
   "scenes": [
     {
-      "index": number,
-      "sceneType": string,
+      "index": number,          // echo the beat index
+      "sceneType": string,      // e.g. "Establishing", "Reaction", "Detail"
       "camera": string,
-      "visualFocus": string,
+      "detectedAction": string, // what is happening in this beat, one line
+      "visualGoal": string,     // the emotional/narrative goal of the shot
+      "visualFocus": string,    // the subject of the frame
+      "characters": [string],   // names (from the profile) of characters visible in this beat
       "sceneSummary": string,
-      "prompt": string
+      "prompt": string          // full prompt with the project's visual style embedded
     }
   ]
 }`;
 
   function scenesPrompt(payload) {
     const { bible, cues, style, instructions, priorSummaries } = payload;
+    const vs = (bible && bible.visualStyle) || {};
+    const styleLine = `PROJECT VISUAL STYLE (embed this in every prompt):\n${vs.name || ''} — ${vs.description || ''}${vs.lighting ? `\nLighting: ${vs.lighting}` : ''}${vs.colorGrading ? `\nColor grading: ${vs.colorGrading}` : ''}${vs.negative ? `\nAvoid: ${vs.negative}` : ''}`;
     const parts = [
-      `STORY BIBLE:\n${JSON.stringify(bible, null, 2)}`,
-      style ? `EXTRA VISUAL STYLE / RULES:\n${style}` : '',
-      instructions ? `EXTRA GENERATION INSTRUCTIONS:\n${instructions}` : '',
+      `PROJECT PROFILE:\n${JSON.stringify(bible, null, 2)}`,
+      styleLine,
+      style ? `EXTRA VISUAL RULES:\n${style}` : '',
+      instructions ? `EXTRA INSTRUCTIONS:\n${instructions}` : '',
       priorSummaries && priorSummaries.length
-        ? `PREVIOUS SCENES (for continuity):\n${priorSummaries.join('\n')}`
+        ? `PREVIOUS BEATS (for continuity):\n${priorSummaries.join('\n')}`
         : '',
-      `CUES TO STORYBOARD (generate one scene per cue, echo each index):\n${cues
+      `STORY BEATS TO STORYBOARD (one scene per beat, echo each index):\n${cues
         .map((c) => `#${c.index} [${c.timestamp || ''}] ${c.text}`)
         .join('\n')}`
     ].filter(Boolean);
     return { system: SCENES_SYSTEM, user: parts.join('\n\n') };
   }
 
-  function normalizeScene(s, cue, cues) {
+  function normalizeScene(s, cue, cues, bible) {
     const idx = Number.isFinite(s && s.index) ? s.index : cue ? cue.index : 0;
     const source = cue || (cues || []).find((c) => c.index === idx) || {};
-    const prompt = String((s && s.prompt) || '').trim() || `${source.text || ''}. ${CHANNEL_STYLE}`;
-    const withStyle = prompt.includes('Premium 2D historical') ? prompt : `${prompt} ${CHANNEL_STYLE}`;
+    let prompt = str(s && s.prompt).trim() || str(source.text);
+    // Safety net: ensure the project's visual style is embedded even if the
+    // model forgot it. No hardcoded style — this comes from the bible.
+    const vs = (bible && bible.visualStyle) || {};
+    if (vs.description && prompt && !prompt.toLowerCase().includes((vs.description.split(/[,.]/)[0] || '').toLowerCase().slice(0, 18))) {
+      prompt = `${prompt} — ${vs.description}${vs.lighting ? `, ${vs.lighting}` : ''}`;
+    }
     return {
       index: idx,
       timestamp: source.timestamp || '',
       subtitle: source.text || '',
-      sceneType: String((s && s.sceneType) || 'Scene'),
-      camera: String((s && s.camera) || 'Medium Shot'),
-      visualFocus: String((s && s.visualFocus) || ''),
-      sceneSummary: String((s && s.sceneSummary) || source.text || ''),
-      prompt: withStyle
+      sceneType: str(s && s.sceneType, 'Scene'),
+      camera: str(s && s.camera, 'Medium Shot'),
+      detectedAction: str(s && s.detectedAction),
+      visualGoal: str(s && s.visualGoal),
+      visualFocus: str(s && s.visualFocus),
+      characters: arr(s && s.characters).map(String).slice(0, 8),
+      sceneSummary: str(s && s.sceneSummary, source.text || ''),
+      prompt
     };
   }
 
-  function parseScenes(rawText, cues) {
+  function parseScenes(rawText, cues, bible) {
     const result = extractJson(rawText);
     const scenes = Array.isArray(result && result.scenes) ? result.scenes : [];
-    return { scenes: scenes.map((s, i) => normalizeScene(s, cues[i], cues)) };
+    if (!scenes.length) {
+      const err = new Error('Missing "scenes" array in the model response.');
+      err.raw = String(rawText || '');
+      throw err;
+    }
+    return { scenes: scenes.map((s, i) => normalizeScene(s, cues[i], cues, bible)) };
   }
 
   // --- YouTube SEO ------------------------------------------------------
 
-  const SEO_SYSTEM = `You are an elite YouTube strategist and SEO specialist for faceless storytelling channels.
-Given a video's story and the channel's brand knowledge base, produce a COMPLETE optimization package that maximises search ranking and click-through while staying perfectly on-brand.
-Respect the channel's brand voice, title patterns, thumbnail style and SEO strategy so every video looks and reads like the same channel.
+  const SEO_SYSTEM = `You are an elite YouTube growth strategist and SEO specialist who thinks like the recommendation algorithm and like a viewer deciding whether to click.
+Given a video's story and the channel's brand knowledge base, produce a COMPLETE optimization package that maximises search ranking AND click-through while staying perfectly on-brand.
+Titles should use proven curiosity and value patterns without clickbait that underdelivers. Descriptions should front-load the hook and keywords. Thumbnails should be simple, high-contrast and readable at small sizes.
 Respond ONLY with JSON of this exact shape (scores are integers 0-100):
 {
   "titles": {
@@ -184,7 +277,7 @@ Give 10 titles in each of the three categories. The "long" description must incl
   function seoPrompt(project, channel) {
     const parts = [];
     parts.push(`VIDEO TITLE / WORKING NAME: ${project.title || 'Untitled'}`);
-    if (project.bible) parts.push(`STORY BIBLE:\n${JSON.stringify(project.bible, null, 2)}`);
+    if (project.bible) parts.push(`PROJECT PROFILE:\n${JSON.stringify(project.bible, null, 2)}`);
     if (project.script) parts.push(`SCRIPT / NARRATION:\n${String(project.script).slice(0, 8000)}`);
     else if (project.subtitles) parts.push(`SUBTITLES:\n${String(project.subtitles).slice(0, 8000)}`);
     parts.push(`CHANNEL KNOWLEDGE BASE:\n${JSON.stringify(channel || {}, null, 2)}`);
@@ -290,10 +383,12 @@ Give 10 titles in each of the three categories. The "long" description must incl
     xlong: 'about 1500 words'
   };
 
-  const SCRIPT_SYSTEM = `You are an elite scriptwriter for faceless storytelling and educational video channels.
+  const SCRIPT_SYSTEM = `You are an elite scriptwriter for faceless storytelling and educational video channels, known for retention-obsessed openings and natural spoken rhythm.
 You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
 - Output ONLY the spoken narration text. No headings, no stage directions, no "[MUSIC]" or "[PAUSE]" markers, no camera notes, no markdown, no speaker labels.
-- Write in flowing paragraphs of natural spoken English. Vary sentence length for rhythm.
+- Open with a genuine hook — a question, a striking image, or a bold claim — never a throat-clearing intro.
+- Write in flowing paragraphs of natural spoken English. Vary sentence length hard: mix short punchy lines with longer flowing ones for rhythm.
+- Use concrete detail over vague generality. Keep momentum; every line should earn the next.
 - Do not include a word count or any commentary about the script — just the script itself.`;
 
   function scriptPrompt(opts) {
@@ -337,7 +432,7 @@ You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
     },
     '/api/storyboard/scenes': {
       build: (p) => scenesPrompt(p),
-      parse: (p, rawText) => parseScenes(rawText, p.cues || [])
+      parse: (p, rawText) => parseScenes(rawText, p.cues || [], p.bible)
     },
     '/api/seo/generate': {
       build: (p) => seoPrompt(p.project || {}, p.channel || {}),
@@ -345,11 +440,11 @@ You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
     },
     '/api/script/generate': {
       build: (p) => scriptPrompt(p.options || {}),
-      // Script output is plain narration text, not JSON — just clean it.
       parse: (p, rawText) => ({ script: cleanScript(rawText) })
     }
   };
 
+  window.VISUAL_STYLES = VISUAL_STYLES;
   window.BlvckPrompts = {
     build(endpoint, payload) {
       const route = ROUTES[endpoint];
@@ -362,8 +457,7 @@ You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
       return route.parse(payload || {}, rawText);
     },
     extractJson,
-    CHANNEL_STYLE,
-    CHANNEL_NAME,
-    CAMERAS
+    repairJson,
+    VISUAL_STYLES
   };
 })();

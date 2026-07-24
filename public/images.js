@@ -70,7 +70,37 @@
     }
   }
 
+  async function enhance() {
+    const idea = promptEl.value.trim();
+    if (!idea) {
+      showStatus('Jot a rough idea first, then Enhance.');
+      promptEl.focus();
+      return;
+    }
+    const btn = $('image-enhance');
+    clearStatus();
+    if (btn) { btn.disabled = true; btn.textContent = '✨ Enhancing…'; }
+    try {
+      // Feed the storyboard's chosen visual style as a hint, if one is set.
+      const styleSel = $('sb-style');
+      const styleHint = styleSel && window.VISUAL_STYLES && window.VISUAL_STYLES[styleSel.value]
+        ? window.VISUAL_STYLES[styleSel.value].render
+        : '';
+      const enhanced = await window.BlvckAI.enhanceImagePrompt(idea, styleHint);
+      if (enhanced) {
+        promptEl.value = enhanced;
+        showStatus('Prompt enhanced — tweak it or generate.', 'info');
+      }
+    } catch (err) {
+      showStatus(err.message || 'Could not enhance the prompt.');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '✨ Enhance prompt'; }
+    }
+  }
+
   genBtn.addEventListener('click', generate);
+  const enhanceBtn = $('image-enhance');
+  if (enhanceBtn) enhanceBtn.addEventListener('click', enhance);
   promptEl.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') generate();
   });
