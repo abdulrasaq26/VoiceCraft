@@ -140,6 +140,9 @@
     // Feed research keywords into SEO so titles/tags reflect real search terms.
     const research = window.BlvckAssets && window.BlvckAssets.research();
     if (research) ctx.research = research;
+    // Bias SEO toward what performs for this channel.
+    const memory = window.BlvckBrain && window.BlvckBrain.promptBlock();
+    if (memory) ctx.channelMemory = memory;
     return ctx;
   }
 

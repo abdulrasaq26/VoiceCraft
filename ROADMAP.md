@@ -59,12 +59,15 @@ The two changes that convert a shelf of tools into an intelligent studio.
 
 Where the channel starts getting **smarter with every video**.
 
-- ⬜ **Channel Brain (cross-project memory).** The single highest-leverage addition after the
-  spine. Per-channel profile that remembers: visual style, narration style, audience,
-  thumbnail style, **CTR winners**, **retention winners**, best topics, best hooks — and
-  biases every future generation. *"Mystery + danger titles outperform daily-life titles"*
-  becomes an automatic bias, not a manual note. Builds on the existing channel knowledge
-  base + project-memory snapshot.
+- ✅ **Channel Brain (cross-project memory).** `public/brain.js` + `brain-ui.js`: a global,
+  per-channel profile that **learns** the preferred visual style / voice / tone across
+  projects (auto-folds each project in, debounced) and — from stats you log per published
+  video — **which title themes actually perform**. Derives insights
+  (*"'mystery' titles outperform 'daily life' — avg CTR 12% vs 6%"*) and injects a
+  **CHANNEL MEMORY** block into the script and SEO prompts, plus the Director snapshot, so
+  every new video is biased toward what works. It's cross-project: it survives a project
+  reset and gets smarter with every video. *Next:* auto-log from real YouTube analytics
+  (Phase 3 feedback loop) instead of manual entry.
 - ⬜ **Story-level retention optimization.** Score every script *before* production —
   hook strength, open loops, curiosity triggers, tension points, re-engagement beats, CTA
   placement — e.g. *"Retention 91/100 · weak tension min 8–10 · move the ox injury earlier."*
