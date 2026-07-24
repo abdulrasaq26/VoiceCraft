@@ -12,7 +12,7 @@
     <div class="topbar">
       <button id="projects-open" class="btn ghost small" type="button">☰ Projects</button>
       <span class="topbar-project">Project: <strong id="active-project-name">—</strong></span>
-      <span class="topbar-badge" title="Every AI call runs through Puter — free, no API keys, no billing">⚡ Puter · ElevenLabs</span>
+      <button id="ai-settings-open" class="topbar-badge" type="button" title="AI settings — models &amp; voice provider for this Puter instance">⚡ Puter · ElevenLabs ⚙</button>
       <button id="project-new" class="btn ghost small" type="button">+ New</button>
     </div>
     <header class="header">
@@ -519,13 +519,8 @@
       <section class="controls agent-controls">
         <div class="control">
           <label for="agent-model">Model</label>
-          <select id="agent-model">
-            <option value="claude-sonnet-4">Claude Sonnet 4</option>
-            <option value="claude-opus-4">Claude Opus 4</option>
-            <option value="gpt-4o">GPT-4o</option>
-            <option value="gpt-4.1">GPT-4.1</option>
-            <option value="deepseek-chat">DeepSeek</option>
-            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+          <select id="agent-model" title="Populated from the models your Puter instance offers">
+            <option value="">Auto (instance default)</option>
           </select>
         </div>
         <div class="control">
@@ -569,6 +564,43 @@
   </div>
 
   <!-- Add-context dialog -->
+  <!-- AI settings -->
+  <div id="ai-settings-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="AI settings">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>AI settings</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <p class="field-note">These adapt Blvck-TTS to whatever your Puter instance offers. On <strong>puter.com</strong> the defaults work as-is. On a <strong>self-hosted</strong> Puter, pick the models and voice provider your server actually has.</p>
+
+      <label for="set-chat-model">Chat model <span class="field-note">(scripts, storyboard, SEO, agent)</span></label>
+      <select id="set-chat-model"><option value="">Auto (instance default)</option></select>
+
+      <label for="set-image-model">Image model</label>
+      <input id="set-image-model" type="text" list="image-model-list" placeholder="gpt-image-1" />
+      <datalist id="image-model-list">
+        <option value="gpt-image-1"></option>
+        <option value="dall-e-3"></option>
+        <option value="gpt-image-1-mini"></option>
+        <option value="gpt-image-2"></option>
+        <option value="gpt-image-1.5"></option>
+      </datalist>
+
+      <label for="set-tts-provider">Voice (TTS) provider</label>
+      <input id="set-tts-provider" type="text" placeholder="elevenlabs" />
+      <p id="set-tts-note" class="field-note"></p>
+
+      <label for="set-tts-model">Voice model</label>
+      <input id="set-tts-model" type="text" placeholder="eleven_multilingual_v2" />
+
+      <div class="actions">
+        <button id="ai-settings-save" class="btn primary" type="button">Save</button>
+        <button id="ai-settings-refresh" class="btn ghost" type="button">Reload model list</button>
+      </div>
+    </div>
+  </div>
+
   <div id="agent-context-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Add context file">
     <div class="modal-backdrop" data-close></div>
     <div class="modal-panel">
@@ -683,6 +715,7 @@
 
   <script src="prompts.js"></script>
   <script src="ai-provider.js"></script>
+  <script src="ai-settings.js"></script>
   <script src="eleven-voices.js"></script>
   <script src="zip.js"></script>
   <script src="pdf.js"></script>

@@ -102,7 +102,8 @@ npm start          # tiny zero-dependency static server → http://localhost:300
 public/                (this whole folder is the deployable app)
   index.html           Single-page app shell
   prompts.js           BlvckPrompts: all LLM prompt build + parse (client-side, single source of truth)
-  ai-provider.js       BlvckAI: Puter router (speak / chat / generateJSON / generateImage / generateVideo)
+  ai-provider.js       BlvckAI: Puter router (speak / chat / generateJSON / generateImage / generateVideo) + model discovery
+  ai-settings.js       ⚙ AI settings modal (chat model / image model / TTS provider per instance)
   eleven-voices.js     Curated ElevenLabs voice catalog (48 voices + metadata)
   app.js               Core TTS UI (voices, queue, subtitles, profiles, instruction presets)
   script.js            AI Script Generator
@@ -132,6 +133,7 @@ There is no API to call. Each AI feature builds its prompt with `window.BlvckPro
 
 ## Notes
 
+- **Which Puter instance?** On **puter.com** the defaults just work (ElevenLabs voices, a broad model catalog, `gpt-image-1`). On a **self-hosted Puter** (e.g. `puter.localhost`), the app adapts: chat models are discovered via `puter.ai.listModels()` and a valid one is auto-selected, image generation falls back across known models, and calls self-heal if a model is missing. If your instance lacks a provider (e.g. ElevenLabs isn't configured), open **⚙ AI settings** in the top bar to choose the chat model, image model, and TTS provider your server actually has.
 - **Voice library**: ElevenLabs' Voice Library API is not exposed to Puter's free tier, so Blvck-TTS ships a hand-curated catalog of the most popular voice IDs. You can swap in your own IDs in `public/eleven-voices.js`.
 - **Character consistency**: honest caveat — image models don't do pixel-perfect character matching without reference conditioning. The story bible clamps textual descriptions across prompts, which is the best you can do without model-side reference support.
 - **In-browser video export**: 4K MP4 rendering is infeasible in-browser today. The editor exports WebM directly and produces a package ZIP (images + subtitles + EDL) that can be fed to a downstream 4K pipeline (e.g. Remotion, After Effects).
