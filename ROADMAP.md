@@ -46,10 +46,14 @@ The two changes that convert a shelf of tools into an intelligent studio.
   (auto-injected into the script prompt) **and SEO** (keywords fed to the SEO prompt);
   hands off to the Script studio; shows an honesty disclaimer so nothing is presented as
   verified fact. *Next:* optional live-web sourcing where the Puter instance supports it.
-- ⬜ **Per-stage routing in auto-run** — the Director auto-run picks the right model for
-  each stage automatically, with a quiet "using *model* for *task*" transparency line.
+- ✅ **Per-stage routing in auto-run** — the Director auto-run now begins with a **Research
+  stage** (seeds the topic, generates the brief, hands it to the script), and each stage
+  runs on the model the task-aware router picks. The panel shows the active **objective**
+  and a per-stage **`↳ model`** transparency line, so you can see exactly which model runs
+  each task. Research → Script → Voice → Storyboard/Images → Video → YouTube, all gated.
 - ⬜ **Idea → full draft quickstart** — one prompt runs the whole gated pipeline; value in
-  the first session.
+  the first session. *(Auto-run now covers the chain end-to-end incl. research; this is the
+  one-field entry point on top.)*
 
 ## Phase 1 — The brain · *quality, cost & memory* (P1, next)
 

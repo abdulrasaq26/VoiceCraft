@@ -2218,6 +2218,7 @@ textarea.sb-scene-prompt:focus {
 .director-autorun-step.skipped .das-icon { background: rgba(255,255,255,0.06); }
 .director-autorun-step.failed .das-icon { background: rgba(229,72,77,0.18); color: #e5484d; }
 .director-autorun-step .das-detail { color: var(--text-dim); font-size: 0.8rem; }
+.director-autorun-step .das-model { font-family: ui-monospace, "SF Mono", monospace; font-size: 0.72rem; color: var(--accent); background: rgba(232,182,76,0.1); border-radius: 5px; padding: 0.05rem 0.4rem; white-space: nowrap; }
 .director-autorun-gate {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
   border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.6rem;

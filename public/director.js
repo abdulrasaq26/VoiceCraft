@@ -228,7 +228,31 @@
 
   const AUTO_STAGES = [
     {
-      key: 'script', label: 'Generate script', target: 'script-card',
+      key: 'research', label: 'Research the topic', target: 'research-card', optional: true, task: 'research',
+      precheck() {
+        if (A().status().research) return null;
+        const topic = (document.getElementById('research-topic') || {}).value || '';
+        const scriptTopic = (document.getElementById('script-topic') || {}).value || '';
+        if (!topic.trim() && !scriptTopic.trim()) return 'Enter a topic to research (or in the Script studio), then approve.';
+        return null;
+      },
+      async run(isStopped) {
+        // Seed the research topic from the script topic if it's empty.
+        const rt = document.getElementById('research-topic');
+        const st = document.getElementById('script-topic');
+        if (rt && !rt.value.trim() && st && st.value.trim()) rt.value = st.value.trim();
+        clickBtn('research-generate');
+        // Once the brief lands, push its topic into the Script studio so the
+        // script stage has a topic and gets grounded in the research.
+        await waitUntil(() => A().status().research, 130000, isStopped);
+        const use = document.getElementById('research-use');
+        if (use) use.click();
+      },
+      done: () => A().status().research,
+      timeout: 150000
+    },
+    {
+      key: 'script', label: 'Generate script', target: 'script-card', task: 'script',
       precheck() {
         if (A().status().script) return null;
         const topic = (document.getElementById('script-topic') || {}).value || '';
@@ -246,7 +270,7 @@
       timeout: 180000
     },
     {
-      key: 'storyboard', label: 'Build storyboard & images', target: 'storyboard-card',
+      key: 'storyboard', label: 'Build storyboard & images', target: 'storyboard-card', task: 'storyboard',
       async run(isStopped) {
         clickBtn('sb-import'); await delay(350); clickBtn('sb-analyze');
         // In Prompt Review mode analyze only produces prompts — once scenes
@@ -265,12 +289,24 @@
       timeout: 240000
     },
     {
-      key: 'youtube', label: 'Optimize for YouTube', target: 'youtube-card',
+      key: 'youtube', label: 'Optimize for YouTube', target: 'youtube-card', task: 'seo',
       async run() { clickBtn('yt-generate'); },
       done: () => A().status().youtube,
       timeout: 150000
     }
   ];
+
+  // Per-stage model the Director routes each task to (resolved at run start via
+  // the capability registry) — surfaced in the panel for transparency.
+  const stageModel = {};
+  async function resolveStageModels() {
+    if (!window.BlvckAI || !window.BlvckAI.modelForTask) return;
+    for (const s of AUTO_STAGES) {
+      if (!s.task) continue;
+      try { stageModel[s.key] = await window.BlvckAI.modelForTask(s.task); }
+      catch { stageModel[s.key] = ''; }
+    }
+  }
 
   let autoRunning = false;
   let autoStopReq = false;
@@ -287,7 +323,8 @@
     const head = document.createElement('div');
     head.className = 'director-autorun-head';
     const title = document.createElement('strong');
-    title.textContent = autoRunning ? '▶ Auto-run in progress' : autoSummary || 'Auto-run finished';
+    const obj = (window.BlvckAI && window.BlvckAI.objective && window.BlvckAI.objective()) || 'balanced';
+    title.textContent = autoRunning ? `▶ Auto-run in progress · ${obj}` : autoSummary || 'Auto-run finished';
     head.appendChild(title);
     if (autoRunning) {
       const stop = document.createElement('button');
@@ -310,6 +347,14 @@
       const label = document.createElement('span');
       label.textContent = s.label + (s.optional ? ' (optional)' : '');
       row.append(icon, label);
+      // Transparency: show which model the Director routed this stage's task to.
+      if (s.task && stageModel[s.key]) {
+        const m = document.createElement('span');
+        m.className = 'das-model';
+        m.textContent = `↳ ${stageModel[s.key]}`;
+        m.title = `Model chosen for the ${s.task} task at the current objective`;
+        row.appendChild(m);
+      }
       if (st === 'active') { const d = document.createElement('span'); d.className = 'das-detail'; d.textContent = 'working…'; row.appendChild(d); }
       if (st === 'skipped') { const d = document.createElement('span'); d.className = 'das-detail'; d.textContent = 'skipped'; row.appendChild(d); }
       if (st === 'failed') { const d = document.createElement('span'); d.className = 'das-detail'; d.textContent = 'needs attention'; row.appendChild(d); }
@@ -371,6 +416,9 @@
     auditBtn.disabled = true;
     sendBtn.disabled = true;
     clearStatus();
+    renderAutorun();
+    // Resolve which model each stage's task routes to, then show it live.
+    await resolveStageModels();
     renderAutorun();
 
     const handsFree = autorunAutoEl.checked;
