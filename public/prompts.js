@@ -280,6 +280,10 @@ Give 10 titles in each of the three categories. The "long" description must incl
     if (project.bible) parts.push(`PROJECT PROFILE:\n${JSON.stringify(project.bible, null, 2)}`);
     if (project.script) parts.push(`SCRIPT / NARRATION:\n${String(project.script).slice(0, 8000)}`);
     else if (project.subtitles) parts.push(`SUBTITLES:\n${String(project.subtitles).slice(0, 8000)}`);
+    if (project.research && project.research.keywords) {
+      const kw = project.research.keywords;
+      parts.push(`RESEARCH KEYWORDS (weave these in): primary "${kw.primary || ''}", secondary ${JSON.stringify(kw.secondary || [])}, long-tail ${JSON.stringify(kw.longTail || [])}.`);
+    }
     parts.push(`CHANNEL KNOWLEDGE BASE:\n${JSON.stringify(channel || {}, null, 2)}`);
     return { system: SEO_SYSTEM, user: parts.join('\n\n') };
   }
@@ -407,6 +411,10 @@ You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
       `TONE: ${tone}.`
     ];
     if (audience) lines.push(`TARGET AUDIENCE: ${audience}.`);
+    const grounding = researchGrounding(opts.research);
+    if (grounding) {
+      lines.push(`\nGROUND THE SCRIPT IN THIS RESEARCH BRIEF (use these facts and angles; do not contradict them or invent conflicting specifics):\n${grounding}`);
+    }
     if (opts.retention) {
       lines.push(
         'RETENTION: open with a strong hook, use open loops and pattern interrupts to sustain attention, and re-engage the listener at natural drop-off points. Keep momentum from the first word to the last.'
@@ -480,7 +488,90 @@ Respond ONLY with JSON:
 
   // --- Endpoint registry (keys match the old /api/* paths) --------------
 
+  // --- Research System ---------------------------------------------------
+  // Produces a structured, honesty-flagged research brief that grounds the
+  // script and SEO in facts, angles and keywords instead of pure model memory.
+
+  const RESEARCH_SYSTEM = `You are a meticulous research analyst and content strategist for a faceless YouTube channel. Given a topic, produce a structured research brief the writer and SEO strategist will build on.
+Be rigorous and honest about certainty. Mark each fact's confidence and set "verify": true for anything a careful editor should double-check before publishing. Do NOT invent precise statistics, quotes, dates or names you are not confident about — prefer a careful, verifiable statement over a fabricated specific. If the topic is niche or recent, say so in "caveats".
+Respond ONLY with JSON of this exact shape:
+{
+  "summary": string,
+  "angles": [string],
+  "hooks": [string],
+  "keyFacts": [{ "fact": string, "detail": string, "confidence": "high" | "medium" | "low", "verify": boolean }],
+  "questions": [string],
+  "entities": { "people": [string], "places": [string], "dates": [string], "terms": [string] },
+  "timeline": [{ "when": string, "event": string }],
+  "keywords": { "primary": string, "secondary": [string], "longTail": [string] },
+  "titleDirections": [string],
+  "caveats": string
+}
+Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity questions, a timeline where the topic is historical/chronological (else []), and search-oriented keywords. Keep every string tight and specific.`;
+
+  function researchPrompt(topic, opts) {
+    opts = opts || {};
+    const lines = [
+      `TOPIC / BRIEF: ${String(topic || '').trim() || '(none given — infer a compelling, specific angle)'}`
+    ];
+    if (opts.audience) lines.push(`TARGET AUDIENCE: ${String(opts.audience).trim()}.`);
+    if (opts.channel && opts.channel.type) lines.push(`CHANNEL: ${opts.channel.name || ''} — ${opts.channel.type}.`);
+    if (opts.depth) lines.push(`DEPTH: ${opts.depth}.`);
+    lines.push('Return the research brief as JSON only.');
+    return { system: RESEARCH_SYSTEM, user: lines.join('\n') };
+  }
+
+  function normalizeResearch(raw) {
+    const r = raw || {};
+    const conf = (c) => (['high', 'medium', 'low'].includes(String(c).toLowerCase()) ? String(c).toLowerCase() : 'medium');
+    const ent = r.entities || {};
+    return {
+      summary: str(r.summary),
+      angles: arr(r.angles).map(str).filter(Boolean),
+      hooks: arr(r.hooks).map(str).filter(Boolean),
+      keyFacts: arr(r.keyFacts).map((f) => ({
+        fact: str(f && f.fact),
+        detail: str(f && f.detail),
+        confidence: conf(f && f.confidence),
+        verify: !!(f && (f.verify || conf(f && f.confidence) !== 'high'))
+      })).filter((f) => f.fact),
+      questions: arr(r.questions).map(str).filter(Boolean),
+      entities: {
+        people: arr(ent.people).map(str).filter(Boolean),
+        places: arr(ent.places).map(str).filter(Boolean),
+        dates: arr(ent.dates).map(str).filter(Boolean),
+        terms: arr(ent.terms).map(str).filter(Boolean)
+      },
+      timeline: arr(r.timeline).map((t) => ({ when: str(t && t.when), event: str(t && t.event) })).filter((t) => t.when || t.event),
+      keywords: {
+        primary: str(r.keywords && r.keywords.primary),
+        secondary: arr(r.keywords && r.keywords.secondary).map(str).filter(Boolean),
+        longTail: arr(r.keywords && r.keywords.longTail).map(str).filter(Boolean)
+      },
+      titleDirections: arr(r.titleDirections).map(str).filter(Boolean),
+      caveats: str(r.caveats)
+    };
+  }
+
+  // Condense a research brief into a grounding block for the script/SEO prompts.
+  function researchGrounding(research) {
+    if (!research) return '';
+    const parts = [];
+    if (research.summary) parts.push(research.summary);
+    const facts = (research.keyFacts || []).slice(0, 12).map((f) => `- ${f.fact}${f.detail ? ` — ${f.detail}` : ''}${f.verify ? ' [verify]' : ''}`);
+    if (facts.length) parts.push('KEY FACTS:\n' + facts.join('\n'));
+    if ((research.angles || []).length) parts.push('ANGLES: ' + research.angles.slice(0, 6).join(' · '));
+    if ((research.hooks || []).length) parts.push('HOOK IDEAS: ' + research.hooks.slice(0, 4).join(' · '));
+    const tl = (research.timeline || []).slice(0, 12).map((t) => `${t.when}: ${t.event}`);
+    if (tl.length) parts.push('TIMELINE:\n' + tl.join('\n'));
+    return parts.join('\n\n');
+  }
+
   const ROUTES = {
+    '/api/research': {
+      build: (p) => researchPrompt(p.topic || '', p.options || {}),
+      parse: (p, rawText) => ({ research: normalizeResearch(extractJson(rawText)) })
+    },
     '/api/director/audit': {
       build: (p) => auditPrompt(p.project || {}),
       parse: (p, rawText) => ({ audit: normalizeAudit(extractJson(rawText)) })
@@ -518,6 +609,7 @@ Respond ONLY with JSON:
     extractJson,
     repairJson,
     directorChatSystem,
+    researchGrounding,
     VISUAL_STYLES
   };
 })();

@@ -39,9 +39,13 @@ The two changes that convert a shelf of tools into an intelligent studio.
   and never clobbers the user's explicit choice; auth lapses re-surface the connection banner.
 - ⬜ **Generalize fallback to all modalities** — extend the same ladder to image, video and
   TTS (image already has a candidate ladder; make it registry-driven).
-- ⬜ **Research System** — a module that produces a **sourced brief** (key facts, angles,
-  citations, keywords) consumed by Script *and* SEO. Kills hallucinated "facts" — the
-  biggest quality risk for a history channel.
+- ✅ **Research System** — `public/research.js` + the `/api/research` prompt route turn a
+  topic into a structured brief (summary, angles, hooks, key facts *with confidence +
+  verify flags*, entities, timeline, keywords, title directions) via the strongest
+  reasoning model (task `research`). Stored in project memory; **grounds the script**
+  (auto-injected into the script prompt) **and SEO** (keywords fed to the SEO prompt);
+  hands off to the Script studio; shows an honesty disclaimer so nothing is presented as
+  verified fact. *Next:* optional live-web sourcing where the Puter instance supports it.
 - ⬜ **Per-stage routing in auto-run** — the Director auto-run picks the right model for
   each stage automatically, with a quiet "using *model* for *task*" transparency line.
 - ⬜ **Idea → full draft quickstart** — one prompt runs the whole gated pipeline; value in

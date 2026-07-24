@@ -106,8 +106,12 @@
     output.value = '';
     updateWordcount();
     try {
+      // Ground the script in the research brief if one exists (not persisted
+      // into the saved options / templates — added only for this generation).
+      const research = window.BlvckAssets && window.BlvckAssets.research();
+      const genOptions = research ? Object.assign({}, options, { research }) : options;
       // Stream the narration token-by-token into the output box.
-      const prompt = window.BlvckPrompts.build('/api/script/generate', { options });
+      const prompt = window.BlvckPrompts.build('/api/script/generate', { options: genOptions });
       const messages = [];
       if (prompt.system) messages.push({ role: 'system', content: prompt.system });
       messages.push({ role: 'user', content: prompt.user });
