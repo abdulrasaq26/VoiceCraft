@@ -10,6 +10,8 @@
   if (!openBtn || !modal) return;
 
   const chatSel = $('set-chat-model');
+  const objectiveSel = $('set-objective');
+  const objectiveNote = $('set-objective-note');
   const imageInput = $('set-image-model');
   const ttsProviderSel = $('set-tts-provider');
   const ttsProviderNote = $('set-tts-provider-note');
@@ -56,9 +58,20 @@
     ttsModelInput.placeholder = def.defaultModel || '';
   }
 
+  const OBJ_NOTE = {
+    quality: 'The Director picks the strongest model for each task; spend is secondary.',
+    balanced: 'The Director picks the best value for each task — premium only where it shows.',
+    cost: 'The Director picks the cheapest capable model for each task to minimise spend.'
+  };
+  function syncObjective() {
+    if (objectiveSel) objectiveSel.value = window.BlvckAI.objective();
+    if (objectiveNote) objectiveNote.textContent = OBJ_NOTE[window.BlvckAI.objective()] || '';
+  }
+
   async function populate() {
     const AI = window.BlvckAI;
     imageInput.value = AI.imageModel();
+    syncObjective();
     populateProviders();
     ttsModelInput.value = AI.ttsModel();
 
@@ -89,6 +102,7 @@
   function saveAll() {
     const AI = window.BlvckAI;
     if (chatSel.value) AI.setChatModel(chatSel.value);
+    if (objectiveSel) AI.setObjective(objectiveSel.value);
     AI.setImageModel(imageInput.value.trim() || undefined);
     AI.setTtsProvider(ttsProviderSel.value || undefined);
     AI.setTtsModel(ttsModelInput.value.trim() || undefined);
@@ -99,6 +113,10 @@
   });
   imageInput.addEventListener('change', () => {
     window.BlvckAI.setImageModel(imageInput.value.trim() || undefined);
+  });
+  if (objectiveSel) objectiveSel.addEventListener('change', () => {
+    window.BlvckAI.setObjective(objectiveSel.value);
+    syncObjective();
   });
   // Switching provider: persist it, clear the model so the new provider uses
   // its own default, refresh the field hints, and tell the voice studio to

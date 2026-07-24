@@ -130,6 +130,7 @@
     try {
       const req = contextMessages().concat(messages.slice(0, -1).map((m) => ({ role: m.role, content: m.content })));
       await window.BlvckAI.chatStream(req, {
+        task: 'director',
         onToken: (_d, full) => { reply.content = full; renderChat(); },
         shouldStop: () => stopRequested
       });

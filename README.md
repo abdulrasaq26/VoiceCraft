@@ -17,6 +17,7 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 - 📊 **Quality audit** — a scored pre-export report (script / retention / storytelling / visual consistency / thumbnail / SEO / monetization / overall) with prioritized recommendations and a "do this next"
 - 🎚️ **Director Mode** — proactive next-step guidance across the pipeline
 - ▶️ **Auto-run pipeline** — opt-in autopilot that drives every stage for you (Script → Voice → Storyboard/Images → Video → YouTube), pausing at an **Approve / Skip / Stop** gate before each stage. Flip on **Hands-free** to run gate-free (Stop still works). It clicks each module's own button and waits for the project state to report the stage done, so it works on localhost and self-hosted Puter exactly like the manual flow
+- 🧭 **Task-aware model routing** *(Director 2.0, slice 1)* — a model-capability registry scores every model your Puter instance offers and picks the **best one per task** (storytelling for scripts, coding for the agent, structure for SEO…) instead of one model for everything. A **cost objective** dial in ⚙ AI settings — *Maximum quality / Balanced / Lowest cost* — reweights every pick. Leave the chat model on **Auto** to let it route; set an explicit model to override. See [`ROADMAP.md`](ROADMAP.md)
 
 ### 🪜 End-to-end production pipeline
 - Sections are ordered as a real workflow — **Script → Voice → Storyboard → Images → Video → YouTube → Agent** — with a sticky **progress tracker** showing where you are (click a step to jump to it)

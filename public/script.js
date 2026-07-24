@@ -112,6 +112,7 @@
       if (prompt.system) messages.push({ role: 'system', content: prompt.system });
       messages.push({ role: 'user', content: prompt.user });
       const raw = await window.BlvckAI.chatStream(messages, {
+        task: 'script',
         onToken: (_d, full) => { output.value = full; updateWordcount(); },
         shouldStop: () => stopRequested
       });

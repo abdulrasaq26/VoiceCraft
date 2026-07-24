@@ -14,6 +14,20 @@
   const IMAGE_MODEL_KEY = 'blvck:imagemodel';
   const TTS_MODEL_KEY = 'blvck:ttsmodel';
   const TTS_PROVIDER_KEY = 'blvck:ttsprovider';
+  const OBJECTIVE_KEY = 'blvck:objective'; // quality | balanced | cost
+
+  // Map a generateJSON endpoint to a routing task so the Director picks the
+  // model suited to that job (storytelling for scripts, structure for SEO…).
+  function endpointTask(endpoint) {
+    const e = String(endpoint || '');
+    if (/bible/.test(e)) return 'bible';
+    if (/scenes|storyboard/.test(e)) return 'storyboard';
+    if (/seo/.test(e)) return 'seo';
+    if (/script/.test(e)) return 'script';
+    if (/audit|director/.test(e)) return 'audit';
+    if (/research/.test(e)) return 'research';
+    return 'chat';
+  }
 
   const DEFAULT_TTS_MODEL = 'eleven_multilingual_v2';
   const DEFAULT_TTS_PROVIDER = 'elevenlabs';
@@ -203,9 +217,33 @@
   const BlvckAI = {
     DEFAULT_VOICE_SETTINGS,
 
+    // Per-task model that worked this session (perf hint; never clobbers the
+    // user's explicit choice in storage).
+    _taskWinner: {},
+
     // --- Model configuration ---
+    // The stored chat model is the user's EXPLICIT override. Auto-routing never
+    // writes it — so switching models per task can't hijack a user's choice.
     chatModel() { return localStorage.getItem(CHAT_MODEL_KEY) || ''; },
     setChatModel(m) { if (m) localStorage.setItem(CHAT_MODEL_KEY, m); },
+
+    // Cost/quality objective that reweights every model pick.
+    objective() { const o = localStorage.getItem(OBJECTIVE_KEY); return o === 'quality' || o === 'cost' ? o : 'balanced'; },
+    setObjective(o) { if (o) localStorage.setItem(OBJECTIVE_KEY, o); },
+
+    // Order / pick the best available model for a task via the capability
+    // registry, honouring the objective. Falls back to the family-preference
+    // ordering if the registry isn't loaded.
+    orderForTask(models, task) {
+      if (window.BlvckModels) return window.BlvckModels.orderForTask(models, task, { objective: this.objective() });
+      return orderDiscovered(models);
+    },
+    pickModel(models, task) {
+      if (window.BlvckModels) return window.BlvckModels.pickForTask(models, task, { objective: this.objective() });
+      return pickChatModel(models);
+    },
+    // Which model the Director would use for a task right now (transparency).
+    async modelForTask(task) { return this.resolveChatModel(task); },
     imageModel() { return localStorage.getItem(IMAGE_MODEL_KEY) || DEFAULT_IMAGE_MODEL; },
     setImageModel(m) { if (m) localStorage.setItem(IMAGE_MODEL_KEY, m); },
     // Empty by default so each provider's buildOptions() supplies its own
@@ -287,18 +325,18 @@
       return modelsCache;
     },
 
-    // The chat model to use: the stored choice if the instance still offers
-    // it, otherwise a freshly-picked available default (which is persisted).
-    // Returns undefined when no list is available (let Puter default).
-    async resolveChatModel() {
+    // The chat model to use for a task: the user's explicit choice if the
+    // instance still offers it, otherwise the best available model for that
+    // task under the current objective. Task-aware and non-persisting, so
+    // different stages can use different models. Returns undefined when no
+    // list is available (let Puter default).
+    async resolveChatModel(task) {
       const stored = this.chatModel();
       const models = await this.listModels();
-      if (!models.length) return stored || undefined;
       const known = (id) => models.some((m) => m.id === id || m.aliases.includes(id));
-      if (stored && known(stored)) return stored;
-      const pick = pickChatModel(models);
-      if (pick) { this.setChatModel(pick); return pick; }
-      return stored || undefined;
+      if (stored && known(stored)) return stored; // explicit user override wins
+      if (!models.length) return stored || undefined;
+      return this.pickModel(models, task || 'chat') || stored || undefined;
     },
 
     async _chatOnce(messages, model) {
@@ -313,25 +351,31 @@
     // Puter with a totally different model roster. Only when discovery is
     // unavailable does it fall back to hardcoded known-good IDs. Stops at the
     // first success and remembers the winning model so later calls are direct.
-    async _chatResilient(messages, preferredModel) {
+    async _chatResilient(messages, preferredModel, task) {
       await ensurePuter();
+      task = task || 'chat';
       if (preferredModel && STALE_MODELS.has(preferredModel)) preferredModel = null;
 
       const models = await this.listModels();
+      const stored = this.chatModel();
+      const known = (id) => models.some((m) => m.id === id || m.aliases.includes(id));
       const attempts = [];
       const add = (m) => {
         if (m === undefined) { if (!attempts.includes(undefined)) attempts.push(undefined); }
         else if (m && !attempts.includes(m)) attempts.push(m);
       };
 
-      add(preferredModel || (await this.resolveChatModel()));
+      // Order of attempts: an explicit request → the user's saved override →
+      // this session's proven pick for the task → the registry's best models
+      // for the task → the instance default → hardcoded fallbacks.
+      if (preferredModel) add(preferredModel);
+      else if (stored && known(stored)) add(stored);
+      else if (this._taskWinner[task] && known(this._taskWinner[task])) add(this._taskWinner[task]);
+
       if (models.length) {
-        // Cycle through the instance's real models, best-first, then the
-        // instance default. No puter.com-specific IDs on a self-hosted box.
-        orderDiscovered(models).slice(0, MAX_CHAT_ATTEMPTS).forEach(add);
+        this.orderForTask(models, task).slice(0, MAX_CHAT_ATTEMPTS).forEach(add);
         add(undefined);
       } else {
-        // Instance can't list models: try its default, then known-good IDs.
         add(undefined);
         FALLBACK_CHAT_MODELS.forEach(add);
       }
@@ -340,7 +384,9 @@
       for (const model of attempts) {
         try {
           const text = await this._chatOnce(messages, model);
-          if (model) this.setChatModel(model); // remember what works
+          // Remember the winning model for this task (session only) so repeat
+          // calls go direct — but never overwrite the user's explicit choice.
+          if (model && !stored) this._taskWinner[task] = model;
           return text;
         } catch (e) {
           lastErr = e;
@@ -411,6 +457,7 @@
       base.push({ role: 'user', content: prompt.user });
 
       const maxAttempts = Math.max(1, opts.attempts || 3);
+      const task = opts.task || endpointTask(endpoint);
       let messages = base;
       let lastRaw = '';
       let lastErr = null;
@@ -419,7 +466,7 @@
         if (opts.onAttempt) { try { opts.onAttempt(attempt, maxAttempts); } catch { /* ignore */ } }
         let rawText = '';
         try {
-          rawText = await this._chatResilient(messages);
+          rawText = await this._chatResilient(messages, undefined, task);
         } catch (e) {
           lastErr = e; // model/transport error — not a JSON problem, stop.
           break;
@@ -451,8 +498,9 @@
     lastRawResponse() { return this._lastRaw || ''; },
 
     // Generic chat completion returning plain text (script generator, agent).
+    // opts.task routes to the best-suited model for that job.
     async chat(messages, opts = {}) {
-      return this._chatResilient(messages, opts.model);
+      return this._chatResilient(messages, opts.model, opts.task);
     },
 
     // Streaming chat: calls onToken(delta, full) as tokens arrive, returns the
@@ -461,9 +509,10 @@
     // opts: { model?, onToken?, shouldStop? }
     async chatStream(messages, opts = {}) {
       await ensurePuter();
+      const task = opts.task || 'chat';
       const onToken = opts.onToken || (() => {});
       const shouldStop = opts.shouldStop || (() => false);
-      const model = opts.model || (await this.resolveChatModel());
+      const model = opts.model || (await this.resolveChatModel(task));
       let full = '';
       const consume = async (resp) => {
         if (!resp || typeof resp[Symbol.asyncIterator] !== 'function') {
@@ -480,12 +529,12 @@
       try {
         const resp = await window.puter.ai.chat(messages, Object.assign({ stream: true }, model ? { model } : {}));
         await consume(resp);
-        if (model) this.setChatModel(model);
+        if (model && !this.chatModel()) this._taskWinner[task] = model; // session hint only
         return full;
       } catch (e) {
         if (full) throw e; // partial stream already delivered
         // Streaming unsupported or model unavailable — fall back cleanly.
-        full = await this._chatResilient(messages, model);
+        full = await this._chatResilient(messages, model, task);
         onToken(full, full);
         return full;
       }
@@ -495,7 +544,7 @@
     async enhanceImagePrompt(idea, styleHint) {
       const sys = 'You turn a short idea into ONE rich, vivid image-generation prompt. Output ONLY the prompt text — no preamble, no quotes, no numbered options. Describe subject, setting, composition, camera/framing, lighting, color palette, mood and medium/art-style. Keep it under 80 words.';
       const user = `Idea: ${String(idea || '').trim()}${styleHint ? `\nPreferred visual style: ${styleHint}` : ''}\nWrite the enhanced image prompt.`;
-      const out = await this.chat([{ role: 'system', content: sys }, { role: 'user', content: user }]);
+      const out = await this.chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { task: 'image-prompt' });
       return String(out).trim().replace(/^["'`]+|["'`]+$/g, '').trim();
     },
 
@@ -510,8 +559,8 @@
       const sys = 'You are an elite script editor for spoken narration. Rewrite as instructed. Output ONLY the rewritten narration — no commentary, no markdown, no labels, no quotes.';
       const user = `${briefs[mode] || briefs.polish}\n\nNARRATION:\n${String(script || '')}`;
       const messages = [{ role: 'system', content: sys }, { role: 'user', content: user }];
-      if (opts.onToken || opts.shouldStop) return this.chatStream(messages, opts);
-      return this.chat(messages);
+      if (opts.onToken || opts.shouldStop) return this.chatStream(messages, Object.assign({}, opts, { task: 'refine' }));
+      return this.chat(messages, { task: 'refine' });
     },
 
     // Generate an image, returning a Blob. Passes an explicit model (required
