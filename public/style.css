@@ -23,6 +23,13 @@
   padding: 0;
 }
 
+/* The [hidden] attribute must always win. Elements with an explicit display
+   rule (flex/grid/block) otherwise stay visible when toggled via el.hidden,
+   which is how the JS shows/hides panels throughout the app. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   background: radial-gradient(1200px 600px at 50% -10%, #1b1b22 0%, var(--bg) 60%);
   color: var(--text);
