@@ -28,9 +28,16 @@
         <label>🎬 AI Production Director</label>
         <label class="ssml-toggle" title="Proactive guidance to the next step across the whole pipeline"><input type="checkbox" id="director-mode" /> <span>Director Mode</span></label>
       </div>
-      <p class="field-note">Your always-on creative director, content strategist and QC manager. It sees the whole project and advises across every stage. Ask it anything, or run a full quality audit before export.</p>
+      <p class="field-note">Your always-on creative director, content strategist and QC manager. It sees the whole project and advises across every stage. Ask it anything, run a full quality audit, or let it drive the whole pipeline for you with your approval at each stage.</p>
 
       <div id="director-next" class="director-next" hidden></div>
+
+      <!-- Auto-run: opt-in autopilot that chains every stage with approval gates -->
+      <div class="director-autorun-bar">
+        <button id="director-autorun" class="btn primary" type="button" title="Let the Director run the whole pipeline, pausing for your approval before each stage">▶ Auto-run pipeline</button>
+        <label class="ssml-toggle" title="Skip the approval prompt and run every stage automatically (you can still Stop)"><input type="checkbox" id="director-autorun-auto" /> <span>Hands-free (no approval gates)</span></label>
+      </div>
+      <div id="director-autorun-panel" class="director-autorun-panel" hidden></div>
 
       <div class="director-actions">
         <button id="director-audit" class="btn primary" type="button">Run production audit</button>

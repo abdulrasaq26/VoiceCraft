@@ -2184,6 +2184,38 @@ textarea.sb-scene-prompt:focus {
   font-size: 0.88rem;
 }
 .director-next-tip { color: var(--text-dim); }
+
+.director-autorun-bar { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center; }
+.director-autorun-panel {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  border: 1px solid rgba(232, 182, 76, 0.35); border-radius: 10px;
+  padding: 0.8rem; background: rgba(232, 182, 76, 0.06);
+}
+.director-autorun-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; }
+.director-autorun-head strong { font-size: 0.92rem; }
+.director-autorun-steps { display: flex; flex-direction: column; gap: 0.35rem; }
+.director-autorun-step {
+  display: flex; align-items: center; gap: 0.55rem;
+  font-size: 0.88rem; padding: 0.3rem 0.1rem;
+}
+.director-autorun-step .das-icon {
+  width: 1.4rem; height: 1.4rem; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; font-size: 0.8rem; font-weight: 700;
+  background: rgba(255,255,255,0.08); color: var(--text-dim);
+}
+.director-autorun-step.active { color: var(--text); font-weight: 600; }
+.director-autorun-step.active .das-icon { background: rgba(232,182,76,0.2); color: var(--accent); }
+.director-autorun-step.done .das-icon { background: rgba(53,194,107,0.18); color: #35c26b; }
+.director-autorun-step.skipped { color: var(--text-dim); }
+.director-autorun-step.skipped .das-icon { background: rgba(255,255,255,0.06); }
+.director-autorun-step.failed .das-icon { background: rgba(229,72,77,0.18); color: #e5484d; }
+.director-autorun-step .das-detail { color: var(--text-dim); font-size: 0.8rem; }
+.director-autorun-gate {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.6rem;
+}
+.director-autorun-gate .das-gate-msg { flex: 1 1 auto; font-size: 0.86rem; min-width: 12rem; }
 .director-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .director-input-row { display: flex; gap: 0.5rem; align-items: flex-start; }
 .director-input-row textarea { flex: 1; }
