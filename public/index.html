@@ -189,11 +189,92 @@
       </section>
     </main>
 
+    <!-- AI Script Generator (Puter chat) -->
+    <section id="script-card" class="card script-card" hidden>
+      <div class="input-header">
+        <label>AI Script Generator</label>
+        <span class="badge elite">⚡ Puter</span>
+      </div>
+      <p class="field-note">Generate a full narration script, then send it straight to the voice studio above.</p>
+
+      <section class="controls script-controls">
+        <div class="control">
+          <label for="script-type">Script type</label>
+          <select id="script-type">
+            <option value="youtube">YouTube video</option>
+            <option value="historical">Historical storytelling</option>
+            <option value="documentary">Documentary narration</option>
+            <option value="educational">Educational content</option>
+            <option value="shorts">Short / Reel</option>
+            <option value="podcast">Podcast episode</option>
+            <option value="audiobook">Audiobook-style</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="script-tone">Tone</label>
+          <select id="script-tone">
+            <option value="cinematic and dramatic">Cinematic &amp; dramatic</option>
+            <option value="warm and conversational">Warm &amp; conversational</option>
+            <option value="authoritative and factual">Authoritative &amp; factual</option>
+            <option value="suspenseful and mysterious">Suspenseful &amp; mysterious</option>
+            <option value="upbeat and energetic">Upbeat &amp; energetic</option>
+            <option value="calm and reflective">Calm &amp; reflective</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="script-length">Length</label>
+          <select id="script-length">
+            <option value="short">Short (~150 words)</option>
+            <option value="medium" selected>Medium (~400 words)</option>
+            <option value="long">Long (~800 words)</option>
+            <option value="xlong">Extra long (~1500 words)</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="script-audience">Audience</label>
+          <input id="script-audience" type="text" placeholder="e.g. history enthusiasts, general viewers" />
+        </div>
+      </section>
+
+      <div class="input-header">
+        <label for="script-topic">Topic / brief</label>
+        <select id="script-template-select" title="Saved prompt templates">
+          <option value="">Prompt templates…</option>
+        </select>
+      </div>
+      <textarea id="script-topic" rows="3" placeholder="What should the script be about? e.g. 'A day in the life of a medieval blacksmith' — add any beats, facts, or angles you want covered…"></textarea>
+
+      <label class="ssml-toggle" title="Add hooks, pattern interrupts, and re-engagement beats to hold viewer attention">
+        <input type="checkbox" id="script-retention" checked /> <span>Optimize for retention (hooks &amp; pacing)</span>
+      </label>
+
+      <section class="actions">
+        <button id="script-generate" class="btn primary" type="button">
+          <span class="btn-label">Generate script</span>
+          <span class="spinner" hidden></span>
+        </button>
+        <button id="script-save-template" class="btn ghost" type="button" title="Save the current type/tone/length/audience/topic as a reusable template">Save as template</button>
+      </section>
+
+      <div id="script-status" class="status" hidden></div>
+
+      <section id="script-result" class="script-result" hidden>
+        <textarea id="script-output" rows="14" spellcheck="false"></textarea>
+        <div class="script-result-actions">
+          <button id="script-use" class="btn primary small" type="button" title="Load this script into the voice studio above">Use in voice studio ↑</button>
+          <button id="script-copy" class="btn ghost small" type="button">Copy</button>
+          <button id="script-download" class="btn ghost small" type="button">Download .txt</button>
+          <button id="script-regenerate" class="btn ghost small" type="button">Regenerate</button>
+          <span id="script-wordcount" class="field-note"></span>
+        </div>
+      </section>
+    </section>
+
     <!-- Image generator (Puter txt2img) -->
     <section id="image-card" class="card image-card" hidden>
       <div class="input-header">
         <label for="image-prompt">Image generator</label>
-        <span class="badge premium">Gemini</span>
+        <span class="badge premium">Puter</span>
       </div>
       <textarea
         id="image-prompt"
@@ -524,6 +605,7 @@
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>
+  <script src="script.js"></script>
   <script src="images.js"></script>
   <script src="storyboard.js"></script>
   <script src="editor.js"></script>

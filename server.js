@@ -18,6 +18,7 @@ const path = require('path');
 
 const storyboard = require('./lib/storyboard');
 const seo = require('./lib/youtube-seo');
+const scriptWriter = require('./lib/script-writer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -89,6 +90,20 @@ app.post('/api/seo/generate', (req, res) => {
     }
   }
   res.status(400).json({ error: 'Send { promptOnly: true } to fetch the prompt, or { rawText } to parse a response.' });
+});
+
+// Script generation. Body flags:
+//   { options, promptOnly: true } → { prompt: { system, user } }
+//   { rawText }                   → { script }
+app.post('/api/script/generate', (req, res) => {
+  const { options = {}, promptOnly, rawText } = req.body || {};
+  if (promptOnly) {
+    return res.json({ prompt: scriptWriter.scriptPrompt(options) });
+  }
+  if (typeof rawText === 'string') {
+    return res.json({ script: scriptWriter.cleanScript(rawText) });
+  }
+  res.status(400).json({ error: 'Send { promptOnly: true } to fetch the prompt, or { rawText } to clean a response.' });
 });
 
 function sendGenError(res, err, fallback) {
