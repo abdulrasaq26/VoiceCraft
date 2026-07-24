@@ -508,13 +508,82 @@
       </div>
     </section>
 
+    <!-- AI Coding Agent -->
+    <section id="agent-card" class="card agent-card" hidden>
+      <div class="input-header">
+        <label>AI Coding Agent</label>
+        <span class="badge elite">⚡ Puter</span>
+      </div>
+      <p class="field-note">A coding assistant powered by Puter. Generate, edit, analyze and debug code. Add files as context so it understands your project.</p>
+
+      <section class="controls agent-controls">
+        <div class="control">
+          <label for="agent-model">Model</label>
+          <select id="agent-model">
+            <option value="claude-sonnet-4">Claude Sonnet 4</option>
+            <option value="claude-opus-4">Claude Opus 4</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="gpt-4.1">GPT-4.1</option>
+            <option value="deepseek-chat">DeepSeek</option>
+            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="agent-mode">Mode</label>
+          <select id="agent-mode">
+            <option value="chat">Chat</option>
+            <option value="task">Task (step-by-step plan)</option>
+          </select>
+        </div>
+        <div class="control agent-context-control">
+          <label>Context files <span id="agent-context-count" class="field-note"></span></label>
+          <div class="agent-context-actions">
+            <button id="agent-add-context" class="btn ghost small" type="button">+ Add file</button>
+            <button id="agent-clear-context" class="btn ghost small" type="button">Clear</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="agent-context-list" class="agent-context-list"></div>
+
+      <div id="agent-messages" class="agent-messages" aria-live="polite"></div>
+
+      <div id="agent-status" class="status" hidden></div>
+
+      <section class="agent-input-row">
+        <textarea id="agent-input" rows="3" placeholder="Ask the agent to write, explain, or debug code… (Ctrl/Cmd+Enter to send)"></textarea>
+        <div class="agent-input-actions">
+          <button id="agent-send" class="btn primary">
+            <span class="btn-label">Send</span>
+            <span class="spinner" hidden></span>
+          </button>
+          <button id="agent-new" class="btn ghost small" type="button" title="Start a new conversation">New chat</button>
+          <button id="agent-export" class="btn ghost small" type="button" title="Download the conversation as Markdown">Export</button>
+        </div>
+      </section>
+    </section>
+
     <footer class="footer">
-      <p>
-        Uses the
-        <a href="https://cloud.google.com/text-to-speech" target="_blank" rel="noopener">Google Cloud Text-to-Speech API</a>.
-        Configure credentials on the server — see the README.
-      </p>
+      <p>Serverless AI content-production studio — voice, images, video and scripts powered by <a href="https://puter.com" target="_blank" rel="noopener">Puter</a> + ElevenLabs. No API keys required.</p>
     </footer>
+  </div>
+
+  <!-- Add-context dialog -->
+  <div id="agent-context-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Add context file">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>Add a context file</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <label for="agent-ctx-name">File name / path</label>
+      <input id="agent-ctx-name" type="text" placeholder="e.g. src/app.js" />
+      <label for="agent-ctx-body">File contents</label>
+      <textarea id="agent-ctx-body" rows="10" spellcheck="false" placeholder="Paste the file contents here…"></textarea>
+      <div class="actions">
+        <button id="agent-ctx-save" class="btn primary" type="button">Add to context</button>
+      </div>
+    </div>
   </div>
 
   <!-- Voice browser -->
@@ -623,5 +692,6 @@
   <script src="editor.js"></script>
   <script src="youtube.js"></script>
   <script src="projects.js"></script>
+  <script src="agent.js"></script>
 </body>
 </html>
