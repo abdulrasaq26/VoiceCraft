@@ -1021,6 +1021,10 @@ input[type="range"]:disabled {
   display: block;
 }
 
+.sb-thumb-video {
+  border-color: var(--accent);
+}
+
 .sb-thumb-placeholder {
   width: 160px;
   height: 90px;

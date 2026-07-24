@@ -316,10 +316,22 @@
       <p class="field-note">
         Upload subtitles (.srt / .vtt / timestamped .txt) plus optional script, visual-style,
         character-reference and instruction files. The AI reads the whole story, builds character
-        and location profiles, then generates one still image per scene — no prompt writing needed.
+        and location profiles, then generates one asset per scene — still image, video clip (Puter
+        txt2vid), or a mix — no prompt writing needed.
       </p>
       <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt" />
       <div id="sb-filelist" class="sb-filelist"></div>
+
+      <section class="controls">
+        <div class="control">
+          <label for="sb-asset-mode">Scene assets</label>
+          <select id="sb-asset-mode" title="Generate still images, video clips (Puter txt2vid), or a mix">
+            <option value="image" selected>Still images</option>
+            <option value="video">Video clips</option>
+            <option value="mixed">Mixed (per-scene)</option>
+          </select>
+        </div>
+      </section>
 
       <div class="actions">
         <button id="sb-analyze" class="btn primary">
