@@ -977,8 +977,9 @@
     if (pending) showStatus(`Restored a storyboard with ${pending} scene(s) left. Click “Continue”.`, 'info');
   }
 
-  async function clearProject() {
-    if (running) return;
+  // Reset only the in-memory + DOM state (no storage deletion). Shared by the
+  // full clear and by the data-manager refresh hook.
+  function resetMemory() {
     files = [];
     cues = [];
     bible = null;
@@ -992,8 +993,6 @@
     refBlobs.clear();
     refDataUrls.clear();
     if (castEl) castEl.hidden = true;
-    await idbClear();
-    localStorage.removeItem(LS_KEY);
     fileInput.value = '';
     renderFileList();
     renderBible();
@@ -1001,6 +1000,40 @@
     exportsEl.hidden = true;
     progressWrap.hidden = true;
     clearStatus();
+  }
+
+  async function clearProject() {
+    if (running) return;
+    resetMemory();
+    await idbClear();
+    localStorage.removeItem(LS_KEY);
+  }
+
+  // Re-hydrate from storage (used by the data manager after a clear or undo).
+  async function refresh() {
+    if (running) return;
+    resetMemory();
+    await restoreProject();
+  }
+
+  // Remove only completed ('done') or failed ('error') scenes, deleting their
+  // images. Returns how many were removed. Used by the smart-clear options.
+  async function clearScenes(filter) {
+    if (running || !scenes.length) return 0;
+    const match = filter === 'completed' ? 'done' : 'error';
+    const removed = scenes.filter((s) => s.status === match);
+    if (!removed.length) return 0;
+    for (const s of removed) {
+      await idbDelete(String(s.index));
+      const u = urls.get(s.index);
+      if (u) { URL.revokeObjectURL(u); urls.delete(s.index); }
+      memBlobs.delete(s.index);
+    }
+    scenes = scenes.filter((s) => s.status !== match);
+    saveProject();
+    renderScenes();
+    if (!scenes.length) exportsEl.hidden = true;
+    return removed.length;
   }
 
   // --- Exports -----------------------------------------------------------
@@ -1246,7 +1279,15 @@
   if (importBtn) importBtn.addEventListener('click', importFromProject);
   if (useRefsEl) useRefsEl.addEventListener('change', saveProject);
   analyzeBtn.addEventListener('click', analyzeAndGenerate);
-  clearBtn.addEventListener('click', clearProject);
+  // The #sb-clear button carries data-clear="storyboard", so the data manager
+  // wires it (confirm + undo). Fall back to a direct clear only if the data
+  // manager isn't present.
+  if (window.BlvckData) {
+    window.BlvckData.register('storyboard', refresh);
+    window.BlvckData.registerScenes(clearScenes);
+  } else {
+    clearBtn.addEventListener('click', clearProject);
+  }
   if (assetModeEl) {
     assetModeEl.addEventListener('change', () => {
       assetMode = assetModeEl.value;

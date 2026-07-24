@@ -1485,6 +1485,57 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     }
   }
 
+  // --- Data-manager refresh hooks ---------------------------------------
+  // Reset the voice tuning (sliders + instructions) to their defaults without
+  // touching the selected voice/language.
+  function resetVoiceSettingsUI() {
+    stabilitySlider.value = stabilitySlider.defaultValue;
+    similaritySlider.value = similaritySlider.defaultValue;
+    styleSlider.value = styleSlider.defaultValue;
+    speakerBoostToggle.checked = speakerBoostToggle.defaultChecked;
+    instructionsInput.value = '';
+    updateSliderOutputs();
+    renderVoiceCard();
+  }
+
+  // Re-hydrate the audio queue + voice settings from storage. Called by the
+  // data manager after a clear or an undo. Never deletes IndexedDB itself —
+  // the data manager owns deletion — so an undo can restore audio blobs.
+  async function ttsRefresh() {
+    if (running) return;
+    const savedBatch = store.get(LS.batch, null);
+    const hasBatch = savedBatch && savedBatch.items && savedBatch.items.length;
+    urls.forEach((u) => URL.revokeObjectURL(u));
+    urls.clear();
+    memBlobs.clear();
+    selected.clear();
+    durations.length = 0;
+    batch = null;
+    if (hasBatch) {
+      await restoreBatch();
+    } else {
+      queueSection.hidden = true;
+      rowAudio.hidden = true;
+      rowAudio.pause();
+    }
+    const saved = store.get(LS.settings, null);
+    if (saved) applySettings(saved);
+    else resetVoiceSettingsUI();
+  }
+
+  if (window.BlvckData) {
+    window.BlvckData.register('tts', ttsRefresh);
+    // Subtitles live only in storage (published for other modules); nothing
+    // visible to rebuild, but keep the project store in sync.
+    window.BlvckData.register('subtitles', () => { if (window.BlvckAssets) window.BlvckAssets.emit(); });
+    // Project name follows the narration record — reset the field when it's cleared.
+    window.BlvckData.register('project', () => {
+      const n = store.get(LS.narration, null);
+      titleInput.value = (n && n.title) || '';
+      updateNamingNote();
+    });
+  }
+
   // --- Presets -----------------------------------------------------------
 
   function savePresets() {

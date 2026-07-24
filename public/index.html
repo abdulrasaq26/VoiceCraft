@@ -78,6 +78,13 @@
         <p id="naming-note" class="field-note">Outputs are named “Project Part 1”, “Project Part 2”, …</p>
       </section>
 
+      <!-- Global data management -->
+      <section class="data-toolbar" aria-label="Project data management">
+        <span class="data-toolbar-label">🧹 Data &amp; cleanup — clear one section, or the whole production</span>
+        <button id="data-smart-open" class="btn ghost small" type="button" title="Advanced: clear generated content, uploads, AI outputs, cache, or completed/failed scenes">Clear…</button>
+        <button id="data-reset-project" class="btn danger small" type="button" title="Remove all project data across every module and start fresh">Reset project</button>
+      </section>
+
       <!-- Text input -->
       <section class="input-section">
         <div class="input-header">
@@ -181,6 +188,8 @@
         </button>
         <button id="subtitle-only-btn" class="btn ghost" type="button" title="Build subtitles from the pasted script (timing estimated from voice speed) — preview, copy, or download SRT/VTT">Generate subtitles</button>
         <button id="reset-btn" class="btn ghost" type="button">Reset</button>
+        <button class="btn ghost clear-btn" type="button" data-clear="tts" title="Delete the generated audio and reset voice settings (undoable)">🗑 Clear audio &amp; voice</button>
+        <button class="btn ghost clear-btn" type="button" data-clear="subtitles" title="Delete the generated subtitles for this project (undoable)">🗑 Clear subtitles</button>
       </section>
 
       <div id="status" class="status" hidden></div>
@@ -234,7 +243,10 @@
     <section id="script-card" class="card script-card" hidden>
       <div class="input-header">
         <label>AI Script Generator</label>
-        <span class="badge elite">⚡ Puter</span>
+        <div class="input-header-actions">
+          <span class="badge elite">⚡ Puter</span>
+          <button class="btn ghost small clear-btn" type="button" data-clear="script" title="Remove the generated script for this project (undoable)">🗑 Clear script</button>
+        </div>
       </div>
       <p class="field-note">Generate a full narration script, then send it straight to the voice studio above.</p>
 
@@ -323,7 +335,10 @@
     <section id="image-card" class="card image-card" hidden>
       <div class="input-header">
         <label for="image-prompt">Image generator</label>
-        <span class="badge premium">Puter</span>
+        <div class="input-header-actions">
+          <span class="badge premium">Puter</span>
+          <button class="btn ghost small clear-btn" type="button" data-clear="images" title="Clear the generated image preview">🗑 Clear image</button>
+        </div>
       </div>
       <textarea
         id="image-prompt"
@@ -424,7 +439,7 @@
         </button>
         <button id="sb-generate-all" class="btn primary" type="button" hidden>Generate all images</button>
         <button id="sb-raw" class="btn ghost" type="button" hidden>View raw response</button>
-        <button id="sb-clear" class="btn ghost" type="button">Clear</button>
+        <button id="sb-clear" class="btn ghost clear-btn" type="button" data-clear="storyboard" title="Clear the storyboard, scenes and generated images (undoable)">🗑 Clear storyboard</button>
       </div>
 
       <div id="sb-status" class="status" hidden></div>
@@ -467,7 +482,10 @@
     <section id="editor-card" class="card" hidden>
       <div class="input-header">
         <label>AI Video Editor</label>
-        <span class="badge premium">Auto-assemble</span>
+        <div class="input-header-actions">
+          <span class="badge premium">Auto-assemble</span>
+          <button class="btn ghost small clear-btn" type="button" data-clear="editor" title="Clear the timeline and uploaded assets (undoable)">🗑 Clear timeline &amp; assets</button>
+        </div>
       </div>
       <p class="field-note">
         Assembles your storyboard images, subtitle timing and narration into a synchronized rough cut
@@ -556,7 +574,10 @@
     <section id="youtube-card" class="card" hidden>
       <div class="input-header">
         <label>YouTube Optimization Center</label>
-        <span class="badge premium">SEO + Thumbnails</span>
+        <div class="input-header-actions">
+          <span class="badge premium">SEO + Thumbnails</span>
+          <button class="btn ghost small clear-btn" type="button" data-clear="youtube" title="Clear generated titles, description, tags and thumbnails (undoable). Your channel knowledge base is kept.">🗑 Clear SEO assets</button>
+        </div>
       </div>
 
       <details class="yt-channel">
@@ -607,7 +628,10 @@
     <section id="agent-card" class="card agent-card" hidden>
       <div class="input-header">
         <label>AI Coding Agent</label>
-        <span class="badge elite">⚡ Puter</span>
+        <div class="input-header-actions">
+          <span class="badge elite">⚡ Puter</span>
+          <button class="btn ghost small clear-btn" type="button" data-clear="agent" title="Clear the chat history and context files (undoable)">🗑 Clear chat history</button>
+        </div>
       </div>
       <p class="field-note">A coding assistant powered by Puter. Generate, edit, analyze and debug code. Add files as context so it understands your project.</p>
 
@@ -657,6 +681,26 @@
     <footer class="footer">
       <p>Serverless AI content-production studio — voice, images, video and scripts powered by <a href="https://puter.com" target="_blank" rel="noopener">Puter</a> + ElevenLabs. No API keys required.</p>
     </footer>
+  </div>
+
+  <!-- Smart clear options -->
+  <div id="data-smart-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Smart clear options">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>Clear options</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <p class="field-note">Target exactly what you want to remove. Each option confirms first and can be undone for a few seconds.</p>
+      <div class="smart-options">
+        <button class="smart-option" type="button" data-smart="generated"><strong>Clear generated content</strong><span>Script, audio, subtitles, storyboard, images, timeline &amp; SEO</span></button>
+        <button class="smart-option" type="button" data-smart="uploaded"><strong>Clear uploaded files</strong><span>Files you uploaded, e.g. narration audio</span></button>
+        <button class="smart-option" type="button" data-smart="ai"><strong>Clear AI outputs</strong><span>Everything the AI produced, incl. chat &amp; audit</span></button>
+        <button class="smart-option" type="button" data-smart="cache"><strong>Clear cache &amp; temporary assets</strong><span>Recent items and transient data</span></button>
+        <button class="smart-option" type="button" data-smart="completed-scenes"><strong>Clear completed scenes only</strong><span>Storyboard scenes that finished generating</span></button>
+        <button class="smart-option" type="button" data-smart="failed-scenes"><strong>Clear failed generations only</strong><span>Storyboard scenes that failed</span></button>
+      </div>
+    </div>
   </div>
 
   <!-- Add-context dialog -->
@@ -833,6 +877,7 @@
   <script src="prompts.js"></script>
   <script src="ai-provider.js"></script>
   <script src="project-assets.js"></script>
+  <script src="data-manager.js"></script>
   <script src="eleven-voices.js"></script>
   <script src="tts-providers.js"></script>
   <script src="ai-settings.js"></script>

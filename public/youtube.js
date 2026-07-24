@@ -499,6 +499,19 @@
     if (kind === 'hashtags') return copy([...seo.hashtags.highVolume, ...seo.hashtags.niche, ...seo.hashtags.brand].join(' '), 'Hashtags');
   }
 
+  // Re-hydrate from storage (used by the data manager after a clear or undo).
+  // The channel knowledge base is global and intentionally left alone.
+  async function refresh() {
+    seo = null;
+    thumbs = [];
+    thumbCounter = 0;
+    thumbUrls.forEach((u) => URL.revokeObjectURL(u));
+    thumbUrls.clear();
+    render();
+    await restore();
+  }
+  if (window.BlvckData) window.BlvckData.register('youtube', refresh);
+
   // --- Init --------------------------------------------------------------
 
   (async () => {

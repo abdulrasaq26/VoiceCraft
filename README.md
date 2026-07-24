@@ -17,6 +17,12 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 - Sections are ordered as a real workflow — **Script → Voice → Storyboard → Images → Video → YouTube → Agent** — with a sticky **progress tracker** showing where you are (click a step to jump to it)
 - **No file shuffling** — a project-memory layer passes data between stages; the storyboard's **⤵ Import from project** pulls the subtitles/script you already generated (no download/re-upload)
 
+### 🧹 Data management & cleanup
+- 🗑️ **Every section has its own Clear button** — Script, Audio &amp; voice, Subtitles, Storyboard, Image, Timeline &amp; assets, SEO assets, and Agent chat — each clears only that section, leaving the rest of the project intact
+- ♻️ **Reset project** — one button wipes every module (scripts, audio, subtitles, storyboards, images, video assets, SEO, chat, settings) after an explicit *"permanently remove all project data"* confirmation. Your reusable libraries (prompt templates, voice presets, the channel knowledge base) are kept
+- 🎯 **Smart clear options** — target exactly what you want: only generated content, only uploaded files, only AI outputs, cache &amp; temporary assets, only completed scenes, or only failed generations
+- ✅ **Safe by design** — every delete confirms first, gives immediate visual feedback, and offers a **~8-second Undo** before it becomes permanent; controls are consistent on mobile and desktop
+
 ### Voices — 5 TTS providers via Puter
 - 🔀 **Switch providers in ⚙ AI settings** — **ElevenLabs**, **Amazon Polly**, **OpenAI**, **Google Gemini**, or **xAI (Grok)**. The voice catalog swaps to that provider's voices and each call sends the right options shape automatically
 - 🎙️ **Curated catalog per provider** — ElevenLabs (Adam, Rachel, …), Polly (Joanna, Matthew, neural/generative), OpenAI (alloy, onyx, nova, …), Gemini (Puck, Kore, … with delivery instructions), xAI (eve, ara, rex, sal, leo with inline `[pause]`/`<whisper>` tags) — all with human names, tier badges, gender/accent/style filters, and search

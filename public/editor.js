@@ -953,6 +953,17 @@
   // The editor is a standalone tool (upload your own images/audio/subtitles),
   // so it's always available — no storyboard required.
 
+  // Re-hydrate from storage (used by the data manager after a clear or undo).
+  async function refresh() {
+    clips = [];
+    timelineEl.innerHTML = '';
+    stage.hidden = true;
+    const summary = $('ed-summary');
+    if (summary) summary.textContent = '';
+    await restoreTimeline();
+  }
+  if (window.BlvckData) window.BlvckData.register('editor', refresh);
+
   // --- Init --------------------------------------------------------------
 
   (async () => {

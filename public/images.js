@@ -105,5 +105,15 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') generate();
   });
 
+  // The image generator holds no persistent storage — its output is the live
+  // preview. The data manager's "Clear image" resets that preview.
+  function resetPreview() {
+    if (currentUrl) { URL.revokeObjectURL(currentUrl); currentUrl = null; }
+    output.removeAttribute('src');
+    result.hidden = true;
+    clearStatus();
+  }
+  if (window.BlvckData) window.BlvckData.register('images', resetPreview);
+
   reveal();
 })();
