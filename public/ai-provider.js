@@ -22,6 +22,19 @@
   const IMAGE_CANDIDATES = ['gpt-image-1', 'dall-e-3', 'gpt-image-1-mini', 'gpt-image-2', 'gpt-image-1.5'];
   // Preference order when auto-picking a chat model from what's available.
   const CHAT_PREF = [/claude.*sonnet/i, /claude.*opus/i, /claude/i, /gpt-5/i, /gpt-4/i, /gemini/i, /deepseek/i, /llama/i, /mistral/i, /qwen/i];
+  // Real, current Puter chat model IDs, tried in order as a last resort when
+  // model discovery is unavailable (older/self-hosted Puter) and the instance
+  // default is unset. See developer.puter.com — these are valid model names.
+  const FALLBACK_CHAT_MODELS = ['gpt-5-nano', 'gpt-4o', 'claude-sonnet-5', 'claude-3-7-sonnet', 'gemini-2.0-flash', 'deepseek-chat'];
+  // Model IDs earlier builds shipped that are NOT valid Puter models — cleared
+  // from storage on load so a stale choice can't keep breaking chat.
+  const STALE_MODELS = new Set(['claude-sonnet-4', 'claude-opus-4', 'gpt-4.1', 'google/gemini-2.5-flash']);
+
+  // One-time migration: drop an invalid stored chat model from older builds.
+  try {
+    const cur = localStorage.getItem('blvck:chatmodel');
+    if (cur && STALE_MODELS.has(cur)) localStorage.removeItem('blvck:chatmodel');
+  } catch { /* storage unavailable */ }
 
   const DEFAULT_VOICE_SETTINGS = Object.freeze({
     stability: 0.5,
@@ -163,22 +176,33 @@
     },
 
     // Run a chat completion, self-healing if the chosen model is unavailable.
+    // Attempt order: the preferred/discovered model → the Puter instance
+    // default (no model arg) → a chain of known-good current model IDs. Stops
+    // at the first success and remembers the winning model.
     async _chatResilient(messages, preferredModel) {
       await ensurePuter();
-      let model = preferredModel || (await this.resolveChatModel());
-      try {
-        return await this._chatOnce(messages, model);
-      } catch (e) {
-        if (!isModelError(e)) throw e;
-        // Refresh the catalog and try a discovered default, then Puter's own.
-        const models = await this.listModels(true);
-        const pick = pickChatModel(models);
-        if (pick && pick !== model) {
-          this.setChatModel(pick);
-          try { return await this._chatOnce(messages, pick); } catch (e2) { if (!isModelError(e2)) throw e2; }
-        }
-        return await this._chatOnce(messages, undefined); // let Puter pick its default
+      if (preferredModel && STALE_MODELS.has(preferredModel)) preferredModel = null;
+
+      const attempts = [];
+      const primary = preferredModel || (await this.resolveChatModel());
+      if (primary) attempts.push(primary);
+      attempts.push(undefined); // Puter's own default model
+      for (const m of FALLBACK_CHAT_MODELS) {
+        if (m !== primary && !attempts.includes(m)) attempts.push(m);
       }
+
+      let lastErr;
+      for (const model of attempts) {
+        try {
+          const text = await this._chatOnce(messages, model);
+          if (model) this.setChatModel(model); // remember what works
+          return text;
+        } catch (e) {
+          lastErr = e;
+          if (!isModelError(e)) throw e; // real failure (quota/network/etc.)
+        }
+      }
+      throw new Error(errMsg(lastErr) || 'No chat model is available on this Puter instance.');
     },
 
     // Synthesize speech (default: ElevenLabs) via Puter; returns an audio Blob.
