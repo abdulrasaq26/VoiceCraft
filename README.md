@@ -11,6 +11,7 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 - 💬 **Advisory chat** — ask it anything ("review my storyboard", "improve retention", "best voice", "optimize for YouTube") with one-click command shortcuts; replies stream live
 - 📊 **Quality audit** — a scored pre-export report (script / retention / storytelling / visual consistency / thumbnail / SEO / monetization / overall) with prioritized recommendations and a "do this next"
 - 🎚️ **Director Mode** — proactive next-step guidance across the pipeline
+- ▶️ **Auto-run pipeline** — opt-in autopilot that drives every stage for you (Script → Voice → Storyboard/Images → Video → YouTube), pausing at an **Approve / Skip / Stop** gate before each stage. Flip on **Hands-free** to run gate-free (Stop still works). It clicks each module's own button and waits for the project state to report the stage done, so it works on localhost and self-hosted Puter exactly like the manual flow
 
 ### 🪜 End-to-end production pipeline
 - Sections are ordered as a real workflow — **Script → Voice → Storyboard → Images → Video → YouTube → Agent** — with a sticky **progress tracker** showing where you are (click a step to jump to it)

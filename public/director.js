@@ -12,6 +12,9 @@
 
   const modeEl = $('director-mode');
   const nextEl = $('director-next');
+  const autorunBtn = $('director-autorun');
+  const autorunAutoEl = $('director-autorun-auto');
+  const autorunPanel = $('director-autorun-panel');
   const auditBtn = $('director-audit');
   const auditResult = $('director-audit-result');
   const chatEl = $('director-chat');
@@ -39,6 +42,7 @@
     busy = b;
     sendBtn.disabled = b;
     auditBtn.disabled = b;
+    if (autorunBtn) autorunBtn.disabled = b;
     spinner.hidden = !b;
     sendLabel.textContent = b ? 'Thinking…' : 'Ask';
     stopBtn.hidden = !b;
@@ -194,8 +198,238 @@
     }
   }
 
+  // --- Auto-run (opt-in autopilot with approval gates) -------------------
+  // The Director drives each module's own button and waits for the project
+  // state (via BlvckAssets) to report the stage done. Between stages it opens
+  // an approval gate — Approve / Skip / Stop — unless "Hands-free" is on. This
+  // is a separate, explicit action from the Director Mode toggle (which only
+  // controls proactive tips).
+
+  const clickBtn = (id) => { const el = document.getElementById(id); if (el && !el.disabled) el.click(); return !!el; };
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Poll a predicate until true, timeout, or a stop is requested.
+  function waitUntil(pred, timeout, isStopped) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      (function tick() {
+        if (isStopped && isStopped()) return resolve('stopped');
+        let ok = false; try { ok = !!pred(); } catch { ok = false; }
+        if (ok) return resolve(true);
+        if (Date.now() - start >= timeout) return resolve(false);
+        setTimeout(tick, 500);
+      })();
+    });
+  }
+
+  const A = () => window.BlvckAssets;
+
+  const AUTO_STAGES = [
+    {
+      key: 'script', label: 'Generate script', target: 'script-card',
+      precheck() {
+        if (A().status().script) return null;
+        const topic = (document.getElementById('script-topic') || {}).value || '';
+        if (!topic.trim()) return 'Enter a topic in the Script studio first, then approve.';
+        return null;
+      },
+      async run() { clickBtn('script-generate'); },
+      done: () => A().status().script,
+      timeout: 150000
+    },
+    {
+      key: 'voice', label: 'Generate voiceover', target: null,
+      async run() { clickBtn('script-use'); await delay(350); clickBtn('speak-btn'); },
+      done: () => A().hasAudio(),
+      timeout: 180000
+    },
+    {
+      key: 'storyboard', label: 'Build storyboard & images', target: 'storyboard-card',
+      async run(isStopped) {
+        clickBtn('sb-import'); await delay(350); clickBtn('sb-analyze');
+        // In Prompt Review mode analyze only produces prompts — once scenes
+        // exist, kick "Generate all images" if it surfaced.
+        await waitUntil(() => A().status().storyboard, 120000, isStopped);
+        const genAll = document.getElementById('sb-generate-all');
+        if (genAll && !genAll.hidden) genAll.click();
+      },
+      done: () => A().status().images,
+      timeout: 300000
+    },
+    {
+      key: 'video', label: 'Assemble the video', target: 'editor-card', optional: true,
+      async run() { clickBtn('ed-assemble'); },
+      done: () => A().status().video,
+      timeout: 240000
+    },
+    {
+      key: 'youtube', label: 'Optimize for YouTube', target: 'youtube-card',
+      async run() { clickBtn('yt-generate'); },
+      done: () => A().status().youtube,
+      timeout: 150000
+    }
+  ];
+
+  let autoRunning = false;
+  let autoStopReq = false;
+  let autoSummary = '';
+  const stageState = {}; // key -> pending|active|done|skipped|failed
+  let gateResolver = null;
+  let currentGate = null; // { key, message, optional }
+
+  const ICON = { pending: '', active: '⋯', done: '✓', skipped: '–', failed: '✕' };
+
+  function renderAutorun() {
+    if (!autoRunning && !autoSummary) { autorunPanel.hidden = true; autorunPanel.innerHTML = ''; return; }
+    autorunPanel.hidden = false;
+    const head = document.createElement('div');
+    head.className = 'director-autorun-head';
+    const title = document.createElement('strong');
+    title.textContent = autoRunning ? '▶ Auto-run in progress' : autoSummary || 'Auto-run finished';
+    head.appendChild(title);
+    if (autoRunning) {
+      const stop = document.createElement('button');
+      stop.className = 'btn ghost small';
+      stop.type = 'button';
+      stop.textContent = '■ Stop';
+      stop.addEventListener('click', requestAutoStop);
+      head.appendChild(stop);
+    }
+
+    const steps = document.createElement('div');
+    steps.className = 'director-autorun-steps';
+    AUTO_STAGES.forEach((s, i) => {
+      const st = stageState[s.key] || 'pending';
+      const row = document.createElement('div');
+      row.className = `director-autorun-step ${st}`;
+      const icon = document.createElement('span');
+      icon.className = 'das-icon';
+      icon.textContent = ICON[st] || String(i + 1);
+      const label = document.createElement('span');
+      label.textContent = s.label + (s.optional ? ' (optional)' : '');
+      row.append(icon, label);
+      if (st === 'active') { const d = document.createElement('span'); d.className = 'das-detail'; d.textContent = 'working…'; row.appendChild(d); }
+      if (st === 'skipped') { const d = document.createElement('span'); d.className = 'das-detail'; d.textContent = 'skipped'; row.appendChild(d); }
+      if (st === 'failed') { const d = document.createElement('span'); d.className = 'das-detail'; d.textContent = 'needs attention'; row.appendChild(d); }
+      steps.appendChild(row);
+    });
+
+    autorunPanel.innerHTML = '';
+    autorunPanel.append(head, steps);
+
+    if (currentGate) {
+      const gate = document.createElement('div');
+      gate.className = 'director-autorun-gate';
+      const msg = document.createElement('span');
+      msg.className = 'das-gate-msg';
+      msg.textContent = currentGate.message;
+      gate.appendChild(msg);
+      const mk = (txt, cls, choice) => {
+        const b = document.createElement('button');
+        b.className = `btn ${cls} small`;
+        b.type = 'button';
+        b.textContent = txt;
+        b.addEventListener('click', () => resolveGate(choice));
+        return b;
+      };
+      gate.appendChild(mk('Approve', 'primary', 'approve'));
+      gate.appendChild(mk('Skip', 'ghost', 'skip'));
+      gate.appendChild(mk('Stop', 'ghost', 'stop'));
+      autorunPanel.appendChild(gate);
+    }
+  }
+
+  function resolveGate(choice) {
+    const r = gateResolver;
+    currentGate = null; gateResolver = null;
+    renderAutorun();
+    if (r) r(choice);
+  }
+
+  function requestAutoStop() {
+    autoStopReq = true;
+    if (gateResolver) resolveGate('stop');
+  }
+
+  function gate(stage, message) {
+    return new Promise((resolve) => {
+      currentGate = { key: stage.key, message, optional: !!stage.optional };
+      gateResolver = resolve;
+      renderAutorun();
+    });
+  }
+
+  async function autorun() {
+    if (autoRunning || busy) return;
+    autoRunning = true;
+    autoStopReq = false;
+    autoSummary = '';
+    AUTO_STAGES.forEach((s) => { stageState[s.key] = 'pending'; });
+    autorunBtn.disabled = true;
+    auditBtn.disabled = true;
+    sendBtn.disabled = true;
+    clearStatus();
+    renderAutorun();
+
+    const handsFree = autorunAutoEl.checked;
+    let stoppedEarly = false;
+
+    try {
+      for (const stage of AUTO_STAGES) {
+        if (autoStopReq) { stoppedEarly = true; break; }
+
+        if (stage.done()) { stageState[stage.key] = 'done'; renderAutorun(); continue; }
+
+        const problem = stage.precheck ? stage.precheck() : null;
+
+        if (!handsFree) {
+          const message = problem
+            ? `⚠ ${problem}`
+            : `Ready to ${stage.label.toLowerCase()}. Approve to run, Skip to move on, or Stop.`;
+          const choice = await gate(stage, message);
+          if (choice === 'stop') { autoStopReq = true; stoppedEarly = true; break; }
+          if (choice === 'skip') { stageState[stage.key] = 'skipped'; renderAutorun(); continue; }
+          // Approved but precondition still unmet → can't run.
+          if (problem && !stage.done()) {
+            stageState[stage.key] = stage.optional ? 'skipped' : 'failed';
+            renderAutorun();
+            if (stage.optional) continue; else break;
+          }
+        } else if (problem) {
+          // Hands-free can't satisfy a missing precondition on its own.
+          stageState[stage.key] = stage.optional ? 'skipped' : 'failed';
+          renderAutorun();
+          if (stage.optional) continue; else break;
+        }
+
+        stageState[stage.key] = 'active';
+        renderAutorun();
+        try { await stage.run(() => autoStopReq); } catch { /* wait decides success */ }
+        const res = await waitUntil(stage.done, stage.timeout, () => autoStopReq);
+        if (res === 'stopped') { autoStopReq = true; stoppedEarly = true; break; }
+        stageState[stage.key] = res === true ? 'done' : (stage.optional ? 'skipped' : 'failed');
+        renderAutorun();
+        if (stageState[stage.key] === 'failed') break;
+      }
+    } finally {
+      autoRunning = false;
+      const failed = Object.values(stageState).includes('failed');
+      autoSummary = stoppedEarly
+        ? '■ Auto-run stopped.'
+        : failed
+          ? '✕ Auto-run paused — a stage needs your attention.'
+          : '✓ Auto-run complete.';
+      autorunBtn.disabled = false;
+      auditBtn.disabled = busy;
+      sendBtn.disabled = busy;
+      currentGate = null; gateResolver = null;
+      renderAutorun();
+    }
+  }
+
   // --- Wiring ------------------------------------------------------------
 
+  autorunBtn.addEventListener('click', autorun);
   auditBtn.addEventListener('click', runAudit);
   sendBtn.addEventListener('click', () => { const t = inputEl.value; inputEl.value = ''; ask(t); });
   stopBtn.addEventListener('click', () => { stopRequested = true; });
