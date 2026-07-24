@@ -6,10 +6,11 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 
 ## Features
 
-### Voices — ElevenLabs via Puter
-- 🎙️ **Curated ElevenLabs catalog** with real voice IDs (Adam, Rachel, Sarah, Charlotte, Domi, George, Antoni, Arnold, Josh, Daniel, Callum, Matilda, Lily, Sam, …), rendered with human names, tier badges, and search
+### Voices — 5 TTS providers via Puter
+- 🔀 **Switch providers in ⚙ AI settings** — **ElevenLabs**, **Amazon Polly**, **OpenAI**, **Google Gemini**, or **xAI (Grok)**. The voice catalog swaps to that provider's voices and each call sends the right options shape automatically
+- 🎙️ **Curated catalog per provider** — ElevenLabs (Adam, Rachel, …), Polly (Joanna, Matthew, neural/generative), OpenAI (alloy, onyx, nova, …), Gemini (Puck, Kore, … with delivery instructions), xAI (eve, ara, rex, sal, leo with inline `[pause]`/`<whisper>` tags) — all with human names, tier badges, gender/accent/style filters, and search
 - 🔊 **Reliable previews** — tap ▶ to hear a sample; works under iOS Safari / Android Chrome autoplay policies
-- 🎛️ **Voice settings** — `stability`, `similarity_boost`, `style`, `use_speaker_boost` (Puter's ElevenLabs API)
+- 🎛️ **Provider-aware controls** — ElevenLabs shows `stability`/`similarity_boost`/`style`/`use_speaker_boost`; Polly exposes the engine (Neural/Generative); Gemini & OpenAI take the free-text instructions as delivery direction
 - ⚡ **No API key required** — every synthesis call runs client-side through Puter; users sign into Puter once
 
 ### Delivery control
@@ -104,6 +105,7 @@ public/                (this whole folder is the deployable app)
   prompts.js           BlvckPrompts: all LLM prompt build + parse (client-side, single source of truth)
   ai-provider.js       BlvckAI: Puter router (speak / chat / generateJSON / generateImage / generateVideo) + model discovery
   ai-settings.js       ⚙ AI settings modal (chat model / image model / TTS provider per instance)
+  tts-providers.js     Multi-provider TTS catalog (ElevenLabs/Polly/OpenAI/Gemini/xAI) + per-provider options
   eleven-voices.js     Curated ElevenLabs voice catalog (48 voices + metadata)
   app.js               Core TTS UI (voices, queue, subtitles, profiles, instruction presets)
   script.js            AI Script Generator
@@ -135,7 +137,7 @@ There is no API to call. Each AI feature builds its prompt with `window.BlvckPro
 
 - **Which Puter instance?** The app adapts to whatever the running instance exposes. Chat **cycles through the models your instance reports** via `puter.ai.listModels()` (not a hardcoded list), so it works the same on **puter.com** and a **self-hosted Puter** with a completely different model roster — it tries the reported models best-first and remembers the one that works. Image generation falls back across known image models. If a call fails because a model/provider is missing, it self-heals to an available one.
   - On **puter.com**, everything is configured (ElevenLabs, 400+ models, `gpt-image-1`) but usage is billed to the signed-in user (Puter's user-pays model).
-  - On a **self-hosted Puter**, only the models/providers *you* configured on the server exist. Chat and images adapt automatically; **voice (TTS) needs a provider configured on your server** — if `elevenlabs` isn't there, open **⚙ AI settings** and set the provider (and voice model) to one your instance supports. The voice catalog in `eleven-voices.js` uses ElevenLabs voice IDs, so a different provider needs its own voice IDs.
+  - On a **self-hosted Puter**, only the models/providers *you* configured on the server exist. Chat and images adapt automatically; for **voice (TTS)**, open **⚙ AI settings → Voice provider** and pick whichever of the five your instance supports (Amazon Polly is Puter's default engine and the most likely to be available). Each provider ships its own voice catalog, so switching provider swaps the voices too.
 - **Voice library**: ElevenLabs' Voice Library API is not exposed to Puter's free tier, so Blvck-TTS ships a hand-curated catalog of the most popular voice IDs. You can swap in your own IDs in `public/eleven-voices.js`.
 - **Character consistency**: honest caveat — image models don't do pixel-perfect character matching without reference conditioning. The story bible clamps textual descriptions across prompts, which is the best you can do without model-side reference support.
 - **In-browser video export**: 4K MP4 rendering is infeasible in-browser today. The editor exports WebM directly and produces a package ZIP (images + subtitles + EDL) that can be fed to a downstream 4K pipeline (e.g. Remotion, After Effects).

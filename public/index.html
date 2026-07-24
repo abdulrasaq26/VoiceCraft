@@ -12,7 +12,7 @@
     <div class="topbar">
       <button id="projects-open" class="btn ghost small" type="button">☰ Projects</button>
       <span class="topbar-project">Project: <strong id="active-project-name">—</strong></span>
-      <button id="ai-settings-open" class="topbar-badge" type="button" title="AI settings — models &amp; voice provider for this Puter instance">⚡ Puter · ElevenLabs ⚙</button>
+      <button id="ai-settings-open" class="topbar-badge" type="button" title="AI settings — models &amp; voice provider for this Puter instance">⚡ Puter AI ⚙</button>
       <button id="project-new" class="btn ghost small" type="button">+ New</button>
     </div>
     <header class="header">
@@ -588,11 +588,13 @@
       </datalist>
 
       <label for="set-tts-provider">Voice (TTS) provider</label>
-      <input id="set-tts-provider" type="text" placeholder="elevenlabs" />
+      <select id="set-tts-provider"></select>
+      <p id="set-tts-provider-note" class="field-note"></p>
       <p id="set-tts-note" class="field-note"></p>
 
-      <label for="set-tts-model">Voice model</label>
+      <label for="set-tts-model" id="set-tts-model-label">Voice model</label>
       <input id="set-tts-model" type="text" placeholder="eleven_multilingual_v2" />
+      <p id="set-tts-model-hint" class="field-note"></p>
 
       <div class="actions">
         <button id="ai-settings-save" class="btn primary" type="button">Save</button>
@@ -715,8 +717,9 @@
 
   <script src="prompts.js"></script>
   <script src="ai-provider.js"></script>
-  <script src="ai-settings.js"></script>
   <script src="eleven-voices.js"></script>
+  <script src="tts-providers.js"></script>
+  <script src="ai-settings.js"></script>
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>

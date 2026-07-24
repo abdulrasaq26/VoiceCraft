@@ -1,6 +1,6 @@
 // AI settings modal — lets the user adapt Blvck-TTS to whatever their Puter
-// instance offers (chat model, image model, TTS provider/model). Essential
-// for self-hosted Puter where the puter.com defaults may not exist.
+// instance offers: chat model, image model, and the text-to-speech provider
+// (ElevenLabs / Amazon Polly / OpenAI / Gemini / xAI) plus its model/engine.
 (() => {
   'use strict';
 
@@ -11,8 +11,11 @@
 
   const chatSel = $('set-chat-model');
   const imageInput = $('set-image-model');
-  const ttsProviderInput = $('set-tts-provider');
+  const ttsProviderSel = $('set-tts-provider');
+  const ttsProviderNote = $('set-tts-provider-note');
   const ttsModelInput = $('set-tts-model');
+  const ttsModelLabel = $('set-tts-model-label');
+  const ttsModelHint = $('set-tts-model-hint');
   const ttsNote = $('set-tts-note');
   const saveBtn = $('ai-settings-save');
   const refreshBtn = $('ai-settings-refresh');
@@ -28,10 +31,35 @@
     }
   }
 
+  // Fill the provider dropdown from the TTS catalog and reflect the model
+  // label/hint/placeholder for the selected provider.
+  function populateProviders() {
+    const order = window.TTS_PROVIDER_ORDER || ['elevenlabs'];
+    ttsProviderSel.innerHTML = '';
+    order.forEach((id) => {
+      const def = window.getTtsProvider ? window.getTtsProvider(id) : { label: id };
+      const o = document.createElement('option');
+      o.value = id;
+      o.textContent = def.label || id;
+      ttsProviderSel.appendChild(o);
+    });
+    ttsProviderSel.value = window.BlvckAI.ttsProvider();
+    syncProviderFields();
+  }
+
+  function syncProviderFields() {
+    const def = window.getTtsProvider ? window.getTtsProvider(ttsProviderSel.value) : null;
+    if (!def) return;
+    ttsProviderNote.textContent = def.note || '';
+    ttsModelLabel.textContent = def.modelLabel || 'Voice model';
+    ttsModelHint.textContent = def.modelHint || '';
+    ttsModelInput.placeholder = def.defaultModel || '';
+  }
+
   async function populate() {
     const AI = window.BlvckAI;
     imageInput.value = AI.imageModel();
-    ttsProviderInput.value = AI.ttsProvider();
+    populateProviders();
     ttsModelInput.value = AI.ttsModel();
 
     chatSel.innerHTML = '<option value="">Auto (instance default)</option>';
@@ -53,35 +81,34 @@
     const stored = AI.chatModel();
     chatSel.value = stored && models.some((m) => m.id === stored) ? stored : '';
 
-    if (!models.length) {
-      ttsNote.textContent = 'Could not list models yet — sign into Puter, then use "Reload model list". You can still type a provider/model manually.';
-    } else {
-      ttsNote.textContent = `${models.length} chat models available on this instance. If speech fails with "provider not found", set the provider to one your instance supports (puter.com has "elevenlabs").`;
-    }
+    ttsNote.textContent = models.length
+      ? `${models.length} chat models available on this instance.`
+      : 'Could not list models yet — sign into Puter, then use "Reload model list".';
   }
 
   function saveAll() {
     const AI = window.BlvckAI;
     if (chatSel.value) AI.setChatModel(chatSel.value);
     AI.setImageModel(imageInput.value.trim() || undefined);
-    AI.setTtsProvider(ttsProviderInput.value.trim() || undefined);
+    AI.setTtsProvider(ttsProviderSel.value || undefined);
     AI.setTtsModel(ttsModelInput.value.trim() || undefined);
   }
 
-  function flash(msg) {
-    if (ttsNote) ttsNote.textContent = msg;
-  }
-
-  // Apply each change immediately so a choice is locked in even without
-  // clicking Save (the Save button may be below the fold on short screens).
   chatSel.addEventListener('change', () => {
-    if (chatSel.value) { window.BlvckAI.setChatModel(chatSel.value); flash(`Chat model set to ${chatSel.value}.`); }
+    if (chatSel.value) { window.BlvckAI.setChatModel(chatSel.value); ttsNote.textContent = `Chat model set to ${chatSel.value}.`; }
   });
   imageInput.addEventListener('change', () => {
     window.BlvckAI.setImageModel(imageInput.value.trim() || undefined);
   });
-  ttsProviderInput.addEventListener('change', () => {
-    window.BlvckAI.setTtsProvider(ttsProviderInput.value.trim() || undefined);
+  // Switching provider: persist it, clear the model so the new provider uses
+  // its own default, refresh the field hints, and tell the voice studio to
+  // reload its catalog for the new provider.
+  ttsProviderSel.addEventListener('change', () => {
+    window.BlvckAI.setTtsProvider(ttsProviderSel.value || undefined);
+    window.BlvckAI.setTtsModel(undefined);
+    ttsModelInput.value = '';
+    syncProviderFields();
+    window.dispatchEvent(new CustomEvent('blvck:tts-provider-changed'));
   });
   ttsModelInput.addEventListener('change', () => {
     window.BlvckAI.setTtsModel(ttsModelInput.value.trim() || undefined);

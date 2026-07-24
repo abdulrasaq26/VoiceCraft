@@ -678,12 +678,16 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
   async function loadVoices() {
     try {
-      allVoices = ELEVEN_VOICES.slice();
+      // Voices come from whichever TTS provider is selected (ElevenLabs,
+      // Polly, OpenAI, Gemini, xAI). Falls back to the ElevenLabs catalog.
+      const providerId = (window.BlvckAI && window.BlvckAI.ttsProvider && window.BlvckAI.ttsProvider()) || 'elevenlabs';
+      allVoices = (window.getTtsVoices ? window.getTtsVoices(providerId) : ELEVEN_VOICES.slice());
+      applyProviderCapabilities(providerId);
       voiceById.clear();
       allVoices.forEach((v) => voiceById.set(v.id, v));
       if (!allVoices.length) {
         voiceCardName.textContent = 'No voices available';
-        showStatus('The ElevenLabs voice catalog is empty.');
+        showStatus('This voice provider has no voices configured.');
         return;
       }
 
@@ -753,8 +757,8 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     return badge;
   }
 
-  // Every ElevenLabs voice accepts the same voice_settings and free-text
-  // delivery instructions, so this only refreshes the note below the card.
+  // Every voice within a provider accepts the same options, so this only
+  // refreshes the note below the card based on the active provider.
   function syncCapabilityUI() {
     if (capsNote) capsNote.hidden = true;
     const v = currentVoice();
@@ -762,8 +766,24 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       instructionsNote.textContent = '';
       return;
     }
-    instructionsNote.textContent =
-      'ElevenLabs listens to natural-language delivery cues in the prompt — describe emotion, pacing, emphasis, and pauses directly.';
+    const providerId = (window.BlvckAI && window.BlvckAI.ttsProvider()) || 'elevenlabs';
+    const notes = {
+      elevenlabs: 'ElevenLabs listens to natural-language delivery cues in the prompt — describe emotion, pacing, emphasis, and pauses directly.',
+      gemini: 'Gemini follows the instructions above as spoken-style direction (e.g. “speak warmly, slower on the key facts”).',
+      openai: 'OpenAI uses the instructions above to steer tone and delivery.',
+      xai: 'xAI supports inline tags in your script: [pause], [laugh], <whisper>…</whisper>.',
+      polly: 'Amazon Polly renders plain text; pick the engine (Neural/Generative) in ⚙ AI settings for higher quality.'
+    };
+    instructionsNote.textContent = notes[providerId] || notes.elevenlabs;
+  }
+
+  // Show provider-relevant controls: the stability/similarity/style sliders
+  // only apply to ElevenLabs, so hide them for other providers.
+  function applyProviderCapabilities(providerId) {
+    const def = window.getTtsProvider ? window.getTtsProvider(providerId) : null;
+    const caps = (def && def.caps) || { voiceSettings: true };
+    const vs = document.querySelector('.vs-sliders');
+    if (vs) vs.style.display = caps.voiceSettings ? '' : 'none';
   }
 
   // --- Voice preview -----------------------------------------------------
@@ -832,7 +852,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     // ElevenLabs runs client-side; fetch the sample as a blob then play.
     // Previews use the LIVE voice_settings so users hear their own tuning.
     const phrase = 'Hello! This is a preview of my voice.';
-    window.BlvckAI.speak(phrase, v.id, { voice_settings: collectVoiceSettings() })
+    window.BlvckAI.speak(phrase, v.id, { voice_settings: collectVoiceSettings(), instructions: instructionsInput.value.trim() })
       .then((blob) => {
         if (previewVoiceId !== voiceId) return;
         if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -1149,6 +1169,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   async function synthesizeChunk(text, s) {
     return window.BlvckAI.speak(text, s.voiceId, {
       voice_settings: s.voice_settings,
+      instructions: s.instructions,
       model: s.ttsModel
     });
   }
@@ -1969,6 +1990,12 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       if (!presetModal.hidden) closeModal(presetModal);
       if (!subtitleModal.hidden) closeModal(subtitleModal);
     }
+  });
+
+  // Reload the voice catalog when the TTS provider changes in AI settings.
+  window.addEventListener('blvck:tts-provider-changed', () => {
+    stopPreview();
+    loadVoices();
   });
 
   // --- Init --------------------------------------------------------------

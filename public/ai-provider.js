@@ -163,8 +163,10 @@
     setChatModel(m) { if (m) localStorage.setItem(CHAT_MODEL_KEY, m); },
     imageModel() { return localStorage.getItem(IMAGE_MODEL_KEY) || DEFAULT_IMAGE_MODEL; },
     setImageModel(m) { if (m) localStorage.setItem(IMAGE_MODEL_KEY, m); },
-    ttsModel() { return localStorage.getItem(TTS_MODEL_KEY) || DEFAULT_TTS_MODEL; },
-    setTtsModel(m) { localStorage.setItem(TTS_MODEL_KEY, m || DEFAULT_TTS_MODEL); },
+    // Empty by default so each provider's buildOptions() supplies its own
+    // model/engine default (an ElevenLabs model must not leak to Polly, etc.).
+    ttsModel() { return localStorage.getItem(TTS_MODEL_KEY) || ''; },
+    setTtsModel(m) { if (m) localStorage.setItem(TTS_MODEL_KEY, m); else localStorage.removeItem(TTS_MODEL_KEY); },
     ttsProvider() { return localStorage.getItem(TTS_PROVIDER_KEY) || DEFAULT_TTS_PROVIDER; },
     setTtsProvider(p) { localStorage.setItem(TTS_PROVIDER_KEY, p || DEFAULT_TTS_PROVIDER); },
 
@@ -251,26 +253,35 @@
       throw new Error(errMsg(lastErr) || 'No chat model is available on this Puter instance.');
     },
 
-    // Synthesize speech (default: ElevenLabs) via Puter; returns an audio Blob.
+    // Synthesize speech via Puter's txt2speech, using whichever provider is
+    // selected (ElevenLabs, Amazon Polly, OpenAI, Gemini, or xAI). Each
+    // provider needs a different options shape — buildTtsOptions (from
+    // tts-providers.js) produces the right one. Returns an audio Blob.
+    // opts: { voice_settings?, instructions?, model?, language? }
     async speak(text, voice, opts = {}) {
       await ensurePuter();
       const provider = this.ttsProvider();
+      const ctx = {
+        voiceSettings: normalizeVoiceSettings(opts.voice_settings),
+        instructions: opts.instructions || '',
+        model: opts.model || this.ttsModel() || '',
+        language: opts.language || 'en-US'
+      };
+      const params = window.buildTtsOptions
+        ? window.buildTtsOptions(provider, voice, ctx)
+        : { provider, voice, model: ctx.model, voice_settings: ctx.voiceSettings };
+
       let audio;
       try {
-        audio = await window.puter.ai.txt2speech(text, {
-          provider,
-          voice,
-          model: opts.model || this.ttsModel(),
-          voice_settings: normalizeVoiceSettings(opts.voice_settings)
-        });
+        audio = await window.puter.ai.txt2speech(text, params);
       } catch (e) {
         const msg = errMsg(e);
-        if (/provider not found|not found:|no such provider|unsupported provider/i.test(msg)) {
+        if (/provider not found|not found:|no such provider|unsupported provider|voice.*not found|not found.*voice/i.test(msg)) {
           const avail = msg.match(/available[:\s]*(.+)$/i);
           throw new Error(
-            `This Puter instance doesn't have the "${provider}" text-to-speech provider.` +
-            (avail ? ` Available: ${avail[1].trim()}.` : '') +
-            ' On puter.com ElevenLabs is available out of the box; a self-hosted Puter must have it configured, or switch the provider under AI settings.'
+            `The "${provider}" voice provider (or this voice) isn't available on your Puter instance.` +
+            (avail ? ` Available providers: ${avail[1].trim()}.` : '') +
+            ' Switch the voice provider under ⚙ AI settings to one your instance supports.'
           );
         }
         throw new Error(msg || 'Speech synthesis failed.');
