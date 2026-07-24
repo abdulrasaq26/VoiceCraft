@@ -51,7 +51,9 @@
     ' TASK MODE: break the request into a short numbered plan first, then execute each step, ' +
     'producing the concrete code or commands for each. End with a brief summary of what changed and any follow-ups.';
 
-  let state = store.get(LS_STATE, null) || { model: 'claude-sonnet-4', mode: 'chat', context: [], messages: [] };
+  // model '' means "use the app-wide resolved default" (discovered from the
+  // Puter instance). No hardcoded model IDs — they vary per instance.
+  let state = store.get(LS_STATE, null) || { model: '', mode: 'chat', context: [], messages: [] };
   let busy = false;
 
   function persist() { store.set(LS_STATE, state); }
@@ -188,7 +190,7 @@
     renderMessages();
     setBusy(true);
     try {
-      const reply = await window.BlvckAI.chat(buildMessages(), { model: state.model });
+      const reply = await window.BlvckAI.chat(buildMessages(), state.model ? { model: state.model } : {});
       state.messages.push({ role: 'assistant', content: reply || '(empty response)' });
       persist();
       renderMessages();
@@ -232,7 +234,6 @@
   inputEl.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') send();
   });
-  modelEl.addEventListener('change', () => { state.model = modelEl.value; persist(); });
   modeEl.addEventListener('change', () => { state.mode = modeEl.value; persist(); });
   newBtn.addEventListener('click', () => {
     if (state.messages.length && !window.confirm('Start a new conversation? The current one will be cleared.')) return;
@@ -255,9 +256,47 @@
 
   // --- Init --------------------------------------------------------------
 
-  modelEl.value = state.model;
   modeEl.value = state.mode;
   renderContext();
   renderMessages();
   card.hidden = false;
+
+  // Populate the model dropdown LAZILY — only when the user opens it — so the
+  // Puter SDK isn't loaded on page view. Runs once. The model list comes from
+  // whatever this Puter instance actually offers; choosing one sets the
+  // app-wide chat model (shared with the script generator, storyboard, SEO).
+  let modelsLoaded = false;
+  async function populateModels() {
+    if (modelsLoaded) return;
+    modelsLoaded = true;
+    try {
+      const models = await window.BlvckAI.listModels();
+      if (!models.length) return; // keep the static "Auto" option
+      const resolved = await window.BlvckAI.resolveChatModel();
+      modelEl.innerHTML = '';
+      const auto = document.createElement('option');
+      auto.value = '';
+      auto.textContent = `Auto (${resolved || 'default'})`;
+      modelEl.appendChild(auto);
+      models.forEach((m) => {
+        const o = document.createElement('option');
+        o.value = m.id;
+        o.textContent = m.name + (m.provider ? ` · ${m.provider}` : '');
+        modelEl.appendChild(o);
+      });
+      modelEl.value = (state.model && models.some((m) => m.id === state.model)) ? state.model : '';
+      state.model = modelEl.value;
+    } catch {
+      modelsLoaded = false; // allow a retry on next open
+    }
+  }
+  // 'mousedown'/'focus' fire before the dropdown opens its list.
+  modelEl.addEventListener('mousedown', populateModels, { once: true });
+  modelEl.addEventListener('focus', populateModels, { once: true });
+
+  modelEl.addEventListener('change', () => {
+    state.model = modelEl.value;
+    if (modelEl.value) window.BlvckAI.setChatModel(modelEl.value); // share app-wide
+    persist();
+  });
 })();
