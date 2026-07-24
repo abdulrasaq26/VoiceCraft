@@ -599,7 +599,10 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     const source = !forceScript && batch ? 'from generated audio' : 'estimated from script';
     activeSubtitles = { project, cues };
     subtitleTitle.textContent = `${project} — subtitles (${cues.length} cues, ${source})`;
-    subtitleView.textContent = toSRT(cues);
+    const srt = toSRT(cues);
+    subtitleView.textContent = srt;
+    // Publish to the project store so the storyboard can import them directly.
+    if (window.BlvckAssets) window.BlvckAssets.setSubtitlesSRT(srt, source.includes('audio') ? 'audio' : 'script');
     openModal(subtitleModal);
   }
 
