@@ -17,6 +17,7 @@
   const statusEl = $('agent-status');
   const inputEl = $('agent-input');
   const sendBtn = $('agent-send');
+  const stopBtn = $('agent-stop');
   const newBtn = $('agent-new');
   const exportBtn = $('agent-export');
   const addContextBtn = $('agent-add-context');
@@ -177,11 +178,22 @@
     return msgs;
   }
 
+  let stopRequested = false;
+
   function setBusy(b) {
     busy = b;
     sendBtn.disabled = b;
     spinner.hidden = !b;
     sendLabel.textContent = b ? 'Thinking…' : 'Send';
+    if (stopBtn) stopBtn.hidden = !b;
+  }
+
+  // Update just the last (streaming) assistant bubble as tokens arrive.
+  function updateLastBubble(text) {
+    const last = messagesEl.lastElementChild;
+    if (!last) return;
+    const body = last.querySelector('.agent-msg-body');
+    if (body) body.textContent = text; // plain text while streaming
   }
 
   async function send() {
@@ -194,15 +206,28 @@
     persist();
     renderMessages();
     setBusy(true);
+    stopRequested = false;
+
+    // Build the request from history BEFORE adding the empty placeholder.
+    const requestMessages = buildMessages();
+    const assistant = { role: 'assistant', content: '' };
+    state.messages.push(assistant);
+    renderMessages();
+
     try {
-      const reply = await window.BlvckAI.chat(buildMessages(), state.model ? { model: state.model } : {});
-      state.messages.push({ role: 'assistant', content: reply || '(empty response)' });
+      await window.BlvckAI.chatStream(requestMessages, {
+        model: state.model || undefined,
+        onToken: (_d, full) => { assistant.content = full; updateLastBubble(full); },
+        shouldStop: () => stopRequested
+      });
+      if (!assistant.content) assistant.content = '(empty response)';
+      persist();
+      renderMessages(); // final pass formats code blocks
+    } catch (err) {
+      if (!assistant.content) state.messages.pop(); // drop empty placeholder
+      showStatus(err.message || 'The agent request failed.');
       persist();
       renderMessages();
-    } catch (err) {
-      showStatus(err.message || 'The agent request failed.');
-      // Roll back the unanswered user turn's "pending" feel by leaving it —
-      // the user can retry; keep their message in the transcript.
     } finally {
       setBusy(false);
     }
@@ -236,6 +261,7 @@
   // --- Wiring ------------------------------------------------------------
 
   sendBtn.addEventListener('click', send);
+  if (stopBtn) stopBtn.addEventListener('click', () => { stopRequested = true; });
   inputEl.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') send();
   });

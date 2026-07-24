@@ -13,6 +13,7 @@
   const retentionEl = $('script-retention');
   const templateSelect = $('script-template-select');
   const genBtn = $('script-generate');
+  const stopBtn = $('script-stop');
   const saveTemplateBtn = $('script-save-template');
   const statusEl = $('script-status');
   const result = $('script-result');
@@ -49,11 +50,15 @@
   }
   function clearStatus() { statusEl.hidden = true; }
 
+  let stopRequested = false;
+
   function setLoading(loading) {
     genBtn.disabled = loading;
     regenBtn.disabled = loading;
     spinner.hidden = !loading;
     label.textContent = loading ? 'Writing…' : 'Generate script';
+    if (stopBtn) stopBtn.hidden = !loading;
+    document.querySelectorAll('.script-refine-row [data-refine]').forEach((b) => (b.disabled = loading));
   }
 
   function collectOptions() {
@@ -96,14 +101,51 @@
     }
     clearStatus();
     setLoading(true);
+    stopRequested = false;
+    result.hidden = false;
+    output.value = '';
+    updateWordcount();
     try {
-      const body = await window.BlvckAI.generateJSON('/api/script/generate', { options });
-      output.value = body.script || '';
-      result.hidden = false;
+      // Stream the narration token-by-token into the output box.
+      const prompt = window.BlvckPrompts.build('/api/script/generate', { options });
+      const messages = [];
+      if (prompt.system) messages.push({ role: 'system', content: prompt.system });
+      messages.push({ role: 'user', content: prompt.user });
+      const raw = await window.BlvckAI.chatStream(messages, {
+        onToken: (_d, full) => { output.value = full; updateWordcount(); },
+        shouldStop: () => stopRequested
+      });
+      // Tidy up any stray fences/labels once the stream is complete.
+      const parsed = window.BlvckPrompts.parse('/api/script/generate', { options }, raw);
+      output.value = (parsed && parsed.script) || raw;
       updateWordcount();
       store.set(LS_LAST, { options, script: output.value });
     } catch (err) {
       showStatus(err.message || 'Script generation failed.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refine(mode) {
+    const before = output.value.trim();
+    if (!before) return;
+    clearStatus();
+    setLoading(true);
+    stopRequested = false;
+    try {
+      output.value = '';
+      const out = await window.BlvckAI.refineScript(before, mode, {
+        onToken: (_d, full) => { output.value = full; updateWordcount(); },
+        shouldStop: () => stopRequested
+      });
+      output.value = (out || '').trim() || before;
+      updateWordcount();
+      store.set(LS_LAST, { options: collectOptions(), script: output.value });
+    } catch (err) {
+      output.value = before;
+      updateWordcount();
+      showStatus(err.message || 'Refine failed.');
     } finally {
       setLoading(false);
     }
@@ -150,6 +192,10 @@
   genBtn.addEventListener('click', generate);
   regenBtn.addEventListener('click', generate);
   saveTemplateBtn.addEventListener('click', saveTemplate);
+  if (stopBtn) stopBtn.addEventListener('click', () => { stopRequested = true; });
+  document.querySelectorAll('.script-refine-row [data-refine]').forEach((btn) =>
+    btn.addEventListener('click', () => refine(btn.dataset.refine))
+  );
 
   templateSelect.addEventListener('change', () => {
     const val = templateSelect.value;
