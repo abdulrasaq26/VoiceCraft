@@ -19,13 +19,16 @@
   const DEFAULT_TTS_PROVIDER = 'elevenlabs';
   const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
   // Tried in order if the configured image model is rejected by the instance.
-  const IMAGE_CANDIDATES = ['gpt-image-1', 'dall-e-3', 'gpt-image-1-mini', 'gpt-image-2', 'gpt-image-1.5'];
+  // Includes open models a self-hosted instance is likely to have.
+  const IMAGE_CANDIDATES = ['gpt-image-1', 'dall-e-3', 'gpt-image-1-mini', 'gpt-image-2', 'gpt-image-1.5', 'qwen/qwen-image-2.0'];
   // Preference order when auto-picking a chat model from what's available.
-  const CHAT_PREF = [/claude.*sonnet/i, /claude.*opus/i, /claude/i, /gpt-5/i, /gpt-4/i, /gemini/i, /deepseek/i, /llama/i, /mistral/i, /qwen/i];
-  // Real, current Puter chat model IDs, tried in order as a last resort when
-  // model discovery is unavailable (older/self-hosted Puter) and the instance
-  // default is unset. See developer.puter.com — these are valid model names.
-  const FALLBACK_CHAT_MODELS = ['gpt-5-nano', 'gpt-4o', 'claude-sonnet-5', 'claude-3-7-sonnet', 'gemini-2.0-flash', 'deepseek-chat'];
+  const CHAT_PREF = [/claude.*sonnet/i, /claude.*opus/i, /claude/i, /gpt-5/i, /gpt-4/i, /gemini/i, /deepseek/i, /qwen/i, /llama/i, /mistral/i, /grok/i, /glm/i, /kimi/i, /phi/i];
+  // Last-resort chat model IDs for when discovery is unavailable AND the
+  // instance default is unset. Discovery (listModels) is always preferred —
+  // these only matter on an instance too old to list models.
+  const FALLBACK_CHAT_MODELS = ['claude-sonnet-5', 'gpt-5-nano', 'gpt-4o', 'gemini-2.5-flash', 'deepseek-chat'];
+  // How many discovered models to attempt before giving up (bounds cost).
+  const MAX_CHAT_ATTEMPTS = 8;
   // Model IDs earlier builds shipped that are NOT valid Puter models — cleared
   // from storage on load so a stale choice can't keep breaking chat.
   const STALE_MODELS = new Set(['claude-sonnet-4', 'claude-opus-4', 'gpt-4.1', 'google/gemini-2.5-flash']);
@@ -129,20 +132,25 @@
     return /\d{8}|\d{4}-\d{2}-\d{2}/.test(String(id));
   }
 
+  function prefRank(m) {
+    for (let i = 0; i < CHAT_PREF.length; i++) {
+      if (CHAT_PREF[i].test(m.id) || CHAT_PREF[i].test(m.name)) return i;
+    }
+    return CHAT_PREF.length;
+  }
+
+  // Order discovered models best-first: undated snapshots before dated ones,
+  // then by preferred family. Returns an array of model ids.
+  function orderDiscovered(models) {
+    return models
+      .map((m) => ({ id: m.id, dated: isDatedModel(m.id) ? 1 : 0, rank: prefRank(m) }))
+      .sort((a, b) => a.dated - b.dated || a.rank - b.rank)
+      .map((x) => x.id);
+  }
+
   function pickChatModel(models) {
-    // First pass: preferred families, undated IDs only.
-    for (const rx of CHAT_PREF) {
-      const hit = models.find((m) => (rx.test(m.id) || rx.test(m.name)) && !isDatedModel(m.id));
-      if (hit) return hit.id;
-    }
-    // Second pass: preferred families, allow dated.
-    for (const rx of CHAT_PREF) {
-      const hit = models.find((m) => rx.test(m.id) || rx.test(m.name));
-      if (hit) return hit.id;
-    }
-    // Last: any undated model, else the first available.
-    const undated = models.find((m) => !isDatedModel(m.id));
-    return (undated || models[0] || {}).id || null;
+    const ordered = orderDiscovered(models);
+    return ordered[0] || null;
   }
 
   let modelsCache = null;
@@ -201,21 +209,33 @@
     },
 
     // Run a chat completion, self-healing if the chosen model is unavailable.
-    // Attempt order: the preferred/discovered model → a chain of known-good
-    // current model IDs → the Puter instance default (no model arg). We try
-    // concrete known-good models before the anonymous default so a WORKING
-    // model id gets persisted and future calls skip the failing one entirely.
+    // The attempt list is built from the models THIS instance actually reports
+    // (via listModels), so it works identically on puter.com and a self-hosted
+    // Puter with a totally different model roster. Only when discovery is
+    // unavailable does it fall back to hardcoded known-good IDs. Stops at the
+    // first success and remembers the winning model so later calls are direct.
     async _chatResilient(messages, preferredModel) {
       await ensurePuter();
       if (preferredModel && STALE_MODELS.has(preferredModel)) preferredModel = null;
 
+      const models = await this.listModels();
       const attempts = [];
-      const primary = preferredModel || (await this.resolveChatModel());
-      if (primary) attempts.push(primary);
-      for (const m of FALLBACK_CHAT_MODELS) {
-        if (m !== primary && !attempts.includes(m)) attempts.push(m);
+      const add = (m) => {
+        if (m === undefined) { if (!attempts.includes(undefined)) attempts.push(undefined); }
+        else if (m && !attempts.includes(m)) attempts.push(m);
+      };
+
+      add(preferredModel || (await this.resolveChatModel()));
+      if (models.length) {
+        // Cycle through the instance's real models, best-first, then the
+        // instance default. No puter.com-specific IDs on a self-hosted box.
+        orderDiscovered(models).slice(0, MAX_CHAT_ATTEMPTS).forEach(add);
+        add(undefined);
+      } else {
+        // Instance can't list models: try its default, then known-good IDs.
+        add(undefined);
+        FALLBACK_CHAT_MODELS.forEach(add);
       }
-      attempts.push(undefined); // Puter's own default model (last resort)
 
       let lastErr;
       for (const model of attempts) {
