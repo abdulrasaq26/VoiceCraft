@@ -6,6 +6,11 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 
 ## Features
 
+### 🔌 Puter connection & sign-in
+- Because every AI feature runs through your Puter account, the app checks the connection on load and shows a **connection banner** if the Puter SDK can't load or you're **not signed in** — with a one-click **Sign in to Puter** button and a direct **Diagnostics** link, so nothing ever fails silently
+- The topbar badge shows **⚡ Puter AI ✓** once connected; a lapsed session (signed out in another tab, expired token) re-surfaces the banner automatically
+- SDK loading has a hard timeout, so a blocked `js.puter.com` reports a clear error instead of hanging on "Loading…"
+
 ### 🎬 AI Production Director (global intelligence layer)
 - 🧠 **Project-aware** — sits above every tool and sees the whole project (script, voice, story bible, scenes, images, SEO) via a central project-memory store
 - 💬 **Advisory chat** — ask it anything ("review my storyboard", "improve retention", "best voice", "optimize for YouTube") with one-click command shortcuts; replies stream live
@@ -16,6 +21,12 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 ### 🪜 End-to-end production pipeline
 - Sections are ordered as a real workflow — **Script → Voice → Storyboard → Images → Video → YouTube → Agent** — with a sticky **progress tracker** showing where you are (click a step to jump to it)
 - **No file shuffling** — a project-memory layer passes data between stages; the storyboard's **⤵ Import from project** pulls the subtitles/script you already generated (no download/re-upload)
+
+### 🧹 Data management & cleanup
+- 🗑️ **Every section has its own Clear button** — Script, Audio &amp; voice, Subtitles, Storyboard, Image, Timeline &amp; assets, SEO assets, and Agent chat — each clears only that section, leaving the rest of the project intact
+- ♻️ **Reset project** — one button wipes every module (scripts, audio, subtitles, storyboards, images, video assets, SEO, chat, settings) after an explicit *"permanently remove all project data"* confirmation. Your reusable libraries (prompt templates, voice presets, the channel knowledge base) are kept
+- 🎯 **Smart clear options** — target exactly what you want: only generated content, only uploaded files, only AI outputs, cache &amp; temporary assets, only completed scenes, or only failed generations
+- ✅ **Safe by design** — every delete confirms first, gives immediate visual feedback, and offers a **~8-second Undo** before it becomes permanent; controls are consistent on mobile and desktop
 
 ### Voices — 5 TTS providers via Puter
 - 🔀 **Switch providers in ⚙ AI settings** — **ElevenLabs**, **Amazon Polly**, **OpenAI**, **Google Gemini**, or **xAI (Grok)**. The voice catalog swaps to that provider's voices and each call sends the right options shape automatically

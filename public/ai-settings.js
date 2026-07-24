@@ -115,6 +115,9 @@
   });
 
   openBtn.addEventListener('click', () => { openModal(); populate(); });
+  // When Puter connects (e.g. after signing in from the banner), refresh the
+  // model list so the dropdowns fill in without needing to reopen the modal.
+  window.addEventListener('blvck:puter-ready', () => { if (!modal.hidden) populate(); });
   saveBtn.addEventListener('click', () => { saveAll(); closeModal(); });
   refreshBtn.addEventListener('click', async () => {
     try { await window.BlvckAI.listModels(true); } catch { /* ignore */ }

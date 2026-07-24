@@ -285,6 +285,16 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
+  // Re-hydrate from storage (used by the data manager after a clear or undo).
+  function refresh() {
+    state = store.get(LS_STATE, null) || { model: '', mode: 'chat', context: [], messages: [] };
+    modeEl.value = state.mode || 'chat';
+    renderContext();
+    renderMessages();
+    clearStatus();
+  }
+  if (window.BlvckData) window.BlvckData.register('agent', refresh);
+
   // --- Init --------------------------------------------------------------
 
   modeEl.value = state.mode;

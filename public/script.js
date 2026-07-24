@@ -247,15 +247,25 @@
 
   // --- Restore -----------------------------------------------------------
 
-  renderTemplateSelect();
-  const last = store.get(LS_LAST, null);
-  if (last) {
-    applyOptions(last.options);
-    if (last.script) {
+  function hydrateScript() {
+    const last = store.get(LS_LAST, null);
+    if (last && last.script) {
+      applyOptions(last.options);
       output.value = last.script;
       result.hidden = false;
       updateWordcount();
+    } else {
+      output.value = '';
+      result.hidden = true;
+      updateWordcount();
     }
   }
+
+  renderTemplateSelect();
+  const last = store.get(LS_LAST, null);
+  if (last) applyOptions(last.options);
+  hydrateScript();
   card.hidden = false;
+
+  if (window.BlvckData) window.BlvckData.register('script', hydrateScript);
 })();

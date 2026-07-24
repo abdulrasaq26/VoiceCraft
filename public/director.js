@@ -443,6 +443,18 @@
   window.BlvckAssets.on(renderNext);
   setInterval(renderNext, 1500);
 
+  // Re-hydrate the audit from storage (used by the data manager on clear/undo).
+  if (window.BlvckData) {
+    window.BlvckData.register('director', () => {
+      try {
+        const a = JSON.parse(localStorage.getItem(LS_AUDIT) || 'null');
+        if (a) renderAudit(a);
+        else { auditResult.hidden = true; auditResult.innerHTML = ''; }
+      } catch { auditResult.hidden = true; }
+      renderNext();
+    });
+  }
+
   // Restore
   try { modeEl.checked = localStorage.getItem(LS_MODE) === '1'; } catch { /* ignore */ }
   try { const a = JSON.parse(localStorage.getItem(LS_AUDIT) || 'null'); if (a) renderAudit(a); } catch { /* ignore */ }
