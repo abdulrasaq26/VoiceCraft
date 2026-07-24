@@ -730,8 +730,16 @@
       </div>
       <p class="field-note">These adapt Blvck-TTS to whatever your Puter instance offers. On <strong>puter.com</strong> the defaults work as-is. On a <strong>self-hosted</strong> Puter, pick the models and voice provider your server actually has.</p>
 
-      <label for="set-chat-model">Chat model <span class="field-note">(scripts, storyboard, SEO, agent)</span></label>
-      <select id="set-chat-model"><option value="">Auto (instance default)</option></select>
+      <label for="set-objective">Model objective <span class="field-note">(how the Director picks a model per task)</span></label>
+      <select id="set-objective">
+        <option value="quality">Maximum quality — best model per task, cost is secondary</option>
+        <option value="balanced" selected>Balanced — best value per task (recommended)</option>
+        <option value="cost">Lowest cost — cheapest capable model, aggressive on spend</option>
+      </select>
+      <p id="set-objective-note" class="field-note"></p>
+
+      <label for="set-chat-model">Chat model <span class="field-note">(leave on Auto to let the Director route per task)</span></label>
+      <select id="set-chat-model"><option value="">Auto (Director routes per task)</option></select>
 
       <label for="set-image-model">Image model</label>
       <input id="set-image-model" type="text" list="image-model-list" placeholder="gpt-image-1" />
@@ -891,6 +899,7 @@
   </div>
 
   <script src="prompts.js"></script>
+  <script src="model-registry.js"></script>
   <script src="ai-provider.js"></script>
   <script src="project-assets.js"></script>
   <script src="data-manager.js"></script>

@@ -216,6 +216,7 @@
 
     try {
       await window.BlvckAI.chatStream(requestMessages, {
+        task: 'code',
         model: state.model || undefined,
         onToken: (_d, full) => { assistant.content = full; updateLastBubble(full); },
         shouldStop: () => stopRequested
