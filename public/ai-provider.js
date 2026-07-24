@@ -54,8 +54,19 @@
 
   // True when an error means "that model/provider isn't available here", so a
   // retry with a discovered model is worth attempting (vs. quota/network).
+  // Matches puter.com's shapes too, e.g. a 404 with
+  //   {"error":{"type":"not_found_error","message":"model: claude-3-5-sonnet-20240620"}}
   function isModelError(e) {
-    return /model.*(not found|not available|unavailable|invalid|unknown|missing)|not found:|missing .?model|no such model|unsupported model/i.test(errMsg(e));
+    let raw = '';
+    try { raw = typeof e === 'string' ? e : JSON.stringify(e); } catch { raw = String(e); }
+    const s = `${errMsg(e)} ${raw}`.toLowerCase();
+    const status = e && (e.status || e.statusCode || e.code);
+    return (
+      String(status) === '404' ||
+      /\b404\b/.test(s) ||
+      /not_found|not found|not available|unavailable|invalid model|unknown model|no such model|unsupported model|missing .?model|model not found/.test(s) ||
+      /"?model"?:\s*["']?\S/.test(s) // a bare "model: <id>" not-found message
+    );
   }
 
   // Normalise the various shapes puter.ai.chat can return into plain text.
@@ -112,12 +123,26 @@
     return { id, name: m.name || id, provider: m.provider || '', aliases: Array.isArray(m.aliases) ? m.aliases : [] };
   }
 
+  // Dated snapshots (e.g. claude-3-5-sonnet-20240620) are often retired even
+  // though listModels still advertises them, so prefer undated model IDs.
+  function isDatedModel(id) {
+    return /\d{8}|\d{4}-\d{2}-\d{2}/.test(String(id));
+  }
+
   function pickChatModel(models) {
+    // First pass: preferred families, undated IDs only.
+    for (const rx of CHAT_PREF) {
+      const hit = models.find((m) => (rx.test(m.id) || rx.test(m.name)) && !isDatedModel(m.id));
+      if (hit) return hit.id;
+    }
+    // Second pass: preferred families, allow dated.
     for (const rx of CHAT_PREF) {
       const hit = models.find((m) => rx.test(m.id) || rx.test(m.name));
       if (hit) return hit.id;
     }
-    return models[0] ? models[0].id : null;
+    // Last: any undated model, else the first available.
+    const undated = models.find((m) => !isDatedModel(m.id));
+    return (undated || models[0] || {}).id || null;
   }
 
   let modelsCache = null;
@@ -176,9 +201,10 @@
     },
 
     // Run a chat completion, self-healing if the chosen model is unavailable.
-    // Attempt order: the preferred/discovered model → the Puter instance
-    // default (no model arg) → a chain of known-good current model IDs. Stops
-    // at the first success and remembers the winning model.
+    // Attempt order: the preferred/discovered model → a chain of known-good
+    // current model IDs → the Puter instance default (no model arg). We try
+    // concrete known-good models before the anonymous default so a WORKING
+    // model id gets persisted and future calls skip the failing one entirely.
     async _chatResilient(messages, preferredModel) {
       await ensurePuter();
       if (preferredModel && STALE_MODELS.has(preferredModel)) preferredModel = null;
@@ -186,10 +212,10 @@
       const attempts = [];
       const primary = preferredModel || (await this.resolveChatModel());
       if (primary) attempts.push(primary);
-      attempts.push(undefined); // Puter's own default model
       for (const m of FALLBACK_CHAT_MODELS) {
         if (m !== primary && !attempts.includes(m)) attempts.push(m);
       }
+      attempts.push(undefined); // Puter's own default model (last resort)
 
       let lastErr;
       for (const model of attempts) {

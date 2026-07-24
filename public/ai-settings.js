@@ -60,21 +60,39 @@
     }
   }
 
-  function save() {
+  function saveAll() {
     const AI = window.BlvckAI;
     if (chatSel.value) AI.setChatModel(chatSel.value);
     AI.setImageModel(imageInput.value.trim() || undefined);
     AI.setTtsProvider(ttsProviderInput.value.trim() || undefined);
     AI.setTtsModel(ttsModelInput.value.trim() || undefined);
-    closeModal();
   }
 
+  function flash(msg) {
+    if (ttsNote) ttsNote.textContent = msg;
+  }
+
+  // Apply each change immediately so a choice is locked in even without
+  // clicking Save (the Save button may be below the fold on short screens).
+  chatSel.addEventListener('change', () => {
+    if (chatSel.value) { window.BlvckAI.setChatModel(chatSel.value); flash(`Chat model set to ${chatSel.value}.`); }
+  });
+  imageInput.addEventListener('change', () => {
+    window.BlvckAI.setImageModel(imageInput.value.trim() || undefined);
+  });
+  ttsProviderInput.addEventListener('change', () => {
+    window.BlvckAI.setTtsProvider(ttsProviderInput.value.trim() || undefined);
+  });
+  ttsModelInput.addEventListener('change', () => {
+    window.BlvckAI.setTtsModel(ttsModelInput.value.trim() || undefined);
+  });
+
   openBtn.addEventListener('click', () => { openModal(); populate(); });
-  saveBtn.addEventListener('click', save);
+  saveBtn.addEventListener('click', () => { saveAll(); closeModal(); });
   refreshBtn.addEventListener('click', async () => {
     try { await window.BlvckAI.listModels(true); } catch { /* ignore */ }
     populate();
   });
-  modal.querySelectorAll('[data-close]').forEach((el) => el.addEventListener('click', closeModal));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
+  modal.querySelectorAll('[data-close]').forEach((el) => el.addEventListener('click', () => { saveAll(); closeModal(); }));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) { saveAll(); closeModal(); } });
 })();
