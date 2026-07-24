@@ -6,6 +6,16 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 
 ## Features
 
+### 🎬 AI Production Director (global intelligence layer)
+- 🧠 **Project-aware** — sits above every tool and sees the whole project (script, voice, story bible, scenes, images, SEO) via a central project-memory store
+- 💬 **Advisory chat** — ask it anything ("review my storyboard", "improve retention", "best voice", "optimize for YouTube") with one-click command shortcuts; replies stream live
+- 📊 **Quality audit** — a scored pre-export report (script / retention / storytelling / visual consistency / thumbnail / SEO / monetization / overall) with prioritized recommendations and a "do this next"
+- 🎚️ **Director Mode** — proactive next-step guidance across the pipeline
+
+### 🪜 End-to-end production pipeline
+- Sections are ordered as a real workflow — **Script → Voice → Storyboard → Images → Video → YouTube → Agent** — with a sticky **progress tracker** showing where you are (click a step to jump to it)
+- **No file shuffling** — a project-memory layer passes data between stages; the storyboard's **⤵ Import from project** pulls the subtitles/script you already generated (no download/re-upload)
+
 ### Voices — 5 TTS providers via Puter
 - 🔀 **Switch providers in ⚙ AI settings** — **ElevenLabs**, **Amazon Polly**, **OpenAI**, **Google Gemini**, or **xAI (Grok)**. The voice catalog swaps to that provider's voices and each call sends the right options shape automatically
 - 🎙️ **Curated catalog per provider** — ElevenLabs (Adam, Rachel, …), Polly (Joanna, Matthew, neural/generative), OpenAI (alloy, onyx, nova, …), Gemini (Puck, Kore, … with delivery instructions), xAI (eve, ara, rex, sal, leo with inline `[pause]`/`<whisper>` tags) — all with human names, tier badges, gender/accent/style filters, and search

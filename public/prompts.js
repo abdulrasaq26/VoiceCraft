@@ -423,9 +423,68 @@ You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
     return text;
   }
 
+  // --- AI Production Director --------------------------------------------
+
+  const DIRECTOR_SYSTEM = `You are the AI Production Director for a YouTube video studio — a seasoned Video Production Director, Creative Director, Content Strategist, YouTube Growth Consultant, Storytelling Expert and Quality-Control Manager rolled into one.
+You have visibility into the whole project (script, narration/voice, story bible, storyboard scenes, images, SEO). Give sharp, specific, production-grade guidance: strengthen hooks and retention, fix pacing and weak scenes, keep visual and character consistency, and grow the channel. Be candid and concrete; reference the actual project. Keep answers focused and actionable — no filler.`;
+
+  function directorChatSystem() { return DIRECTOR_SYSTEM; }
+
+  const AUDIT_SYSTEM = `${DIRECTOR_SYSTEM}
+Now perform a complete pre-export QUALITY AUDIT of the project. Score each dimension 0-100 (be honest — do not inflate) and give specific, prioritized recommendations.
+Respond ONLY with JSON:
+{
+  "scores": {
+    "script": int, "retention": int, "storytelling": int, "visualConsistency": int,
+    "thumbnail": int, "seo": int, "monetization": int, "overall": int
+  },
+  "summary": string,
+  "strengths": [string],
+  "weaknesses": [string],
+  "recommendations": [{ "area": string, "priority": "high" | "medium" | "low", "action": string }],
+  "nextStep": string
+}`;
+
+  function auditPrompt(project) {
+    return { system: AUDIT_SYSTEM, user: `PROJECT (JSON snapshot):\n${JSON.stringify(project || {}, null, 2)}` };
+  }
+
+  function normalizeAudit(j) {
+    j = j || {};
+    const sc = j.scores || {};
+    const score = (v) => clampScore(v);
+    const scores = {
+      script: score(sc.script), retention: score(sc.retention), storytelling: score(sc.storytelling),
+      visualConsistency: score(sc.visualConsistency), thumbnail: score(sc.thumbnail), seo: score(sc.seo),
+      monetization: score(sc.monetization),
+      overall: sc.overall != null ? score(sc.overall) : 0
+    };
+    if (!scores.overall) {
+      const vals = [scores.script, scores.retention, scores.storytelling, scores.visualConsistency, scores.thumbnail, scores.seo, scores.monetization];
+      scores.overall = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+    }
+    return {
+      generatedAt: Date.now(),
+      scores,
+      summary: str(j.summary),
+      strengths: arr(j.strengths).map(String).slice(0, 12),
+      weaknesses: arr(j.weaknesses).map(String).slice(0, 12),
+      recommendations: arr(j.recommendations).slice(0, 20).map((r) => ({
+        area: str(r && r.area),
+        priority: /high|medium|low/i.test(str(r && r.priority)) ? str(r.priority).toLowerCase() : 'medium',
+        action: str(r && r.action)
+      })).filter((r) => r.action),
+      nextStep: str(j.nextStep)
+    };
+  }
+
   // --- Endpoint registry (keys match the old /api/* paths) --------------
 
   const ROUTES = {
+    '/api/director/audit': {
+      build: (p) => auditPrompt(p.project || {}),
+      parse: (p, rawText) => ({ audit: normalizeAudit(extractJson(rawText)) })
+    },
     '/api/storyboard/bible': {
       build: (p) => biblePrompt(p.context || {}),
       parse: (p, rawText) => ({ bible: normalizeBible(extractJson(rawText)) })
@@ -458,6 +517,7 @@ You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
     },
     extractJson,
     repairJson,
+    directorChatSystem,
     VISUAL_STYLES
   };
 })();

@@ -22,6 +22,38 @@
 
     <nav id="pipeline" class="pipeline" aria-label="Production pipeline" hidden></nav>
 
+    <!-- AI Production Director -->
+    <section id="director-card" class="card director-card">
+      <div class="input-header">
+        <label>🎬 AI Production Director</label>
+        <label class="ssml-toggle" title="Proactive guidance to the next step across the whole pipeline"><input type="checkbox" id="director-mode" /> <span>Director Mode</span></label>
+      </div>
+      <p class="field-note">Your always-on creative director, content strategist and QC manager. It sees the whole project and advises across every stage. Ask it anything, or run a full quality audit before export.</p>
+
+      <div id="director-next" class="director-next" hidden></div>
+
+      <div class="director-actions">
+        <button id="director-audit" class="btn primary" type="button">Run production audit</button>
+        <button class="btn ghost small" type="button" data-dcmd="Review my storyboard: flag repetitive visuals, weak scenes, and consistency issues.">Review storyboard</button>
+        <button class="btn ghost small" type="button" data-dcmd="How can I improve viewer retention and pacing for this video?">Improve retention</button>
+        <button class="btn ghost small" type="button" data-dcmd="Recommend the best voice and voice instructions for this narration.">Best voice</button>
+        <button class="btn ghost small" type="button" data-dcmd="Optimize this video for YouTube search and click-through. What titles and thumbnail should I use?">Optimize for YouTube</button>
+        <button class="btn ghost small" type="button" data-dcmd="What is the single most important thing I should do next on this project?">What's next?</button>
+      </div>
+
+      <div id="director-audit-result" class="director-audit" hidden></div>
+
+      <div id="director-chat" class="director-chat" hidden></div>
+      <div class="director-input-row">
+        <textarea id="director-input" rows="2" placeholder="Ask the Production Director… (Ctrl/Cmd+Enter to send)"></textarea>
+        <div class="director-input-actions">
+          <button id="director-send" class="btn primary"><span class="btn-label">Ask</span><span class="spinner" hidden></span></button>
+          <button id="director-stop" class="btn ghost" type="button" hidden>■ Stop</button>
+        </div>
+      </div>
+      <div id="director-status" class="status" hidden></div>
+    </section>
+
     <main class="card">
       <!-- Presets -->
       <section class="presets-bar">
@@ -808,6 +840,7 @@
   <script src="youtube.js"></script>
   <script src="projects.js"></script>
   <script src="agent.js"></script>
+  <script src="director.js"></script>
   <script src="pipeline.js"></script>
 </body>
 </html>
