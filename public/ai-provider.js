@@ -1,16 +1,22 @@
-// AI provider router. Chooses between Gemini (server-side, via /api/*) and
-// Puter/Qwen (client-side, via the puter.js SDK — "user-pays", no server key).
-// When Puter is selected, prompt-building and result-parsing still happen on
-// the server (single source of truth); only the model call runs in the browser.
+// Puter-first AI router for Blvck-TTS.
+//
+// Every AI capability — TTS (ElevenLabs), text (Claude/GPT/Qwen/…), images,
+// video — routes through Puter's client-side SDK. Prompt-building and result
+// parsing still happen on the server for storyboard + SEO (single source of
+// truth); the model call itself runs in the browser.
 (() => {
   'use strict';
 
-  const PROVIDER_KEY = 'blvck-tts:aiprovider';
-  const MODEL_KEY = 'blvck-tts:qwenmodel';
-  const DEFAULT_MODEL = 'qwen3.6-flash';
-  const TTS_KEY = 'blvck-tts:ttsprovider';
-  const TTS_MODEL_KEY = 'blvck-tts:elevenmodel';
+  const CHAT_MODEL_KEY = 'blvck:chatmodel';
+  const TTS_MODEL_KEY = 'blvck:ttsmodel';
+  const DEFAULT_CHAT_MODEL = 'claude-sonnet-4';
   const DEFAULT_TTS_MODEL = 'eleven_multilingual_v2';
+  const DEFAULT_VOICE_SETTINGS = Object.freeze({
+    stability: 0.5,
+    similarity_boost: 0.85,
+    style: 0.1,
+    use_speaker_boost: true
+  });
 
   async function postJson(url, body) {
     const res = await fetch(url, {
@@ -37,8 +43,7 @@
     return '';
   }
 
-  // Load the Puter SDK on demand (only when the Qwen provider is actually
-  // used), so Gemini users never fetch an external script.
+  // Lazy-load Puter's SDK. Only fetched on first use.
   let puterLoading = null;
   function ensurePuter() {
     if (typeof window.puter !== 'undefined') return Promise.resolve();
@@ -47,53 +52,45 @@
       const s = document.createElement('script');
       s.src = 'https://js.puter.com/v2/';
       s.onload = () => (typeof window.puter !== 'undefined' ? resolve() : reject(new Error('Puter SDK loaded but unavailable.')));
-      s.onerror = () => reject(new Error('Could not load the Puter SDK (js.puter.com). Check your connection, or switch the AI provider back to Gemini.'));
+      s.onerror = () => reject(new Error('Could not load the Puter SDK (js.puter.com). Check your connection.'));
       document.head.appendChild(s);
     });
     return puterLoading;
   }
 
-  const BlvckAI = {
-    provider() {
-      return localStorage.getItem(PROVIDER_KEY) || 'gemini';
-    },
-    isPuter() {
-      return this.provider() === 'puter';
-    },
-    setProvider(p) {
-      localStorage.setItem(PROVIDER_KEY, p);
-    },
-    model() {
-      return localStorage.getItem(MODEL_KEY) || DEFAULT_MODEL;
-    },
-    setModel(m) {
-      localStorage.setItem(MODEL_KEY, m || DEFAULT_MODEL);
-    },
+  function clampNumber(n, lo, hi, fallback) {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.min(hi, Math.max(lo, v));
+  }
 
-    // --- Text-to-speech provider (Google server-side | ElevenLabs via Puter) ---
-    ttsProvider() {
-      return localStorage.getItem(TTS_KEY) || 'google';
-    },
-    isElevenLabs() {
-      return this.ttsProvider() === 'elevenlabs';
-    },
-    setTtsProvider(p) {
-      localStorage.setItem(TTS_KEY, p);
-    },
-    ttsModel() {
-      return localStorage.getItem(TTS_MODEL_KEY) || DEFAULT_TTS_MODEL;
-    },
-    setTtsModel(m) {
-      localStorage.setItem(TTS_MODEL_KEY, m || DEFAULT_TTS_MODEL);
-    },
+  function normalizeVoiceSettings(vs) {
+    const base = { ...DEFAULT_VOICE_SETTINGS, ...(vs || {}) };
+    return {
+      stability: clampNumber(base.stability, 0, 1, DEFAULT_VOICE_SETTINGS.stability),
+      similarity_boost: clampNumber(base.similarity_boost, 0, 1, DEFAULT_VOICE_SETTINGS.similarity_boost),
+      style: clampNumber(base.style, 0, 1, DEFAULT_VOICE_SETTINGS.style),
+      use_speaker_boost: Boolean(base.use_speaker_boost)
+    };
+  }
+
+  const BlvckAI = {
+    DEFAULT_VOICE_SETTINGS,
+
+    chatModel() { return localStorage.getItem(CHAT_MODEL_KEY) || DEFAULT_CHAT_MODEL; },
+    setChatModel(m) { localStorage.setItem(CHAT_MODEL_KEY, m || DEFAULT_CHAT_MODEL); },
+    ttsModel() { return localStorage.getItem(TTS_MODEL_KEY) || DEFAULT_TTS_MODEL; },
+    setTtsModel(m) { localStorage.setItem(TTS_MODEL_KEY, m || DEFAULT_TTS_MODEL); },
 
     // Synthesize speech with ElevenLabs via Puter; returns an audio Blob.
-    async speak(text, voice) {
+    // opts: { voice_settings?, model? }
+    async speak(text, voice, opts = {}) {
       await ensurePuter();
       const audio = await window.puter.ai.txt2speech(text, {
         provider: 'elevenlabs',
         voice,
-        model: this.ttsModel()
+        model: opts.model || this.ttsModel(),
+        voice_settings: normalizeVoiceSettings(opts.voice_settings)
       });
       const src = audio && (audio.src || (typeof audio === 'string' ? audio : null));
       if (!src) throw new Error('ElevenLabs (Puter) returned no audio.');
@@ -101,82 +98,56 @@
       return r.blob();
     },
 
-    // Run a JSON-producing generation. For Gemini, the server does it all.
-    // For Puter: fetch the prompt from the server, run Qwen in the browser,
-    // then post the raw output back for the server to parse + normalise.
+    // Run a JSON-producing generation. Fetch the prompt from the server, run
+    // the chat model in the browser, post the raw output back for parsing.
     async generateJSON(endpoint, payload) {
-      if (!this.isPuter()) {
-        return postJson(endpoint, payload);
-      }
       await ensurePuter();
       const { prompt } = await postJson(endpoint, { ...payload, promptOnly: true });
       const messages = [];
       if (prompt.system) messages.push({ role: 'system', content: prompt.system });
       messages.push({ role: 'user', content: prompt.user });
-      const resp = await window.puter.ai.chat(messages, { model: this.model() });
+      const resp = await window.puter.ai.chat(messages, { model: this.chatModel() });
       const rawText = chatText(resp);
-      if (!rawText) throw new Error('Qwen (Puter) returned an empty response.');
+      if (!rawText) throw new Error('The chat model returned an empty response.');
       return postJson(endpoint, { ...payload, rawText });
     },
 
-    // Generate an image, returning a Blob. Gemini → /api/image; Puter → txt2img.
-    async generateImage(prompt, aspect) {
-      if (this.isPuter()) {
-        await ensurePuter();
-        const fullPrompt = aspect ? `${prompt} (${aspect} aspect ratio)` : prompt;
-        const el = await window.puter.ai.txt2img(fullPrompt);
-        const src = el && (el.src || (typeof el === 'string' ? el : null));
-        if (!src) throw new Error('Qwen (Puter) returned no image.');
-        const r = await fetch(src);
-        return r.blob();
-      }
-      const res = await fetch('/api/image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, aspect })
+    // Generic chat completion returning plain text. For UI-facing use (script
+    // generator, coding agent, etc.).
+    async chat(messages, opts = {}) {
+      await ensurePuter();
+      const resp = await window.puter.ai.chat(messages, {
+        model: opts.model || this.chatModel(),
+        ...opts
       });
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({}));
-        const err = new Error(b.error || `Request failed (${res.status})`);
-        err.status = res.status;
-        err.quota = res.status === 429 || /quota|exceeded|billing/i.test(b.error || '');
-        err.hint = b.hint;
-        throw err;
-      }
-      return res.blob();
+      return chatText(resp);
+    },
+
+    // Generate an image, returning a Blob.
+    async generateImage(prompt, aspect) {
+      await ensurePuter();
+      const fullPrompt = aspect ? `${prompt} (${aspect} aspect ratio)` : prompt;
+      const el = await window.puter.ai.txt2img(fullPrompt);
+      const src = el && (el.src || (typeof el === 'string' ? el : null));
+      if (!src) throw new Error('Puter returned no image.');
+      const r = await fetch(src);
+      return r.blob();
+    },
+
+    // Generate a short video clip, returning a Blob.
+    async generateVideo(prompt, opts = {}) {
+      await ensurePuter();
+      const el = await window.puter.ai.txt2vid(prompt, {
+        model: opts.model || 'sora-2',
+        seconds: opts.seconds,
+        size: opts.size
+      });
+      const src = el && (el.src || (typeof el === 'string' ? el : null));
+      if (!src) throw new Error('Puter returned no video.');
+      const r = await fetch(src);
+      return r.blob();
     }
   };
 
   window.BlvckAI = BlvckAI;
-
-  // Wire the top-bar provider selector (elements exist — this script runs at
-  // the end of <body>). Changing provider reloads so every module re-inits.
-  const sel = document.getElementById('ai-provider');
-  const modelInput = document.getElementById('qwen-model');
-  if (sel) {
-    sel.value = BlvckAI.provider();
-    const syncModel = () => {
-      if (modelInput) {
-        modelInput.hidden = BlvckAI.provider() !== 'puter';
-        modelInput.value = BlvckAI.model();
-      }
-    };
-    syncModel();
-    sel.addEventListener('change', () => {
-      BlvckAI.setProvider(sel.value);
-      location.reload();
-    });
-    if (modelInput) {
-      modelInput.addEventListener('change', () => BlvckAI.setModel(modelInput.value.trim()));
-    }
-  }
-
-  const ttsSel = document.getElementById('tts-provider');
-  if (ttsSel) {
-    ttsSel.value = BlvckAI.ttsProvider();
-    ttsSel.addEventListener('change', () => {
-      BlvckAI.setTtsProvider(ttsSel.value);
-      location.reload();
-    });
-  }
 })();

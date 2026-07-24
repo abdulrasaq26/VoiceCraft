@@ -1,215 +1,126 @@
 # Blvck TTS
 
-A fully functional text-to-speech web app powered by the **Google Cloud Text-to-Speech API**.
+**A serverless AI content-production studio.** Voice, images, video and scripts — powered by [Puter](https://puter.com) + ElevenLabs. No API keys. No billing setup. No server-side model calls.
 
-Type or paste text (or SSML), pick a voice by human name from a searchable voice browser, tune the delivery with instructions and sliders, then play the result in the browser or download it as MP3, OGG, or WAV.
+Type or paste a script, pick a voice from the ElevenLabs catalog, tune the delivery, and generate speech, storyboards, thumbnails, SEO packages, and video scenes — all through Puter's free, user-pays SDK.
 
 ## Features
 
-### Voices
-- 🔀 **Google or ElevenLabs** — a top-bar TTS switch chooses the speech backend. **Google** runs server-side with your credentials (the full human-named catalog below). **ElevenLabs (free)** uses [Puter.js](https://developer.puter.com/tutorials/free-unlimited-elevenlabs-api/) — a client-side, "user-pays" SDK that needs **no API key and no billing** (you sign into Puter in the browser). It exposes a curated set of ElevenLabs voices (Adam, Rachel, …) for preview, single, and long-form batch generation. The Puter SDK is loaded lazily — only when you actually select ElevenLabs.
-- 🎙️ **Human-named voices** — every voice gets a realistic name and descriptor (e.g. *Sarah — Warm Female Narrator*, *James — Deep Professional Male Voice*) instead of `en-US-Neural2-C`
-- 🏆 **Quality tiers with badges** — ⭐ Elite (Chirp3-HD, Studio), Premium (Neural2, WaveNet), Standard, and Experimental voices, clearly labeled
-- 🔎 **Voice browser** — search by name, style, or voice ID; filter by tier and gender; favorites and recently-used sections; mobile-friendly full-screen browser
-- 🔊 **Reliable previews** — tap ▶ on any voice to hear a sample; gesture-safe playback that works under iOS Safari / Android Chrome autoplay policies; previews are cached server-side so repeat listens don't hit your quota
-- 🩺 **Voice health system** — per-family capability rules prevent invalid API requests; voices that fail a live preview are hidden automatically; `npm run verify-voices` audits the entire catalog against the live API and writes a blocklist
+### Voices — ElevenLabs via Puter
+- 🎙️ **Curated ElevenLabs catalog** with real voice IDs (Adam, Rachel, Sarah, Charlotte, Domi, George, Antoni, Arnold, Josh, Daniel, Callum, Matilda, Lily, Sam, …), rendered with human names, tier badges, and search
+- 🔊 **Reliable previews** — tap ▶ to hear a sample; works under iOS Safari / Android Chrome autoplay policies
+- 🎛️ **Voice settings** — `stability`, `similarity_boost`, `style`, `use_speaker_boost` (Puter's ElevenLabs API)
+- ⚡ **No API key required** — every synthesis call runs client-side through Puter; users sign into Puter once
 
 ### Delivery control
-- 📝 **Voice instructions** — free-text delivery guidance with pre-built style templates (Documentary Narrator, Energetic YouTube Presenter, Calm Bedtime Storyteller, …). Templates tune real API parameters (speed/pitch) on every voice; instruction-capable voices also receive the text directly
-- 🎛️ **Sliders** — speaking rate (0.25×–4×), pitch (±20 semitones), volume gain; controls a voice doesn't support are greyed out instead of causing errors
-- 🗣️ **SSML support** — toggle to send raw SSML (blocked with a clear message on voices that don't accept it)
+- 📝 **Voice instructions** with 8 ElevenLabs-optimized presets (Documentary Narrator, Historical Storyteller, Calm Educator, YouTube Explainer, Cinematic Narrator, Audiobook Style, Dramatic Storytelling, Conversational). Each applies both a performance brief and recommended voice_settings in one click
+- ➕ **Custom instruction presets** — save your own delivery brief + voice_settings under a name, reuse across projects
+- 💾 **Voice profiles** — voice + voice_settings + instruction saved together, one-click reloadable
+- 🗣️ **Instruction-first** — ElevenLabs listens to natural-language delivery cues in the prompt itself
+
+### AI Script Generator
+- ✍️ **Seven script types** — YouTube, historical storytelling, documentary, educational, shorts, podcast, audiobook
+- 🎚️ Tone, length (~150–1500 words), target audience, and a retention-optimization toggle (hooks, open loops, re-engagement)
+- 💾 Saved prompt templates; editable output with live word count; **"Use in voice studio"** loads the script straight into the narrator
+
+### AI Coding Agent
+- 🤖 **Chat-first coding assistant** (Claude / GPT / DeepSeek / Gemini via Puter) — generate, edit, analyze, and debug code
+- 📎 **Project context** — paste files so the agent understands your codebase; **Task mode** produces step-by-step plans
+- 💬 Conversation history persisted locally; code blocks with copy buttons; export the conversation as Markdown
 
 ### Long-form scripts
-- ♾️ **Unlimited input** — paste an entire script, chapter, or article in one go; there's no length cap on the box
-- ✂️ **Sentence-aware auto-chunking** — the script is split into ~1,000-character parts on sentence boundaries, so no part ever cuts a sentence in half (a lone long sentence fills its own part, up to a safe limit)
-- 🔁 **Automated generation queue** — every part is generated in sequence automatically, with a live progress bar showing the current part (“Part 7 of 32”), count complete, percentage, and estimated time remaining
-- ⏯️ **Full queue control** — pause, resume, cancel, and retry-failed-parts; the batch is saved to the browser (IndexedDB), so a refresh restores it and you can continue where you left off
-- 🏷️ **Auto-named parts** — outputs are named from the project name: `Medieval Peasant Life Part 1.mp3`, `… Part 2.mp3`, …
-- 📦 **Batch downloads** — download all parts as a single ZIP (the `.srt` and `.vtt` subtitles are bundled in too), download each part individually, or tick specific parts and download just those
-- 🎬 **Automatic subtitles (SRT/VTT)** — every project produces broadcast-style subtitles whose timing comes from the **actual generated audio**: each part's decoded duration is distributed across cues on sentence/phrase boundaries, with a running offset so the timeline is continuous across the whole project (never restarts per part). Cues wrap to 1–2 lines of ≤42 chars, never splitting a word. Preview, copy, or download `Medieval Peasant Life.srt` / `.vtt` — ready for YouTube, CapCut, Premiere, DaVinci Resolve, etc. A **Generate subtitles** button also works on any pasted script alone (timing estimated from the voice speed) with no audio run
+- ♾️ **Unlimited input** — paste an entire script, chapter, or article
+- ✂️ **Sentence-aware auto-chunking** into ~1,000-character parts
+- 🔁 **Automated generation queue** with live progress bar, ETA, pause / resume / cancel / retry
+- 🏷️ **Auto-named parts** — `Medieval Peasant Life Part 1.mp3`, `… Part 2.mp3`, …
+- 🌐 **Refresh-safe** — batch state persists in IndexedDB
+
+### Subtitles
+- 🎬 **Standalone subtitle generation** from your script (SRT / VTT / TXT) without needing to synthesize audio first
+- ⏱️ **Audio-timed subtitles** when audio exists — continuous timeline across all chunks
+- 📦 **Included in the ZIP** download
 
 ### Projects
-- 🗂️ **Project dashboard** — every project (e.g. *Born Back Then – Medieval Peasant*) is a first-class saved workspace that bundles its script, voice/style settings, audio, subtitles, image prompts, generated images, and video timeline. Open the **Projects** dashboard from the top bar to **create, open, rename, duplicate, archive, search and sort** projects. Switching a project swaps the entire asset set — each project's audio and images are fully isolated (snapshotted in IndexedDB), so opening one restores exactly where you left it.
+- 🗂️ **Project dashboard** — first-class projects with independent snapshots (scenes, images, subtitles, thumbnails, SEO, editor state)
+- 🔁 Switch, duplicate, archive, search
 
-### Creator workflow
-- 💾 **Presets** — save complete configurations (voice, instructions, speed, pitch, volume, format); rename, duplicate, delete, set a default, organize by project, and apply with one click
-- 🕘 **Last-used memory** — all settings and the project name persist across sessions; the app reopens exactly as you left it
+### AI storyboards + text-to-video (Puter txt2img / txt2vid)
+- 🧠 **Story bible** — reads your subtitles/script and locks characters, locations, tone, period, colour grading
+- 🎬 **Per-scene prompts** with cinematic shot variety and continuity across batches
+- 🖼️/🎥 **Still, Video, or Mixed** — a "Scene assets" setting generates a still image (txt2img), a video clip (txt2vid), or a per-scene mix. In mixed mode each scene has a "Make video / Make image" toggle
+- 📤 **ZIP / prompts / JSON / PDF export** (ZIP packs the right extension per scene; PDF is an image contact sheet)
 
-### Images (optional)
-- 🖼️ **AI image generator** — a built-in panel that generates still 2D images from a text prompt via Google's **Gemini image API**, with an aspect-ratio selector, inline preview, and download. Disabled until a `GEMINI_API_KEY` is set, then it appears automatically. Great for thumbnails or per-scene visuals to pair with narration.
-- 🎞️ **AI Storyboard** — upload subtitles (`.srt` / `.vtt` / timestamped `.txt`) plus optional script, visual-style, character-reference and instruction files; the AI reads the *whole* story, builds a story bible (characters, locations, period, tone), then automatically writes one image prompt per scene and generates a still image for each — no manual prompt writing. Camera shots vary for visual interest, the "Born Back Then" channel style is injected into every prompt, and character/location descriptions are locked for consistency. Batch queue with progress, pause/resume, per-scene regenerate, refresh-persistence, and exports: **ZIP** (images + prompts + JSON), **prompts.txt**, **scenes.json**, and a **storyboard PDF**.
-
-### YouTube Optimization Center (optional)
-- 📈 **Project-aware SEO** — analyzes the selected project's story (script, bible, subtitles) and your channel brand to generate an entire publishing package: **30 title variations** (SEO / CTR / balanced, each scored for SEO, CTR, competition and readability) with a recommendation, **long + short descriptions**, **keywords** (primary / secondary / long-tail + search intent), **categorized tags**, and **hashtags** — all copyable.
-- 🧠 **Channel knowledge base** — save a channel profile (name, type, audience, tone, visual & thumbnail style, colour palette, title structure, SEO focus, content strategy) once; it's stored globally and inherited by every project so the whole channel stays on-brand.
-- 🖼️ **Thumbnail intelligence** — two on-brand thumbnail concepts (A/B) with text, visual focus, emotional & curiosity triggers, reasoning, a ready image prompt, and predicted scores (curiosity / CTR / readability / mobile / brand). One-click **Generate thumbnail** (×1 / ×5 / ×10) feeds the concept prompt to the Gemini image model, quota-aware, and saves results to the project.
-- 📦 **Exports** — SEO report (`.md`), thumbnail package (ZIP: images + prompts + notes), and a complete publishing package (ZIP: report + thumbnails). Needs `GEMINI_API_KEY`.
+### YouTube Optimization Center (Puter chat + txt2img)
+- 🎯 **Titles × 30** — SEO / CTR / Balanced with per-title scores
+- 📝 Long + short descriptions, keywords, tags, hashtags, thumbnail concepts (with generated thumbnails)
+- 🧠 **Channel knowledge base** — brand voice, title patterns, thumbnail style, SEO strategy inherited across projects
 
 ### Video editor (optional)
-- 🎬 **AI Video Editor** — auto-assembles your storyboard images, subtitle timing and narration into a synchronized rough cut: each scene becomes a clip whose duration comes from its subtitle timing, with an automatically-assigned **Ken Burns motion** effect (zoom / pan / push / pull / drift / focus-shift) and **burned-in subtitles** (font, size, position, colour). Live canvas preview, and a timeline you can edit — reorder, change duration, change motion, replace an image, or delete clips.
-- 🔀 **Two workflows** — the **storyboard-driven auto-assemble is the primary, recommended path** (scene order, timing and image assignments come from the storyboard). An optional **Open Manual Editor** button reveals a standalone mode where you **upload your own images, narration audio, and subtitles** and click **Auto Assemble uploads** to build a draft — no storyboard required. Manual assets are saved to the project like generated ones.
-- 🎞️ **Default crossfade transitions** between scenes (toggleable), applied in both the preview and the exported video.
-- 📤 **Export** — an in-browser **WebM** render (720p/1080p, video + narration muxed via Web Audio; YouTube accepts WebM), plus an **editor package ZIP** (scene images + narration parts + an SRT matching the timeline + `edl.json` with scene order/durations/effects) to finish a **4K MP4** in Premiere / DaVinci Resolve / CapCut or a one-line ffmpeg script. *(True 4K MP4/MOV can't be encoded inside a browser — that's what the package is for.)*
+- 🎞️ **Auto-assemble** storyboard scenes into a canvas timeline with Ken Burns motion + burned subtitles
+- 📤 **WebM export** (MediaRecorder) + editor-package ZIP with images, subtitles, EDL for downstream 4K rendering
+- 🎬 **Manual editor** — upload your own images / audio / subtitles if you skip the storyboard pipeline
 
-### AI provider
-- 🔁 **Gemini or Qwen (Puter)** — a top-bar switch chooses the AI backend for storyboard analysis, SEO, and image generation. **Gemini** runs server-side with your `GEMINI_API_KEY`. **Qwen (free)** uses [Puter.js](https://developer.puter.com/) — a client-side, "user-pays" SDK that needs **no API key and no billing** (you sign into Puter in the browser), which sidesteps the Gemini image quota. Prompt-building and result-parsing stay server-side either way; only the model call moves to the browser under Qwen. The Qwen model id is editable in the top bar (default `qwen3.6-flash`). Puter's SDK is loaded lazily — only when you actually select Qwen.
-- 🗣️ **Google or ElevenLabs TTS** — an independent top-bar switch chooses the speech backend (see **Voices** above). ElevenLabs also runs through Puter with no key; the entire Google voice system stays intact behind the switch.
+### AI provider (backend model)
+- 🔁 **Any Puter chat model** — Claude, GPT, Qwen, Llama, DeepSeek (change with `localStorage['blvck:chatmodel']`)
+- 🎬 **Puter txt2vid** available for future text-to-video scenes (Sora / Veo / Kling via Puter's routing)
 
 ### Infrastructure
-- 🔐 **Two auth modes** — simple API key, or service-account / Application Default Credentials
-- 🛡️ **Server-side proxy** — your Google credentials never reach the browser
-- 🧪 **Mock mode** — `npm run mock` serves canned voices and audio so you can develop and test the UI without credentials or billing
+- 🕸️ **Serverless-friendly** — the thin Node/Express server hosts static files and owns the storyboard/SEO prompt scaffolding (single source of truth). Every model call runs in the browser via Puter
+- 🔒 **No API keys on the server** — nothing to leak, nothing to bill
+- 🐳 **Docker + Railway** ready (`Dockerfile`, `railway.json` included)
 
 ## Quick start
 
-### 1. Set up Google Cloud
-
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create (or select) a project.
-2. Enable the **Cloud Text-to-Speech API**: *APIs & Services → Library → search "Text-to-Speech" → Enable*.
-3. Make sure billing is enabled on the project (the API has a generous free tier — currently up to 4 million characters/month for standard voices and 1 million for WaveNet/Neural2).
-4. Create credentials — pick **one** of the following:
-
-   **Option A — API key (fastest):**
-   - *APIs & Services → Credentials → Create credentials → API key*
-   - Recommended: restrict the key to the Cloud Text-to-Speech API.
-
-   **Option B — Service account (recommended for production):**
-   - *IAM & Admin → Service Accounts → Create service account*
-   - Create a JSON key (*Keys → Add key → JSON*) and download it.
-
-### 2. Configure and run the app
-
 ```bash
-git clone https://github.com/abdulrasaq26/Blvck-TTS.git
-cd Blvck-TTS
 npm install
-cp .env.example .env
+npm start
+# → http://localhost:3000
 ```
 
-Edit `.env`:
+The first time you use any AI feature, Puter will prompt you to sign in (free). Every subsequent call is metered against your Puter usage, not yours to bill.
 
-```env
-# Option A
-GOOGLE_TTS_API_KEY=your-api-key-here
-
-# ...or Option B (leave GOOGLE_TTS_API_KEY empty)
-GOOGLE_APPLICATION_CREDENTIALS=./service-account.json
-```
-
-Then start the server:
-
-```bash
-npm start          # production
-npm run dev        # auto-restarts on changes
-npm run mock       # UI development without credentials
-```
-
-Open **http://localhost:3000**. `Ctrl/Cmd + Enter` in the text box triggers generation.
-
-### 3. (Optional) Audit the voice catalog
-
-```bash
-npm run verify-voices
-```
-
-Synthesizes a tiny sample with every voice in the catalog (~3 characters per voice — negligible cost), writes any failing voices to `voice-blocklist.json`, and the server hides them on next start. Voices that fail a preview at runtime are hidden automatically without this step.
-
-## API
-
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `GET` | `/api/health` | Server status, auth mode, hidden-voice count |
-| `GET` | `/api/voices` | Enriched voice catalog: human names, descriptors, tiers, capabilities |
-| `GET` | `/api/preview?voiceName=en-US-Neural2-C&languageCode=en-US` | Short MP3 sample of a voice (cached, deduped server-side) |
-| `POST` | `/api/synthesize` | Generate audio; returns the audio bytes |
-| `POST` | `/api/image` | Generate a still image from `{ prompt, aspect }` via the Gemini image API; returns image bytes (requires `GEMINI_API_KEY`) |
-| `POST` | `/api/storyboard/bible` | Analyze the full story (`{ context }`) into a story bible: characters, locations, period, tone |
-| `POST` | `/api/storyboard/scenes` | Turn a batch of cues into scene prompts (`{ bible, cues, style, instructions, priorSummaries }`) |
-
-`POST /api/synthesize` body:
-
-```json
-{
-  "text": "Hello world",
-  "ssml": false,
-  "voiceName": "en-US-Neural2-C",
-  "languageCode": "en-US",
-  "audioFormat": "MP3",
-  "speakingRate": 1.0,
-  "pitch": 0.0,
-  "volumeGainDb": 0.0,
-  "instructions": "Calm, authoritative documentary narration."
-}
-```
-
-- `audioFormat`: `MP3`, `OGG_OPUS`, or `LINEAR16` (WAV)
-- `/api/synthesize` accepts up to 2,000 characters per request. Longer scripts are chunked client-side into ~1,000-character, sentence-aware parts, each sent as its own request and assembled into the download queue — so there's no practical limit on the script you paste into the app.
-- Parameters a voice doesn't support are stripped server-side rather than sent (Google rejects whole requests otherwise); the `X-Instructions-Applied` response header reports whether the voice consumed the free-text instructions directly
-
-## How voice capabilities are handled
-
-Google's voice families accept different parameters; sending an unsupported one fails the whole request. The server enforces these rules (see `lib/voice-catalog.js`):
-
-| Family | Tier | Speed | Pitch | SSML |
-| --- | --- | --- | --- | --- |
-| Chirp3-HD / Chirp-HD | ⭐ Elite | ✓ (up to 2×) | — | — |
-| Studio | ⭐ Elite | ✓ | — | ✓ |
-| Neural2 / WaveNet | Premium | ✓ | ✓ | ✓ |
-| Standard | Standard | ✓ | ✓ | ✓ |
-| News / Casual / Polyglot | Experimental | ✓ | ✓ | ✓ |
-
-Controls a voice can't use are disabled with a visible note explaining why (Google rejects the whole request if the parameter is sent). As a safety net, if Google still rejects a delivery parameter, the server strips it and retries once instead of failing the generation.
-
-The UI greys out controls the selected voice can't use, so users can't build a failing request.
+### Deploy
+Any static-friendly Node host works. `Dockerfile` and `railway.json` are wired up out of the box. The only environment variable you can set is `PORT`.
 
 ## Project structure
 
 ```
-├── server.js               # Express server: catalog, preview, synthesis, voice health
-├── lib/
-│   ├── google-tts.js       # Google TTS REST client (API key / ADC) + mock mode
-│   └── voice-catalog.js    # Human naming, tiers, descriptors, capability rules
-├── scripts/
-│   └── verify-voices.js    # Full-catalog voice audit → voice-blocklist.json
-├── public/
-│   ├── index.html          # UI
-│   ├── style.css           # Styling
-│   ├── zip.js              # Dependency-free ZIP writer for batch downloads
-│   └── app.js              # Voice browser, presets, previews, chunking + batch queue
-├── Dockerfile              # Lean container build
-├── railway.json            # Railway build/deploy config
-├── .env.example            # Credential configuration template
-└── package.json
+lib/
+  storyboard.js      Story-bible + scene-prompt scaffolding (prompt-only)
+  youtube-seo.js     YouTube SEO prompt + response parser
+  script-writer.js   Script-generator prompt scaffolding
+public/
+  index.html         Single-page app shell
+  ai-provider.js     BlvckAI: Puter router (speak / chat / generateJSON / generateImage / generateVideo)
+  eleven-voices.js   Curated ElevenLabs voice catalog (48 voices + metadata)
+  app.js             Core TTS UI (voices, queue, subtitles, profiles, instruction presets)
+  script.js          AI Script Generator
+  agent.js           AI Coding Agent
+  storyboard.js      Storyboard pipeline UI (still / video / mixed)
+  editor.js          Auto-assemble + manual editor
+  youtube.js         Optimization Center
+  projects.js        Project dashboard + snapshots
+  images.js          Standalone image generator
+  zip.js / pdf.js    Dependency-free ZIP and PDF writers
+server.js            Static + prompt/parse endpoints (no external API keys)
 ```
 
-## Image generation (optional)
+## API
 
-To enable the image panel, add a **Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey):
+The server exposes only prompt-scaffolding endpoints. The browser fetches a prompt (`{promptOnly: true}` → `{prompt}`), runs the LLM through Puter, then posts the model's raw output back (`{rawText}`) for parsing and normalisation.
 
-```env
-GEMINI_API_KEY=your-gemini-key
-# Optional — override the model (default gemini-2.5-flash-image):
-# GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
-```
+| Endpoint | Purpose |
+|---|---|
+| `GET  /api/health` | `{ ok: true, provider: 'puter' }` |
+| `POST /api/storyboard/bible` | Build / parse story bible prompt |
+| `POST /api/storyboard/scenes` | Build / parse scene-prompt batch |
+| `POST /api/seo/generate` | Build / parse YouTube SEO package prompt |
+| `POST /api/script/generate` | Build script prompt / clean model output |
 
-The panel appears automatically once the key is set. The default model
-(`gemini-2.5-flash-image`) has a free tier on Google AI Studio; verify current
-free limits there, since Google adjusts them. To use Imagen or a newer model,
-set `GEMINI_IMAGE_MODEL`. The key is used server-side only and never reaches the
-browser. For local UI testing without a key, run with `MOCK_IMAGE=1` (or the
-general `MOCK_TTS=1`) to get placeholder images.
-
-The same `GEMINI_API_KEY` also powers the **AI Storyboard** (story analysis uses
-the text model `gemini-3.6-flash`, overridable via `GEMINI_TEXT_MODEL` — set this
-if Google retires the default). Note
-that character consistency is enforced by locking each character's visual
-description in the story bible and injecting it into every prompt — it's strong
-but, with a text-only image API, not pixel-perfect across images; reference-image
-conditioning would be the next step for exact face locking.
+No credentials required.
 
 ## Notes
 
-- Presets, favorites, recents, and last-used settings are stored in the browser's localStorage.
-- Free-text voice instructions are passed to the API only for instruction-capable (Gemini-TTS) voices; for all other Google voices the style templates shape delivery through the speed/pitch parameters, and the UI says so.
-- Never commit `.env` or service-account JSON files — both are gitignored.
-- If voices fail to load with an auth error, double-check that the Text-to-Speech API is enabled and your key/credentials belong to that same project.
+- **Voice library**: ElevenLabs' Voice Library API is not exposed to Puter's free tier, so Blvck-TTS ships a hand-curated catalog of the most popular voice IDs. You can swap in your own IDs in `public/app.js` (`ELEVEN_VOICES`).
+- **Character consistency**: honest caveat — image models don't do pixel-perfect character matching without reference conditioning. The story bible clamps textual descriptions across prompts, which is the best you can do without model-side reference support.
+- **In-browser video export**: 4K MP4 rendering is infeasible in-browser today. The editor exports WebM directly and produces a package ZIP (images + subtitles + EDL) that can be fed to a downstream 4K pipeline (e.g. Remotion, After Effects).

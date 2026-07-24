@@ -1,29 +1,27 @@
 {
   "name": "blvck-tts",
-  "version": "2.0.0",
-  "description": "Text-to-speech web app powered by the Google Cloud Text-to-Speech API",
+  "version": "3.0.0",
+  "description": "Serverless AI content-production studio — voice, images, video and scripts powered by Puter + ElevenLabs.",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js",
-    "mock": "MOCK_TTS=1 node server.js",
-    "verify-voices": "node scripts/verify-voices.js"
+    "dev": "node --watch server.js"
   },
   "engines": {
     "node": ">=18"
   },
   "keywords": [
     "tts",
+    "elevenlabs",
+    "puter",
     "text-to-speech",
-    "google-cloud",
-    "express"
+    "ai-video",
+    "serverless"
   ],
   "license": "MIT",
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "google-auth-library": "^9.15.1"
+    "express": "^4.19.2"
   },
   "overrides": {
     "uuid": "^11.1.1"

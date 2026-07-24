@@ -12,20 +12,12 @@
     <div class="topbar">
       <button id="projects-open" class="btn ghost small" type="button">☰ Projects</button>
       <span class="topbar-project">Project: <strong id="active-project-name">—</strong></span>
-      <select id="ai-provider" class="topbar-provider" title="AI provider for storyboard, SEO and image generation">
-        <option value="gemini">AI: Gemini</option>
-        <option value="puter">AI: Qwen (free)</option>
-      </select>
-      <input id="qwen-model" class="topbar-model" type="text" placeholder="qwen3.6-flash" title="Qwen model id (Puter)" hidden />
-      <select id="tts-provider" class="topbar-provider" title="Voice engine for text-to-speech">
-        <option value="google">TTS: Google</option>
-        <option value="elevenlabs">TTS: ElevenLabs (free)</option>
-      </select>
+      <span class="topbar-badge" title="Every AI call runs through Puter — free, no API keys, no billing">⚡ Puter · ElevenLabs</span>
       <button id="project-new" class="btn ghost small" type="button">+ New</button>
     </div>
     <header class="header">
       <h1>Blvck<span class="accent">TTS</span></h1>
-      <p class="tagline">Text to speech powered by Google Cloud</p>
+      <p class="tagline">Serverless AI voice, images, video &amp; scripts — powered by Puter + ElevenLabs</p>
     </header>
 
     <main class="card">
@@ -50,10 +42,6 @@
         <div class="input-header">
           <label for="text-input">Your script</label>
           <div class="input-tools">
-            <label class="ssml-toggle" title="Treat input as SSML markup">
-              <input type="checkbox" id="ssml-toggle" />
-              <span>SSML</span>
-            </label>
             <span id="char-count" class="char-count">0 characters</span>
           </div>
         </div>
@@ -113,19 +101,34 @@
         <p id="instructions-note" class="field-note"></p>
       </section>
 
-      <!-- Delivery sliders -->
-      <section class="sliders">
-        <div class="slider-control" id="rate-control">
-          <label for="rate-slider">Speed <output id="rate-value">1.0×</output></label>
-          <input type="range" id="rate-slider" min="0.25" max="4" step="0.05" value="1" />
+      <!-- ElevenLabs voice_settings -->
+      <section class="sliders vs-sliders">
+        <div class="slider-control" id="stability-control">
+          <label for="stability-slider">
+            Stability <output id="stability-value">50</output>
+            <span class="vs-hint" title="Lower = more expressive & variable delivery. Higher = more consistent, monotone.">?</span>
+          </label>
+          <input type="range" id="stability-slider" min="0" max="100" step="1" value="50" />
         </div>
-        <div class="slider-control" id="pitch-control">
-          <label for="pitch-slider">Pitch <output id="pitch-value">0.0</output></label>
-          <input type="range" id="pitch-slider" min="-20" max="20" step="0.5" value="0" />
+        <div class="slider-control" id="similarity-control">
+          <label for="similarity-slider">
+            Similarity <output id="similarity-value">85</output>
+            <span class="vs-hint" title="How closely the output should match the original voice character. Higher = closer to source.">?</span>
+          </label>
+          <input type="range" id="similarity-slider" min="0" max="100" step="1" value="85" />
         </div>
-        <div class="slider-control" id="volume-control">
-          <label for="volume-slider">Volume gain <output id="volume-value">0.0 dB</output></label>
-          <input type="range" id="volume-slider" min="-20" max="16" step="0.5" value="0" />
+        <div class="slider-control" id="style-control">
+          <label for="style-slider">
+            Style <output id="style-value">10</output>
+            <span class="vs-hint" title="Style exaggeration. Higher = more stylistic delivery, but can introduce artifacts.">?</span>
+          </label>
+          <input type="range" id="style-slider" min="0" max="100" step="1" value="10" />
+        </div>
+        <div class="slider-control speaker-boost-control">
+          <label class="ssml-toggle" title="Enhance similarity to the original speaker. Small performance cost.">
+            <input type="checkbox" id="speaker-boost-toggle" checked />
+            <span>Speaker boost</span>
+          </label>
         </div>
       </section>
       <p id="caps-note" class="field-note" hidden></p>
@@ -186,11 +189,92 @@
       </section>
     </main>
 
-    <!-- Image generator (revealed when GEMINI_API_KEY is configured) -->
+    <!-- AI Script Generator (Puter chat) -->
+    <section id="script-card" class="card script-card" hidden>
+      <div class="input-header">
+        <label>AI Script Generator</label>
+        <span class="badge elite">⚡ Puter</span>
+      </div>
+      <p class="field-note">Generate a full narration script, then send it straight to the voice studio above.</p>
+
+      <section class="controls script-controls">
+        <div class="control">
+          <label for="script-type">Script type</label>
+          <select id="script-type">
+            <option value="youtube">YouTube video</option>
+            <option value="historical">Historical storytelling</option>
+            <option value="documentary">Documentary narration</option>
+            <option value="educational">Educational content</option>
+            <option value="shorts">Short / Reel</option>
+            <option value="podcast">Podcast episode</option>
+            <option value="audiobook">Audiobook-style</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="script-tone">Tone</label>
+          <select id="script-tone">
+            <option value="cinematic and dramatic">Cinematic &amp; dramatic</option>
+            <option value="warm and conversational">Warm &amp; conversational</option>
+            <option value="authoritative and factual">Authoritative &amp; factual</option>
+            <option value="suspenseful and mysterious">Suspenseful &amp; mysterious</option>
+            <option value="upbeat and energetic">Upbeat &amp; energetic</option>
+            <option value="calm and reflective">Calm &amp; reflective</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="script-length">Length</label>
+          <select id="script-length">
+            <option value="short">Short (~150 words)</option>
+            <option value="medium" selected>Medium (~400 words)</option>
+            <option value="long">Long (~800 words)</option>
+            <option value="xlong">Extra long (~1500 words)</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="script-audience">Audience</label>
+          <input id="script-audience" type="text" placeholder="e.g. history enthusiasts, general viewers" />
+        </div>
+      </section>
+
+      <div class="input-header">
+        <label for="script-topic">Topic / brief</label>
+        <select id="script-template-select" title="Saved prompt templates">
+          <option value="">Prompt templates…</option>
+        </select>
+      </div>
+      <textarea id="script-topic" rows="3" placeholder="What should the script be about? e.g. 'A day in the life of a medieval blacksmith' — add any beats, facts, or angles you want covered…"></textarea>
+
+      <label class="ssml-toggle" title="Add hooks, pattern interrupts, and re-engagement beats to hold viewer attention">
+        <input type="checkbox" id="script-retention" checked /> <span>Optimize for retention (hooks &amp; pacing)</span>
+      </label>
+
+      <section class="actions">
+        <button id="script-generate" class="btn primary" type="button">
+          <span class="btn-label">Generate script</span>
+          <span class="spinner" hidden></span>
+        </button>
+        <button id="script-save-template" class="btn ghost" type="button" title="Save the current type/tone/length/audience/topic as a reusable template">Save as template</button>
+      </section>
+
+      <div id="script-status" class="status" hidden></div>
+
+      <section id="script-result" class="script-result" hidden>
+        <textarea id="script-output" rows="14" spellcheck="false"></textarea>
+        <div class="script-result-actions">
+          <button id="script-use" class="btn primary small" type="button" title="Load this script into the voice studio above">Use in voice studio ↑</button>
+          <button id="script-copy" class="btn ghost small" type="button">Copy</button>
+          <button id="script-download" class="btn ghost small" type="button">Download .txt</button>
+          <button id="script-regenerate" class="btn ghost small" type="button">Regenerate</button>
+          <span id="script-wordcount" class="field-note"></span>
+        </div>
+      </section>
+    </section>
+
+    <!-- Image generator (Puter txt2img) -->
     <section id="image-card" class="card image-card" hidden>
       <div class="input-header">
         <label for="image-prompt">Image generator</label>
-        <span class="badge premium">Gemini</span>
+        <span class="badge premium">Puter</span>
       </div>
       <textarea
         id="image-prompt"
@@ -223,7 +307,7 @@
       </div>
     </section>
 
-    <!-- AI Storyboard (revealed when GEMINI_API_KEY is configured) -->
+    <!-- AI Storyboard (Puter chat + txt2img) -->
     <section id="storyboard-card" class="card" hidden>
       <div class="input-header">
         <label>AI Storyboard</label>
@@ -232,10 +316,22 @@
       <p class="field-note">
         Upload subtitles (.srt / .vtt / timestamped .txt) plus optional script, visual-style,
         character-reference and instruction files. The AI reads the whole story, builds character
-        and location profiles, then generates one still image per scene — no prompt writing needed.
+        and location profiles, then generates one asset per scene — still image, video clip (Puter
+        txt2vid), or a mix — no prompt writing needed.
       </p>
       <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt" />
       <div id="sb-filelist" class="sb-filelist"></div>
+
+      <section class="controls">
+        <div class="control">
+          <label for="sb-asset-mode">Scene assets</label>
+          <select id="sb-asset-mode" title="Generate still images, video clips (Puter txt2vid), or a mix">
+            <option value="image" selected>Still images</option>
+            <option value="video">Video clips</option>
+            <option value="mixed">Mixed (per-scene)</option>
+          </select>
+        </div>
+      </section>
 
       <div class="actions">
         <button id="sb-analyze" class="btn primary">
@@ -412,13 +508,82 @@
       </div>
     </section>
 
+    <!-- AI Coding Agent -->
+    <section id="agent-card" class="card agent-card" hidden>
+      <div class="input-header">
+        <label>AI Coding Agent</label>
+        <span class="badge elite">⚡ Puter</span>
+      </div>
+      <p class="field-note">A coding assistant powered by Puter. Generate, edit, analyze and debug code. Add files as context so it understands your project.</p>
+
+      <section class="controls agent-controls">
+        <div class="control">
+          <label for="agent-model">Model</label>
+          <select id="agent-model">
+            <option value="claude-sonnet-4">Claude Sonnet 4</option>
+            <option value="claude-opus-4">Claude Opus 4</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="gpt-4.1">GPT-4.1</option>
+            <option value="deepseek-chat">DeepSeek</option>
+            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="agent-mode">Mode</label>
+          <select id="agent-mode">
+            <option value="chat">Chat</option>
+            <option value="task">Task (step-by-step plan)</option>
+          </select>
+        </div>
+        <div class="control agent-context-control">
+          <label>Context files <span id="agent-context-count" class="field-note"></span></label>
+          <div class="agent-context-actions">
+            <button id="agent-add-context" class="btn ghost small" type="button">+ Add file</button>
+            <button id="agent-clear-context" class="btn ghost small" type="button">Clear</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="agent-context-list" class="agent-context-list"></div>
+
+      <div id="agent-messages" class="agent-messages" aria-live="polite"></div>
+
+      <div id="agent-status" class="status" hidden></div>
+
+      <section class="agent-input-row">
+        <textarea id="agent-input" rows="3" placeholder="Ask the agent to write, explain, or debug code… (Ctrl/Cmd+Enter to send)"></textarea>
+        <div class="agent-input-actions">
+          <button id="agent-send" class="btn primary">
+            <span class="btn-label">Send</span>
+            <span class="spinner" hidden></span>
+          </button>
+          <button id="agent-new" class="btn ghost small" type="button" title="Start a new conversation">New chat</button>
+          <button id="agent-export" class="btn ghost small" type="button" title="Download the conversation as Markdown">Export</button>
+        </div>
+      </section>
+    </section>
+
     <footer class="footer">
-      <p>
-        Uses the
-        <a href="https://cloud.google.com/text-to-speech" target="_blank" rel="noopener">Google Cloud Text-to-Speech API</a>.
-        Configure credentials on the server — see the README.
-      </p>
+      <p>Serverless AI content-production studio — voice, images, video and scripts powered by <a href="https://puter.com" target="_blank" rel="noopener">Puter</a> + ElevenLabs. No API keys required.</p>
     </footer>
+  </div>
+
+  <!-- Add-context dialog -->
+  <div id="agent-context-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Add context file">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>Add a context file</h2>
+        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <label for="agent-ctx-name">File name / path</label>
+      <input id="agent-ctx-name" type="text" placeholder="e.g. src/app.js" />
+      <label for="agent-ctx-body">File contents</label>
+      <textarea id="agent-ctx-body" rows="10" spellcheck="false" placeholder="Paste the file contents here…"></textarea>
+      <div class="actions">
+        <button id="agent-ctx-save" class="btn primary" type="button">Add to context</button>
+      </div>
+    </div>
   </div>
 
   <!-- Voice browser -->
@@ -429,19 +594,23 @@
         <h2>Choose a voice</h2>
         <button class="modal-close" type="button" data-close aria-label="Close">×</button>
       </div>
-      <input id="voice-search" class="voice-search" type="search" placeholder="Search by name, style, or voice ID…" />
+      <input id="voice-search" class="voice-search" type="search" placeholder="Search by name, accent, style, or voice ID…" />
       <div class="filter-rows">
         <div class="chip-row" id="tier-filters">
           <button class="chip active" data-tier="all" type="button">All tiers</button>
           <button class="chip" data-tier="elite" type="button">⭐ Elite</button>
           <button class="chip" data-tier="premium" type="button">Premium</button>
-          <button class="chip" data-tier="standard" type="button">Standard</button>
-          <button class="chip" data-tier="experimental" type="button">Experimental</button>
+          <button class="chip" data-tier="standard" type="button">Character</button>
         </div>
         <div class="chip-row" id="gender-filters">
           <button class="chip active" data-gender="all" type="button">Any gender</button>
           <button class="chip" data-gender="FEMALE" type="button">Female</button>
           <button class="chip" data-gender="MALE" type="button">Male</button>
+          <button class="chip" data-gender="NEUTRAL" type="button">Neutral</button>
+        </div>
+        <div class="chip-row" id="style-filters">
+          <button class="chip active" data-style="all" type="button">All styles</button>
+          <!-- style chips injected from ELEVEN_STYLES -->
         </div>
       </div>
       <div id="voice-list" class="voice-list"></div>
@@ -513,13 +682,16 @@
   </div>
 
   <script src="ai-provider.js"></script>
+  <script src="eleven-voices.js"></script>
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
   <script src="app.js"></script>
+  <script src="script.js"></script>
   <script src="images.js"></script>
   <script src="storyboard.js"></script>
   <script src="editor.js"></script>
   <script src="youtube.js"></script>
   <script src="projects.js"></script>
+  <script src="agent.js"></script>
 </body>
 </html>

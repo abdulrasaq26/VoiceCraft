@@ -20,7 +20,27 @@
   const bibleEl = $('sb-bible');
   const exportsEl = $('sb-exports');
   const scenesEl = $('sb-scenes');
+  const assetModeEl = $('sb-asset-mode');
   const titleInput = $('title-input');
+
+  // Project-level asset mode: 'image' | 'video' | 'mixed'. In mixed mode each
+  // scene carries its own assetType (default 'image', togglable per scene).
+  let assetMode = 'image';
+
+  function sceneAssetType(scene) {
+    if (assetMode === 'video') return 'video';
+    if (assetMode === 'image') return 'image';
+    return scene.assetType === 'video' ? 'video' : 'image'; // mixed
+  }
+  function isVideoBlob(blob) {
+    return Boolean(blob && blob.type && blob.type.startsWith('video/'));
+  }
+  function videoExt(blob) {
+    const t = (blob && blob.type) || '';
+    if (t.includes('mp4')) return 'mp4';
+    if (t.includes('webm')) return 'webm';
+    return 'mp4';
+  }
 
   const KINDS = ['subtitles', 'script', 'style', 'characters', 'instructions'];
   const KIND_LABELS = {
@@ -315,12 +335,17 @@
     runImageQueue();
   }
 
-  async function generateSceneImage(scene) {
-    // Routes to Gemini (/api/image) or Qwen (Puter txt2img) per the provider.
+  async function generateSceneAsset(scene) {
+    if (sceneAssetType(scene) === 'video') {
+      // Puter txt2vid. Video clips are short (a few seconds) and slower than
+      // images; the queue throttle and progress ETA account for that.
+      return window.BlvckAI.generateVideo(scene.prompt, { seconds: 5, size: '1280x720' });
+    }
     return window.BlvckAI.generateImage(scene.prompt, ASPECT);
   }
 
-  const THROTTLE_MS = 600; // gentle pacing to ease per-minute rate limits
+  // Video generation is far slower than images; pace the queue accordingly.
+  const THROTTLE_MS = 600;
 
   async function runImageQueue() {
     if (running) return;
@@ -341,8 +366,8 @@
       renderScenes();
       const t0 = performance.now();
       try {
-        const blob = await generateSceneImage(scene);
-        storeImage(scene.index, blob);
+        const blob = await generateSceneAsset(scene);
+        storeAsset(scene.index, blob);
         scene.status = 'done';
         durations.push(performance.now() - t0);
       } catch (err) {
@@ -368,12 +393,13 @@
     running = false;
     updateControls();
     updateProgress();
+    renderScenes(); // re-render so run-gated controls (mixed toggles) reappear
     const done = scenes.filter((s) => s.status === 'done').length;
     const remaining = scenes.filter((s) => s.status !== 'done').length;
     if (quotaHit) {
       showStatus(
-        `Image quota reached — Google returned "quota exceeded". ${done} of ${scenes.length} scenes generated. ` +
-          'Enable billing on your Gemini API key, or wait for the free-tier quota to reset, then click “Continue”.'
+        `Generation limit reached. ${done} of ${scenes.length} scenes generated. ` +
+          'Wait a moment for the rate limit to clear, then click “Continue”.'
       );
     } else if (cancelRequested) {
       showStatus('Cancelled. Completed scenes are saved.', 'info');
@@ -384,11 +410,15 @@
     }
   }
 
-  function storeImage(index, blob) {
+  function storeAsset(index, blob) {
     memBlobs.set(index, blob);
     if (urls.has(index)) URL.revokeObjectURL(urls.get(index));
     urls.set(index, URL.createObjectURL(blob));
     idbPut(String(index), blob);
+    // Remember what kind of asset this scene ended up with, so the render
+    // path and downloads work correctly after a reload.
+    const scene = scenes.find((s) => s.index === index);
+    if (scene) scene.assetType = isVideoBlob(blob) ? 'video' : 'image';
   }
 
   async function regenerateScene(scene) {
@@ -399,8 +429,8 @@
     scene.status = 'generating';
     renderScenes();
     try {
-      const blob = await generateSceneImage(scene);
-      storeImage(scene.index, blob);
+      const blob = await generateSceneAsset(scene);
+      storeAsset(scene.index, blob);
       scene.status = 'done';
       scene.error = null;
     } catch (err) {
@@ -473,17 +503,34 @@
       row.className = 'sb-scene' + (scene.status === 'generating' ? ' is-generating' : '') + (scene.status === 'error' ? ' is-error' : '');
 
       const url = urls.get(scene.index);
+      const isVideo = sceneAssetType(scene) === 'video';
       let thumb;
       if (url && scene.status === 'done') {
-        thumb = document.createElement('img');
-        thumb.className = 'sb-thumb';
-        thumb.src = url;
-        thumb.alt = `Scene ${scene.index}`;
+        if (isVideo) {
+          thumb = document.createElement('video');
+          thumb.className = 'sb-thumb sb-thumb-video';
+          thumb.src = url;
+          thumb.muted = true;
+          thumb.loop = true;
+          thumb.playsInline = true;
+          thumb.controls = true;
+          thumb.preload = 'metadata';
+        } else {
+          thumb = document.createElement('img');
+          thumb.className = 'sb-thumb';
+          thumb.src = url;
+          thumb.alt = `Scene ${scene.index}`;
+        }
       } else {
         thumb = document.createElement('div');
         thumb.className = 'sb-thumb-placeholder';
+        const noun = isVideo ? 'video' : 'image';
         thumb.textContent =
-          scene.status === 'generating' ? 'Generating…' : scene.status === 'error' ? 'Failed' : 'Queued';
+          scene.status === 'generating'
+            ? `Generating ${noun}…`
+            : scene.status === 'error'
+              ? 'Failed'
+              : `Queued (${noun})`;
       }
 
       const body = document.createElement('div');
@@ -516,10 +563,28 @@
       regen.textContent = scene.status === 'error' ? 'Retry' : 'Regenerate';
       regen.addEventListener('click', () => regenerateScene(scene));
       actions.appendChild(regen);
+
+      // In mixed mode, let each scene switch between image and video. Changing
+      // the type then Regenerate picks up the new asset kind.
+      if (assetMode === 'mixed') {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.textContent = isVideo ? '→ Make image' : '→ Make video';
+        toggle.title = 'Switch this scene’s asset type, then Regenerate';
+        toggle.disabled = running;
+        toggle.addEventListener('click', () => {
+          scene.assetType = isVideo ? 'image' : 'video';
+          saveProject();
+          renderScenes();
+        });
+        actions.appendChild(toggle);
+      }
+
       if (scene.status === 'done' && url) {
+        const ext = isVideo ? videoExt(memBlobs.get(scene.index)) : 'png';
         const dl = document.createElement('a');
         dl.href = url;
-        dl.download = `${project()} Scene ${String(scene.index).padStart(2, '0')}.png`;
+        dl.download = `${project()} Scene ${String(scene.index).padStart(2, '0')}.${ext}`;
         dl.textContent = 'Download';
         actions.appendChild(dl);
       }
@@ -545,7 +610,7 @@
     try {
       localStorage.setItem(
         LS_KEY,
-        JSON.stringify({ project: project(), cues, bible, scenes: scenes.map(({ ...s }) => s) })
+        JSON.stringify({ project: project(), cues, bible, assetMode, scenes: scenes.map(({ ...s }) => s) })
       );
     } catch {
       /* quota — non-fatal */
@@ -564,6 +629,10 @@
     if (!saved || !saved.scenes || !saved.scenes.length) return;
     cues = saved.cues || [];
     bible = saved.bible || null;
+    if (saved.assetMode && assetModeEl) {
+      assetMode = saved.assetMode;
+      assetModeEl.value = assetMode;
+    }
     scenes = saved.scenes.map((s) => (s.status === 'generating' ? { ...s, status: 'pending' } : s));
     for (const s of scenes) {
       if (s.status === 'done') {
@@ -655,8 +724,9 @@
     const filesOut = [];
     for (const s of doneScenes) {
       const blob = memBlobs.get(s.index);
+      const ext = isVideoBlob(blob) ? videoExt(blob) : 'png';
       filesOut.push({
-        name: `${project()} Scene ${String(s.index).padStart(2, '0')}.png`,
+        name: `${project()} Scene ${String(s.index).padStart(2, '0')}.${ext}`,
         data: new Uint8Array(await blob.arrayBuffer())
       });
     }
@@ -666,9 +736,12 @@
   }
 
   async function downloadPdf() {
-    const doneScenes = scenes.filter((s) => s.status === 'done' && memBlobs.has(s.index));
+    // The PDF is an image contact sheet; video scenes have no still to embed.
+    const doneScenes = scenes.filter(
+      (s) => s.status === 'done' && memBlobs.has(s.index) && !isVideoBlob(memBlobs.get(s.index))
+    );
     if (!doneScenes.length) {
-      showStatus('No generated images to export yet.');
+      showStatus('No generated still images to export as a PDF yet.');
       return;
     }
     showStatus('Building storyboard PDF…', 'info');
@@ -719,6 +792,13 @@
 
   analyzeBtn.addEventListener('click', analyzeAndGenerate);
   clearBtn.addEventListener('click', clearProject);
+  if (assetModeEl) {
+    assetModeEl.addEventListener('change', () => {
+      assetMode = assetModeEl.value;
+      saveProject();
+      renderScenes();
+    });
+  }
   pauseBtn.addEventListener('click', () => {
     paused = true;
     updateControls();
@@ -748,12 +828,8 @@
 
   (async () => {
     try {
-      const res = await fetch('/api/health');
-      const body = await res.json();
-      if (body.storyboardConfigured || window.BlvckAI.provider() === 'puter') {
-        card.hidden = false;
-        restoreProject();
-      }
+      card.hidden = false;
+      restoreProject();
     } catch {
       /* leave hidden */
     }
