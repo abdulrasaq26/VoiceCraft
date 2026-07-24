@@ -319,10 +319,25 @@
         and location profiles, then generates one asset per scene — still image, video clip (Puter
         txt2vid), or a mix — no prompt writing needed.
       </p>
-      <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt" />
+      <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt,.md" title="Subtitles, script, story bible, character sheets, style guides, worldbuilding, scene instructions" />
       <div id="sb-filelist" class="sb-filelist"></div>
 
-      <section class="controls">
+      <section class="controls sb-controls">
+        <div class="control">
+          <label for="sb-style">Visual style</label>
+          <select id="sb-style" title="The look of every generated image — choose one or let the AI infer it from your content"></select>
+        </div>
+        <div class="control">
+          <label for="sb-preset">Style preset</label>
+          <select id="sb-preset" title="Reusable visual presets"></select>
+        </div>
+        <div class="control">
+          <label for="sb-mode">Mode</label>
+          <select id="sb-mode" title="How the storyboard runs">
+            <option value="auto" selected>Auto (analyze → generate)</option>
+            <option value="review">Prompt review (approve before images)</option>
+          </select>
+        </div>
         <div class="control">
           <label for="sb-asset-mode">Scene assets</label>
           <select id="sb-asset-mode" title="Generate still images, video clips (Puter txt2vid), or a mix">
@@ -331,13 +346,28 @@
             <option value="mixed">Mixed (per-scene)</option>
           </select>
         </div>
+        <div class="control">
+          <label for="sb-density">Scene pacing</label>
+          <select id="sb-density" title="How many images to make — merges subtitle lines into story beats">
+            <option value="20">Sparse · ~1 / 20s</option>
+            <option value="15" selected>Balanced · ~1 / 15s</option>
+            <option value="10">Dense · ~1 / 10s</option>
+            <option value="0">One per subtitle line</option>
+          </select>
+        </div>
       </section>
+      <div class="sb-preset-tools">
+        <input id="sb-style-notes" type="text" placeholder="Extra style notes (e.g. warm lighting, muted palette)…" />
+        <button id="sb-preset-save" class="btn ghost small" type="button">Save preset</button>
+      </div>
 
       <div class="actions">
         <button id="sb-analyze" class="btn primary">
           <span class="btn-label">Analyze &amp; generate</span>
           <span class="spinner" hidden></span>
         </button>
+        <button id="sb-generate-all" class="btn primary" type="button" hidden>Generate all images</button>
+        <button id="sb-raw" class="btn ghost" type="button" hidden>View raw response</button>
         <button id="sb-clear" class="btn ghost" type="button">Clear</button>
       </div>
 

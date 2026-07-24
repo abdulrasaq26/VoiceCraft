@@ -320,18 +320,57 @@
     },
 
     // Run a JSON-producing generation entirely in the browser: build the
-    // prompt with BlvckPrompts, run the chat model via Puter, parse the
-    // output with BlvckPrompts. No backend involved.
-    async generateJSON(endpoint, payload) {
+    // prompt with BlvckPrompts, run the chat model via Puter, parse (with
+    // repair) via BlvckPrompts. If the model returns prose/markdown/invalid
+    // JSON, retry up to 3 times explicitly asking for JSON only. The raw
+    // response and attempt count are surfaced on failure (for "View raw").
+    // opts: { attempts?, onAttempt? }
+    async generateJSON(endpoint, payload, opts = {}) {
       if (!window.BlvckPrompts) throw new Error('Prompt module not loaded (prompts.js).');
       const prompt = window.BlvckPrompts.build(endpoint, payload);
-      const messages = [];
-      if (prompt.system) messages.push({ role: 'system', content: prompt.system });
-      messages.push({ role: 'user', content: prompt.user });
-      const rawText = await this._chatResilient(messages);
-      if (!rawText) throw new Error('The chat model returned an empty response.');
-      return window.BlvckPrompts.parse(endpoint, payload, rawText);
+      const base = [];
+      if (prompt.system) base.push({ role: 'system', content: prompt.system });
+      base.push({ role: 'user', content: prompt.user });
+
+      const maxAttempts = Math.max(1, opts.attempts || 3);
+      let messages = base;
+      let lastRaw = '';
+      let lastErr = null;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (opts.onAttempt) { try { opts.onAttempt(attempt, maxAttempts); } catch { /* ignore */ } }
+        let rawText = '';
+        try {
+          rawText = await this._chatResilient(messages);
+        } catch (e) {
+          lastErr = e; // model/transport error — not a JSON problem, stop.
+          break;
+        }
+        lastRaw = rawText || '';
+        this._lastRaw = lastRaw;
+        if (!rawText) {
+          lastErr = new Error('Empty response from the model.');
+        } else {
+          try {
+            return window.BlvckPrompts.parse(endpoint, payload, rawText);
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+        // Retry: show the model its output and demand strict JSON.
+        messages = base.concat([
+          { role: 'assistant', content: rawText || '(empty)' },
+          { role: 'user', content: 'Your previous reply was not valid JSON. Reply with ONLY the JSON object — no explanations, no markdown code fences, no comments, no trailing commas. It must start with { and end with }.' }
+        ]);
+      }
+
+      const err = new Error(`${(lastErr && lastErr.message) || 'Invalid response'} (after ${maxAttempts} attempt${maxAttempts > 1 ? 's' : ''}).`);
+      err.raw = (lastErr && lastErr.raw) || lastRaw;
+      err.category = classifyError(lastErr);
+      throw err;
     },
+
+    lastRawResponse() { return this._lastRaw || ''; },
 
     // Generic chat completion returning plain text (script generator, agent).
     async chat(messages, opts = {}) {

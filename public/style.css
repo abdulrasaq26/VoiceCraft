@@ -1991,3 +1991,43 @@ input[type="range"]:disabled {
 }
 .diag-verdict.good { background: rgba(53, 194, 107, 0.12); color: #35c26b; }
 .diag-verdict.bad { background: rgba(229, 72, 77, 0.12); color: #ff6b6f; }
+
+/* --- Storyboard intelligence controls --- */
+.sb-controls {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.sb-preset-tools {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: -0.4rem;
+}
+.sb-preset-tools input {
+  flex: 1;
+  min-width: 0;
+}
+.sb-visualstyle {
+  color: var(--accent);
+}
+.sb-scene-insight {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  margin: 0.15rem 0;
+}
+textarea.sb-scene-prompt {
+  width: 100%;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  padding: 0.45rem 0.55rem;
+  min-height: 2.6rem;
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  resize: vertical;
+}
+textarea.sb-scene-prompt:focus {
+  color: var(--text);
+}

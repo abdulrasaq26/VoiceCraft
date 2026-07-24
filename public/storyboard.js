@@ -21,7 +21,33 @@
   const exportsEl = $('sb-exports');
   const scenesEl = $('sb-scenes');
   const assetModeEl = $('sb-asset-mode');
+  const styleEl = $('sb-style');
+  const presetEl = $('sb-preset');
+  const modeEl = $('sb-mode');
+  const densityEl = $('sb-density');
+  const styleNotesEl = $('sb-style-notes');
+  const presetSaveBtn = $('sb-preset-save');
+  const generateAllBtn = $('sb-generate-all');
+  const rawBtn = $('sb-raw');
   const titleInput = $('title-input');
+
+  const STYLE_KEY = 'blvck-tts:sb-style';
+  const PRESETS_KEY = 'blvck-tts:sb-presets';
+  let lastRaw = ''; // raw model response from the last analyze (for "View raw")
+
+  // Built-in visual presets: a style id + extra notes, reusable across projects.
+  const BUILTIN_PRESETS = [
+    { name: 'Born Back Then (historical)', style: 'historical-illustration', notes: 'Warm atmospheric lighting, realistic period architecture, consistent color grading, faceless framing.' },
+    { name: 'Modern Documentary', style: 'documentary', notes: 'Photoreal, natural lighting, candid documentary framing.' },
+    { name: 'Business Explainer', style: 'modern-explainer', notes: 'Clean flat vector shapes, bright friendly colors, generous negative space.' },
+    { name: 'Finance Explainer', style: 'infographic', notes: 'Charts, icons, bold flat colors, clear visual hierarchy.' },
+    { name: 'Tech Explainer', style: 'tech-ui', notes: 'Sleek UI-inspired shapes, cool gradients, modern product-design look.' },
+    { name: 'Self-help / Lifestyle', style: 'lifestyle', notes: 'Bright natural light, relatable modern settings, aspirational but authentic.' },
+    { name: 'Animated Explainer', style: '2d-animation', notes: 'Clean vector style, bright colors, simple iconography.' },
+    { name: 'Cinematic Realism', style: 'cinematic', notes: 'Dramatic lighting, filmic grade, shallow depth of field.' },
+    { name: 'Anime Storytelling', style: 'anime', notes: 'Dramatic anime key-art, expressive characters, detailed backgrounds.' },
+    { name: "Children's Educational", style: 'childrens-book', notes: 'Friendly rounded shapes, cheerful colors, simple clear scenes.' }
+  ];
 
   // Project-level asset mode: 'image' | 'video' | 'mixed'. In mixed mode each
   // scene carries its own assetType (default 'image', togglable per scene).
@@ -251,18 +277,86 @@
     });
   }
 
+  // Parse "HH:MM:SS" (from a "HH:MM:SS - HH:MM:SS" range) to seconds.
+  function tsToSeconds(ts) {
+    const m = String(ts || '').match(/(\d{1,2}):(\d{2}):(\d{2})/);
+    if (!m) return null;
+    return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+  }
+
+  // Merge adjacent subtitle cues into narrative story beats so we generate one
+  // image per beat (~targetSec of runtime) instead of one per micro-caption.
+  // targetSec <= 0 means "no merging" (one image per subtitle line).
+  function mergeCuesToBeats(rawCues, targetSec) {
+    if (!targetSec || targetSec <= 0 || rawCues.length <= 1) {
+      return rawCues.map((c, i) => ({ ...c, index: i + 1 }));
+    }
+    const WORD_BUDGET = Math.round(targetSec * 2.6); // ~2.6 spoken words/sec
+    const MAX_BEATS = 80;
+    const beats = [];
+    let cur = null;
+    for (const c of rawCues) {
+      const start = tsToSeconds((c.timestamp || '').split('-')[0]);
+      const end = tsToSeconds((c.timestamp || '').split('-')[1]) ?? start;
+      if (!cur) {
+        cur = { startS: start, endS: end, startTs: c.timestamp, endTs: c.timestamp, words: c.text.split(/\s+/).length, text: c.text };
+        continue;
+      }
+      const spanBySec = start != null && cur.startS != null ? (end ?? start) - cur.startS : null;
+      const overBySec = spanBySec != null && spanBySec >= targetSec;
+      const overByWords = spanBySec == null && cur.words >= WORD_BUDGET;
+      if (overBySec || overByWords) {
+        beats.push(cur);
+        cur = { startS: start, endS: end, startTs: c.timestamp, endTs: c.timestamp, words: c.text.split(/\s+/).length, text: c.text };
+      } else {
+        cur.text += ' ' + c.text;
+        cur.words += c.text.split(/\s+/).length;
+        cur.endTs = c.timestamp;
+        cur.endS = end ?? start;
+      }
+    }
+    if (cur) beats.push(cur);
+    // If we blew past a sane cap, coalesce further.
+    let out = beats;
+    if (out.length > MAX_BEATS) {
+      const factor = Math.ceil(out.length / MAX_BEATS);
+      const coalesced = [];
+      for (let i = 0; i < out.length; i += factor) {
+        const group = out.slice(i, i + factor);
+        coalesced.push({
+          startTs: group[0].startTs,
+          endTs: group[group.length - 1].endTs,
+          text: group.map((g) => g.text).join(' ')
+        });
+      }
+      out = coalesced;
+    }
+    return out.map((b, i) => {
+      const startLbl = (b.startTs || '').split('-')[0].trim();
+      const endLbl = (b.endTs || '').split('-').pop().trim();
+      const timestamp = startLbl && endLbl ? `${startLbl} - ${endLbl}` : (b.startTs || '');
+      return { index: i + 1, timestamp, text: b.text.trim() };
+    });
+  }
+
   function buildContext() {
     const ctx = {};
     let subs = files.find((f) => f.kind === 'subtitles');
+    let rawCues = [];
     if (subs) {
-      cues = parseSubtitles(subs.content);
-      if (!cues.length) cues = cuesFromScript(subs.content); // txt without timecodes
-      ctx.subtitles = cues.map((c) => `#${c.index} [${c.timestamp}] ${c.text}`).join('\n');
+      rawCues = parseSubtitles(subs.content);
+      if (!rawCues.length) rawCues = cuesFromScript(subs.content); // txt without timecodes
     }
     const script = files.find((f) => f.kind === 'script');
     if (script) {
       ctx.script = script.content;
-      if (!cues.length) cues = cuesFromScript(script.content);
+      if (!rawCues.length) rawCues = cuesFromScript(script.content);
+    }
+    // Merge into story beats per the pacing control.
+    const targetSec = densityEl ? Number(densityEl.value) : 15;
+    cues = mergeCuesToBeats(rawCues, targetSec);
+    if (cues.length) {
+      ctx.subtitles = cues.map((c) => `#${c.index} [${c.timestamp}] ${c.text}`).join('\n');
     }
     const style = files.find((f) => f.kind === 'style');
     if (style) ctx.style = style.content;
@@ -270,6 +364,9 @@
     if (chars) ctx.characters = chars.content;
     const instr = files.find((f) => f.kind === 'instructions');
     if (instr) ctx.instructions = instr.content;
+    // Visual style direction from the UI.
+    ctx.styleChoice = styleEl ? styleEl.value : 'auto';
+    ctx.styleNotes = styleNotesEl ? styleNotesEl.value.trim() : '';
     return ctx;
   }
 
@@ -300,10 +397,12 @@
       return;
     }
     clearStatus();
-    setAnalyzing(true, 'Reading the story…');
+    if (rawBtn) rawBtn.hidden = true;
+    setAnalyzing(true, 'Analyzing the story & inferring visual style…');
+    const onAttempt = (n, max) => { if (n > 1) setAnalyzing(true, `Reformatting response (attempt ${n} of ${max})…`); };
     try {
-      // 1. Story bible
-      const bibleRes = await window.BlvckAI.generateJSON('/api/storyboard/bible', { context: ctx });
+      // 1. Project profile (story + inferred/selected visual style)
+      const bibleRes = await window.BlvckAI.generateJSON('/api/storyboard/bible', { context: ctx }, { onAttempt });
       bible = bibleRes.bible;
       renderBible();
 
@@ -319,20 +418,28 @@
           style: ctx.style,
           instructions: ctx.instructions,
           priorSummaries: prior
-        });
+        }, { onAttempt });
         (res.scenes || []).forEach((s) => scenes.push({ ...s, status: 'pending', error: null }));
         renderScenes();
       }
       saveProject();
     } catch (err) {
-      showStatus(err.message);
+      lastRaw = (err && err.raw) || (window.BlvckAI.lastRawResponse && window.BlvckAI.lastRawResponse()) || '';
+      if (rawBtn) rawBtn.hidden = !lastRaw;
+      const cat = err && err.category ? ` [${err.category}]` : '';
+      showStatus(`${err.message}${cat}${lastRaw ? ' — click “View raw response” to inspect.' : ''}`);
       setAnalyzing(false);
       return;
     }
     setAnalyzing(false);
     exportsEl.hidden = false;
-    // 3. Generate images
-    runImageQueue();
+    // 3. Generate assets — unless the user wants to review/edit prompts first.
+    if (modeEl && modeEl.value === 'review') {
+      if (generateAllBtn) generateAllBtn.hidden = false;
+      showStatus(`${scenes.length} scene prompt(s) ready. Review or edit them, then click “Generate all images”.`, 'info');
+    } else {
+      runImageQueue();
+    }
   }
 
   async function generateSceneAsset(scene) {
@@ -485,9 +592,20 @@
     bibleEl.hidden = false;
     const chars = bible.characters.map((c) => `<div class="sb-bible-item"><strong>${esc(c.name)}:</strong> ${esc(c.description)}</div>`).join('');
     const locs = bible.locations.map((l) => `<div class="sb-bible-item"><strong>${esc(l.name)}:</strong> ${esc(l.description)}</div>`).join('');
+    const vs = bible.visualStyle || {};
+    const profileBits = [
+      bible.genre && `<strong>Genre:</strong> ${esc(bible.genre)}`,
+      bible.period && `<strong>Era:</strong> ${esc(bible.period)}`,
+      bible.tone && `<strong>Tone:</strong> ${esc(bible.tone)}`,
+      bible.audience && `<strong>Audience:</strong> ${esc(bible.audience)}`,
+      bible.format && `<strong>Format:</strong> ${esc(bible.format)}`
+    ].filter(Boolean).join(' · ');
     bibleEl.innerHTML =
-      `<h3>Story bible — ${esc(bible.title)}</h3>` +
-      `<div class="sb-bible-item"><strong>Period:</strong> ${esc(bible.period)} · <strong>Tone:</strong> ${esc(bible.tone)}</div>` +
+      `<h3>Project profile — ${esc(bible.title)}</h3>` +
+      (profileBits ? `<div class="sb-bible-item">${profileBits}</div>` : '') +
+      (vs.name || vs.description
+        ? `<div class="sb-bible-item sb-visualstyle"><strong>🎨 Visual style:</strong> ${esc(vs.name)}${vs.description ? ` — ${esc(vs.description)}` : ''}</div>`
+        : '') +
       (chars ? `<h3 style="margin-top:.6rem">Characters</h3>${chars}` : '') +
       (locs ? `<h3 style="margin-top:.6rem">Locations</h3>${locs}` : '');
   }
@@ -550,11 +668,27 @@
       subtitle.className = 'sb-scene-subtitle';
       subtitle.textContent = scene.subtitle || scene.sceneSummary;
 
-      const prompt = document.createElement('div');
+      // Prompt transparency: show the detected action + visual goal, and let
+      // the user edit the actual image prompt before generating.
+      let insight = null;
+      if (scene.detectedAction || scene.visualGoal) {
+        insight = document.createElement('div');
+        insight.className = 'sb-scene-insight';
+        insight.innerHTML =
+          (scene.detectedAction ? `<span><strong>Action:</strong> ${esc(scene.detectedAction)}</span>` : '') +
+          (scene.visualGoal ? `<span><strong>Goal:</strong> ${esc(scene.visualGoal)}</span>` : '');
+      }
+
+      const prompt = document.createElement('textarea');
       prompt.className = 'sb-scene-prompt';
-      prompt.textContent = scene.prompt;
-      prompt.title = 'Click to expand';
-      prompt.addEventListener('click', () => prompt.classList.toggle('expanded'));
+      prompt.value = scene.prompt;
+      prompt.rows = 2;
+      prompt.spellcheck = false;
+      prompt.title = 'Edit the image prompt before generating';
+      prompt.addEventListener('change', () => {
+        scene.prompt = prompt.value.trim();
+        saveProject();
+      });
 
       const actions = document.createElement('div');
       actions.className = 'sb-scene-actions';
@@ -596,7 +730,9 @@
         actions.appendChild(err);
       }
 
-      body.append(head, subtitle, prompt, actions);
+      body.append(head, subtitle);
+      if (insight) body.appendChild(insight);
+      body.append(prompt, actions);
       row.append(thumb, body);
       scenesEl.appendChild(row);
     });
@@ -789,6 +925,99 @@
     renderFileList();
     clearStatus();
   });
+
+  // --- Visual style + presets --------------------------------------------
+
+  function customPresets() {
+    try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || '[]'); } catch { return []; }
+  }
+  function saveCustomPresets(list) {
+    try { localStorage.setItem(PRESETS_KEY, JSON.stringify(list)); } catch { /* quota */ }
+  }
+
+  function populateStyleSelect() {
+    if (!styleEl || !window.VISUAL_STYLES) return;
+    styleEl.innerHTML = '';
+    Object.entries(window.VISUAL_STYLES).forEach(([id, def]) => {
+      const o = document.createElement('option');
+      o.value = id;
+      o.textContent = def.label;
+      styleEl.appendChild(o);
+    });
+    const saved = localStorage.getItem(STYLE_KEY);
+    if (saved && window.VISUAL_STYLES[saved]) styleEl.value = saved;
+  }
+
+  function populatePresetSelect() {
+    if (!presetEl) return;
+    const prev = presetEl.value;
+    presetEl.innerHTML = '<option value="">Presets…</option>';
+    const add = (label, key) => {
+      const o = document.createElement('option');
+      o.value = key;
+      o.textContent = label;
+      presetEl.appendChild(o);
+    };
+    BUILTIN_PRESETS.forEach((p, i) => add(p.name, `builtin:${i}`));
+    customPresets().forEach((p, i) => add(`★ ${p.name}`, `custom:${i}`));
+    if ([...presetEl.options].some((o) => o.value === prev)) presetEl.value = prev;
+  }
+
+  function applyPreset(key) {
+    let preset = null;
+    if (key.startsWith('builtin:')) preset = BUILTIN_PRESETS[Number(key.slice(8))];
+    else if (key.startsWith('custom:')) preset = customPresets()[Number(key.slice(7))];
+    if (!preset) return;
+    if (styleEl && window.VISUAL_STYLES[preset.style]) {
+      styleEl.value = preset.style;
+      localStorage.setItem(STYLE_KEY, preset.style);
+    }
+    if (styleNotesEl) styleNotesEl.value = preset.notes || '';
+  }
+
+  if (styleEl) {
+    populateStyleSelect();
+    styleEl.addEventListener('change', () => localStorage.setItem(STYLE_KEY, styleEl.value));
+  }
+  if (presetEl) {
+    populatePresetSelect();
+    presetEl.addEventListener('change', () => { if (presetEl.value) applyPreset(presetEl.value); });
+  }
+  if (presetSaveBtn) {
+    presetSaveBtn.addEventListener('click', () => {
+      const name = window.prompt('Name this visual preset:');
+      if (!name) return;
+      const list = customPresets();
+      list.push({ name: name.trim().slice(0, 60), style: styleEl ? styleEl.value : 'auto', notes: styleNotesEl ? styleNotesEl.value.trim() : '' });
+      saveCustomPresets(list);
+      populatePresetSelect();
+      showStatus(`Preset “${name}” saved.`, 'info');
+    });
+  }
+  if (generateAllBtn) {
+    generateAllBtn.addEventListener('click', () => {
+      generateAllBtn.hidden = true;
+      clearStatus();
+      runImageQueue();
+    });
+  }
+  if (rawBtn) {
+    rawBtn.addEventListener('click', () => showRawResponse(lastRaw));
+  }
+
+  function showRawResponse(raw) {
+    const w = window.open('', '_blank');
+    if (w) {
+      w.document.title = 'Raw model response';
+      const pre = w.document.createElement('pre');
+      pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;font:13px monospace;padding:16px;';
+      pre.textContent = raw || '(empty)';
+      w.document.body.appendChild(pre);
+    } else {
+      // Popup blocked — fall back to a copy prompt.
+      window.prompt('Raw model response (copy):', raw || '(empty)');
+    }
+  }
 
   analyzeBtn.addEventListener('click', analyzeAndGenerate);
   clearBtn.addEventListener('click', clearProject);
