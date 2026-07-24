@@ -65,62 +65,73 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 - 🎬 **Puter txt2vid** available for future text-to-video scenes (Sora / Veo / Kling via Puter's routing)
 
 ### Infrastructure
-- 🕸️ **Serverless-friendly** — the thin Node/Express server hosts static files and owns the storyboard/SEO prompt scaffolding (single source of truth). Every model call runs in the browser via Puter
-- 🔒 **No API keys on the server** — nothing to leak, nothing to bill
-- 🐳 **Docker + Railway** ready (`Dockerfile`, `railway.json` included)
+- 🕸️ **Truly serverless** — a pure static site. All prompt scaffolding lives in the browser (`public/prompts.js`); every model call runs in the browser via Puter. No backend, no build step
+- 🔒 **Zero API keys, zero dependencies** — nothing to leak, nothing to bill, `npm install` pulls nothing
+- ☁️ **Deploy anywhere static** — Puter, GitHub Pages, Netlify, Vercel, Cloudflare Pages, S3 (`Dockerfile` + `railway.json` also included for container hosts)
 
 ## Quick start
 
 ```bash
-npm install
 npm start
-# → http://localhost:3000
+# → http://localhost:3000  (a tiny zero-dependency static server)
 ```
 
 The first time you use any AI feature, Puter will prompt you to sign in (free). Every subsequent call is metered against your Puter usage, not yours to bill.
 
-### Deploy
-Any static-friendly Node host works. `Dockerfile` and `railway.json` are wired up out of the box. The only environment variable you can set is `PORT`.
+## Deploy
+
+**Blvck-TTS is a pure static site.** Everything — speech, chat, images, video, and all prompt scaffolding — runs in the browser through Puter. There is no backend and there are no API keys, so you deploy by uploading the **`public/` folder** to any static host.
+
+### Puter (Dev Center)
+1. Open Puter → **Dev Center → Apps → Deploy**.
+2. Upload the **contents of the `public/` folder** (the folder that has `index.html` at its root) — **not** the repository root. Puter requires an `index.html` at the top level of what you upload; the repo root doesn't have one (it lives in `public/`), which is why uploading the whole project shows *"Please upload an 'index.html' file…"*.
+3. That's it — open the app URL and sign into Puter when prompted.
+
+### Other static hosts
+GitHub Pages, Netlify, Vercel, Cloudflare Pages, S3, etc. — set the publish/output directory to `public/`.
+
+### Local dev (optional)
+```bash
+npm start          # tiny zero-dependency static server → http://localhost:3000
+```
+`Dockerfile` and `railway.json` are included for container hosts; the only env var is `PORT`.
 
 ## Project structure
 
 ```
-lib/
-  storyboard.js      Story-bible + scene-prompt scaffolding (prompt-only)
-  youtube-seo.js     YouTube SEO prompt + response parser
-  script-writer.js   Script-generator prompt scaffolding
-public/
-  index.html         Single-page app shell
-  ai-provider.js     BlvckAI: Puter router (speak / chat / generateJSON / generateImage / generateVideo)
-  eleven-voices.js   Curated ElevenLabs voice catalog (48 voices + metadata)
-  app.js             Core TTS UI (voices, queue, subtitles, profiles, instruction presets)
-  script.js          AI Script Generator
-  agent.js           AI Coding Agent
-  storyboard.js      Storyboard pipeline UI (still / video / mixed)
-  editor.js          Auto-assemble + manual editor
-  youtube.js         Optimization Center
-  projects.js        Project dashboard + snapshots
-  images.js          Standalone image generator
-  zip.js / pdf.js    Dependency-free ZIP and PDF writers
-server.js            Static + prompt/parse endpoints (no external API keys)
+public/                (this whole folder is the deployable app)
+  index.html           Single-page app shell
+  prompts.js           BlvckPrompts: all LLM prompt build + parse (client-side, single source of truth)
+  ai-provider.js       BlvckAI: Puter router (speak / chat / generateJSON / generateImage / generateVideo)
+  eleven-voices.js     Curated ElevenLabs voice catalog (48 voices + metadata)
+  app.js               Core TTS UI (voices, queue, subtitles, profiles, instruction presets)
+  script.js            AI Script Generator
+  agent.js             AI Coding Agent
+  storyboard.js        Storyboard pipeline UI (still / video / mixed)
+  editor.js            Auto-assemble + manual editor
+  youtube.js           Optimization Center
+  projects.js          Project dashboard + snapshots
+  images.js            Standalone image generator
+  zip.js / pdf.js      Dependency-free ZIP and PDF writers
+server.js              Optional zero-dependency static server for local dev only
 ```
 
-## API
+## Architecture
 
-The server exposes only prompt-scaffolding endpoints. The browser fetches a prompt (`{promptOnly: true}` → `{prompt}`), runs the LLM through Puter, then posts the model's raw output back (`{rawText}`) for parsing and normalisation.
+There is no API to call. Each AI feature builds its prompt with `window.BlvckPrompts`, runs the model through `window.puter.ai.*` in the browser, and parses the result back with `BlvckPrompts` — all client-side:
 
-| Endpoint | Purpose |
+| Feature | Flow |
 |---|---|
-| `GET  /api/health` | `{ ok: true, provider: 'puter' }` |
-| `POST /api/storyboard/bible` | Build / parse story bible prompt |
-| `POST /api/storyboard/scenes` | Build / parse scene-prompt batch |
-| `POST /api/seo/generate` | Build / parse YouTube SEO package prompt |
-| `POST /api/script/generate` | Build script prompt / clean model output |
-
-No credentials required.
+| Speech | `BlvckAI.speak()` → `puter.ai.txt2speech` (ElevenLabs) |
+| Storyboard bible / scenes | `BlvckPrompts.build → puter.ai.chat → BlvckPrompts.parse` |
+| YouTube SEO | `BlvckPrompts.build → puter.ai.chat → BlvckPrompts.parse` |
+| Script generator | `BlvckPrompts.build → puter.ai.chat → BlvckPrompts.parse` |
+| Images / thumbnails | `BlvckAI.generateImage()` → `puter.ai.txt2img` |
+| Video scenes | `BlvckAI.generateVideo()` → `puter.ai.txt2vid` |
+| Coding agent | `BlvckAI.chat()` → `puter.ai.chat` |
 
 ## Notes
 
-- **Voice library**: ElevenLabs' Voice Library API is not exposed to Puter's free tier, so Blvck-TTS ships a hand-curated catalog of the most popular voice IDs. You can swap in your own IDs in `public/app.js` (`ELEVEN_VOICES`).
+- **Voice library**: ElevenLabs' Voice Library API is not exposed to Puter's free tier, so Blvck-TTS ships a hand-curated catalog of the most popular voice IDs. You can swap in your own IDs in `public/eleven-voices.js`.
 - **Character consistency**: honest caveat — image models don't do pixel-perfect character matching without reference conditioning. The story bible clamps textual descriptions across prompts, which is the best you can do without model-side reference support.
 - **In-browser video export**: 4K MP4 rendering is infeasible in-browser today. The editor exports WebM directly and produces a package ZIP (images + subtitles + EDL) that can be fed to a downstream 4K pipeline (e.g. Remotion, After Effects).

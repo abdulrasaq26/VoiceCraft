@@ -1,118 +1,77 @@
 'use strict';
 
-// Blvck-TTS server — Puter-first, serverless-in-spirit.
+// Blvck-TTS is a pure static site — every AI capability runs in the browser
+// through Puter (speech, chat, images, video) and all prompt scaffolding
+// lives in public/prompts.js. There is no backend logic and no API keys.
 //
-// The browser talks directly to Puter for speech (ElevenLabs), text (Claude,
-// GPT, Qwen, Llama, DeepSeek, …), images, and video. No third-party API keys
-// live on the server anymore.
-//
-// This tiny Express app exists only to:
-//   1. Serve the static frontend
-//   2. Own the source-of-truth prompts for storyboard + SEO, so the browser
-//      can ask for a prompt (`promptOnly:true`) and post the model's raw
-//      output back for parsing (`rawText`). Prompt engineering stays in one
-//      place; the LLM call itself runs in the browser via puter.ai.chat.
+// This tiny zero-dependency static file server exists ONLY as a convenience
+// for local development (`npm start`). To deploy, you don't need it at all:
+// upload the contents of the `public/` folder to any static host — Puter
+// (Dev Center → Deploy → upload the public/ folder), GitHub Pages, Netlify,
+// Vercel, Cloudflare Pages, S3, etc.
 
-const express = require('express');
+const http = require('http');
+const fs = require('fs');
 const path = require('path');
 
-const storyboard = require('./lib/storyboard');
-const seo = require('./lib/youtube-seo');
-const scriptWriter = require('./lib/script-writer');
-
-const app = express();
 const PORT = process.env.PORT || 3000;
+const ROOT = path.join(__dirname, 'public');
 
-app.use(express.json({ limit: '8mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
+  '.woff2': 'font/woff2'
+};
 
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, provider: 'puter' });
-});
+const server = http.createServer((req, res) => {
+  // Health check for uptime probes.
+  if (req.url === '/api/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, provider: 'puter', static: true }));
+    return;
+  }
 
-// Story bible prompt + parse. Body flags:
-//   { context, promptOnly: true }  → { prompt: { system, user } }
-//   { rawText }                    → { bible }
-app.post('/api/storyboard/bible', (req, res) => {
-  const { context = {}, promptOnly, rawText } = req.body || {};
-  if (promptOnly) {
-    if (!context.script && !context.subtitles) {
-      return res.status(400).json({ error: 'Provide subtitles or a script first.' });
+  // Resolve the request path safely inside ROOT (no directory traversal).
+  const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+  let filePath = path.join(ROOT, urlPath);
+  if (!filePath.startsWith(ROOT)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+  if (urlPath === '/' || urlPath.endsWith('/')) {
+    filePath = path.join(filePath, 'index.html');
+  }
+
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      // SPA fallback: unknown paths serve index.html.
+      fs.readFile(path.join(ROOT, 'index.html'), (e2, html) => {
+        if (e2) {
+          res.writeHead(404);
+          res.end('Not found');
+        } else {
+          res.writeHead(200, { 'Content-Type': MIME['.html'] });
+          res.end(html);
+        }
+      });
+      return;
     }
-    return res.json({ prompt: storyboard.biblePrompt(context) });
-  }
-  if (typeof rawText === 'string') {
-    try {
-      return res.json({ bible: storyboard.parseBible(rawText) });
-    } catch (err) {
-      return sendGenError(res, err, 'Could not parse the model output');
-    }
-  }
-  res.status(400).json({ error: 'Send { promptOnly: true } to fetch the prompt, or { rawText } to parse a response.' });
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    res.end(data);
+  });
 });
 
-app.post('/api/storyboard/scenes', (req, res) => {
-  const { bible, cues, style, instructions, priorSummaries, promptOnly, rawText } = req.body || {};
-  if (!bible || !Array.isArray(cues) || !cues.length) {
-    return res.status(400).json({ error: 'A story bible and cues are required.' });
-  }
-  if (cues.length > 40) {
-    return res.status(400).json({ error: 'Send at most 40 cues per batch.' });
-  }
-  if (promptOnly) {
-    return res.json({ prompt: storyboard.scenesPrompt({ bible, cues, style, instructions, priorSummaries }) });
-  }
-  if (typeof rawText === 'string') {
-    try {
-      return res.json(storyboard.parseScenes(rawText, cues));
-    } catch (err) {
-      return sendGenError(res, err, 'Could not parse the model output');
-    }
-  }
-  res.status(400).json({ error: 'Send { promptOnly: true } to fetch the prompt, or { rawText } to parse a response.' });
-});
-
-app.post('/api/seo/generate', (req, res) => {
-  const project = req.body?.project || {};
-  const channel = req.body?.channel || {};
-  const { promptOnly, rawText } = req.body || {};
-  if (!project.title && !project.script && !project.subtitles && !project.bible) {
-    return res.status(400).json({ error: 'The selected project has no story content to analyze yet.' });
-  }
-  if (promptOnly) {
-    return res.json({ prompt: seo.seoPrompt(project, channel) });
-  }
-  if (typeof rawText === 'string') {
-    try {
-      return res.json({ seo: seo.parseSeo(rawText, project) });
-    } catch (err) {
-      return sendGenError(res, err, 'Could not parse the model output');
-    }
-  }
-  res.status(400).json({ error: 'Send { promptOnly: true } to fetch the prompt, or { rawText } to parse a response.' });
-});
-
-// Script generation. Body flags:
-//   { options, promptOnly: true } → { prompt: { system, user } }
-//   { rawText }                   → { script }
-app.post('/api/script/generate', (req, res) => {
-  const { options = {}, promptOnly, rawText } = req.body || {};
-  if (promptOnly) {
-    return res.json({ prompt: scriptWriter.scriptPrompt(options) });
-  }
-  if (typeof rawText === 'string') {
-    return res.json({ script: scriptWriter.cleanScript(rawText) });
-  }
-  res.status(400).json({ error: 'Send { promptOnly: true } to fetch the prompt, or { rawText } to clean a response.' });
-});
-
-function sendGenError(res, err, fallback) {
-  console.error(`${fallback}:`, err.message);
-  const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 502;
-  res.status(status).json({ error: err.message || fallback });
-}
-
-app.listen(PORT, () => {
-  console.log(`Blvck TTS running at http://localhost:${PORT}`);
-  console.log('Backend mode: Puter-first (no API keys required).');
+server.listen(PORT, () => {
+  console.log(`Blvck TTS (static) running at http://localhost:${PORT}`);
+  console.log('Pure static build — deploy by uploading the public/ folder to any static host.');
 });

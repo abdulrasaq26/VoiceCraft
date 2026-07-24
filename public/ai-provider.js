@@ -18,16 +18,6 @@
     use_speaker_boost: true
   });
 
-  async function postJson(url, body) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.hint ? `${data.error} — ${data.hint}` : data.error || `Request failed (${res.status})`);
-    return data;
-  }
 
   // Normalise the various shapes puter.ai.chat can return into plain text.
   function chatText(resp) {
@@ -98,18 +88,21 @@
       return r.blob();
     },
 
-    // Run a JSON-producing generation. Fetch the prompt from the server, run
-    // the chat model in the browser, post the raw output back for parsing.
+    // Run a JSON-producing generation entirely in the browser: build the
+    // prompt with BlvckPrompts, run the chat model via Puter, then parse the
+    // output with BlvckPrompts. No backend involved — this is what lets the
+    // app run as a pure static site on Puter hosting.
     async generateJSON(endpoint, payload) {
+      if (!window.BlvckPrompts) throw new Error('Prompt module not loaded (prompts.js).');
       await ensurePuter();
-      const { prompt } = await postJson(endpoint, { ...payload, promptOnly: true });
+      const prompt = window.BlvckPrompts.build(endpoint, payload);
       const messages = [];
       if (prompt.system) messages.push({ role: 'system', content: prompt.system });
       messages.push({ role: 'user', content: prompt.user });
       const resp = await window.puter.ai.chat(messages, { model: this.chatModel() });
       const rawText = chatText(resp);
       if (!rawText) throw new Error('The chat model returned an empty response.');
-      return postJson(endpoint, { ...payload, rawText });
+      return window.BlvckPrompts.parse(endpoint, payload, rawText);
     },
 
     // Generic chat completion returning plain text. For UI-facing use (script
