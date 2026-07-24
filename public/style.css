@@ -2097,3 +2097,78 @@ textarea.sb-scene-prompt:focus {
 .sb-cast-name { font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-cast-actions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .sb-cast-upload { cursor: pointer; }
+
+/* --- Production pipeline order + progress tracker --- */
+/* Reorder the studio into the production workflow using flex order, without
+   moving DOM (modules query by id, so this stays safe). */
+.app > .topbar { order: -4; }
+.app > .header { order: -3; }
+.app > .pipeline { order: -2; }
+.app > #script-card { order: 1; }
+.app > main.card { order: 2; }
+.app > #storyboard-card { order: 3; }
+.app > #image-card { order: 4; }
+.app > #editor-card { order: 5; }
+.app > #youtube-card { order: 6; }
+.app > #agent-card { order: 7; }
+.app > .footer { order: 8; }
+
+.pipeline {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 20;
+  background: rgba(22, 22, 25, 0.92);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 0.5rem 0.6rem;
+  overflow-x: auto;
+}
+.pipeline-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: max-content;
+}
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.3rem 0.6rem;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pipeline-step:hover { color: var(--text); }
+.pipeline-step.active {
+  color: var(--accent);
+  border-color: rgba(232, 182, 76, 0.5);
+  background: rgba(232, 182, 76, 0.08);
+}
+.pipeline-step.done { color: var(--success); }
+.pipeline-num { font-size: 0.95rem; }
+.pipeline-tick { font-weight: 700; }
+.pipeline-sep {
+  width: 14px;
+  height: 1px;
+  background: var(--card-border);
+  flex-shrink: 0;
+}
+.sb-import-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+
+@media (max-width: 600px) {
+  .pipeline-label { display: none; }
+  .pipeline-step { padding: 0.3rem 0.45rem; }
+  .pipeline-sep { width: 8px; }
+}

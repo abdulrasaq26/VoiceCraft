@@ -20,6 +20,8 @@
       <p class="tagline">Serverless AI voice, images, video &amp; scripts — powered by Puter + ElevenLabs</p>
     </header>
 
+    <nav id="pipeline" class="pipeline" aria-label="Production pipeline" hidden></nav>
+
     <main class="card">
       <!-- Presets -->
       <section class="presets-bar">
@@ -330,6 +332,10 @@
         follows) a visual style, builds character &amp; location profiles, merges lines into story
         beats, and generates one asset per beat — still image, video clip (Puter txt2vid), or a mix.
       </p>
+      <div class="sb-import-row">
+        <button id="sb-import" class="btn ghost small" type="button" title="Pull the subtitles or script you already generated in this project — no download/upload needed">⤵ Import from project</button>
+        <span class="field-note">or upload files:</span>
+      </div>
       <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt,.md" title="Subtitles, script, story bible, character sheets, style guides, worldbuilding, scene instructions" />
       <div id="sb-filelist" class="sb-filelist"></div>
 
@@ -787,6 +793,7 @@
 
   <script src="prompts.js"></script>
   <script src="ai-provider.js"></script>
+  <script src="project-assets.js"></script>
   <script src="eleven-voices.js"></script>
   <script src="tts-providers.js"></script>
   <script src="ai-settings.js"></script>
@@ -801,5 +808,6 @@
   <script src="youtube.js"></script>
   <script src="projects.js"></script>
   <script src="agent.js"></script>
+  <script src="pipeline.js"></script>
 </body>
 </html>

@@ -1213,6 +1213,37 @@
     }
   }
 
+  // Import subtitles/script already generated earlier in the workflow, so the
+  // user never has to download-then-re-upload files between modules.
+  function importFromProject() {
+    if (!window.BlvckAssets) { showStatus('Project assets are unavailable.'); return; }
+    const srt = window.BlvckAssets.subtitlesSRT();
+    const scriptText = window.BlvckAssets.script();
+    const already = (kind) => files.some((f) => f.kind === kind && f.imported);
+    let added = 0;
+    if (srt && !already('subtitles')) {
+      files = files.filter((f) => !(f.kind === 'subtitles' && f.imported));
+      files.push({ name: 'project-subtitles.srt', kind: 'subtitles', content: srt, imported: true });
+      added++;
+    }
+    if (scriptText && !already('script')) {
+      files = files.filter((f) => !(f.kind === 'script' && f.imported));
+      files.push({ name: 'project-script.txt', kind: 'script', content: scriptText, imported: true });
+      added++;
+    }
+    if (!added && !srt && !scriptText) {
+      showStatus('No project subtitles or script yet — generate them in the Script or Voice section first.');
+      return;
+    }
+    renderFileList();
+    const bits = [];
+    if (srt) bits.push('subtitles');
+    if (scriptText) bits.push('script');
+    showStatus(`Imported ${bits.join(' + ')} from your project. Click “Analyze & generate”.`, 'info');
+  }
+
+  const importBtn = $('sb-import');
+  if (importBtn) importBtn.addEventListener('click', importFromProject);
   if (useRefsEl) useRefsEl.addEventListener('change', saveProject);
   analyzeBtn.addEventListener('click', analyzeAndGenerate);
   clearBtn.addEventListener('click', clearProject);
