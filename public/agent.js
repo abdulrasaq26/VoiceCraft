@@ -54,6 +54,11 @@
   // model '' means "use the app-wide resolved default" (discovered from the
   // Puter instance). No hardcoded model IDs — they vary per instance.
   let state = store.get(LS_STATE, null) || { model: '', mode: 'chat', context: [], messages: [] };
+  // Migrate away invalid model IDs persisted by older builds.
+  if (['claude-sonnet-4', 'claude-opus-4', 'gpt-4.1', 'google/gemini-2.5-flash'].includes(state.model)) {
+    state.model = '';
+    persist();
+  }
   let busy = false;
 
   function persist() { store.set(LS_STATE, state); }

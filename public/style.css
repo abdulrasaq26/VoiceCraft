@@ -1489,6 +1489,7 @@ input[type="range"]:disabled {
   width: 100%;
   max-width: 620px;
   max-height: min(85vh, 720px);
+  overflow-y: auto;
   background: var(--card);
   border: 1px solid var(--card-border);
   border-radius: var(--radius);

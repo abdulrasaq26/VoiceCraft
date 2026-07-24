@@ -775,6 +775,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   previewAudio.preload = 'none';
   let previewState = 'idle'; // idle | loading | playing
   let previewVoiceId = null;
+  let previewUrl = null; // object URL for the current ElevenLabs preview blob
   let activePreviewButtons = [];
 
   function previewButtonsFor(voiceId) {
