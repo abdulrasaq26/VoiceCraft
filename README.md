@@ -53,6 +53,7 @@ Type or paste a script, pick a voice from the ElevenLabs catalog, tune the deliv
 - 🎨 **25 visual styles + Auto** — 2D/3D/Pixar/anime/realistic/cinematic/documentary/oil/watercolor/comic/storybook/isometric/explainer/infographic/motion-graphics/… selectable per project, plus **reusable visual presets** (save your own)
 - 🎞️ **Scene-beat merging** — adjacent subtitle lines are merged into ~1 image per 10/15/20s (selectable) instead of one per micro-caption — fewer, better scenes and much lower cost
 - 👤 **Character & location continuity** locked into every prompt from the project profile
+- 🎭 **Reference-image conditioning** — generate (or upload) a reference portrait per character; scenes featuring them are conditioned on it via Puter's `image_url` image-to-image on models that support it (Gemini image, GPT-Image-2, Ideogram Character, …), with automatic text-only fallback where they don't. References persist and can be toggled off
 - 🔍 **Prompt transparency** — each scene shows its detected action + visual goal and an **editable prompt**; **Prompt Review mode** stops before generation so you approve/edit first
 - 🛡️ **Robust JSON** — repairs fenced/messy model output and retries up to 3× for valid JSON, with a **View raw response** button on failure
 - 🖼️/🎥 **Still, Video, or Mixed** — generate a still image (txt2img), a video clip (txt2vid), or a per-scene mix

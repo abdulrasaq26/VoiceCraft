@@ -18,6 +18,9 @@
   const resumeBtn = $('sb-resume');
   const cancelBtn = $('sb-cancel');
   const bibleEl = $('sb-bible');
+  const castEl = $('sb-cast');
+  const castListEl = $('sb-cast-list');
+  const useRefsEl = $('sb-use-refs');
   const exportsEl = $('sb-exports');
   const scenesEl = $('sb-scenes');
   const assetModeEl = $('sb-asset-mode');
@@ -87,6 +90,28 @@
   const memBlobs = new Map(); // index -> Blob
   const urls = new Map(); // index -> object URL
 
+  // Character reference images (for cross-scene consistency).
+  const refBlobs = new Map(); // name -> Blob
+  const refUrls = new Map(); // name -> object URL
+  const refDataUrls = new Map(); // name -> data: URL (passed to txt2img image_url)
+  const refKey = (name) => `ref:${name}`;
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ''));
+      r.onerror = () => resolve('');
+      r.readAsDataURL(blob);
+    });
+  }
+  async function setReference(name, blob) {
+    refBlobs.set(name, blob);
+    if (refUrls.has(name)) URL.revokeObjectURL(refUrls.get(name));
+    refUrls.set(name, URL.createObjectURL(blob));
+    refDataUrls.set(name, await blobToDataUrl(blob));
+    await idbPut(refKey(name), blob);
+  }
+
   function idbOpen() {
     return new Promise((resolve, reject) => {
       if (!window.indexedDB) return reject(new Error('no idb'));
@@ -133,6 +158,20 @@
       await new Promise((res, rej) => {
         const tx = db.transaction(STORE, 'readwrite');
         tx.objectStore(STORE).clear();
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+      db.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  async function idbDelete(key) {
+    try {
+      const db = await idbOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(key);
         tx.oncomplete = res;
         tx.onerror = () => rej(tx.error);
       });
@@ -442,13 +481,26 @@
     }
   }
 
+  // Pick a reference image for a scene: the first character present in the
+  // scene that has a reference portrait. Returns a data URL or null.
+  function sceneReference(scene) {
+    if (!useRefsEl || !useRefsEl.checked) return null;
+    const names = Array.isArray(scene.characters) ? scene.characters : [];
+    for (const n of names) {
+      if (refDataUrls.has(n)) return refDataUrls.get(n);
+    }
+    return null;
+  }
+
   async function generateSceneAsset(scene) {
     if (sceneAssetType(scene) === 'video') {
       // Puter txt2vid. Video clips are short (a few seconds) and slower than
       // images; the queue throttle and progress ETA account for that.
       return window.BlvckAI.generateVideo(scene.prompt, { seconds: 5, size: '1280x720' });
     }
-    return window.BlvckAI.generateImage(scene.prompt, ASPECT);
+    // Condition on a character reference where available (image scenes only).
+    const imageUrl = sceneReference(scene);
+    return window.BlvckAI.generateImage(scene.prompt, ASPECT, imageUrl ? { imageUrl } : {});
   }
 
   // Video generation is far slower than images; pace the queue accordingly.
@@ -608,6 +660,125 @@
         : '') +
       (chars ? `<h3 style="margin-top:.6rem">Characters</h3>${chars}` : '') +
       (locs ? `<h3 style="margin-top:.6rem">Locations</h3>${locs}` : '');
+    renderCast();
+  }
+
+  // --- Character references (cross-scene consistency) --------------------
+
+  let refBusy = false;
+
+  function referencePrompt(name, description) {
+    const vs = (bible && bible.visualStyle) || {};
+    return (
+      `Character reference portrait of ${name}. ${description}. ` +
+      `Head-and-shoulders, neutral plain background, front-facing, clear consistent character design. ` +
+      `${vs.description || ''}${vs.lighting ? `, ${vs.lighting}` : ''}`.trim()
+    );
+  }
+
+  async function generateCharacterReference(name, description) {
+    if (refBusy) return;
+    refBusy = true;
+    renderCast();
+    try {
+      const blob = await window.BlvckAI.generateImage(referencePrompt(name, description), '1:1');
+      await setReference(name, blob);
+      showStatus(`Reference for ${name} saved. Scenes with ${name} will use it.`, 'info');
+    } catch (err) {
+      showStatus(`Could not generate a reference for ${name}: ${err.message}`);
+    } finally {
+      refBusy = false;
+      renderCast();
+      saveProject();
+    }
+  }
+
+  async function uploadCharacterReference(name, file) {
+    if (!file) return;
+    try {
+      await setReference(name, file);
+      renderCast();
+      saveProject();
+      showStatus(`Uploaded a reference for ${name}.`, 'info');
+    } catch {
+      showStatus(`Could not read the reference image for ${name}.`);
+    }
+  }
+
+  function renderCast() {
+    if (!castEl || !castListEl) return;
+    const characters = (bible && bible.characters) || [];
+    if (!characters.length) {
+      castEl.hidden = true;
+      return;
+    }
+    castEl.hidden = false;
+    castListEl.innerHTML = '';
+    characters.forEach((c) => {
+      const name = c.name || '';
+      if (!name) return;
+      const card = document.createElement('div');
+      card.className = 'sb-cast-card';
+
+      const thumb = document.createElement('div');
+      thumb.className = 'sb-cast-thumb';
+      if (refUrls.has(name)) {
+        const img = document.createElement('img');
+        img.src = refUrls.get(name);
+        img.alt = name;
+        thumb.appendChild(img);
+      } else {
+        thumb.textContent = '—';
+      }
+
+      const info = document.createElement('div');
+      info.className = 'sb-cast-info';
+      const nm = document.createElement('div');
+      nm.className = 'sb-cast-name';
+      nm.textContent = name + (refUrls.has(name) ? ' ✓' : '');
+      const actions = document.createElement('div');
+      actions.className = 'sb-cast-actions';
+
+      const gen = document.createElement('button');
+      gen.type = 'button';
+      gen.className = 'btn ghost small';
+      gen.textContent = refUrls.has(name) ? 'Regenerate' : 'Generate';
+      gen.disabled = refBusy || running;
+      gen.addEventListener('click', () => generateCharacterReference(name, c.description || ''));
+
+      const up = document.createElement('label');
+      up.className = 'btn ghost small sb-cast-upload';
+      up.textContent = 'Upload';
+      const file = document.createElement('input');
+      file.type = 'file';
+      file.accept = 'image/*';
+      file.hidden = true;
+      file.addEventListener('change', () => { if (file.files[0]) uploadCharacterReference(name, file.files[0]); });
+      up.appendChild(file);
+
+      actions.append(gen, up);
+      if (refUrls.has(name)) {
+        const clr = document.createElement('button');
+        clr.type = 'button';
+        clr.className = 'btn ghost small';
+        clr.textContent = 'Clear';
+        clr.disabled = refBusy || running;
+        clr.addEventListener('click', async () => {
+          refBlobs.delete(name);
+          if (refUrls.has(name)) URL.revokeObjectURL(refUrls.get(name));
+          refUrls.delete(name);
+          refDataUrls.delete(name);
+          await idbDelete(refKey(name));
+          renderCast();
+          saveProject();
+        });
+        actions.appendChild(clr);
+      }
+
+      info.append(nm, actions);
+      card.append(thumb, info);
+      castListEl.appendChild(card);
+    });
   }
 
   function esc(s) {
@@ -746,7 +917,14 @@
     try {
       localStorage.setItem(
         LS_KEY,
-        JSON.stringify({ project: project(), cues, bible, assetMode, scenes: scenes.map(({ ...s }) => s) })
+        JSON.stringify({
+          project: project(),
+          cues,
+          bible,
+          assetMode,
+          useRefs: useRefsEl ? useRefsEl.checked : true,
+          scenes: scenes.map(({ ...s }) => s)
+        })
       );
     } catch {
       /* quota — non-fatal */
@@ -781,6 +959,17 @@
         }
       }
     }
+    // Restore character reference images.
+    if (useRefsEl && typeof saved.useRefs === 'boolean') useRefsEl.checked = saved.useRefs;
+    for (const c of (bible && bible.characters) || []) {
+      if (!c.name) continue;
+      const blob = await idbGet(refKey(c.name));
+      if (blob) {
+        refBlobs.set(c.name, blob);
+        refUrls.set(c.name, URL.createObjectURL(blob));
+        refDataUrls.set(c.name, await blobToDataUrl(blob));
+      }
+    }
     renderBible();
     renderScenes();
     exportsEl.hidden = false;
@@ -798,6 +987,11 @@
     urls.forEach((u) => URL.revokeObjectURL(u));
     urls.clear();
     memBlobs.clear();
+    refUrls.forEach((u) => URL.revokeObjectURL(u));
+    refUrls.clear();
+    refBlobs.clear();
+    refDataUrls.clear();
+    if (castEl) castEl.hidden = true;
     await idbClear();
     localStorage.removeItem(LS_KEY);
     fileInput.value = '';
@@ -1019,6 +1213,7 @@
     }
   }
 
+  if (useRefsEl) useRefsEl.addEventListener('change', saveProject);
   analyzeBtn.addEventListener('click', analyzeAndGenerate);
   clearBtn.addEventListener('click', clearProject);
   if (assetModeEl) {

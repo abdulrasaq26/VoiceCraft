@@ -21,6 +21,10 @@
   // Tried in order if the configured image model is rejected by the instance.
   // Includes open models a self-hosted instance is likely to have.
   const IMAGE_CANDIDATES = ['gpt-image-1', 'dall-e-3', 'gpt-image-1-mini', 'gpt-image-2', 'gpt-image-1.5', 'qwen/qwen-image-2.0'];
+  // Models that accept an input/reference image (image_url) for image-to-image
+  // and character consistency. Tried first when a reference is supplied; if the
+  // instance has none of them, generateImage falls back to text-only.
+  const REFERENCE_IMAGE_MODELS = ['google/gemini-3-pro-image-preview', 'google/flash-image-2.5', 'openai/gpt-image-2', 'gpt-image-2', 'gpt-image-1', 'ideogram-v3'];
   // Preference order when auto-picking a chat model from what's available.
   const CHAT_PREF = [/claude.*sonnet/i, /claude.*opus/i, /claude/i, /gpt-5/i, /gpt-4/i, /gemini/i, /deepseek/i, /qwen/i, /llama/i, /mistral/i, /grok/i, /glm/i, /kimi/i, /phi/i];
   // Last-resort chat model IDs for when discovery is unavailable AND the
@@ -438,27 +442,46 @@
 
     // Generate an image, returning a Blob. Passes an explicit model (required
     // by current Puter) and falls back across known image models if needed.
-    async generateImage(prompt, aspect) {
+    // opts.imageUrl — a reference/input image (URL or data URL) for
+    // image-to-image / character consistency, used only on models that accept
+    // it; if none work, generation falls back to text-only so it never fails
+    // just because references aren't supported.
+    async generateImage(prompt, aspect, opts = {}) {
       await ensurePuter();
       const full = aspect ? `${prompt} (${aspect} aspect ratio)` : prompt;
+      const ref = opts.imageUrl || opts.reference || null;
       const configured = this.imageModel();
-      const tries = [configured, ...IMAGE_CANDIDATES.filter((m) => m !== configured)];
+
+      const tries = ref
+        ? [...REFERENCE_IMAGE_MODELS, configured].filter((v, i, a) => v && a.indexOf(v) === i)
+        : [configured, ...IMAGE_CANDIDATES.filter((m) => m !== configured)];
+
       let lastErr;
       for (const model of tries) {
         try {
-          const el = await window.puter.ai.txt2img(full, { model });
+          const params = { model };
+          if (ref) params.image_url = ref;
+          const el = await window.puter.ai.txt2img(full, params);
           const src = el && (el.src || (typeof el === 'string' ? el : null));
           if (!src) throw new Error('Puter returned no image.');
-          if (model !== configured) this.setImageModel(model); // remember what works
+          if (!ref && model !== configured) this.setImageModel(model); // remember what works
           const r = await fetch(src);
           return r.blob();
         } catch (e) {
           lastErr = e;
-          // Only walk the candidate list for model-availability errors; a real
-          // failure (quota, network) should surface immediately.
-          if (!isModelError(e)) throw new Error(errMsg(e) || 'Image generation failed.');
+          const cat = classifyError(e);
+          // A genuine failure (quota/network) should surface immediately.
+          if (cat === 'rate limit / quota / billing' || cat === 'network / CORS') {
+            throw new Error(errMsg(e) || 'Image generation failed.');
+          }
+          // For text-only mode, only walk the list on model-availability errors.
+          if (!ref && !isModelError(e)) throw new Error(errMsg(e) || 'Image generation failed.');
+          // For reference mode, keep trying other reference-capable models.
         }
       }
+      // Reference requested but unsupported everywhere → text-only fallback so
+      // the scene still generates (from its text description).
+      if (ref) return this.generateImage(prompt, aspect, {});
       throw new Error(errMsg(lastErr) || 'No available image model on this Puter instance.');
     },
 

@@ -186,6 +186,7 @@ Respond ONLY with JSON:
       "detectedAction": string, // what is happening in this beat, one line
       "visualGoal": string,     // the emotional/narrative goal of the shot
       "visualFocus": string,    // the subject of the frame
+      "characters": [string],   // names (from the profile) of characters visible in this beat
       "sceneSummary": string,
       "prompt": string          // full prompt with the project's visual style embedded
     }
@@ -230,6 +231,7 @@ Respond ONLY with JSON:
       detectedAction: str(s && s.detectedAction),
       visualGoal: str(s && s.visualGoal),
       visualFocus: str(s && s.visualFocus),
+      characters: arr(s && s.characters).map(String).slice(0, 8),
       sceneSummary: str(s && s.sceneSummary, source.text || ''),
       prompt
     };

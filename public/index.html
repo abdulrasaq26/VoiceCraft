@@ -399,6 +399,15 @@
 
       <div id="sb-bible" class="sb-bible" hidden></div>
 
+      <div id="sb-cast" class="sb-cast" hidden>
+        <div class="sb-cast-head">
+          <strong>🎭 Character references</strong>
+          <label class="ssml-toggle" title="Condition scene generation on each character's reference image (on models that support it) so they stay consistent"><input type="checkbox" id="sb-use-refs" checked /> <span>Use references for scenes</span></label>
+        </div>
+        <p class="field-note">Lock each character's look: generate a reference portrait (or upload one). Scenes featuring that character are then conditioned on the reference — on image models that support it, with automatic text-only fallback otherwise.</p>
+        <div id="sb-cast-list" class="sb-cast-list"></div>
+      </div>
+
       <div id="sb-exports" class="queue-downloads" hidden>
         <button id="sb-zip" class="btn primary small" type="button">Download ZIP</button>
         <button id="sb-prompts" class="btn ghost small" type="button">Download prompts</button>
