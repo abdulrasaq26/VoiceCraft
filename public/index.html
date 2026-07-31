@@ -3,867 +3,1015 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Blvck TTS — Text to Speech</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d0d0f'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle' fill='%23e8b64c' font-family='sans-serif' font-weight='bold'%3EB%3C/text%3E%3C/svg%3E" />
+  <title>AETHER AI Studio — Next-Gen Content Production OS</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d0d0f'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle' fill='%236366f1' font-family='sans-serif' font-weight='bold'%3EA%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="app">
-    <div class="topbar">
-      <button id="projects-open" class="btn ghost small" type="button">☰ Projects</button>
-      <span class="topbar-project">Project: <strong id="active-project-name">—</strong></span>
-      <button id="ai-settings-open" class="topbar-badge" type="button" title="AI settings — models &amp; voice provider for this Puter instance">⚡ Puter AI ⚙</button>
-      <button id="project-new" class="btn ghost small" type="button">+ New</button>
-    </div>
-
-    <!-- Puter connection banner — surfaces "AI isn't connected / sign in" so a
-         deployed app never fails silently when the Puter session is missing. -->
-    <div id="ai-status-banner" class="ai-status-banner" role="status" hidden>
-      <span class="ai-status-icon">⚠️</span>
-      <div class="ai-status-text">
-        <strong id="ai-status-title">AI isn't connected yet</strong>
-        <span id="ai-status-detail">Sign in to your Puter account to enable scripts, voice, images, video and the agent.</span>
-      </div>
-      <div class="ai-status-actions">
-        <button id="ai-status-signin" class="btn primary small" type="button">Sign in to Puter</button>
-        <button id="ai-status-diag" class="btn ghost small" type="button">Diagnostics</button>
-        <button id="ai-status-dismiss" class="btn ghost small" type="button" aria-label="Dismiss" title="Dismiss">×</button>
-      </div>
-    </div>
-
-    <header class="header">
-      <h1>Blvck<span class="accent">TTS</span></h1>
-      <p class="tagline">Serverless AI voice, images, video &amp; scripts — powered by Puter + ElevenLabs</p>
-    </header>
-
-    <nav id="pipeline" class="pipeline" aria-label="Production pipeline" hidden></nav>
-
-    <!-- AI Production Director -->
-    <section id="director-card" class="card director-card">
-      <div class="input-header">
-        <label>🎬 AI Production Director</label>
-        <label class="ssml-toggle" title="Proactive guidance to the next step across the whole pipeline"><input type="checkbox" id="director-mode" /> <span>Director Mode</span></label>
-      </div>
-      <p class="field-note">Your always-on creative director, content strategist and QC manager. It sees the whole project and advises across every stage. Ask it anything, run a full quality audit, or let it drive the whole pipeline for you with your approval at each stage.</p>
-
-      <div id="director-next" class="director-next" hidden></div>
-
-      <!-- Auto-run: opt-in autopilot that chains every stage with approval gates -->
-      <div class="director-autorun-bar">
-        <button id="director-autorun" class="btn primary" type="button" title="Let the Director run the whole pipeline, pausing for your approval before each stage">▶ Auto-run pipeline</button>
-        <label class="ssml-toggle" title="Skip the approval prompt and run every stage automatically (you can still Stop)"><input type="checkbox" id="director-autorun-auto" /> <span>Hands-free (no approval gates)</span></label>
-      </div>
-      <div id="director-autorun-panel" class="director-autorun-panel" hidden></div>
-
-      <div class="director-actions">
-        <button id="director-audit" class="btn primary" type="button">Run production audit</button>
-        <button class="btn ghost small" type="button" data-dcmd="Review my storyboard: flag repetitive visuals, weak scenes, and consistency issues.">Review storyboard</button>
-        <button class="btn ghost small" type="button" data-dcmd="How can I improve viewer retention and pacing for this video?">Improve retention</button>
-        <button class="btn ghost small" type="button" data-dcmd="Recommend the best voice and voice instructions for this narration.">Best voice</button>
-        <button class="btn ghost small" type="button" data-dcmd="Optimize this video for YouTube search and click-through. What titles and thumbnail should I use?">Optimize for YouTube</button>
-        <button class="btn ghost small" type="button" data-dcmd="What is the single most important thing I should do next on this project?">What's next?</button>
-      </div>
-
-      <div id="director-audit-result" class="director-audit" hidden></div>
-
-      <div id="director-chat" class="director-chat" hidden></div>
-      <div class="director-input-row">
-        <textarea id="director-input" rows="2" placeholder="Ask the Production Director… (Ctrl/Cmd+Enter to send)"></textarea>
-        <div class="director-input-actions">
-          <button id="director-send" class="btn primary"><span class="btn-label">Ask</span><span class="spinner" hidden></span></button>
-          <button id="director-stop" class="btn ghost" type="button" hidden>■ Stop</button>
+  <div class="app-shell">
+    <!-- Left Navigation Sidebar -->
+    <aside id="sidebar-nav" class="sidebar-nav">
+      <div class="sidebar-header">
+        <div class="brand">
+          <span class="brand-logo">⚡</span>
+          <span class="brand-name">AETHER<span class="accent">STUDIO</span></span>
         </div>
-      </div>
-      <div id="director-status" class="status" hidden></div>
-    </section>
-
-    <!-- Channel Brain — cross-project memory that learns and biases generation -->
-    <section id="brain-card" class="card brain-card" hidden>
-      <div class="input-header">
-        <label>🧠 Channel Brain</label>
-        <div class="input-header-actions">
-          <span class="badge premium">Cross-project memory</span>
-          <button class="btn ghost small clear-btn" type="button" data-clear="brain" title="Reset the channel memory (undoable)">🗑 Reset brain</button>
-        </div>
-      </div>
-      <p class="field-note">Learns your channel’s style, voice and tone across projects — and which title themes actually perform from stats you log — then biases every new script and SEO pack toward what works. It’s global: it survives project resets and gets smarter with every video.</p>
-
-      <div class="brain-grid">
-        <div class="brain-col">
-          <h4 class="brain-h">Learned preferences</h4>
-          <div id="brain-prefs" class="brain-prefs"></div>
-          <button id="brain-learn" class="btn ghost small" type="button">Learn from this project</button>
-        </div>
-        <div class="brain-col">
-          <h4 class="brain-h">What performs</h4>
-          <div id="brain-insights" class="brain-insights"></div>
-        </div>
+        <button id="toggle-sidebar" class="btn icon small" type="button" title="Toggle Sidebar">☰</button>
       </div>
 
-      <div class="brain-log">
-        <h4 class="brain-h">Log a published video</h4>
-        <p class="field-note">No YouTube connection needed yet — enter a video’s real numbers so the brain learns which themes win. Tag a theme (e.g. “mystery”, “daily life”) to compare.</p>
-        <div class="brain-log-row">
-          <input id="brain-perf-title" type="text" placeholder="Video title" />
-          <input id="brain-perf-theme" type="text" placeholder="Theme (e.g. mystery)" />
-          <input id="brain-perf-views" type="text" inputmode="numeric" placeholder="Views" />
-          <input id="brain-perf-ctr" type="text" inputmode="decimal" placeholder="CTR %" />
-          <input id="brain-perf-ret" type="text" inputmode="decimal" placeholder="Retention %" />
-          <button id="brain-perf-log" class="btn primary small" type="button">Log</button>
-        </div>
-        <div id="brain-perf-list" class="brain-perf-list" hidden></div>
+      <div class="sidebar-menu">
+        <div class="sidebar-group-title">OVERVIEW</div>
+        <button class="sidebar-nav-item active" data-workspace="dashboard" type="button"><span class="nav-icon">📊</span> <span class="nav-text">Dashboard</span></button>
+        <button class="sidebar-nav-item" data-workspace="assets" type="button"><span class="nav-icon">📦</span> <span class="nav-text">Assets</span></button>
+        <button class="sidebar-nav-item" data-workspace="vault" type="button"><span class="nav-icon">📚</span> <span class="nav-text">Knowledge Vault</span></button>
+
+        <div class="sidebar-group-title">PRODUCTION STAGES</div>
+        <button class="sidebar-nav-item" data-workspace="research" type="button"><span class="nav-icon">🔎</span> <span class="nav-text">Research</span></button>
+        <button class="sidebar-nav-item" data-workspace="script" type="button"><span class="nav-icon">📝</span> <span class="nav-text">Scripts</span></button>
+        <button class="sidebar-nav-item" data-workspace="voice" type="button"><span class="nav-icon">🎙️</span> <span class="nav-text">Voices</span></button>
+        <button class="sidebar-nav-item" data-workspace="storyboard" type="button"><span class="nav-icon">🎬</span> <span class="nav-text">Storyboards</span></button>
+        <button class="sidebar-nav-item" data-workspace="images" type="button"><span class="nav-icon">🎨</span> <span class="nav-text">Images</span></button>
+        <button class="sidebar-nav-item" data-workspace="video" type="button"><span class="nav-icon">🎞️</span> <span class="nav-text">Videos</span></button>
+        <button class="sidebar-nav-item" data-workspace="thumbnail" type="button"><span class="nav-icon">🖼️</span> <span class="nav-text">Thumbnails</span></button>
+        <button class="sidebar-nav-item" data-workspace="youtube" type="button"><span class="nav-icon">🚀</span> <span class="nav-text">Publish</span></button>
+
+        <div class="sidebar-group-title">SYSTEM & AI</div>
+        <button class="sidebar-nav-item" data-workspace="director" type="button"><span class="nav-icon">⚙️</span> <span class="nav-text">AI Director</span></button>
       </div>
-      <div id="brain-status" class="status" hidden></div>
-    </section>
+    </aside>
 
-    <main class="card">
-      <!-- Presets -->
-      <section class="presets-bar">
-        <select id="preset-select" title="Apply a saved preset">
-          <option value="">Presets…</option>
-        </select>
-        <button id="preset-save-btn" class="btn ghost small" type="button">Save preset</button>
-        <button id="preset-manage-btn" class="btn ghost small" type="button">Manage</button>
-      </section>
+    <!-- Main Content Shell -->
+    <div class="app-main">
+      <!-- Top Header Bar -->
+      <header class="app-header">
+        <div class="header-left">
+          <button id="projects-open" class="btn ghost small" type="button">📁 Projects</button>
+          <span class="header-project-name">Project: <strong id="active-project-name">—</strong></span>
+          <span id="active-workspace-title" class="header-workspace-title">📊 Dashboard</span>
+        </div>
 
-      <!-- Project name -->
-      <section class="naming-section">
-        <label for="title-input">Project name</label>
-        <input id="title-input" type="text" maxlength="60" placeholder="e.g. Medieval Peasant Life" />
-        <p id="naming-note" class="field-note">Outputs are named “Project Part 1”, “Project Part 2”, …</p>
-      </section>
-
-      <!-- Global data management -->
-      <section class="data-toolbar" aria-label="Project data management">
-        <span class="data-toolbar-label">🧹 Data &amp; cleanup — clear one section, or the whole production</span>
-        <button id="data-smart-open" class="btn ghost small" type="button" title="Advanced: clear generated content, uploads, AI outputs, cache, or completed/failed scenes">Clear…</button>
-        <button id="data-reset-project" class="btn danger small" type="button" title="Remove all project data across every module and start fresh">Reset project</button>
-      </section>
-
-      <!-- Text input -->
-      <section class="input-section">
-        <div class="input-header">
-          <label for="text-input">Your script</label>
-          <div class="input-tools">
-            <span id="char-count" class="char-count">0 characters</span>
+        <div class="header-right">
+          <!-- Guided vs Pro Mode Switcher -->
+          <div class="mode-switcher">
+            <button id="mode-btn-guided" class="mode-btn active" data-mode="guided" type="button" title="Step-by-step guided workflow">🧭 Guided</button>
+            <button id="mode-btn-pro" class="mode-btn" data-mode="pro" type="button" title="Advanced power-user multi-panel workspace">⚙️ Pro</button>
           </div>
+          <button id="ai-settings-open" class="topbar-badge" type="button" title="AI Provider & Model Settings">⚡ AI Settings ⚙</button>
+          <button id="project-new" class="btn primary small" type="button">+ New Project</button>
         </div>
-        <textarea
-          id="text-input"
-          rows="8"
-          placeholder="Paste an entire script, chapter, or article — no length limit. It’s automatically split into ~1,000-character parts on sentence boundaries and generated in sequence…"
-        ></textarea>
-      </section>
+      </header>
 
-      <!-- Voice + language + format -->
-      <section class="controls">
-        <div class="control">
-          <label for="language-select">Language</label>
-          <select id="language-select"></select>
+      <!-- Top Mission Control Status Strip -->
+      <div id="mission-control-bar" class="mission-control-bar">
+        <div class="mc-item">
+          <span class="mc-label">Completion:</span>
+          <strong id="mc-completion-pct" class="mc-value">0%</strong>
+          <div class="mc-progress-track"><div id="mc-progress-fill" class="mc-progress-fill"></div></div>
         </div>
-        <div class="control voice-control">
-          <label>Voice</label>
-          <div class="voice-row">
-            <button id="voice-card" class="voice-card" type="button" aria-haspopup="dialog">
-              <span class="voice-card-main">
-                <span id="voice-card-name" class="voice-card-name">Loading voices…</span>
-                <span id="voice-card-desc" class="voice-card-desc"></span>
-              </span>
-              <span class="voice-card-chevron">▾</span>
-            </button>
-            <button id="preview-btn" class="btn icon" type="button" title="Preview this voice" aria-label="Preview this voice">
-              <span class="preview-icon">▶</span>
-              <span class="spinner small" hidden></span>
-            </button>
-          </div>
+        <div class="mc-item">
+          <span class="mc-label">Assets Generated:</span>
+          <strong id="mc-assets-count" class="mc-value">0</strong>
         </div>
-        <div class="control">
-          <label for="format-select">Format</label>
-          <select id="format-select">
-            <option value="MP3" selected>MP3</option>
-            <option value="OGG_OPUS">OGG (Opus)</option>
-            <option value="LINEAR16">WAV</option>
-          </select>
+        <div class="mc-item">
+          <span class="mc-label">AI Gateway:</span>
+          <span id="mc-gateway-name" class="badge">NVIDIA NIM (Llama 3.3 70B)</span>
         </div>
-      </section>
+      </div>
 
-      <!-- Voice instructions -->
-      <section class="instructions-section">
-        <div class="input-header">
-          <label for="instructions-input">Voice instructions</label>
-          <select id="template-select" title="Apply a delivery style template">
-            <option value="">Style templates…</option>
-          </select>
+      <!-- Puter Connection Status Banner -->
+      <div id="ai-status-banner" class="ai-status-banner" role="status" hidden>
+        <span class="ai-status-icon">⚠️</span>
+        <div class="ai-status-text">
+          <strong id="ai-status-title">AI isn't connected yet</strong>
+          <span id="ai-status-detail">Sign in to enable scripts, voice, images, video and Director.</span>
         </div>
-        <textarea
-          id="instructions-input"
-          rows="5"
-          maxlength="2500"
-          placeholder="Describe in detail how the voice should sound — persona, tone, pacing, emphasis, emotion. Pick a style template for a full multi-paragraph starting point, then edit it freely…"
-        ></textarea>
-        <p id="instructions-note" class="field-note"></p>
-      </section>
+        <div class="ai-status-actions">
+          <button id="ai-status-signin" class="btn primary small" type="button">Sign in to Puter</button>
+          <button id="ai-status-diag" class="btn ghost small" type="button">Diagnostics</button>
+          <button id="ai-status-dismiss" class="btn ghost small" type="button" aria-label="Dismiss">×</button>
+        </div>
+      </div>
 
-      <!-- ElevenLabs voice_settings -->
-      <section class="sliders vs-sliders">
-        <div class="slider-control" id="stability-control">
-          <label for="stability-slider">
-            Stability <output id="stability-value">50</output>
-            <span class="vs-hint" title="Lower = more expressive & variable delivery. Higher = more consistent, monotone.">?</span>
-          </label>
-          <input type="range" id="stability-slider" min="0" max="100" step="1" value="50" />
-        </div>
-        <div class="slider-control" id="similarity-control">
-          <label for="similarity-slider">
-            Similarity <output id="similarity-value">85</output>
-            <span class="vs-hint" title="How closely the output should match the original voice character. Higher = closer to source.">?</span>
-          </label>
-          <input type="range" id="similarity-slider" min="0" max="100" step="1" value="85" />
-        </div>
-        <div class="slider-control" id="style-control">
-          <label for="style-slider">
-            Style <output id="style-value">10</output>
-            <span class="vs-hint" title="Style exaggeration. Higher = more stylistic delivery, but can introduce artifacts.">?</span>
-          </label>
-          <input type="range" id="style-slider" min="0" max="100" step="1" value="10" />
-        </div>
-        <div class="slider-control speaker-boost-control">
-          <label class="ssml-toggle" title="Enhance similarity to the original speaker. Small performance cost.">
-            <input type="checkbox" id="speaker-boost-toggle" checked />
-            <span>Speaker boost</span>
-          </label>
-        </div>
-      </section>
-      <p id="caps-note" class="field-note" hidden></p>
+      <!-- Persistent Workflow Stepper -->
+      <nav id="pipeline" class="pipeline" aria-label="Production pipeline"></nav>
 
-      <section class="actions">
-        <button id="speak-btn" class="btn primary">
-          <span class="btn-label">Generate speech</span>
-          <span class="spinner" hidden></span>
-        </button>
-        <button id="subtitle-only-btn" class="btn ghost" type="button" title="Build subtitles from the pasted script (timing estimated from voice speed) — preview, copy, or download SRT/VTT">Generate subtitles</button>
-        <button id="reset-btn" class="btn ghost" type="button">Reset</button>
-        <button class="btn ghost clear-btn" type="button" data-clear="tts" title="Delete the generated audio and reset voice settings (undoable)">🗑 Clear audio &amp; voice</button>
-        <button class="btn ghost clear-btn" type="button" data-clear="subtitles" title="Delete the generated subtitles for this project (undoable)">🗑 Clear subtitles</button>
-      </section>
+      <!-- Workspace Canvas -->
+      <main id="workspace-canvas" class="workspace-canvas">
 
-      <div id="status" class="status" hidden></div>
+        <!-- 1. DASHBOARD COMMAND CENTER WORKSPACE -->
+        <div id="workspace-dashboard" class="workspace-page">
+          <header class="header" style="margin-bottom:16px;">
+            <h1 style="font-size:1.8rem; margin:0;">Command Center</h1>
+            <p class="tagline" style="margin:4px 0 0 0;">Project-Centric AI Production Manager — Overview &amp; Live Status</p>
+          </header>
 
-      <!-- Batch generation queue -->
-      <section id="queue-section" class="queue" hidden>
-        <div class="queue-head">
-          <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
-          <div class="queue-stats-row">
-            <span id="queue-stats" class="queue-stats"></span>
-            <span id="queue-eta" class="queue-eta"></span>
+          <div class="command-center-grid">
+            <!-- Card 1: Project Status & Stage Checklist -->
+            <div class="card cc-card">
+              <div class="input-header">
+                <label>📊 Project Completion &amp; Stage Status</label>
+                <span class="badge elite copilot-completion-val">0%</span>
+              </div>
+              <p class="field-note">Track completed vs pending stages for the active project.</p>
+              <div class="copilot-stage-checklist" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;"></div>
+            </div>
+
+            <!-- Card 2: AI Director Co-Pilot Recommendation -->
+            <div class="card cc-card" style="border-left:4px solid #6366f1;">
+              <div class="input-header">
+                <label>🎬 AI Director Recommendation</label>
+                <span class="badge premium">Next Action</span>
+              </div>
+              <p id="dashboard-director-recommendation" class="field-note" style="font-size:0.95rem; color:#fff; font-weight:500;">
+                👉 Start by generating a topic research brief or narrative script in the Research/Script studio.
+              </p>
+              <div style="display:flex; gap:8px; margin-top:12px;">
+                <button id="dash-autorun" class="btn primary small" type="button">⚡ Auto-Run Full Pipeline</button>
+                <button class="btn ghost small" type="button" onclick="document.getElementById('dock-quick-audit').click()">Run Production Audit</button>
+              </div>
+            </div>
+
+            <!-- Card 3: Recent Assets Gallery -->
+            <div class="card cc-card">
+              <div class="input-header">
+                <label>📁 Recent Assets Preview</label>
+                <button class="btn ghost small" type="button" onclick="window.AetherRouter.switchWorkspace('assets')">View All Assets →</button>
+              </div>
+              <div id="dashboard-recent-assets" style="margin-top:10px;">
+                <p class="field-note">Generated audio, script files, and storyboard frames will appear here.</p>
+              </div>
+            </div>
+
+            <!-- Card 4: Production Queue & Health -->
+            <div class="card cc-card">
+              <div class="input-header">
+                <label>⏱️ Queue &amp; System Health</label>
+                <span class="badge success">Active</span>
+              </div>
+              <div style="font-size:0.85rem; display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+                <div><strong>TTS Server:</strong> Kokoro Local (http://localhost:8880)</div>
+                <div><strong>AI Gateway:</strong> NVIDIA NIM (Free Endpoints Pool)</div>
+                <div><strong>Queue Status:</strong> Idle (Ready for generation)</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="queue-controls">
-          <button id="pause-btn" class="btn ghost small" type="button" hidden>Pause</button>
-          <button id="resume-btn" class="btn primary small" type="button" hidden>Resume</button>
-          <button id="retry-btn" class="btn ghost small" type="button" hidden>Retry failed</button>
-          <button id="cancel-btn" class="btn ghost small" type="button" hidden>Cancel</button>
-          <button id="clear-btn" class="btn ghost small" type="button">Clear</button>
+        <!-- 2. ASSET LIBRARY WORKSPACE -->
+        <div id="workspace-assets" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
+          </div>
+
+          <section id="assets-card" class="card">
+            <div class="input-header">
+              <label>📁 Project Asset Library</label>
+              <span class="badge premium">Media Manager</span>
+            </div>
+            <p class="field-note">All generated audio, subtitles, storyboard images, and video renders for the current project.</p>
+            <div id="asset-library-content">
+              <p style="font-size:13px; color:var(--text-dim, #999);">Your generated audio and storyboard assets will be listed here automatically as you create them.</p>
+            </div>
+          </section>
         </div>
 
-        <div class="queue-group">
-          <span class="queue-group-label">Audio outputs</span>
-          <div class="queue-downloads">
-            <button id="zip-btn" class="btn primary small" type="button" title="ZIP of all audio parts plus the .srt and .vtt subtitles" disabled>Download all as ZIP</button>
-            <button id="zip-selected-btn" class="btn ghost small" type="button" disabled>Download selected</button>
-            <button id="download-each-btn" class="btn ghost small" type="button" disabled>Download each</button>
-            <label class="select-all-label">
-              <input type="checkbox" id="select-all" /> Select all
+        <!-- 2.5 KNOWLEDGE VAULT WORKSPACE -->
+        <div id="workspace-vault" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
+          </div>
+
+          <section class="card">
+            <div class="input-header">
+              <label>📚 Project Knowledge Vault</label>
+              <span class="badge premium">RAG Enabled</span>
+            </div>
+            <p class="field-note">Upload documents (PDF, DOCX, TXT, MD, JSON, CSV) to ground the AI's research and scripting. The AI Director will automatically retrieve and cite relevant chunks during generation.</p>
+            
+            <div id="vault-dropzone" style="margin: 20px 0; padding: 40px; border: 2px dashed rgba(255,255,255,0.2); border-radius: 12px; text-align: center; cursor: pointer; transition: all 0.2s; background: rgba(0,0,0,0.2);">
+              <div style="font-size: 2rem; margin-bottom: 10px;">📄</div>
+              <div style="font-weight: 500; font-size: 1.1rem; color: #eee;">Drag & Drop documents here</div>
+              <div style="font-size: 0.85rem; color: #888; margin-top: 5px;">or click to browse files</div>
+              <input type="file" id="vault-file-input" multiple accept=".txt,.md,.csv,.json,.pdf,.docx" style="display: none;" />
+            </div>
+
+            <div class="vault-controls" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+              <h4 style="margin:0;">Active Resources</h4>
+              <span id="vault-status" style="font-size: 0.8rem; color:#888;">0 documents</span>
+            </div>
+
+            <div id="vault-resource-list" style="display:flex; flex-direction:column; gap:10px;">
+              <!-- Resources will populate here -->
+            </div>
+          </section>
+        </div>
+
+        <!-- 3. RESEARCH WORKSPACE -->
+        <div id="workspace-research" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
+          </div>
+
+          <section id="research-card" class="card research-card">
+            <div class="input-header">
+              <label for="research-topic">🔎 AI Research</label>
+              <div class="input-header-actions">
+                <span class="badge elite">⚡ Grounding Engine</span>
+                <button class="btn ghost small clear-btn" type="button" data-clear="research">🗑 Clear research</button>
+              </div>
+            </div>
+            <p class="field-note">Turn a topic into a structured research brief — facts (with confidence), angles, hooks, entities, a timeline and keywords — that grounds your script and SEO.</p>
+            <textarea id="research-topic" rows="3" placeholder="What should we research? e.g. 'Daily life of a 14th-century English village on the eve of the Black Death'"></textarea>
+            
+            <div style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px dashed rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.8rem; color: #aaa;">📚 Want to ground the AI in specific documents?</span>
+              <button class="btn ghost small" data-workspace="vault" type="button" style="color: #60a5fa;">Go to Knowledge Vault →</button>
+            </div>
+            
+            <section class="actions" style="margin-top: 15px;">
+              <button id="research-generate" class="btn primary" type="button">
+                <span class="btn-label">Research topic</span>
+                <span class="spinner" hidden></span>
+              </button>
+            </section>
+            <div id="research-status" class="status" hidden></div>
+            <div id="research-result" class="research-result" hidden></div>
+          </section>
+        </div>
+
+        <!-- 4. SCRIPTS WORKSPACE -->
+        <div id="workspace-script" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
+          </div>
+
+          <section id="script-card" class="card script-card">
+            <div class="input-header">
+              <label>📝 AI Script Studio</label>
+              <div class="input-header-actions">
+                <span class="badge elite">⚡ Script Generator</span>
+                <button class="btn ghost small clear-btn" type="button" data-clear="script">🗑 Clear script</button>
+              </div>
+            </div>
+            <p class="field-note">Generate a full narration script, then send it straight to the voice studio.</p>
+
+            <section class="controls script-controls">
+              <div class="control">
+                <label for="script-type">Script type</label>
+                <select id="script-type">
+                  <option value="youtube">YouTube video</option>
+                  <option value="historical">Historical storytelling</option>
+                  <option value="documentary">Documentary narration</option>
+                  <option value="educational">Educational content</option>
+                  <option value="shorts">Short / Reel</option>
+                  <option value="podcast">Podcast episode</option>
+                  <option value="audiobook">Audiobook-style</option>
+                </select>
+              </div>
+              <div class="control">
+                <label for="script-tone">Tone</label>
+                <select id="script-tone">
+                  <option value="cinematic and dramatic">Cinematic &amp; dramatic</option>
+                  <option value="warm and conversational">Warm &amp; conversational</option>
+                  <option value="authoritative and factual">Authoritative &amp; factual</option>
+                  <option value="suspenseful and mysterious">Suspenseful &amp; mysterious</option>
+                  <option value="upbeat and energetic">Upbeat &amp; energetic</option>
+                  <option value="calm and reflective">Calm &amp; reflective</option>
+                </select>
+              </div>
+              <div class="control">
+                <label for="script-length">Length</label>
+                <select id="script-length">
+                  <option value="short">Short (~150 words)</option>
+                  <option value="medium" selected>Medium (~400 words)</option>
+                  <option value="long">Long (~800 words)</option>
+                  <option value="xlong">Extra long (~1500 words)</option>
+                </select>
+              </div>
+              <div class="control">
+                <label for="script-audience">Audience</label>
+                <input id="script-audience" type="text" placeholder="e.g. history enthusiasts, general viewers" />
+              </div>
+            </section>
+
+            <div class="input-header">
+              <label for="script-topic">Topic / brief</label>
+              <select id="script-template-select" title="Saved prompt templates">
+                <option value="">Prompt templates…</option>
+              </select>
+            </div>
+            <textarea id="script-topic" rows="3" placeholder="What should the script be about? e.g. 'A day in the life of a medieval blacksmith'…"></textarea>
+
+            <div style="margin-top: 10px; margin-bottom: 15px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px dashed rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.8rem; color: #aaa;">📚 Want to base this script on specific files?</span>
+              <button class="btn ghost small" data-workspace="vault" type="button" style="color: #60a5fa;">Go to Knowledge Vault →</button>
+            </div>
+
+            <label class="ssml-toggle">
+              <input type="checkbox" id="script-retention" checked /> <span>Optimize for retention (hooks &amp; pacing)</span>
             </label>
+
+            <section class="actions">
+              <button id="script-generate" class="btn primary" type="button">
+                <span class="btn-label">Generate script</span>
+                <span class="spinner" hidden></span>
+              </button>
+              <button id="script-stop" class="btn ghost" type="button" hidden>■ Stop</button>
+              <button id="script-save-template" class="btn ghost" type="button">Save as template</button>
+            </section>
+
+            <div id="script-status" class="status" hidden></div>
+
+            <section id="script-result" class="script-result" hidden>
+              <textarea id="script-output" rows="14" spellcheck="false"></textarea>
+              <div class="script-refine-row">
+                <span class="refine-label">AI refine:</span>
+                <button class="btn ghost small" type="button" data-refine="polish">✨ Polish</button>
+                <button class="btn ghost small" type="button" data-refine="punch">⚡ Punch up</button>
+                <button class="btn ghost small" type="button" data-refine="shorten">✂ Shorten</button>
+                <button class="btn ghost small" type="button" data-refine="expand">➕ Expand</button>
+              </div>
+              <div class="script-result-actions">
+                <a href="#voice" id="script-use" class="btn primary small" style="text-decoration:none;" title="Load this script into the voice studio">Use in voice studio ↑</a>
+                <button id="script-copy" class="btn ghost small" type="button">Copy</button>
+                <button id="script-download" class="btn ghost small" type="button">Download .txt</button>
+                <button id="script-regenerate" class="btn ghost small" type="button">Regenerate</button>
+                <span id="script-wordcount" class="field-note"></span>
+              </div>
+            </section>
+          </section>
+        </div>
+
+        <!-- 5. VOICES WORKSPACE -->
+        <div id="workspace-voice" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
           </div>
+
+          <main class="card">
+            <section class="presets-bar">
+              <select id="preset-select" title="Apply a saved preset">
+                <option value="">Presets…</option>
+              </select>
+              <button id="preset-save-btn" class="btn ghost small" type="button">Save preset</button>
+              <button id="preset-manage-btn" class="btn ghost small" type="button">Manage</button>
+            </section>
+
+            <section class="naming-section">
+              <label for="title-input">Project name</label>
+              <input id="title-input" type="text" maxlength="60" placeholder="e.g. Medieval Peasant Life" />
+              <p id="naming-note" class="field-note">Outputs are named “Project Part 1”, “Project Part 2”, …</p>
+            </section>
+
+            <section class="data-toolbar" aria-label="Project data management">
+              <span class="data-toolbar-label">🧹 Data &amp; cleanup</span>
+              <button id="data-smart-open" class="btn ghost small" type="button">Clear…</button>
+              <button id="data-reset-project" class="btn danger small" type="button">Reset project</button>
+            </section>
+
+            <section class="input-section">
+              <div class="input-header">
+                <label for="text-input">Your script</label>
+                <div class="input-tools">
+                  <span id="char-count" class="char-count">0 characters</span>
+                </div>
+              </div>
+              <textarea
+                id="text-input"
+                rows="8"
+                placeholder="Paste an entire script... split into ~1,000-character parts on sentence boundaries..."
+              ></textarea>
+            </section>
+
+            <section class="controls">
+              <div class="control">
+                <label for="language-select">Language</label>
+                <select id="language-select"></select>
+              </div>
+              <div class="control voice-control">
+                <label>Voice</label>
+                <div class="voice-row">
+                  <button id="voice-card" class="voice-card" type="button" aria-haspopup="dialog">
+                    <span class="voice-card-main">
+                      <span id="voice-card-name" class="voice-card-name">Loading voices…</span>
+                      <span id="voice-card-desc" class="voice-card-desc"></span>
+                    </span>
+                    <span class="voice-card-chevron">▾</span>
+                  </button>
+                  <button id="preview-btn" class="btn icon" type="button" title="Preview this voice" aria-label="Preview this voice">
+                    <span class="preview-icon">▶</span>
+                    <span class="spinner small" hidden></span>
+                  </button>
+                </div>
+              </div>
+              <div class="control">
+                <label for="format-select">Format</label>
+                <select id="format-select">
+                  <option value="MP3" selected>MP3</option>
+                  <option value="OGG_OPUS">OGG (Opus)</option>
+                  <option value="LINEAR16">WAV</option>
+                </select>
+              </div>
+            </section>
+
+            <section class="instructions-section">
+              <div class="input-header">
+                <label for="instructions-input">Voice instructions</label>
+                <select id="template-select" title="Apply a delivery style template">
+                  <option value="">Style templates…</option>
+                </select>
+              </div>
+              <textarea
+                id="instructions-input"
+                rows="4"
+                maxlength="2500"
+                placeholder="Describe in detail how the voice should sound…"
+              ></textarea>
+              <p id="instructions-note" class="field-note"></p>
+            </section>
+
+            <!-- Kokoro Speech Director Studio -->
+            <section class="card-sub-section" style="background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; margin: 15px 0;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 style="margin:0; font-size:15px; color:var(--accent, #6366f1); display:flex; align-items:center; gap:8px;">
+                  🎙️ Kokoro Speech Director Studio
+                </h3>
+                <div style="display:flex; gap:8px;">
+                  <button id="btn-auto-voice" class="btn ghost small" type="button">🎙 Auto Select Best Voice</button>
+                  <button id="btn-voice-variants" class="btn ghost small" type="button">🎙 Generate 5 Voice Variants</button>
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:12px;">
+                <div>
+                  <label for="narration-style-select">Narration Style</label>
+                  <select id="narration-style-select" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2);">
+                    <option value="documentary" selected>🎬 Documentary</option>
+                    <option value="storytelling">📖 Storytelling</option>
+                    <option value="historical">🏛️ Historical</option>
+                    <option value="educational">🎓 Educational</option>
+                    <option value="motivational">🔥 Motivational</option>
+                    <option value="podcast">🎙️ Podcast</option>
+                    <option value="news">📰 News</option>
+                    <option value="audiobook">📚 Audiobook</option>
+                    <option value="youtube_longform">🔴 YouTube Longform</option>
+                    <option value="youtube_shorts">⚡ YouTube Shorts</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="speech-speed-slider">Speech Speed <output id="speech-speed-val">1.0x</output></label>
+                  <input id="speech-speed-slider" type="range" min="0.5" max="2.0" step="0.05" value="1.0" style="width:100%;" />
+                </div>
+
+                <div>
+                  <label for="pause-intensity-slider">Dramatic Pause Intensity <output id="pause-intensity-val">50%</output></label>
+                  <input id="pause-intensity-slider" type="range" min="0" max="100" step="5" value="50" style="width:100%;" />
+                </div>
+              </div>
+
+              <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:12px; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
+                <label class="ssml-toggle"><input type="checkbox" id="toggle-naturalize-dates" checked /> <span>✓ Convert dates &amp; years naturally</span></label>
+                <label class="ssml-toggle"><input type="checkbox" id="toggle-naturalize-currencies" checked /> <span>✓ Convert currencies</span></label>
+              </div>
+
+              <div style="display:flex; gap:10px; align-items:center;">
+                <button id="btn-generate-natural-narration" class="btn primary" type="button" style="background:linear-gradient(135deg, #6366f1, #8b5cf6);">
+                  ✨ Generate Natural Narration
+                </button>
+                <span id="speech-director-status" class="field-note" style="margin:0;"></span>
+              </div>
+
+              <div id="speech-analytics-panel" style="margin-top:12px; padding:10px; background:rgba(16,185,129,0.1); border:1px solid #10b981; border-radius:8px; font-size:12px; color:#a7f3d0; display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">
+                <div><strong>⏱️ Duration:</strong> <span id="stat-dur">--</span></div>
+                <div><strong>📝 Words:</strong> <span id="stat-words">0</span></div>
+                <div><strong>🚀 Pace:</strong> <span id="stat-wpm">140 WPM</span></div>
+                <div><strong>⏸️ Pauses:</strong> <span id="stat-pauses">0</span></div>
+                <div><strong>🎙️ Active Voice:</strong> <span id="stat-voice">af_heart</span></div>
+              </div>
+            </section>
+
+            <section class="actions">
+              <button id="speak-btn" class="btn primary">
+                <span class="btn-label">Generate speech</span>
+                <span class="spinner" hidden></span>
+              </button>
+              <button id="subtitle-only-btn" class="btn ghost" type="button">Generate subtitles</button>
+              <button id="reset-btn" class="btn ghost" type="button">Reset</button>
+              <button class="btn ghost clear-btn" type="button" data-clear="tts">🗑 Clear audio</button>
+            </section>
+
+            <div id="status" class="status" hidden></div>
+
+            <section id="queue-section" class="queue" hidden>
+              <div class="queue-head">
+                <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+                <div class="queue-stats-row">
+                  <span id="queue-stats" class="queue-stats"></span>
+                  <span id="queue-eta" class="queue-eta"></span>
+                </div>
+              </div>
+
+              <div class="queue-controls">
+                <button id="pause-btn" class="btn ghost small" type="button" hidden>Pause</button>
+                <button id="resume-btn" class="btn primary small" type="button" hidden>Resume</button>
+                <button id="retry-btn" class="btn ghost small" type="button" hidden>Retry failed</button>
+                <button id="cancel-btn" class="btn ghost small" type="button" hidden>Cancel</button>
+                <button id="clear-btn" class="btn ghost small" type="button">Clear</button>
+              </div>
+
+              <div class="queue-group">
+                <span class="queue-group-label">Audio outputs</span>
+                <div class="queue-downloads">
+                  <button id="zip-btn" class="btn primary small" type="button" disabled>Download all as ZIP</button>
+                  <button id="zip-selected-btn" class="btn ghost small" type="button" disabled>Download selected</button>
+                  <button id="download-each-btn" class="btn ghost small" type="button" disabled>Download each</button>
+                  <label class="select-all-label"><input type="checkbox" id="select-all" /> Select all</label>
+                </div>
+              </div>
+
+              <div class="queue-group">
+                <span class="queue-group-label">Subtitles</span>
+                <div class="queue-downloads">
+                  <button id="sub-srt-btn" class="btn primary small" type="button">Download SRT</button>
+                  <button id="sub-vtt-btn" class="btn ghost small" type="button">Download VTT</button>
+                  <button id="sub-copy-btn" class="btn ghost small" type="button">Copy</button>
+                  <button id="sub-preview-btn" class="btn ghost small" type="button">Preview</button>
+                </div>
+              </div>
+
+              <div id="queue-list" class="queue-list"></div>
+              <audio id="row-audio" class="row-audio" controls hidden></audio>
+            </section>
+          </main>
         </div>
 
-        <div class="queue-group">
-          <span class="queue-group-label">Subtitles</span>
-          <div class="queue-downloads">
-            <button id="sub-srt-btn" class="btn primary small" type="button">Download SRT</button>
-            <button id="sub-vtt-btn" class="btn ghost small" type="button">Download VTT</button>
-            <button id="sub-copy-btn" class="btn ghost small" type="button">Copy</button>
-            <button id="sub-preview-btn" class="btn ghost small" type="button">Preview</button>
+        <!-- 6. STORYBOARDS WORKSPACE -->
+        <div id="workspace-storyboard" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
           </div>
+
+          <section id="storyboard-card" class="card">
+            <div class="input-header">
+              <label>🎬 AI Storyboards</label>
+              <span class="badge elite">⭐ Visual Director</span>
+            </div>
+            <p class="field-note">Upload subtitles (.srt/.vtt) plus optional script to generate scene prompts and visual assets.</p>
+
+            <div class="sb-import-row">
+              <button id="sb-import" class="btn ghost small" type="button">⤵ Import from project</button>
+              <span class="field-note">or upload files:</span>
+            </div>
+            <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt,.md" />
+            <div id="sb-filelist" class="sb-filelist"></div>
+
+            <section class="controls sb-controls">
+              <div class="control"><label for="sb-style">Visual style</label><select id="sb-style"></select></div>
+              <div class="control"><label for="sb-preset">Style preset</label><select id="sb-preset"></select></div>
+              <div class="control"><label for="sb-mode">Mode</label><select id="sb-mode"><option value="auto" selected>Auto</option><option value="review">Review</option></select></div>
+              <div class="control"><label for="sb-asset-mode">Scene assets</label><select id="sb-asset-mode"><option value="image" selected>Still images</option><option value="video">Video clips</option><option value="mixed">Mixed</option></select></div>
+              <div class="control"><label for="sb-density">Pacing</label><select id="sb-density"><option value="20">Sparse</option><option value="15" selected>Balanced</option><option value="10">Dense</option></select></div>
+            </section>
+
+            <div class="sb-preset-tools">
+              <input id="sb-style-notes" type="text" placeholder="Extra style notes…" />
+              <button id="sb-preset-save" class="btn ghost small" type="button">Save preset</button>
+            </div>
+
+            <div class="actions">
+              <button id="sb-analyze" class="btn primary"><span class="btn-label">Analyze &amp; generate</span><span class="spinner" hidden></span></button>
+              <button id="sb-generate-all" class="btn primary" type="button" hidden>Generate all images</button>
+              <button id="sb-raw" class="btn ghost" type="button" hidden>View raw response</button>
+              <button id="sb-clear" class="btn ghost clear-btn" type="button" data-clear="storyboard">🗑 Clear storyboard</button>
+            </div>
+
+            <div id="sb-status" class="status" hidden></div>
+            <div id="sb-progress" class="queue-head" hidden>
+              <div class="progress-track"><div id="sb-progress-fill" class="progress-fill"></div></div>
+              <div class="queue-stats-row"><span id="sb-stats" class="queue-stats"></span><span id="sb-eta" class="queue-eta"></span></div>
+            </div>
+
+            <div id="sb-bible" class="sb-bible" hidden></div>
+            <div id="sb-cast" class="sb-cast" hidden>
+              <div class="sb-cast-head">
+                <strong>🎭 Character references</strong>
+                <label class="ssml-toggle"><input type="checkbox" id="sb-use-refs" checked /> <span>Use references</span></label>
+              </div>
+              <div id="sb-cast-list" class="sb-cast-list"></div>
+            </div>
+
+            <div id="sb-exports" class="queue-downloads" hidden>
+              <button id="sb-zip" class="btn primary small" type="button">Download ZIP</button>
+              <button id="sb-prompts" class="btn ghost small" type="button">Download prompts</button>
+              <button id="sb-json" class="btn ghost small" type="button">Scene JSON</button>
+              <button id="sb-pdf" class="btn ghost small" type="button">PDF</button>
+            </div>
+
+            <div id="sb-scenes" class="sb-scenes"></div>
+          </section>
         </div>
 
-        <div id="queue-list" class="queue-list"></div>
-        <audio id="row-audio" class="row-audio" controls hidden></audio>
-      </section>
-    </main>
-
-    <!-- AI Research (sourced brief that grounds the script + SEO) -->
-    <section id="research-card" class="card research-card" hidden>
-      <div class="input-header">
-        <label for="research-topic">AI Research</label>
-        <div class="input-header-actions">
-          <span class="badge elite">⚡ Puter</span>
-          <button class="btn ghost small clear-btn" type="button" data-clear="research" title="Remove the research brief for this project (undoable)">🗑 Clear research</button>
-        </div>
-      </div>
-      <p class="field-note">Turn a topic into a structured research brief — facts (with confidence), angles, hooks, entities, a timeline and keywords — that grounds your script and SEO instead of relying on the model's memory. Verify anything flagged before publishing.</p>
-      <textarea id="research-topic" rows="2" placeholder="What should we research? e.g. 'Daily life of a 14th-century English village on the eve of the Black Death'"></textarea>
-      <section class="actions">
-        <button id="research-generate" class="btn primary" type="button">
-          <span class="btn-label">Research topic</span>
-          <span class="spinner" hidden></span>
-        </button>
-      </section>
-      <div id="research-status" class="status" hidden></div>
-      <div id="research-result" class="research-result" hidden></div>
-    </section>
-
-    <!-- AI Script Generator (Puter chat) -->
-    <section id="script-card" class="card script-card" hidden>
-      <div class="input-header">
-        <label>AI Script Generator</label>
-        <div class="input-header-actions">
-          <span class="badge elite">⚡ Puter</span>
-          <button class="btn ghost small clear-btn" type="button" data-clear="script" title="Remove the generated script for this project (undoable)">🗑 Clear script</button>
-        </div>
-      </div>
-      <p class="field-note">Generate a full narration script, then send it straight to the voice studio above.</p>
-
-      <section class="controls script-controls">
-        <div class="control">
-          <label for="script-type">Script type</label>
-          <select id="script-type">
-            <option value="youtube">YouTube video</option>
-            <option value="historical">Historical storytelling</option>
-            <option value="documentary">Documentary narration</option>
-            <option value="educational">Educational content</option>
-            <option value="shorts">Short / Reel</option>
-            <option value="podcast">Podcast episode</option>
-            <option value="audiobook">Audiobook-style</option>
-          </select>
-        </div>
-        <div class="control">
-          <label for="script-tone">Tone</label>
-          <select id="script-tone">
-            <option value="cinematic and dramatic">Cinematic &amp; dramatic</option>
-            <option value="warm and conversational">Warm &amp; conversational</option>
-            <option value="authoritative and factual">Authoritative &amp; factual</option>
-            <option value="suspenseful and mysterious">Suspenseful &amp; mysterious</option>
-            <option value="upbeat and energetic">Upbeat &amp; energetic</option>
-            <option value="calm and reflective">Calm &amp; reflective</option>
-          </select>
-        </div>
-        <div class="control">
-          <label for="script-length">Length</label>
-          <select id="script-length">
-            <option value="short">Short (~150 words)</option>
-            <option value="medium" selected>Medium (~400 words)</option>
-            <option value="long">Long (~800 words)</option>
-            <option value="xlong">Extra long (~1500 words)</option>
-          </select>
-        </div>
-        <div class="control">
-          <label for="script-audience">Audience</label>
-          <input id="script-audience" type="text" placeholder="e.g. history enthusiasts, general viewers" />
-        </div>
-      </section>
-
-      <div class="input-header">
-        <label for="script-topic">Topic / brief</label>
-        <select id="script-template-select" title="Saved prompt templates">
-          <option value="">Prompt templates…</option>
-        </select>
-      </div>
-      <textarea id="script-topic" rows="3" placeholder="What should the script be about? e.g. 'A day in the life of a medieval blacksmith' — add any beats, facts, or angles you want covered…"></textarea>
-
-      <label class="ssml-toggle" title="Add hooks, pattern interrupts, and re-engagement beats to hold viewer attention">
-        <input type="checkbox" id="script-retention" checked /> <span>Optimize for retention (hooks &amp; pacing)</span>
-      </label>
-
-      <section class="actions">
-        <button id="script-generate" class="btn primary" type="button">
-          <span class="btn-label">Generate script</span>
-          <span class="spinner" hidden></span>
-        </button>
-        <button id="script-stop" class="btn ghost" type="button" hidden>■ Stop</button>
-        <button id="script-save-template" class="btn ghost" type="button" title="Save the current type/tone/length/audience/topic as a reusable template">Save as template</button>
-      </section>
-
-      <div id="script-status" class="status" hidden></div>
-
-      <section id="script-result" class="script-result" hidden>
-        <textarea id="script-output" rows="14" spellcheck="false"></textarea>
-        <div class="script-refine-row">
-          <span class="refine-label">AI refine:</span>
-          <button class="btn ghost small" type="button" data-refine="polish" title="Tighten wording and improve flow">✨ Polish</button>
-          <button class="btn ghost small" type="button" data-refine="punch" title="Stronger hook, more energy">⚡ Punch up</button>
-          <button class="btn ghost small" type="button" data-refine="shorten" title="Cut ~30%">✂ Shorten</button>
-          <button class="btn ghost small" type="button" data-refine="expand" title="Add ~40% detail">➕ Expand</button>
-        </div>
-        <div class="script-result-actions">
-          <button id="script-use" class="btn primary small" type="button" title="Load this script into the voice studio above">Use in voice studio ↑</button>
-          <button id="script-copy" class="btn ghost small" type="button">Copy</button>
-          <button id="script-download" class="btn ghost small" type="button">Download .txt</button>
-          <button id="script-regenerate" class="btn ghost small" type="button">Regenerate</button>
-          <span id="script-wordcount" class="field-note"></span>
-        </div>
-      </section>
-    </section>
-
-    <!-- Image generator (Puter txt2img) -->
-    <section id="image-card" class="card image-card" hidden>
-      <div class="input-header">
-        <label for="image-prompt">Image generator</label>
-        <div class="input-header-actions">
-          <span class="badge premium">Puter</span>
-          <button class="btn ghost small clear-btn" type="button" data-clear="images" title="Clear the generated image preview">🗑 Clear image</button>
-        </div>
-      </div>
-      <textarea
-        id="image-prompt"
-        rows="3"
-        maxlength="2000"
-        placeholder="Describe the image, or jot a rough idea and hit ✨ Enhance… e.g. a lone lighthouse in a storm"
-      ></textarea>
-      <div class="image-prompt-tools">
-        <button id="image-enhance" class="btn ghost small" type="button" title="Turn a rough idea into a rich, model-ready prompt">✨ Enhance prompt</button>
-      </div>
-      <section class="controls image-controls">
-        <div class="control">
-          <label for="image-aspect">Aspect</label>
-          <select id="image-aspect">
-            <option value="1:1">Square · 1:1</option>
-            <option value="16:9" selected>Wide · 16:9</option>
-            <option value="9:16">Tall · 9:16</option>
-            <option value="4:3">Landscape · 4:3</option>
-            <option value="3:4">Portrait · 3:4</option>
-          </select>
-        </div>
-      </section>
-      <div class="actions">
-        <button id="image-generate" class="btn primary">
-          <span class="btn-label">Generate image</span>
-          <span class="spinner" hidden></span>
-        </button>
-      </div>
-      <div id="image-status" class="status" hidden></div>
-      <div id="image-result" class="image-result" hidden>
-        <img id="image-output" alt="Generated image" />
-        <a id="image-download" class="btn ghost" download>Download image</a>
-      </div>
-    </section>
-
-    <!-- AI Storyboard (Puter chat + txt2img) -->
-    <section id="storyboard-card" class="card" hidden>
-      <div class="input-header">
-        <label>AI Storyboard</label>
-        <span class="badge elite">⭐ AI Visual Director</span>
-      </div>
-      <p class="field-note">
-        Upload subtitles (.srt / .vtt / timestamped .txt) plus optional script, story bible,
-        character sheets, style guides or instructions. The AI reads the whole story, infers (or
-        follows) a visual style, builds character &amp; location profiles, merges lines into story
-        beats, and generates one asset per beat — still image, video clip (Puter txt2vid), or a mix.
-      </p>
-      <div class="sb-import-row">
-        <button id="sb-import" class="btn ghost small" type="button" title="Pull the subtitles or script you already generated in this project — no download/upload needed">⤵ Import from project</button>
-        <span class="field-note">or upload files:</span>
-      </div>
-      <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt,.md" title="Subtitles, script, story bible, character sheets, style guides, worldbuilding, scene instructions" />
-      <div id="sb-filelist" class="sb-filelist"></div>
-
-      <section class="controls sb-controls">
-        <div class="control">
-          <label for="sb-style">Visual style</label>
-          <select id="sb-style" title="The look of every generated image — choose one or let the AI infer it from your content"></select>
-        </div>
-        <div class="control">
-          <label for="sb-preset">Style preset</label>
-          <select id="sb-preset" title="Reusable visual presets"></select>
-        </div>
-        <div class="control">
-          <label for="sb-mode">Mode</label>
-          <select id="sb-mode" title="How the storyboard runs">
-            <option value="auto" selected>Auto (analyze → generate)</option>
-            <option value="review">Prompt review (approve before images)</option>
-          </select>
-        </div>
-        <div class="control">
-          <label for="sb-asset-mode">Scene assets</label>
-          <select id="sb-asset-mode" title="Generate still images, video clips (Puter txt2vid), or a mix">
-            <option value="image" selected>Still images</option>
-            <option value="video">Video clips</option>
-            <option value="mixed">Mixed (per-scene)</option>
-          </select>
-        </div>
-        <div class="control">
-          <label for="sb-density">Scene pacing</label>
-          <select id="sb-density" title="How many images to make — merges subtitle lines into story beats">
-            <option value="20">Sparse · ~1 / 20s</option>
-            <option value="15" selected>Balanced · ~1 / 15s</option>
-            <option value="10">Dense · ~1 / 10s</option>
-            <option value="0">One per subtitle line</option>
-          </select>
-        </div>
-      </section>
-      <div class="sb-preset-tools">
-        <input id="sb-style-notes" type="text" placeholder="Extra style notes (e.g. warm lighting, muted palette)…" />
-        <button id="sb-preset-save" class="btn ghost small" type="button">Save preset</button>
-      </div>
-
-      <div class="actions">
-        <button id="sb-analyze" class="btn primary">
-          <span class="btn-label">Analyze &amp; generate</span>
-          <span class="spinner" hidden></span>
-        </button>
-        <button id="sb-generate-all" class="btn primary" type="button" hidden>Generate all images</button>
-        <button id="sb-raw" class="btn ghost" type="button" hidden>View raw response</button>
-        <button id="sb-clear" class="btn ghost clear-btn" type="button" data-clear="storyboard" title="Clear the storyboard, scenes and generated images (undoable)">🗑 Clear storyboard</button>
-      </div>
-
-      <div id="sb-status" class="status" hidden></div>
-
-      <div id="sb-progress" class="queue-head" hidden>
-        <div class="progress-track"><div id="sb-progress-fill" class="progress-fill"></div></div>
-        <div class="queue-stats-row">
-          <span id="sb-stats" class="queue-stats"></span>
-          <span id="sb-eta" class="queue-eta"></span>
-        </div>
-        <div class="queue-controls">
-          <button id="sb-pause" class="btn ghost small" type="button" hidden>Pause</button>
-          <button id="sb-resume" class="btn primary small" type="button" hidden>Resume</button>
-          <button id="sb-cancel" class="btn ghost small" type="button" hidden>Cancel</button>
-        </div>
-      </div>
-
-      <div id="sb-bible" class="sb-bible" hidden></div>
-
-      <div id="sb-cast" class="sb-cast" hidden>
-        <div class="sb-cast-head">
-          <strong>🎭 Character references</strong>
-          <label class="ssml-toggle" title="Condition scene generation on each character's reference image (on models that support it) so they stay consistent"><input type="checkbox" id="sb-use-refs" checked /> <span>Use references for scenes</span></label>
-        </div>
-        <p class="field-note">Lock each character's look: generate a reference portrait (or upload one). Scenes featuring that character are then conditioned on the reference — on image models that support it, with automatic text-only fallback otherwise.</p>
-        <div id="sb-cast-list" class="sb-cast-list"></div>
-      </div>
-
-      <div id="sb-exports" class="queue-downloads" hidden>
-        <button id="sb-zip" class="btn primary small" type="button">Download ZIP</button>
-        <button id="sb-prompts" class="btn ghost small" type="button">Download prompts</button>
-        <button id="sb-json" class="btn ghost small" type="button">Scene JSON</button>
-        <button id="sb-pdf" class="btn ghost small" type="button">Storyboard PDF</button>
-      </div>
-
-      <div id="sb-scenes" class="sb-scenes"></div>
-    </section>
-
-    <!-- AI Video Editor -->
-    <section id="editor-card" class="card" hidden>
-      <div class="input-header">
-        <label>AI Video Editor</label>
-        <div class="input-header-actions">
-          <span class="badge premium">Auto-assemble</span>
-          <button class="btn ghost small clear-btn" type="button" data-clear="editor" title="Clear the timeline and uploaded assets (undoable)">🗑 Clear timeline &amp; assets</button>
-        </div>
-      </div>
-      <p class="field-note">
-        Assembles your storyboard images, subtitle timing and narration into a synchronized rough cut
-        with automatic camera motion and burned-in subtitles. Preview it, tweak the timeline, then export.
-      </p>
-      <p class="field-note"><strong>Recommended:</strong> generate a storyboard first, then auto-assemble — the storyboard provides scene order, timing and image assignments. Or open the manual editor to work with your own assets.</p>
-      <div class="actions">
-        <button id="ed-assemble" class="btn primary" type="button">Auto-assemble from project</button>
-        <button id="ed-manual-toggle" class="btn ghost" type="button">Open Manual Editor</button>
-        <span id="ed-summary" class="field-note"></span>
-      </div>
-
-      <div id="ed-manual" class="ed-manual" hidden>
-        <span class="queue-group-label">Manual Editor — upload your own assets (no storyboard required)</span>
-        <div class="ed-manual-inputs">
-          <label>Images (scenes, sorted by filename)<input id="ed-up-images" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
-          <label>Narration audio<input id="ed-up-audio" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/*" /></label>
-          <label>Subtitles (.srt/.vtt) — sets timing &amp; captions<input id="ed-up-subs" type="file" accept=".srt,.vtt,.txt" /></label>
-        </div>
-        <div class="actions">
-          <button id="ed-build-manual" class="btn primary" type="button">Auto Assemble uploads</button>
-          <span class="field-note">Reads subtitle timestamps, matches images to timing, sets durations, and syncs audio into a draft timeline.</span>
-        </div>
-      </div>
-      <div id="ed-status" class="status" hidden></div>
-
-      <div id="ed-stage" hidden>
-        <canvas id="ed-canvas" width="1280" height="720" class="ed-canvas"></canvas>
-        <div class="ed-transport">
-          <button id="ed-play" class="btn primary small" type="button">▶ Play</button>
-          <input id="ed-seek" type="range" min="0" max="1000" value="0" class="ed-seek" />
-          <span id="ed-time" class="queue-eta">0:00 / 0:00</span>
-        </div>
-
-        <div class="controls ed-subs">
-          <div class="control">
-            <label for="ed-sub-font">Subtitle font</label>
-            <select id="ed-sub-font">
-              <option value="Arial, sans-serif">Sans (Arial)</option>
-              <option value="Georgia, serif">Serif (Georgia)</option>
-              <option value="Impact, sans-serif">Impact</option>
-              <option value="'Courier New', monospace">Monospace</option>
-            </select>
+        <!-- 7. IMAGES WORKSPACE — Uncensored Local Studio (Stable Diffusion) -->
+        <div id="workspace-images" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
           </div>
-          <div class="control">
-            <label for="ed-sub-size">Size <output id="ed-sub-size-val">42</output></label>
-            <input id="ed-sub-size" type="range" min="20" max="72" step="2" value="42" />
+
+          <section id="image-card" class="card image-card">
+            <div class="input-header">
+              <label for="image-prompt">🎨 AI Image Studio</label>
+              <div class="input-header-actions">
+                <span id="sd-status-badge" class="badge standard">⏳ Checking SD backend…</span>
+                <button class="btn ghost small clear-btn" type="button" data-clear="images">🗑 Clear</button>
+              </div>
+            </div>
+
+            <!-- Prompt -->
+            <div class="input-header" style="margin-top:1rem">
+              <label for="image-prompt">Prompt</label>
+              <button id="image-enhance" class="btn ghost small" type="button">✨ AI Enhance</button>
+            </div>
+            <textarea id="image-prompt" rows="3" maxlength="2000" placeholder="Describe the scene in detail — style, lighting, subject, composition…"></textarea>
+
+            <!-- Negative prompt -->
+            <div class="input-header" style="margin-top:.75rem">
+              <label for="image-negative-prompt">Negative Prompt</label>
+              <span style="font-size:.75rem;color:var(--muted)">what to avoid</span>
+            </div>
+            <textarea id="image-negative-prompt" rows="2" maxlength="1000" placeholder="watermark, blurry, deformed, worst quality, low quality, nsfw…"></textarea>
+
+            <!-- Controls Row 1 -->
+            <section class="controls image-controls" style="margin-top:1rem">
+              <div class="control">
+                <label for="image-aspect">Aspect</label>
+                <select id="image-aspect">
+                  <option value="1:1">Square · 1:1</option>
+                  <option value="16:9" selected>Wide · 16:9</option>
+                  <option value="9:16">Tall · 9:16</option>
+                  <option value="4:3">Landscape · 4:3</option>
+                  <option value="3:4">Portrait · 3:4</option>
+                </select>
+              </div>
+              <div class="control">
+                <label for="image-sampler">Sampler</label>
+                <select id="image-sampler">
+                  <option value="euler_a" selected>Euler A</option>
+                  <option value="euler">Euler</option>
+                  <option value="dpm++2m">DPM++ 2M</option>
+                  <option value="dpm++2m_karras">DPM++ 2M Karras</option>
+                  <option value="lcm">LCM</option>
+                  <option value="ddim">DDIM</option>
+                </select>
+              </div>
+              <div class="control">
+                <label for="image-model-select">Model</label>
+                <select id="image-model-select">
+                  <option value="">Auto (server default)</option>
+                </select>
+              </div>
+            </section>
+
+            <!-- Controls Row 2 -->
+            <section class="controls image-controls" style="margin-top:.5rem">
+              <div class="control">
+                <label for="image-steps">Steps <span id="image-steps-val">20</span></label>
+                <input type="range" id="image-steps" min="1" max="60" value="20" step="1" />
+              </div>
+              <div class="control">
+                <label for="image-cfg">CFG Scale <span id="image-cfg-val">7.0</span></label>
+                <input type="range" id="image-cfg" min="1" max="20" value="7" step="0.5" />
+              </div>
+              <div class="control">
+                <label for="image-seed">Seed</label>
+                <input type="number" id="image-seed" value="-1" min="-1" max="4294967295" style="width:100%;max-width:160px" title="-1 = random" />
+              </div>
+            </section>
+
+            <!-- Actions -->
+            <div class="actions" style="margin-top:1rem">
+              <button id="image-generate" class="btn primary"><span class="btn-label">🎨 Generate</span><span class="spinner" hidden></span></button>
+              <button id="image-reload-models" class="btn ghost small" type="button" title="Reload model list from SD backend">🔄 Reload Models</button>
+            </div>
+            <div id="image-status" class="status" hidden></div>
+            <div id="image-result" class="image-result" hidden>
+              <img id="image-output" alt="Generated image" />
+              <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
+                <a id="image-download" class="btn ghost" download>⬇ Download</a>
+                <button id="image-use-as-ref" class="btn ghost small" type="button">📌 Use as Reference</button>
+              </div>
+              <div id="image-seed-used" style="font-size:.75rem;color:var(--muted);margin-top:.25rem"></div>
+            </div>
+          </section>
+        </div>
+
+        <!-- 8. VIDEOS WORKSPACE -->
+        <div id="workspace-video" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
           </div>
-          <div class="control">
-            <label for="ed-sub-pos">Position</label>
-            <select id="ed-sub-pos">
-              <option value="bottom" selected>Bottom</option>
-              <option value="center">Center</option>
-              <option value="top">Top</option>
-            </select>
+
+          <section id="editor-card" class="card">
+            <div class="input-header">
+              <label>🎞️ AI Video Editor</label>
+              <div class="input-header-actions">
+                <span class="badge premium">Auto-assemble</span>
+                <button class="btn ghost small clear-btn" type="button" data-clear="editor">🗑 Clear timeline</button>
+              </div>
+            </div>
+            <p class="field-note">Assembles your storyboard images, subtitle timing and narration into a synchronized rough cut.</p>
+            <div class="actions">
+              <button id="ed-assemble" class="btn primary" type="button">Auto-assemble from project</button>
+              <button id="ed-manual-toggle" class="btn ghost" type="button">Open Manual Editor</button>
+              <span id="ed-summary" class="field-note"></span>
+            </div>
+
+            <div id="ed-manual" class="ed-manual" hidden>
+              <div class="ed-manual-inputs">
+                <label>Images<input id="ed-up-images" type="file" accept="image/*" multiple /></label>
+                <label>Audio<input id="ed-up-audio" type="file" accept="audio/*" /></label>
+                <label>Subtitles<input id="ed-up-subs" type="file" accept=".srt,.vtt,.txt" /></label>
+              </div>
+              <div class="actions"><button id="ed-build-manual" class="btn primary" type="button">Auto Assemble uploads</button></div>
+            </div>
+            <div id="ed-status" class="status" hidden></div>
+
+            <div id="ed-stage" hidden>
+              <canvas id="ed-canvas" width="1280" height="720" class="ed-canvas"></canvas>
+              <div class="ed-transport">
+                <button id="ed-play" class="btn primary small" type="button">▶ Play</button>
+                <input id="ed-seek" type="range" min="0" max="1000" value="0" class="ed-seek" />
+                <span id="ed-time" class="queue-eta">0:00 / 0:00</span>
+              </div>
+
+              <div class="controls ed-subs">
+                <div class="control"><label for="ed-sub-font">Font</label><select id="ed-sub-font"><option value="Arial, sans-serif">Sans (Arial)</option><option value="Impact, sans-serif">Impact</option></select></div>
+                <div class="control"><label for="ed-sub-size">Size <output id="ed-sub-size-val">42</output></label><input id="ed-sub-size" type="range" min="20" max="72" step="2" value="42" /></div>
+                <div class="control"><label for="ed-sub-color">Color</label><input id="ed-sub-color" type="color" value="#ffffff" /></div>
+                <div class="control"><label class="ssml-toggle"><input type="checkbox" id="ed-sub-on" checked /> <span>Burn subtitles</span></label></div>
+              </div>
+
+              <div class="queue-downloads">
+                <button id="ed-export-video" class="btn primary small" type="button">Export video (WebM)</button>
+                <button id="ed-export-package" class="btn ghost small" type="button">Export ZIP</button>
+              </div>
+              <div id="ed-timeline" class="ed-timeline"></div>
+            </div>
+          </section>
+        </div>
+
+        <!-- 9. THUMBNAILS WORKSPACE -->
+        <div id="workspace-thumbnail" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
           </div>
-          <div class="control">
-            <label for="ed-sub-color">Color</label>
-            <input id="ed-sub-color" type="color" value="#ffffff" />
+
+          <section id="thumbnail-card" class="card">
+            <div class="input-header">
+              <label>🖼️ Thumbnails &amp; Visual Hooks Studio</label>
+              <span class="badge premium">CTR Generator</span>
+            </div>
+            <p class="field-note">Generate high-click-through thumbnail concepts, viral overlay text hooks, and AI art prompts tailored for YouTube search and home feed.</p>
+            <div style="display:flex; gap:10px; margin: 15px 0;">
+              <input type="text" id="thumb-topic-input" class="input-text" placeholder="Thumbnail Topic / Focus (e.g. A Day in the Life of a Snake)..." style="flex:1;" />
+              <button id="thumb-generate-btn" class="btn primary" type="button">✨ Generate High-CTR Concepts</button>
+            </div>
+            <div id="thumb-status" class="status" hidden></div>
+            <div id="thumb-results" class="thumb-results-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:15px; margin-top:15px;"></div>
+          </section>
+        </div>
+
+        <!-- 10. PUBLISH (YOUTUBE SEO) WORKSPACE -->
+        <div id="workspace-youtube" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
           </div>
-          <div class="control">
-            <label class="ssml-toggle"><input type="checkbox" id="ed-sub-on" checked /> <span>Burn subtitles</span></label>
-          </div>
-          <div class="control">
-            <label class="ssml-toggle"><input type="checkbox" id="ed-crossfade" checked /> <span>Crossfade transitions</span></label>
-          </div>
+
+          <section id="youtube-card" class="card">
+            <div class="input-header">
+              <label>🚀 YouTube SEO &amp; Publishing</label>
+              <div class="input-header-actions">
+                <span class="badge premium">SEO + Package</span>
+                <button class="btn ghost small clear-btn" type="button" data-clear="youtube">🗑 Clear SEO</button>
+              </div>
+            </div>
+
+            <details class="yt-channel">
+              <summary>Channel profile &amp; knowledge base</summary>
+              <div class="controls yt-channel-form">
+                <div class="control"><label for="yt-ch-name">Channel name</label><input id="yt-ch-name" type="text" placeholder="Born Back Then" /></div>
+                <div class="control"><label for="yt-ch-type">Channel type</label><input id="yt-ch-type" type="text" placeholder="Historical storytelling" /></div>
+              </div>
+              <div class="actions"><button id="yt-save-channel" class="btn ghost small" type="button">Save profile</button></div>
+            </details>
+
+            <div class="actions">
+              <button id="yt-generate" class="btn primary" type="button">
+                <span class="btn-label">Generate optimization package</span>
+                <span class="spinner" hidden></span>
+              </button>
+              <span id="yt-project-name" class="field-note"></span>
+            </div>
+            <div id="yt-status" class="status" hidden></div>
+
+            <div id="yt-results" hidden>
+              <div id="yt-recommended" class="yt-block"></div>
+              <div id="yt-titles" class="yt-block"></div>
+              <div id="yt-desc" class="yt-block"></div>
+              <div id="yt-keywords" class="yt-block"></div>
+              <div id="yt-tags" class="yt-block"></div>
+              <div id="yt-hashtags" class="yt-block"></div>
+              <div id="yt-thumbs" class="yt-block"></div>
+
+              <div class="queue-downloads">
+                <button id="yt-export-seo" class="btn primary small" type="button">SEO report (.md)</button>
+                <button id="yt-export-all" class="btn ghost small" type="button">Publishing package (ZIP)</button>
+              </div>
+            </div>
+          </section>
         </div>
 
-        <div class="queue-downloads">
-          <div class="control" style="min-width:150px">
-            <label for="ed-res">Export resolution</label>
-            <select id="ed-res">
-              <option value="720">720p (WebM)</option>
-              <option value="1080" selected>1080p (WebM)</option>
-            </select>
-          </div>
-          <button id="ed-export-video" class="btn primary small" type="button">Export video (WebM)</button>
-          <button id="ed-export-package" class="btn ghost small" type="button">Export editor package (ZIP)</button>
+        <!-- 11. AI DIRECTOR WORKSPACE -->
+        <div id="workspace-director" class="workspace-page" hidden>
+          <section id="director-card" class="card director-card">
+            <div class="input-header">
+              <label>⚙️ AI Production Director</label>
+              <label class="ssml-toggle"><input type="checkbox" id="director-mode" /> <span>Director Mode</span></label>
+            </div>
+            <p class="field-note">Your creative director, content strategist and QC manager.</p>
+
+            <div id="director-next" class="director-next" hidden></div>
+
+            <div class="director-autorun-bar">
+              <button id="director-autorun" class="btn primary" type="button">▶ Auto-run pipeline</button>
+              <label class="ssml-toggle"><input type="checkbox" id="director-autorun-auto" /> <span>Hands-free</span></label>
+            </div>
+            <div id="director-autorun-panel" class="director-autorun-panel" hidden></div>
+
+            <div class="director-actions">
+              <button id="director-audit" class="btn primary" type="button">Run production audit</button>
+              <button class="btn ghost small" type="button" data-dcmd="Review my storyboard">Review storyboard</button>
+              <button class="btn ghost small" type="button" data-dcmd="Improve retention">Improve retention</button>
+              <button class="btn ghost small" type="button" data-dcmd="Recommend best voice">Best voice</button>
+            </div>
+
+            <div id="director-audit-result" class="director-audit" hidden></div>
+
+            <div id="director-chat" class="director-chat" hidden></div>
+            <div class="director-input-row">
+              <textarea id="director-input" rows="2" placeholder="Ask the Production Director…"></textarea>
+              <div class="director-input-actions">
+                <button id="director-send" class="btn primary"><span class="btn-label">Ask</span><span class="spinner" hidden></span></button>
+                <button id="director-stop" class="btn ghost" type="button" hidden>■ Stop</button>
+              </div>
+            </div>
+            <div id="director-status" class="status" hidden></div>
+          </section>
+
+          <section id="brain-card" class="card brain-card" style="margin-top:16px;">
+            <div class="input-header">
+              <label>🧠 Channel Brain</label>
+              <div class="input-header-actions">
+                <span class="badge premium">Cross-project memory</span>
+                <button class="btn ghost small clear-btn" type="button" data-clear="brain">🗑 Reset brain</button>
+              </div>
+            </div>
+            <div class="brain-grid">
+              <div class="brain-col">
+                <h4 class="brain-h">Learned preferences</h4>
+                <div id="brain-prefs" class="brain-prefs"></div>
+                <button id="brain-learn" class="btn ghost small" type="button">Learn from this project</button>
+              </div>
+              <div class="brain-col">
+                <h4 class="brain-h">What performs</h4>
+                <div id="brain-insights" class="brain-insights"></div>
+              </div>
+            </div>
+          </section>
         </div>
 
-        <div id="ed-timeline" class="ed-timeline"></div>
-      </div>
-    </section>
-
-    <!-- YouTube Optimization Center -->
-    <section id="youtube-card" class="card" hidden>
-      <div class="input-header">
-        <label>YouTube Optimization Center</label>
-        <div class="input-header-actions">
-          <span class="badge premium">SEO + Thumbnails</span>
-          <button class="btn ghost small clear-btn" type="button" data-clear="youtube" title="Clear generated titles, description, tags and thumbnails (undoable). Your channel knowledge base is kept.">🗑 Clear SEO assets</button>
-        </div>
-      </div>
-
-      <details class="yt-channel">
-        <summary>Channel profile &amp; knowledge base</summary>
-        <p class="field-note">Saved globally and inherited by every project, so your whole channel stays on-brand.</p>
-        <div class="controls yt-channel-form">
-          <div class="control"><label for="yt-ch-name">Channel name</label><input id="yt-ch-name" type="text" placeholder="Born Back Then" /></div>
-          <div class="control"><label for="yt-ch-type">Channel type</label><input id="yt-ch-type" type="text" placeholder="Historical storytelling" /></div>
-          <div class="control"><label for="yt-ch-audience">Audience</label><input id="yt-ch-audience" type="text" placeholder="Adults interested in immersive history" /></div>
-          <div class="control"><label for="yt-ch-tone">Tone</label><input id="yt-ch-tone" type="text" placeholder="Immersive, educational, documentary" /></div>
-          <div class="control"><label for="yt-ch-visual">Visual style</label><input id="yt-ch-visual" type="text" placeholder="Premium 2D historical illustrations" /></div>
-          <div class="control"><label for="yt-ch-thumb">Thumbnail style</label><input id="yt-ch-thumb" type="text" placeholder="Dark cinematic, warm lighting, bold readable text" /></div>
-          <div class="control"><label for="yt-ch-palette">Colour palette</label><input id="yt-ch-palette" type="text" placeholder="Warm amber, deep shadow, muted earth" /></div>
-          <div class="control"><label for="yt-ch-titles">Title structure</label><input id="yt-ch-titles" type="text" placeholder="Curiosity hook + subject + era" /></div>
-          <div class="control"><label for="yt-ch-seo">SEO focus</label><input id="yt-ch-seo" type="text" placeholder="History enthusiasts, educational viewers" /></div>
-          <div class="control"><label for="yt-ch-strategy">Content strategy</label><input id="yt-ch-strategy" type="text" placeholder="Weekly immersive medieval stories" /></div>
-        </div>
-        <div class="actions"><button id="yt-save-channel" class="btn ghost small" type="button">Save channel profile</button></div>
-      </details>
-
-      <div class="actions">
-        <button id="yt-generate" class="btn primary" type="button">
-          <span class="btn-label">Generate optimization for this project</span>
-          <span class="spinner" hidden></span>
-        </button>
-        <span id="yt-project-name" class="field-note"></span>
-      </div>
-      <div id="yt-status" class="status" hidden></div>
-
-      <div id="yt-results" hidden>
-        <div id="yt-recommended" class="yt-block"></div>
-        <div id="yt-titles" class="yt-block"></div>
-        <div id="yt-desc" class="yt-block"></div>
-        <div id="yt-keywords" class="yt-block"></div>
-        <div id="yt-tags" class="yt-block"></div>
-        <div id="yt-hashtags" class="yt-block"></div>
-        <div id="yt-thumbs" class="yt-block"></div>
-
-        <div class="queue-downloads">
-          <button id="yt-export-seo" class="btn primary small" type="button">SEO report (.md)</button>
-          <button id="yt-export-thumbs" class="btn ghost small" type="button">Thumbnail package (ZIP)</button>
-          <button id="yt-export-all" class="btn ghost small" type="button">Publishing package (ZIP)</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- AI Coding Agent -->
-    <section id="agent-card" class="card agent-card" hidden>
-      <div class="input-header">
-        <label>AI Coding Agent</label>
-        <div class="input-header-actions">
-          <span class="badge elite">⚡ Puter</span>
-          <button class="btn ghost small clear-btn" type="button" data-clear="agent" title="Clear the chat history and context files (undoable)">🗑 Clear chat history</button>
-        </div>
-      </div>
-      <p class="field-note">A coding assistant powered by Puter. Generate, edit, analyze and debug code. Add files as context so it understands your project.</p>
-
-      <section class="controls agent-controls">
-        <div class="control">
-          <label for="agent-model">Model</label>
-          <select id="agent-model" title="Populated from the models your Puter instance offers">
-            <option value="">Auto (instance default)</option>
-          </select>
-        </div>
-        <div class="control">
-          <label for="agent-mode">Mode</label>
-          <select id="agent-mode">
-            <option value="chat">Chat</option>
-            <option value="task">Task (step-by-step plan)</option>
-          </select>
-        </div>
-        <div class="control agent-context-control">
-          <label>Context files <span id="agent-context-count" class="field-note"></span></label>
-          <div class="agent-context-actions">
-            <button id="agent-add-context" class="btn ghost small" type="button">+ Add file</button>
-            <button id="agent-clear-context" class="btn ghost small" type="button">Clear</button>
-          </div>
-        </div>
-      </section>
-
-      <div id="agent-context-list" class="agent-context-list"></div>
-
-      <div id="agent-messages" class="agent-messages" aria-live="polite"></div>
-
-      <div id="agent-status" class="status" hidden></div>
-
-      <section class="agent-input-row">
-        <textarea id="agent-input" rows="3" placeholder="Ask the agent to write, explain, or debug code… (Ctrl/Cmd+Enter to send)"></textarea>
-        <div class="agent-input-actions">
-          <button id="agent-send" class="btn primary">
-            <span class="btn-label">Send</span>
-            <span class="spinner" hidden></span>
-          </button>
-          <button id="agent-stop" class="btn ghost" type="button" hidden>■ Stop</button>
-          <button id="agent-new" class="btn ghost small" type="button" title="Start a new conversation">New chat</button>
-          <button id="agent-export" class="btn ghost small" type="button" title="Download the conversation as Markdown">Export</button>
-        </div>
-      </section>
-    </section>
-
-    <footer class="footer">
-      <p>Serverless AI content-production studio — voice, images, video and scripts powered by <a href="https://puter.com" target="_blank" rel="noopener">Puter</a> + ElevenLabs. No API keys required.</p>
-    </footer>
-  </div>
-
-  <!-- Smart clear options -->
-  <div id="data-smart-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Smart clear options">
-    <div class="modal-backdrop" data-close></div>
-    <div class="modal-panel">
-      <div class="modal-header">
-        <h2>Clear options</h2>
-        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
-      </div>
-      <p class="field-note">Target exactly what you want to remove. Each option confirms first and can be undone for a few seconds.</p>
-      <div class="smart-options">
-        <button class="smart-option" type="button" data-smart="generated"><strong>Clear generated content</strong><span>Script, audio, subtitles, storyboard, images, timeline &amp; SEO</span></button>
-        <button class="smart-option" type="button" data-smart="uploaded"><strong>Clear uploaded files</strong><span>Files you uploaded, e.g. narration audio</span></button>
-        <button class="smart-option" type="button" data-smart="ai"><strong>Clear AI outputs</strong><span>Everything the AI produced, incl. chat &amp; audit</span></button>
-        <button class="smart-option" type="button" data-smart="cache"><strong>Clear cache &amp; temporary assets</strong><span>Recent items and transient data</span></button>
-        <button class="smart-option" type="button" data-smart="completed-scenes"><strong>Clear completed scenes only</strong><span>Storyboard scenes that finished generating</span></button>
-        <button class="smart-option" type="button" data-smart="failed-scenes"><strong>Clear failed generations only</strong><span>Storyboard scenes that failed</span></button>
-      </div>
+      </main>
     </div>
   </div>
 
-  <!-- Add-context dialog -->
-  <!-- AI settings -->
+  <!-- Footer -->
+  <footer class="footer" style="text-align:center; padding:15px; color:var(--text-dim, #777); font-size:12px;">
+    AETHER AI Studio — AI Video &amp; Voice Engine — Powered by Stable Diffusion Local + Kokoro TTS + ElevenLabs
+  </footer>
+
+  <!-- Modals -->
   <div id="ai-settings-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="AI settings">
     <div class="modal-backdrop" data-close></div>
-    <div class="modal-panel">
+    <div class="modal-panel" style="max-width: 650px;">
       <div class="modal-header">
-        <h2>AI settings</h2>
+        <h2>⚙ Provider &amp; Engine Settings</h2>
         <button class="modal-close" type="button" data-close aria-label="Close">×</button>
       </div>
-      <p class="field-note">These adapt Blvck-TTS to whatever your Puter instance offers. On <strong>puter.com</strong> the defaults work as-is. On a <strong>self-hosted</strong> Puter, pick the models and voice provider your server actually has.</p>
+      <p class="field-note">Configure key pools and engine priorities categorized by capability.</p>
 
-      <label for="set-objective">Model objective <span class="field-note">(how the Director picks a model per task)</span></label>
-      <select id="set-objective">
-        <option value="quality">Maximum quality — best model per task, cost is secondary</option>
-        <option value="balanced" selected>Balanced — best value per task (recommended)</option>
-        <option value="cost">Lowest cost — cheapest capable model, aggressive on spend</option>
-      </select>
-      <p id="set-objective-note" class="field-note"></p>
+      <fieldset style="border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px; margin-bottom:15px;">
+        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🎙️ Text-to-Speech (TTS) Engine &amp; Keys</legend>
+        <label for="set-tts-provider">Main Active TTS Provider</label>
+        <select id="set-tts-provider" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2); margin-bottom:10px;">
+          <option value="kokoro">🔊 Kokoro Local TTS (http://localhost:8880 - Zero Cost)</option>
+          <option value="fishaudio">🐟 Fish Speech (Colab/API)</option>
+          <option value="elevenlabs">🎙️ ElevenLabs Direct API Key Pool</option>
+          <option value="openai">🌐 OpenAI Voice API</option>
+        </select>
+        <label for="set-kokoro-endpoint">🔊 Kokoro Local Endpoint</label>
+        <input id="set-kokoro-endpoint" type="text" value="http://localhost:8880" style="margin-bottom:10px;" />
+        <label for="set-fishaudio-endpoint">🐟 Fish Speech Endpoint (e.g. ngrok URL)</label>
+        <input id="set-fishaudio-endpoint" type="text" placeholder="https://..." style="margin-bottom:10px;" />
+        <label for="set-elevenlabs-keys">🎙️ ElevenLabs API Keys</label>
+        <textarea id="set-elevenlabs-keys" rows="2" placeholder="xi-api-key..."></textarea>
+      </fieldset>
 
-      <label for="set-chat-model">Chat model <span class="field-note">(leave on Auto to let the Director route per task)</span></label>
-      <select id="set-chat-model"><option value="">Auto (Director routes per task)</option></select>
+      <fieldset style="border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px; margin-bottom:15px;">
+        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🧠 LLM &amp; Reasoning Engine (NVIDIA NIM Gateway)</legend>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <label for="set-chat-model" style="margin:0;">Available Models</label>
+          <button id="btn-refresh-models" class="btn ghost small" type="button">↻ Refresh</button>
+        </div>
+        <select id="set-chat-model" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2); margin-bottom:10px;">
+          <option value="auto">⚡ Auto (AI Director Recommendation)</option>
+        </select>
+        <label for="set-nim-keys">🚀 NVIDIA NIM API Keys</label>
+        <textarea id="set-nim-keys" rows="2" placeholder="nvapi-..." style="margin-bottom:10px;"></textarea>
+        <label for="set-openai-oauth-endpoint">🔓 OpenAI OAuth Local Proxy Endpoint (ChatGPT Free/Plus Account)</label>
+        <input id="set-openai-oauth-endpoint" type="text" value="http://127.0.0.1:10531/v1" style="margin-bottom:10px;" placeholder="http://127.0.0.1:10531/v1" />
+      </fieldset>
+        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🎨 Image Generation Engine, Keys &amp; Endpoint</legend>
+        <label for="set-image-provider">Main Active Image Provider</label>
+        <select id="set-image-provider" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2); margin-bottom:10px;">
+          <option value="pollinations" selected>🌸 Pollinations.ai FLUX / SD (Free Public High-Res Engine)</option>
+          <option value="sd_local">🎨 Stable Diffusion Local (Uncensored Local Studio)</option>
+          <option value="cloudflare_worker">☁️ Cloudflare Worker AI (SDXL Base 1.0)</option>
+          <option value="openai_oauth">🤖 OpenAI ChatGPT Image Generator (gpt-image-2 / DALL-E 3)</option>
+          <option value="fal">⚡ Fal.ai (Cloud FLUX / SDXL)</option>
+          <option value="replicate">🌀 Replicate (Cloud FLUX / SDXL)</option>
+        </select>
+        <label for="set-cf-worker-endpoint">☁️ Cloudflare Worker Endpoint URL</label>
+        <input id="set-cf-worker-endpoint" type="text" value="" style="margin-bottom:10px;" placeholder="https://my-image-ai.my-name.workers.dev/" />
+        <label for="set-cf-worker-key">🔐 Cloudflare Worker API Key (Authorization: Bearer KEY)</label>
+        <input id="set-cf-worker-key" type="password" value="" style="margin-bottom:10px;" placeholder="Your secret API_KEY..." />
+        <label for="set-openai-endpoint">🔑 OpenAI / ChatGPT Local Proxy Endpoint</label>
+        <input id="set-openai-endpoint" type="text" value="http://127.0.0.1:10531/v1" style="margin-bottom:10px;" placeholder="http://127.0.0.1:10531/v1" />
+        <label for="set-openai-keys">⚡ OpenAI Direct API Key (sk-... for DALL-E 3)</label>
+        <textarea id="set-openai-keys" rows="1" placeholder="sk-proj-..." style="margin-bottom:10px;"></textarea>
+        <label for="set-sd-endpoint">🎨 Stable Diffusion Local Endpoint</label>
+        <input id="set-sd-endpoint" type="text" value="http://localhost:1420" style="margin-bottom:10px;" placeholder="http://localhost:1420 or http://localhost:8080" />
+        <label for="set-fal-keys">⚡ Fal.ai API Keys</label>
+        <textarea id="set-fal-keys" rows="1" placeholder="Key..." style="margin-bottom:10px;"></textarea>
+        <label for="set-replicate-keys">🌀 Replicate API Keys</label>
+        <textarea id="set-replicate-keys" rows="1" placeholder="r8_..."></textarea>
+      </fieldset>
 
-      <label for="set-image-model">Image model</label>
-      <input id="set-image-model" type="text" list="image-model-list" placeholder="gpt-image-1" />
-      <datalist id="image-model-list">
-        <option value="gpt-image-1"></option>
-        <option value="dall-e-3"></option>
-        <option value="gpt-image-1-mini"></option>
-        <option value="gpt-image-2"></option>
-        <option value="gpt-image-1.5"></option>
-      </datalist>
-
-      <label for="set-tts-provider">Voice (TTS) provider</label>
-      <select id="set-tts-provider"></select>
-      <p id="set-tts-provider-note" class="field-note"></p>
-      <p id="set-tts-note" class="field-note"></p>
-
-      <label for="set-tts-model" id="set-tts-model-label">Voice model</label>
-      <input id="set-tts-model" type="text" placeholder="eleven_multilingual_v2" />
-      <p id="set-tts-model-hint" class="field-note"></p>
-
-      <div class="actions">
-        <button id="ai-settings-save" class="btn primary" type="button">Save</button>
-        <button id="ai-settings-refresh" class="btn ghost" type="button">Reload model list</button>
-        <button id="ai-diagnostics-open" class="btn ghost" type="button">🔧 Diagnostics</button>
+      <div class="actions" style="margin-top:15px;">
+        <button id="ai-settings-save" class="btn primary" type="button">Save Settings</button>
       </div>
     </div>
   </div>
 
-  <!-- AI diagnostics -->
-  <div id="ai-diagnostics-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="AI diagnostics">
-    <div class="modal-backdrop" data-close></div>
-    <div class="modal-panel">
-      <div class="modal-header">
-        <h2>AI diagnostics</h2>
-        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
-      </div>
-      <p class="field-note">Runs live checks against your Puter instance and shows the exact cause of any failure (authentication, network/CORS, missing provider, unsupported model, or quota). The chat and voice tests make real calls.</p>
-      <label class="ssml-toggle"><input type="checkbox" id="diag-image" /> <span>Also test image generation (uses credits)</span></label>
-      <div class="actions">
-        <button id="diag-run" class="btn primary" type="button">Run diagnostics</button>
-        <button id="diag-copy" class="btn ghost" type="button" hidden>Copy report</button>
-      </div>
-      <div id="diag-results" class="diag-results"></div>
-    </div>
-  </div>
-
-  <div id="agent-context-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Add context file">
-    <div class="modal-backdrop" data-close></div>
-    <div class="modal-panel">
-      <div class="modal-header">
-        <h2>Add a context file</h2>
-        <button class="modal-close" type="button" data-close aria-label="Close">×</button>
-      </div>
-      <label for="agent-ctx-name">File name / path</label>
-      <input id="agent-ctx-name" type="text" placeholder="e.g. src/app.js" />
-      <label for="agent-ctx-body">File contents</label>
-      <textarea id="agent-ctx-body" rows="10" spellcheck="false" placeholder="Paste the file contents here…"></textarea>
-      <div class="actions">
-        <button id="agent-ctx-save" class="btn primary" type="button">Add to context</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Voice browser -->
   <div id="voice-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Choose a voice">
     <div class="modal-backdrop" data-close></div>
     <div class="modal-panel">
@@ -883,43 +1031,30 @@
           <button class="chip active" data-gender="all" type="button">Any gender</button>
           <button class="chip" data-gender="FEMALE" type="button">Female</button>
           <button class="chip" data-gender="MALE" type="button">Male</button>
-          <button class="chip" data-gender="NEUTRAL" type="button">Neutral</button>
         </div>
         <div class="chip-row" id="style-filters">
           <button class="chip active" data-style="all" type="button">All styles</button>
-          <!-- style chips injected from ELEVEN_STYLES -->
         </div>
       </div>
       <div id="voice-list" class="voice-list"></div>
     </div>
   </div>
 
-  <!-- Preset manager -->
-  <div id="preset-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Manage presets">
+  <div id="projects-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Projects">
     <div class="modal-backdrop" data-close></div>
     <div class="modal-panel">
       <div class="modal-header">
-        <h2>Presets</h2>
+        <h2>Projects</h2>
         <button class="modal-close" type="button" data-close aria-label="Close">×</button>
       </div>
-      <form id="preset-save-form" class="preset-save-form" hidden>
-        <input id="preset-name-input" type="text" placeholder="Preset name (e.g. Documentary Narrator)" maxlength="60" required />
-        <input id="preset-project-input" type="text" placeholder="Project (optional)" maxlength="60" />
-        <div class="preset-save-actions">
-          <button class="btn primary small" type="submit">Save current settings</button>
-          <button class="btn ghost small" type="button" id="preset-save-cancel">Cancel</button>
-        </div>
-      </form>
-      <div class="preset-toolbar">
-        <select id="project-filter" hidden>
-          <option value="">All projects</option>
-        </select>
+      <div class="proj-toolbar">
+        <input id="proj-search" type="search" placeholder="Search projects…" />
+        <button id="proj-new" class="btn primary small" type="button">+ New project</button>
       </div>
-      <div id="preset-list" class="preset-list"></div>
+      <div id="proj-list" class="proj-list"></div>
     </div>
   </div>
 
-  <!-- Subtitle preview -->
   <div id="subtitle-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Subtitle preview">
     <div class="modal-backdrop" data-close></div>
     <div class="modal-panel">
@@ -936,32 +1071,49 @@
     </div>
   </div>
 
-  <!-- Projects dashboard -->
-  <div id="projects-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Projects">
+  <div id="preset-modal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Manage presets">
     <div class="modal-backdrop" data-close></div>
     <div class="modal-panel">
       <div class="modal-header">
-        <h2>Projects</h2>
+        <h2>Presets</h2>
         <button class="modal-close" type="button" data-close aria-label="Close">×</button>
       </div>
-      <div class="proj-toolbar">
-        <input id="proj-search" type="search" placeholder="Search projects…" />
-        <select id="proj-sort">
-          <option value="updated">Recently updated</option>
-          <option value="created">Newest</option>
-          <option value="name">Name A–Z</option>
-        </select>
-        <label class="ssml-toggle"><input type="checkbox" id="proj-archived" /> <span>Show archived</span></label>
-        <button id="proj-new" class="btn primary small" type="button">+ New project</button>
-      </div>
-      <div id="proj-list" class="proj-list"></div>
+      <form id="preset-save-form" class="preset-save-form" hidden>
+        <input id="preset-name-input" type="text" placeholder="Preset name" maxlength="60" required />
+        <div class="preset-save-actions">
+          <button class="btn primary small" type="submit">Save</button>
+          <button class="btn ghost small" type="button" id="preset-save-cancel">Cancel</button>
+        </div>
+      </form>
+      <div id="preset-list" class="preset-list"></div>
     </div>
   </div>
 
+  <!-- CDNs for Knowledge Vault File Parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+
+  <!-- Scripts -->
   <script src="prompts.js"></script>
   <script src="model-registry.js"></script>
+  <script src="adapters/provider-manager.js"></script>
+  <script src="adapters/llm-adapters.js"></script>
+  <script src="adapters/image-adapters.js"></script>
+  <script src="adapters/stable-diffusion-adapter.js"></script>
+  <script src="adapters/video-adapters.js"></script>
+  <script src="adapters/kokoro-adapter.js"></script>
+  <script src="adapters/fish-adapter.js"></script>
+  <script src="kokoro-speech-director.js"></script>
+  <script src="adapters/direct-adapters.js"></script>
+  <script src="provider-dashboard.js"></script>
+  <script src="asset-consistency.js"></script>
+  <script src="historical-accuracy.js"></script>
+  <script src="series-memory.js"></script>
+  <script src="style-manager.js"></script>
+  <script src="thumbnail-lab.js"></script>
   <script src="ai-provider.js"></script>
   <script src="project-assets.js"></script>
+  <script src="vault.js"></script>
   <script src="brain.js"></script>
   <script src="data-manager.js"></script>
   <script src="eleven-voices.js"></script>
@@ -971,6 +1123,8 @@
   <script src="ai-status.js"></script>
   <script src="zip.js"></script>
   <script src="pdf.js"></script>
+  <script src="workspace-router.js"></script>
+  <script src="global-director-dock.js"></script>
   <script src="app.js"></script>
   <script src="research.js"></script>
   <script src="script.js"></script>
@@ -983,5 +1137,6 @@
   <script src="director.js"></script>
   <script src="brain-ui.js"></script>
   <script src="pipeline.js"></script>
+  <script src="auto-pipeline.js"></script>
 </body>
 </html>

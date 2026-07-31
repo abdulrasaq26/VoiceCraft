@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #0d0d0f;
   --card: #161619;
   --card-border: #26262b;
@@ -31,22 +31,25 @@
 }
 
 body {
-  background: radial-gradient(1200px 600px at 50% -10%, #1b1b22 0%, var(--bg) 60%);
+  background: #09090b;
   color: var(--text);
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  padding: 2.5rem 1rem;
+  height: 100vh;
+  overflow: hidden;
+  display: block;
+  margin: 0;
+  padding: 0;
 }
 
 body.modal-open {
   overflow: hidden;
 }
 
+/* Legacy .app class — not used in AETHER shell but kept for compat */
 .app {
   width: 100%;
-  max-width: 760px;
+  max-width: none;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -2414,3 +2417,565 @@ textarea.sb-scene-prompt:focus {
 .brain-perf-stat { font-variant-numeric: tabular-nums; color: var(--accent); font-size: 0.8rem; white-space: nowrap; }
 .brain-perf-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 1.1rem; line-height: 1; padding: 0 0.2rem; }
 .brain-perf-del:hover { color: var(--danger); }
+
+/* ====================================================================
+   AETHER AI Studio — Full Production Shell Layout (Responsive)
+   Target: 1080p / 1440p / ultrawide / laptop
+   Philosophy: Full viewport, no wasted space, Notion/Figma/Linear feel
+   ==================================================================== */
+
+/* Shell: Full-viewport flex row */
+.app-shell {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #09090b;
+  color: #f4f4f5;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Inter", Roboto, sans-serif;
+}
+
+/* ---- Left Sidebar -------------------------------------------------- */
+.sidebar-nav {
+  width: 220px;
+  min-width: 220px;
+  background: #0f0f12;
+  border-right: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 0.2s ease, min-width 0.2s ease;
+  z-index: 200;
+}
+
+body.sidebar-collapsed .sidebar-nav {
+  width: 52px;
+  min-width: 52px;
+}
+
+body.sidebar-collapsed .nav-text,
+body.sidebar-collapsed .sidebar-group-title,
+body.sidebar-collapsed .brand-name {
+  display: none;
+}
+
+.sidebar-header {
+  height: 54px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.brand-name { color: #fff; }
+.brand-name .accent { color: #6366f1; }
+
+.sidebar-menu {
+  flex: 1;
+  padding: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-group-title {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  color: rgba(255,255,255,0.3);
+  padding: 12px 8px 4px 8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.55);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.sidebar-nav-item .nav-icon {
+  font-size: 1rem;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.sidebar-nav-item:hover {
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+}
+
+.sidebar-nav-item.active {
+  background: rgba(99,102,241,0.18);
+  color: #a5b4fc;
+  font-weight: 600;
+  border-left: 3px solid #6366f1;
+  padding-left: 7px;
+}
+
+/* ---- App Main (right of sidebar) ---------------------------------- */
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: #09090b;
+}
+
+/* ---- App Header Bar ------------------------------------------------ */
+.app-header {
+  height: 54px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  background: #0f0f12;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 100;
+}
+
+.header-left, .header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.header-left { flex: 1; overflow: hidden; }
+
+.header-project-name {
+  font-size: 0.82rem;
+  color: rgba(255,255,255,0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-project-name strong { color: rgba(255,255,255,0.85); }
+
+.header-workspace-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(255,255,255,0.06);
+  padding: 3px 10px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+/* Mode Switcher */
+.mode-switcher {
+  display: flex;
+  background: rgba(255,255,255,0.06);
+  padding: 2px;
+  border-radius: 7px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.mode-btn {
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.45);
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+
+.mode-btn.active {
+  background: #6366f1;
+  color: #fff;
+}
+
+/* ---- Mission Control Bar ------------------------------------------ */
+.mission-control-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 36px;
+  padding: 0 16px;
+  background: #0a0a0d;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.45);
+  overflow-x: auto;
+}
+
+.mc-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 20px;
+  white-space: nowrap;
+}
+
+.mc-label { color: rgba(255,255,255,0.35); }
+.mc-value { color: #fff; font-weight: 700; }
+
+.mc-progress-track {
+  width: 80px;
+  height: 4px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.mc-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #6366f1, #10b981);
+  transition: width 0.4s ease;
+}
+
+/* ---- Workflow Stepper (pipeline bar) ------------------------------ */
+.pipeline {
+  flex-shrink: 0;
+  overflow-x: auto;
+  background: #0c0c10;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.pipeline-inner {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 42px;
+  gap: 0;
+  min-width: max-content;
+}
+
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.4);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.pipeline-step:hover { color: rgba(255,255,255,0.75); }
+
+.pipeline-step.done {
+  color: #6ee7b7;
+  border-bottom-color: #10b981;
+}
+
+.pipeline-step.active {
+  color: #a5b4fc;
+  border-bottom-color: #6366f1;
+  font-weight: 700;
+}
+
+.pipeline-num { font-size: 0.85em; }
+.pipeline-tick { color: #10b981; font-weight: 700; }
+.pipeline-sep { color: rgba(255,255,255,0.15); padding: 0 4px; font-size: 0.8rem; }
+
+/* ---- Workspace Canvas --------------------------------------------- */
+.workspace-canvas {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 24px 40px;
+  background: #09090b;
+}
+
+/* Each workspace page fills full width — no max-width centering */
+.workspace-page {
+  width: 100%;
+}
+
+.workspace-page[hidden] { display: none !important; }
+
+/* ---- Cards in workspace context ----------------------------------- */
+.workspace-page .card {
+  background: #111116;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+/* ---- Command Center Dashboard Grid -------------------------------- */
+.command-center-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (min-width: 1600px) {
+  .command-center-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (max-width: 900px) {
+  .command-center-grid { grid-template-columns: 1fr; }
+}
+
+.cc-card {
+  background: #111116 !important;
+  border: 1px solid rgba(255,255,255,0.07) !important;
+  border-radius: 10px;
+  padding: 18px 20px !important;
+  margin: 0 !important;
+}
+
+/* ---- Copilot Card ------------------------------------------------- */
+.copilot-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px !important;
+  margin-bottom: 16px !important;
+  background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.06)) !important;
+  border: 1px solid rgba(99,102,241,0.28) !important;
+  border-radius: 9px;
+  flex-wrap: wrap;
+}
+
+.copilot-card .input-header {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.copilot-stage-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.copilot-checklist-item {
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.5);
+  white-space: nowrap;
+}
+
+.copilot-checklist-item.done {
+  background: rgba(16,185,129,0.15);
+  border-color: rgba(16,185,129,0.35);
+  color: #6ee7b7;
+}
+
+.copilot-checklist-item.active {
+  background: rgba(99,102,241,0.25);
+  border-color: #6366f1;
+  color: #c7d2fe;
+  font-weight: 600;
+}
+
+/* ---- Floating AI Director Dock ------------------------------------ */
+.director-floating-dock {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+.director-dock-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  box-shadow: 0 6px 20px rgba(99,102,241,0.45);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.director-dock-trigger:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(99,102,241,0.55);
+}
+
+.director-dock-panel {
+  position: absolute;
+  bottom: 58px;
+  right: 0;
+  width: 420px;
+  max-width: calc(100vw - 40px);
+  height: 540px;
+  max-height: calc(100vh - 80px);
+  background: #13131a;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dock-header {
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.dock-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dock-messages {
+  flex: 1;
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dock-msg {
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  max-width: 88%;
+}
+
+.dock-msg.system, .dock-msg.assistant {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.07);
+  color: #e4e4e7;
+  align-self: flex-start;
+}
+
+.dock-msg.user {
+  background: #6366f1;
+  color: #fff;
+  align-self: flex-end;
+}
+
+.dock-msg.error {
+  background: rgba(224,108,108,0.15);
+  border: 1px solid rgba(224,108,108,0.3);
+  color: #fca5a5;
+}
+
+.dock-context-bar {
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.25);
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  flex-shrink: 0;
+}
+
+.dock-input-area {
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.dock-input-area textarea {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 7px;
+  color: #fff;
+  padding: 7px 10px;
+  font-size: 0.84rem;
+  font-family: inherit;
+  resize: none;
+}
+
+/* ---- Sidebar Mobile ------------------------------------------------ */
+@media (max-width: 768px) {
+  .sidebar-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    z-index: 300;
+  }
+  body.sidebar-open .sidebar-nav {
+    transform: translateX(0);
+  }
+}
+
+/* ---- Form / controls fill full width ------------------------------ */
+.workspace-page select,
+.workspace-page input[type="text"],
+.workspace-page input[type="search"],
+.workspace-page textarea {
+  width: 100%;
+}
+
+.workspace-page .controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.workspace-page .script-controls,
+.workspace-page .sb-controls {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+/* ---- Status Strip ai-status-banner -------------------------------- */
+.ai-status-banner {
+  flex-shrink: 0;
+}
+

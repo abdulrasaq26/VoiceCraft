@@ -182,15 +182,20 @@
   // --- Timeline math -----------------------------------------------------
 
   function hmsToSec(s) {
-    const m = String(s).match(/(\d{1,2}):(\d{2}):(\d{2})/);
-    return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : 0;
+    if (!s) return 0;
+    const str = String(s).trim();
+    const parts = str.split(':').map((p) => parseFloat(p) || 0);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 1 && !isNaN(parts[0])) return parts[0];
+    return 0;
   }
   function clipDuration(ts) {
-    if (!ts) return 4;
-    const parts = ts.split(/\s*-\s*/);
-    if (parts.length < 2) return 4;
+    if (!ts) return 15;
+    const parts = String(ts).split(/\s*-\s*/);
+    if (parts.length < 2) return 15;
     const d = hmsToSec(parts[1]) - hmsToSec(parts[0]);
-    return d >= 1 ? d : 4;
+    return d >= 1 ? d : 15;
   }
   function autoEffect(i, camera) {
     const c = (camera || '').toLowerCase();
@@ -200,14 +205,24 @@
     return EFFECTS[i % EFFECTS.length];
   }
   function totalMs() {
-    return clips.reduce((a, c) => a + c.durationSec * 1000, 0);
+    const clipsTotal = clips.reduce((a, c) => a + c.durationSec * 1000, 0);
+    return Math.max(clipsTotal, audio.totalMs || 0);
   }
   function clipAt(ms) {
+    if (!clips.length) return null;
     let acc = 0;
     for (const c of clips) {
       const end = acc + c.durationSec * 1000;
       if (ms < end) return { clip: c, localMs: ms - acc, startMs: acc };
       acc = end;
+    }
+    const clipsLen = clips.reduce((a, c) => a + c.durationSec * 1000, 0) || 1;
+    const cycledMs = ms % clipsLen;
+    let acc2 = 0;
+    for (const c of clips) {
+      const end = acc2 + c.durationSec * 1000;
+      if (cycledMs < end) return { clip: c, localMs: cycledMs - acc2, startMs: acc2 };
+      acc2 = end;
     }
     const last = clips[clips.length - 1];
     return last ? { clip: last, localMs: last.durationSec * 1000, startMs: acc - last.durationSec * 1000 } : null;
@@ -225,25 +240,25 @@
     });
   }
 
-  async function loadAudio() {
+  async function loadAudio(forceBatch = false) {
     audio = { buffers: [], offsets: [], totalMs: 0 };
     const ctx = () => (audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)());
 
-    // 1. Manually uploaded narration takes priority.
-    const manual = await idbGet(MANUAL_DB, MANUAL_STORE, MANUAL_KEY);
-    if (manual) {
-      try {
-        const buf = await ctx().decodeAudioData(await manual.arrayBuffer());
-        audio.buffers = [buf];
-        audio.offsets = [0];
-        audio.totalMs = buf.duration * 1000;
-        return;
-      } catch {
-        /* fall through to generated audio */
+    // 1. Manually uploaded narration takes priority unless forceBatch is true.
+    if (!forceBatch) {
+      const manual = await idbGet(MANUAL_DB, MANUAL_STORE, MANUAL_KEY);
+      if (manual) {
+        try {
+          const buf = await ctx().decodeAudioData(await manual.arrayBuffer());
+          audio.buffers = [buf];
+          audio.offsets = [0];
+          audio.totalMs = buf.duration * 1000;
+          return;
+        } catch {}
       }
     }
 
-    // 2. Otherwise the generated TTS batch.
+    // 2. Otherwise load ALL items from the generated TTS audio batch.
     let meta;
     try {
       meta = JSON.parse(localStorage.getItem(AUDIO_LS) || 'null');
@@ -253,16 +268,15 @@
     if (!meta || !meta.items) return;
     let acc = 0;
     for (const item of meta.items) {
-      const blob = await idbGet(AUDIO_DB, AUDIO_STORE, `${meta.id}:${item.index}`);
+      let blob = await idbGet(AUDIO_DB, AUDIO_STORE, `${meta.id}:${item.index}`);
+      if (!blob) blob = await idbGet(AUDIO_DB, AUDIO_STORE, String(item.index));
       if (!blob) continue;
       try {
         const buf = await ctx().decodeAudioData(await blob.arrayBuffer());
         audio.buffers.push(buf);
         audio.offsets.push(acc);
         acc += buf.duration * 1000;
-      } catch {
-        /* skip undecodable part */
-      }
+      } catch {}
     }
     audio.totalMs = acc;
   }
@@ -374,7 +388,7 @@
         sceneIndex: s.index,
         subtitle: s.subtitle || s.sceneSummary || '',
         camera: s.camera || '',
-        durationSec: Math.min(12, Math.max(2.5, clipDuration(s.timestamp))),
+        durationSec: Math.max(1, clipDuration(s.timestamp)),
         effect: autoEffect(i, s.camera),
         img
       });
@@ -384,7 +398,7 @@
       assembleBtn.disabled = false;
       return;
     }
-    await loadAudio();
+    await loadAudio(true);
     assembleBtn.disabled = false;
 
     stage.hidden = false;
@@ -533,6 +547,7 @@
   function scheduleAudio(fromMs, dest) {
     const out = [];
     if (!audioCtx || !audio.buffers.length) return out;
+    const targetDest = dest || audioCtx.destination;
     const now = audioCtx.currentTime;
     audio.buffers.forEach((buf, i) => {
       const partStart = audio.offsets[i];
@@ -540,7 +555,7 @@
       if (partEnd <= fromMs) return;
       const src = audioCtx.createBufferSource();
       src.buffer = buf;
-      src.connect(dest);
+      src.connect(targetDest);
       const when = now + Math.max(0, (partStart - fromMs) / 1000);
       const off = Math.max(0, (fromMs - partStart) / 1000);
       src.start(when, off);
@@ -573,9 +588,10 @@
 
   async function play() {
     if (playing) return;
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
     playing = true;
-    playBtn.textContent = '⏸ Pause';
+    if (playBtn) playBtn.textContent = '⏸ Pause';
     clockStart = performance.now();
     if (offsetMs >= totalMs()) offsetMs = 0;
     activeSources = scheduleAudio(offsetMs, audioCtx ? audioCtx.destination : null);
@@ -760,60 +776,68 @@
   }
 
   async function exportVideo() {
-    if (!clips.length) return;
+    if (!clips.length) {
+      showStatus('No scenes in timeline to export. Assemble a video first.');
+      return;
+    }
     if (!window.MediaRecorder) {
       showStatus('This browser can’t record video. Use the editor package export instead.');
       return;
     }
-    pause();
-    const h = Number(resSel.value);
-    const w = Math.round((h * 16) / 9);
-    const off = document.createElement('canvas');
-    off.width = w;
-    off.height = h;
-    const g = off.getContext('2d');
+    try {
+      pause();
+      const h = resSel ? Number(resSel.value) || 720 : 720;
+      const w = Math.round((h * 16) / 9);
+      const off = document.createElement('canvas');
+      off.width = w;
+      off.height = h;
+      const g = off.getContext('2d');
 
-    const stream = off.captureStream(30);
-    let recDest = null;
-    if (audioCtx && audio.buffers.length) {
-      recDest = audioCtx.createMediaStreamDestination();
+      const stream = off.captureStream(30);
+      let recDest = null;
+      if (audioCtx && audio.buffers.length) {
+        recDest = audioCtx.createMediaStreamDestination();
+      }
+      const tracks = [...stream.getVideoTracks()];
+      if (recDest) tracks.push(...recDest.stream.getAudioTracks());
+      const combined = new MediaStream(tracks);
+      const rec = new MediaRecorder(combined, { mimeType: pickMime() });
+      const chunks = [];
+      rec.ondataavailable = (e) => e.data && e.data.size && chunks.push(e.data);
+
+      const total = totalMs();
+      if (exportVideoBtn) exportVideoBtn.disabled = true;
+      showStatus('Recording video in real time — please keep this tab open…', 'info');
+
+      const finished = new Promise((resolve) => {
+        rec.onstop = () => {
+          download(`${project()}.webm`, new Blob(chunks, { type: 'video/webm' }));
+          resolve();
+        };
+      });
+
+      if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
+      rec.start();
+      if (recDest) activeSources = scheduleAudio(0, recDest);
+      const start = performance.now();
+      await new Promise((resolve) => {
+        const step = () => {
+          const ms = performance.now() - start;
+          renderTo(g, w, h, Math.min(ms, total));
+          if (ms >= total) return resolve();
+          requestAnimationFrame(step);
+        };
+        step();
+      });
+      stopAudio();
+      rec.stop();
+      await finished;
+      if (exportVideoBtn) exportVideoBtn.disabled = false;
+      showStatus('Video exported (WebM). Saved to your downloads!', 'info');
+    } catch (err) {
+      if (exportVideoBtn) exportVideoBtn.disabled = false;
+      showStatus(`Export video failed: ${err.message}`);
     }
-    const tracks = [...stream.getVideoTracks()];
-    if (recDest) tracks.push(...recDest.stream.getAudioTracks());
-    const combined = new MediaStream(tracks);
-    const rec = new MediaRecorder(combined, { mimeType: pickMime() });
-    const chunks = [];
-    rec.ondataavailable = (e) => e.data && e.data.size && chunks.push(e.data);
-
-    const total = totalMs();
-    exportVideoBtn.disabled = true;
-    showStatus('Recording video in real time — please keep this tab open…', 'info');
-
-    const finished = new Promise((resolve) => {
-      rec.onstop = () => {
-        download(`${project()}.webm`, new Blob(chunks, { type: 'video/webm' }));
-        resolve();
-      };
-    });
-
-    if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
-    rec.start();
-    if (recDest) activeSources = scheduleAudio(0, recDest);
-    const start = performance.now();
-    await new Promise((resolve) => {
-      const step = () => {
-        const ms = performance.now() - start;
-        renderTo(g, w, h, Math.min(ms, total));
-        if (ms >= total) return resolve();
-        requestAnimationFrame(step);
-      };
-      step();
-    });
-    stopAudio();
-    rec.stop();
-    await finished;
-    exportVideoBtn.disabled = false;
-    showStatus('Video exported (WebM). For a 4K MP4, use the editor package + your video tool.', 'info');
   }
 
   function buildSrt() {
@@ -838,56 +862,63 @@
   }
 
   async function exportPackage() {
-    if (!clips.length) return;
-    const enc = new TextEncoder();
-    const files = [];
-    for (let i = 0; i < clips.length; i++) {
-      const blob = await idbGet(SB_DB, SB_STORE, String(clips[i].sceneIndex));
-      if (blob) {
-        files.push({ name: `images/scene-${String(i + 1).padStart(3, '0')}.png`, data: new Uint8Array(await blob.arrayBuffer()) });
-      }
+    if (!clips.length) {
+      showStatus('No scenes in timeline to export. Assemble a video first.');
+      return;
     }
-    // Narration audio — manually uploaded track first, else the TTS parts.
-    const manualAudio = await idbGet(MANUAL_DB, MANUAL_STORE, MANUAL_KEY);
-    if (manualAudio) {
-      const ext = (manualAudio.type && manualAudio.type.split('/')[1]) || 'mp3';
-      files.push({ name: `audio/narration.${ext}`, data: new Uint8Array(await manualAudio.arrayBuffer()) });
-    } else {
-      try {
-        const meta = JSON.parse(localStorage.getItem(AUDIO_LS) || 'null');
-        if (meta && meta.items) {
-          for (const item of meta.items) {
-            const blob = await idbGet(AUDIO_DB, AUDIO_STORE, `${meta.id}:${item.index}`);
-            if (blob) files.push({ name: `audio/part-${String(item.part).padStart(3, '0')}.${meta.ext || 'mp3'}`, data: new Uint8Array(await blob.arrayBuffer()) });
-          }
+    try {
+      showStatus('Creating video ZIP package...', 'info');
+      const enc = new TextEncoder();
+      const files = [];
+      for (let i = 0; i < clips.length; i++) {
+        const blob = await idbGet(SB_DB, SB_STORE, String(clips[i].sceneIndex));
+        if (blob) {
+          files.push({ name: `images/scene-${String(i + 1).padStart(3, '0')}.png`, data: new Uint8Array(await blob.arrayBuffer()) });
         }
-      } catch {
-        /* no audio */
       }
+      // Narration audio — manually uploaded track first, else the TTS parts.
+      const manualAudio = await idbGet(MANUAL_DB, MANUAL_STORE, MANUAL_KEY);
+      if (manualAudio) {
+        const ext = (manualAudio.type && manualAudio.type.split('/')[1]) || 'mp3';
+        files.push({ name: `audio/narration.${ext}`, data: new Uint8Array(await manualAudio.arrayBuffer()) });
+      } else {
+        try {
+          const meta = JSON.parse(localStorage.getItem(AUDIO_LS) || 'null');
+          if (meta && meta.items) {
+            for (const item of meta.items) {
+              let blob = await idbGet(AUDIO_DB, AUDIO_STORE, `${meta.id}:${item.index}`);
+              if (!blob) blob = await idbGet(AUDIO_DB, AUDIO_STORE, String(item.index));
+              if (blob) files.push({ name: `audio/part-${String(item.part || item.index).padStart(3, '0')}.${meta.ext || 'mp3'}`, data: new Uint8Array(await blob.arrayBuffer()) });
+            }
+          }
+        } catch {
+          /* no audio */
+        }
+      }
+      const edl = {
+        project: project(),
+        fps: 30,
+        resolution: resSel ? `${resSel.value}p` : '720p',
+        subtitleStyle: subStyle,
+        clips: clips.map((c, i) => ({ order: i + 1, scene: c.sceneIndex, image: `images/scene-${String(i + 1).padStart(3, '0')}.png`, durationSec: c.durationSec, effect: c.effect, subtitle: c.subtitle }))
+      };
+      files.push({ name: 'subtitles.srt', data: enc.encode(buildSrt()) });
+      files.push({ name: 'edl.json', data: enc.encode(JSON.stringify(edl, null, 2)) });
+      files.push({
+        name: 'README.txt',
+        data: enc.encode(
+          'Blvck TTS editor package\n\n' +
+            'images/  — scene stills in order\n' +
+            'audio/   — narration parts (concatenate in order)\n' +
+            'subtitles.srt — subtitle track matching the assembled timeline\n' +
+            'edl.json — scene order, durations, motion effects and subtitle style\n\n'
+        )
+      });
+      download(`${project()} editor package.zip`, window.BlvckZip.create(files));
+      showStatus('Editor package ZIP exported successfully!', 'info');
+    } catch (err) {
+      showStatus(`Export ZIP failed: ${err.message}`);
     }
-    const edl = {
-      project: project(),
-      fps: 30,
-      resolution: `${resSel.value}p`,
-      subtitleStyle: subStyle,
-      clips: clips.map((c, i) => ({ order: i + 1, scene: c.sceneIndex, image: `images/scene-${String(i + 1).padStart(3, '0')}.png`, durationSec: c.durationSec, effect: c.effect, subtitle: c.subtitle }))
-    };
-    files.push({ name: 'subtitles.srt', data: enc.encode(buildSrt()) });
-    files.push({ name: 'edl.json', data: enc.encode(JSON.stringify(edl, null, 2)) });
-    files.push({
-      name: 'README.txt',
-      data: enc.encode(
-        'Blvck TTS editor package\n\n' +
-          'images/  — scene stills in order\n' +
-          'audio/   — narration parts (concatenate in order)\n' +
-          'subtitles.srt — subtitle track matching the assembled timeline\n' +
-          'edl.json — scene order, durations, motion effects and subtitle style\n\n' +
-          'Import these into Premiere / DaVinci Resolve / CapCut, or render a 4K MP4 with\n' +
-          'ffmpeg using edl.json (each clip = one image held for durationSec with a Ken Burns\n' +
-          'zoom/pan, narration audio muxed, subtitles.srt burned or attached).\n'
-      )
-    });
-    download(`${project()} editor package.zip`, window.BlvckZip.create(files));
   }
 
   // --- Sub controls ------------------------------------------------------
@@ -904,51 +935,67 @@
 
   // --- Events ------------------------------------------------------------
 
-  assembleBtn.addEventListener('click', assemble);
-  buildManualBtn.addEventListener('click', buildFromManual);
-  manualToggle.addEventListener('click', () => {
-    manualPanel.hidden = !manualPanel.hidden;
-    manualToggle.textContent = manualPanel.hidden ? 'Open Manual Editor' : 'Hide Manual Editor';
-  });
-  crossfadeToggle.addEventListener('change', () => {
-    transitionsOn = crossfadeToggle.checked;
-    saveTimeline();
-    drawFrame(offsetMs);
-  });
-  playBtn.addEventListener('click', () => (playing ? pause() : play()));
-  seek.addEventListener('input', () => {
-    pause();
-    offsetMs = (Number(seek.value) / 1000) * totalMs();
-    drawFrame(offsetMs);
-  });
-  subFont.addEventListener('change', () => {
-    subStyle.font = subFont.value;
-    saveTimeline();
-    drawFrame(offsetMs);
-  });
-  subSize.addEventListener('input', () => {
-    subStyle.size = Number(subSize.value);
-    subSizeVal.textContent = subStyle.size;
-    drawFrame(offsetMs);
-  });
-  subSize.addEventListener('change', saveTimeline);
-  subPos.addEventListener('change', () => {
-    subStyle.pos = subPos.value;
-    saveTimeline();
-    drawFrame(offsetMs);
-  });
-  subColor.addEventListener('input', () => {
-    subStyle.color = subColor.value;
-    drawFrame(offsetMs);
-  });
-  subColor.addEventListener('change', saveTimeline);
-  subOn.addEventListener('change', () => {
-    subStyle.on = subOn.checked;
-    saveTimeline();
-    drawFrame(offsetMs);
-  });
-  exportVideoBtn.addEventListener('click', exportVideo);
-  exportPkgBtn.addEventListener('click', exportPackage);
+  if (assembleBtn) assembleBtn.addEventListener('click', assemble);
+  if (buildManualBtn) buildManualBtn.addEventListener('click', buildFromManual);
+  if (manualToggle && manualPanel) {
+    manualToggle.addEventListener('click', () => {
+      manualPanel.hidden = !manualPanel.hidden;
+      manualToggle.textContent = manualPanel.hidden ? 'Open Manual Editor' : 'Hide Manual Editor';
+    });
+  }
+  if (crossfadeToggle) {
+    crossfadeToggle.addEventListener('change', () => {
+      transitionsOn = crossfadeToggle.checked;
+      saveTimeline();
+      drawFrame(offsetMs);
+    });
+  }
+  if (playBtn) playBtn.addEventListener('click', () => (playing ? pause() : play()));
+  if (seek) {
+    seek.addEventListener('input', () => {
+      pause();
+      offsetMs = (Number(seek.value) / 1000) * totalMs();
+      drawFrame(offsetMs);
+    });
+  }
+  if (subFont) {
+    subFont.addEventListener('change', () => {
+      subStyle.font = subFont.value;
+      saveTimeline();
+      drawFrame(offsetMs);
+    });
+  }
+  if (subSize) {
+    subSize.addEventListener('input', () => {
+      subStyle.size = Number(subSize.value);
+      if (subSizeVal) subSizeVal.textContent = subStyle.size;
+      drawFrame(offsetMs);
+    });
+    subSize.addEventListener('change', saveTimeline);
+  }
+  if (subPos) {
+    subPos.addEventListener('change', () => {
+      subStyle.pos = subPos.value;
+      saveTimeline();
+      drawFrame(offsetMs);
+    });
+  }
+  if (subColor) {
+    subColor.addEventListener('input', () => {
+      subStyle.color = subColor.value;
+      drawFrame(offsetMs);
+    });
+    subColor.addEventListener('change', saveTimeline);
+  }
+  if (subOn) {
+    subOn.addEventListener('change', () => {
+      subStyle.on = subOn.checked;
+      saveTimeline();
+      drawFrame(offsetMs);
+    });
+  }
+  if (exportVideoBtn) exportVideoBtn.addEventListener('click', exportVideo);
+  if (exportPkgBtn) exportPkgBtn.addEventListener('click', exportPackage);
 
   // The editor is a standalone tool (upload your own images/audio/subtitles),
   // so it's always available — no storyboard required.

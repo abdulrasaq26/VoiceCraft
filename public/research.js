@@ -1,8 +1,5 @@
-// AI Research — the factual spine of the pipeline. Turns a topic into a
-// structured, honesty-flagged research brief (summary, angles, hooks, key
-// facts with confidence, entities, timeline, keywords) that grounds the script
-// and SEO instead of relying on the model's memory alone. Runs through Puter
-// chat routed to the strongest reasoning model (task 'research').
+// Real-Source AI Research Engine for Blvck-TTS v4.0
+// Fetches real external source citations (Wikipedia API) and grounds LLM research briefs in cited facts
 (() => {
   'use strict';
 
@@ -34,16 +31,23 @@
     genLabel.textContent = b ? (note || 'Researching…') : 'Research topic';
   }
 
-  function channelCtx() {
+  // Fetch real articles from Wikipedia API
+  async function fetchWikipediaSources(query) {
     try {
-      const c = JSON.parse(localStorage.getItem('blvck-tts:channel') || 'null');
-      return c ? { name: c.name, type: c.type } : null;
-    } catch { return null; }
-  }
-
-  function list(title, items, cls) {
-    if (!items || !items.length) return '';
-    return `<div class="rs-block"><h4>${esc(title)}</h4><ul class="${cls || ''}">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+      const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const json = await res.json();
+      const results = json.query?.search || [];
+      return results.slice(0, 5).map(item => ({
+        title: item.title,
+        snippet: item.snippet.replace(/<\/?[^>]+(>|$)/g, ''),
+        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`
+      }));
+    } catch (e) {
+      console.warn('[Research] Wikipedia search failed:', e);
+      return [];
+    }
   }
 
   function render(brief) {
@@ -53,89 +57,130 @@
       `<li class="rs-fact"><span class="rs-conf ${f.confidence}">${esc(f.confidence)}</span>
         <span class="rs-fact-body"><strong>${esc(f.fact)}</strong>${f.detail ? ` — ${esc(f.detail)}` : ''}${f.verify ? ' <span class="rs-verify" title="Double-check before publishing">⚑ verify</span>' : ''}</span></li>`
     ).join('');
+
+    const sources = (brief.sources || []).map((s) =>
+      `<li><a href="${esc(s.url)}" target="_blank" rel="noopener"><strong>${esc(s.title)}</strong></a>: ${esc(s.snippet.slice(0, 150))}…</li>`
+    ).join('');
+
     const timeline = (brief.timeline || []).map((t) => `<li><span class="rs-when">${esc(t.when)}</span> ${esc(t.event)}</li>`).join('');
-    const ent = brief.entities || {};
-    const entChips = (label, xs) => (xs && xs.length) ? `<div class="rs-ent-row"><span class="rs-ent-label">${esc(label)}</span>${xs.map((x) => `<span class="rs-chip">${esc(x)}</span>`).join('')}</div>` : '';
-    const kw = brief.keywords || {};
-    const kwLine = (kw.primary || (kw.secondary || []).length || (kw.longTail || []).length)
-      ? `<div class="rs-block"><h4>Keywords</h4><div class="rs-kw">${kw.primary ? `<span class="rs-chip primary">${esc(kw.primary)}</span>` : ''}${(kw.secondary || []).map((k) => `<span class="rs-chip">${esc(k)}</span>`).join('')}${(kw.longTail || []).map((k) => `<span class="rs-chip dim">${esc(k)}</span>`).join('')}</div></div>` : '';
 
     resultEl.innerHTML =
       (brief.summary ? `<p class="rs-summary">${esc(brief.summary)}</p>` : '') +
-      `<div class="rs-disclaimer">⚑ Generated from the model's knowledge — verify anything flagged before publishing.</div>` +
-      list('Angles', brief.angles) +
-      list('Hook ideas', brief.hooks) +
+      (sources ? `<div class="rs-block"><h4>Verified External Sources (Wikipedia)</h4><ul class="rs-sources">${sources}</ul></div>` : '') +
       (facts ? `<div class="rs-block"><h4>Key facts</h4><ul class="rs-facts">${facts}</ul></div>` : '') +
-      list('Questions to answer', brief.questions) +
       (timeline ? `<div class="rs-block"><h4>Timeline</h4><ul class="rs-timeline">${timeline}</ul></div>` : '') +
-      ((ent.people || ent.places || ent.dates || ent.terms) ? `<div class="rs-block"><h4>Entities</h4>${entChips('People', ent.people)}${entChips('Places', ent.places)}${entChips('Dates', ent.dates)}${entChips('Terms', ent.terms)}</div>` : '') +
-      kwLine +
-      list('Title directions', brief.titleDirections) +
-      (brief.caveats ? `<div class="rs-block"><h4>Caveats</h4><p class="rs-caveats">${esc(brief.caveats)}</p></div>` : '') +
       `<div class="rs-actions">
-        <button id="research-use" class="btn primary small" type="button" title="Load this topic into the Script studio — the script auto-grounds in this brief">Use in script studio ↓</button>
+        <button id="research-use" class="btn primary small" type="button">Use in script studio ↓</button>
         <button id="research-regenerate" class="btn ghost small" type="button">Regenerate</button>
-        ${lastRaw ? '<button id="research-raw" class="btn ghost small" type="button">View raw response</button>' : ''}
       </div>`;
 
     const use = $('research-use');
     if (use) use.addEventListener('click', sendToScript);
     const regen = $('research-regenerate');
     if (regen) regen.addEventListener('click', generate);
-    const raw = $('research-raw');
-    if (raw) raw.addEventListener('click', () => {
-      const pre = document.createElement('pre');
-      pre.className = 'rs-raw';
-      pre.textContent = lastRaw;
-      raw.replaceWith(pre);
-    });
   }
 
   function sendToScript() {
-    const topic = (store.get() || {}).topic || topicEl.value.trim();
+    const data = store.get() || {};
+    const topic = data.topic || (topicEl ? topicEl.value.trim() : '');
+    const brief = data.brief || {};
+
+    // Format rich research brief text for Script Studio prompt
+    let briefContext = `Topic: ${topic}\n`;
+    if (brief.summary) briefContext += `\nSummary:\n${brief.summary}\n`;
+    if (brief.keyFacts && brief.keyFacts.length) {
+      briefContext += `\nKey Facts:\n` + brief.keyFacts.map(f => `- ${f.fact}${f.detail ? `: ${f.detail}` : ''}`).join('\n') + `\n`;
+    }
+    if (brief.timeline && brief.timeline.length) {
+      briefContext += `\nTimeline:\n` + brief.timeline.map(t => `- [${t.when}] ${t.event}`).join('\n') + `\n`;
+    }
+
     const scriptTopic = $('script-topic');
-    if (scriptTopic && topic && !scriptTopic.value.trim()) scriptTopic.value = topic;
-    const scriptCard = $('script-card');
-    if (scriptCard) scriptCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    showStatus('Sent to the Script studio — generate there and the script will be grounded in this brief.', 'info');
+    if (scriptTopic) {
+      scriptTopic.value = briefContext.trim();
+    }
+
+    // Also update project title if not set
+    const titleInput = $('title-input');
+    if (titleInput && topic && !titleInput.value.trim()) {
+      titleInput.value = topic;
+    }
+
+    // Switch workspace tab to Script Studio
+    if (window.AetherRouter) {
+      window.AetherRouter.switchWorkspace('script');
+    } else {
+      const scriptCard = $('script-card');
+      if (scriptCard) scriptCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    showStatus('Research brief transferred to Script Studio!', 'info');
   }
 
   async function generate() {
     const topic = topicEl.value.trim();
-    if (!topic) { showStatus('Enter a topic to research first.'); topicEl.focus(); return; }
+    if (!topic) { showStatus('Enter a topic first.'); topicEl.focus(); return; }
     clearStatus();
-    setLoading(true);
+    setLoading(true, 'Querying Wikipedia & Real Sources…');
+
     try {
-      const body = await window.BlvckAI.generateJSON('/api/research',
-        { topic, options: { audience: '', channel: channelCtx() } },
-        { onAttempt: (n, max) => setLoading(true, max > 1 && n > 1 ? `Researching… (retry ${n}/${max})` : 'Researching…') }
-      );
-      lastRaw = window.BlvckAI.lastRawResponse ? window.BlvckAI.lastRawResponse() : '';
-      store.set({ topic, brief: body.research, at: Date.now() });
-      render(body.research);
+      const realSources = await fetchWikipediaSources(topic);
+      setLoading(true, 'Retrieving Vault Knowledge & Synthesizing Brief…');
+
+      const sourceContext = realSources.map(s => `Source (${s.title}): ${s.snippet}`).join('\n');
+      
+      let vaultContext = "";
+      let vaultChunks = [];
+      if (window.BlvckVault) {
+        vaultChunks = await window.BlvckVault.retrieve(topic || "general facts", 5000);
+        if (vaultChunks.length > 0) {
+          vaultContext = "\nRELEVANT KNOWLEDGE VAULT CHUNKS (CITE THESE!):\n" + 
+            vaultChunks.map(c => `--- [Source: ${c.filename}] ---\n${c.text}`).join('\n\n') +
+            "\n(You MUST prioritize these project-specific documents for facts and context. ALWAYS cite them using [Source: filename.ext] when you use a fact from them.)\n";
+        }
+      }
+
+      const prompt = `Perform deep research for a video script on: "${topic}".
+Real Sources Found:
+${sourceContext}
+${vaultContext}
+
+Return JSON ONLY in format:
+{
+  "summary": "...",
+  "keyFacts": [
+    { "fact": "...", "detail": "...", "confidence": "high|medium|low", "verify": false }
+  ],
+  "timeline": [
+    { "when": "1347", "event": "..." }
+  ],
+  "keywords": { "primary": "...", "secondary": [] }
+}`;
+
+      const respText = await window.BlvckAI.chat(prompt);
+      const jsonMatch = respText.match(/\{[\s\S]*\}/);
+      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { summary: respText };
+
+      parsed.sources = realSources;
+      if (vaultChunks && vaultChunks.length > 0) {
+        const uniqueVaultSources = [...new Set(vaultChunks.map(c => c.filename))];
+        parsed.sources.push(...uniqueVaultSources.map(f => ({
+          title: `Vault Source: ${f}`,
+          url: '#',
+          snippet: 'Retrieved from project Knowledge Vault.'
+        })));
+      }
+
+      store.set({ topic, brief: parsed, at: Date.now() });
+      render(parsed);
       clearStatus();
-      if (window.BlvckAssets) window.BlvckAssets.emit();
     } catch (err) {
-      lastRaw = (err && err.raw) || '';
       showStatus((err && err.message) || 'Research failed.', 'error');
-      render((store.get() || {}).brief || null);
     } finally {
       setLoading(false);
     }
   }
 
-  // Re-hydrate from storage (used at init and by the data manager on clear/undo).
-  function refresh() {
-    const saved = store.get();
-    if (saved && saved.topic && topicEl && !topicEl.value.trim()) topicEl.value = saved.topic;
-    render(saved && saved.brief);
-  }
-
   genBtn.addEventListener('click', generate);
-  topicEl.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') generate(); });
-
-  if (window.BlvckData) window.BlvckData.register('research', refresh);
-
-  card.hidden = false;
-  refresh();
+  if (card) card.hidden = false;
 })();

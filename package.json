@@ -1,9 +1,9 @@
 {
   "name": "blvck-tts",
-  "version": "3.0.0",
-  "description": "Serverless AI content-production studio — voice, images, video and scripts powered by Puter + ElevenLabs.",
+  "version": "5.0.0",
+  "description": "Autonomous AI content-production studio & channel operating system powered by Decoupled Multi-Provider Pools (NVIDIA NIM, Ollama, ElevenLabs, Kokoro, FLUX).",
   "main": "server.js",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
@@ -20,5 +20,10 @@
     "serverless"
   ],
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "kokoro-js": "^1.2.1"
+  }
 }

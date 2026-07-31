@@ -110,9 +110,16 @@
       // into the saved options / templates — added only for this generation).
       const research = window.BlvckAssets && window.BlvckAssets.research();
       const channelMemory = window.BlvckBrain ? window.BlvckBrain.promptBlock() : '';
+      
+      let vaultChunks = [];
+      if (window.BlvckVault) {
+        vaultChunks = await window.BlvckVault.retrieve(options.topic || "general script writing", 8000);
+      }
+
       const genOptions = Object.assign({}, options,
         research ? { research } : {},
-        channelMemory ? { channelMemory } : {});
+        channelMemory ? { channelMemory } : {},
+        vaultChunks.length > 0 ? { vaultChunks } : {});
       // Stream the narration token-by-token into the output box.
       const prompt = window.BlvckPrompts.build('/api/script/generate', { options: genOptions });
       const messages = [];

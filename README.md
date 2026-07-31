@@ -1,8 +1,8 @@
-# Blvck TTS
+# Blvck TTS v4.0
 
-**A serverless AI content-production studio.** Voice, images, video and scripts — powered by [Puter](https://puter.com) + ElevenLabs. No API keys. No billing setup. No server-side model calls.
+**An Autonomous AI Channel Operating System & Production Studio.** Voice, images, video, scripts, research, and channel intelligence — powered by **OmniRoute AI Gateway** with multi-provider fallback.
 
-Type or paste a script, pick a voice from the ElevenLabs catalog, tune the delivery, and generate speech, storyboards, thumbnails, SEO packages, and video scenes — all through Puter's free, user-pays SDK.
+Type or paste a topic, let the **Real-Source Research Engine** pull verified citations, audit historical accuracy with the **Anachronism Guard**, and produce complete video packages with **AI Director 3.0**, **Five-Bible Asset Consistency**, and **Thumbnail Intelligence**.
 
 ## Features
 

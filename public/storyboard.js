@@ -493,14 +493,20 @@
   }
 
   async function generateSceneAsset(scene) {
-    if (sceneAssetType(scene) === 'video') {
-      // Puter txt2vid. Video clips are short (a few seconds) and slower than
-      // images; the queue throttle and progress ETA account for that.
-      return window.BlvckAI.generateVideo(scene.prompt, { seconds: 5, size: '1280x720' });
+    let finalPrompt = scene.prompt || '';
+
+    // Append master visual style to guarantee consistent art style across all generated scenes
+    if (bible && bible.visualStyle) {
+      finalPrompt = `${finalPrompt}. Visual Style: ${bible.visualStyle}`;
+    } else if (styleEl && styleEl.value && styleEl.value !== 'auto') {
+      finalPrompt = `${finalPrompt}. Visual Style: ${styleEl.value}`;
     }
-    // Condition on a character reference where available (image scenes only).
+
+    if (sceneAssetType(scene) === 'video') {
+      return window.BlvckAI.generateVideo(finalPrompt, { seconds: 5, size: '1280x720' });
+    }
     const imageUrl = sceneReference(scene);
-    return window.BlvckAI.generateImage(scene.prompt, ASPECT, imageUrl ? { imageUrl } : {});
+    return window.BlvckAI.generateImage(finalPrompt, ASPECT, imageUrl ? { imageUrl } : {});
   }
 
   // Video generation is far slower than images; pace the queue accordingly.
@@ -628,10 +634,12 @@
 
   function updateControls() {
     const hasPending = scenes.some((s) => s.status === 'pending' || s.status === 'error');
-    pauseBtn.hidden = !(running && !paused);
-    resumeBtn.hidden = !((running && paused) || (!running && hasPending && scenes.length));
-    resumeBtn.textContent = running ? 'Resume' : 'Continue';
-    cancelBtn.hidden = !running;
+    if (pauseBtn) pauseBtn.hidden = !(running && !paused);
+    if (resumeBtn) {
+      resumeBtn.hidden = !((running && paused) || (!running && hasPending && scenes.length));
+      resumeBtn.textContent = running ? 'Resume' : 'Continue';
+    }
+    if (cancelBtn) cancelBtn.hidden = !running;
   }
 
   // --- Rendering ---------------------------------------------------------
@@ -1295,25 +1303,33 @@
       renderScenes();
     });
   }
-  pauseBtn.addEventListener('click', () => {
-    paused = true;
-    updateControls();
-    showStatus('Paused. The current image finishes, then generation waits.', 'info');
-  });
-  resumeBtn.addEventListener('click', () => {
-    if (running) {
-      paused = false;
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', () => {
+      paused = true;
       updateControls();
-      clearStatus();
-    } else {
-      clearStatus();
-      runImageQueue();
-    }
-  });
-  cancelBtn.addEventListener('click', () => {
-    cancelRequested = true;
-    paused = false;
-  });
+      showStatus('Paused. The current image finishes, then generation waits.', 'info');
+    });
+  }
+  if (resumeBtn) {
+    resumeBtn.addEventListener('click', () => {
+      if (running) {
+        paused = false;
+        updateControls();
+        clearStatus();
+      } else {
+        clearStatus();
+        runImageQueue();
+      }
+    });
+  }
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      cancelRequested = true;
+      paused = false;
+      showStatus('Cancelling image queue…', 'info');
+      updateControls();
+    });
+  }
 
   $('sb-zip').addEventListener('click', downloadZip);
   $('sb-prompts').addEventListener('click', () => download(`${project()} prompts.txt`, new Blob([promptsText()], { type: 'text/plain;charset=utf-8' })));

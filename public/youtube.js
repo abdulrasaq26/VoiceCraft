@@ -2,14 +2,6 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const card = $('youtube-card');
-  const genBtn = $('yt-generate');
-  const genSpinner = genBtn.querySelector('.spinner');
-  const genLabel = genBtn.querySelector('.btn-label');
-  const statusEl = $('yt-status');
-  const results = $('yt-results');
-  const projectNameEl = $('yt-project-name');
-  const saveChannelBtn = $('yt-save-channel');
 
   const CHANNEL_LS = 'blvck-tts:channel'; // global knowledge base
   const SEO_LS = 'blvck-tts:seo'; // per-project (in the project working set)
@@ -108,57 +100,141 @@
   // --- Status ------------------------------------------------------------
 
   function showStatus(msg, type = 'error') {
+    const statusEl = document.getElementById('yt-status');
+    if (!statusEl) return;
     statusEl.textContent = msg;
     statusEl.className = `status ${type}`;
     statusEl.hidden = false;
   }
-  const clearStatus = () => (statusEl.hidden = true);
+  const clearStatus = () => {
+    const statusEl = document.getElementById('yt-status');
+    if (statusEl) statusEl.hidden = true;
+  };
 
   function setGenerating(on) {
+    const genBtn = document.getElementById('yt-generate');
+    if (!genBtn) return;
     genBtn.disabled = on;
-    genSpinner.hidden = !on;
-    genLabel.textContent = on ? 'Analyzing project…' : 'Generate optimization for this project';
+    const genSpinner = genBtn.querySelector('.spinner');
+    const genLabel = genBtn.querySelector('.btn-label') || genBtn;
+    if (genSpinner) genSpinner.hidden = !on;
+    if (genLabel) genLabel.textContent = on ? 'Analyzing project…' : 'Generate optimization for this project';
   }
 
   // --- Project context ---------------------------------------------------
 
   function projectTitle() {
+    if (window.BlvckAssets && window.BlvckAssets.title()) return window.BlvckAssets.title();
     const n = readLS('blvck-tts:narration');
     return (n && n.title) || 'Untitled';
   }
 
   function getProjectContext() {
-    const ctx = { title: projectTitle() };
-    const sb = readLS('blvck-tts:storyboard');
-    if (sb && sb.bible) ctx.bible = sb.bible;
-    const batch = readLS('blvck-tts:batch');
-    if (batch && batch.items && batch.items.length) {
-      ctx.script = batch.items.map((i) => i.text).join(' ');
-    } else if (sb && sb.scenes) {
-      ctx.subtitles = sb.scenes.map((s) => s.subtitle).filter(Boolean).join(' ');
+    const snap = window.BlvckAssets ? window.BlvckAssets.snapshot() : {};
+
+    const ctx = {
+      title: snap.title || projectTitle(),
+      script: snap.script || '',
+      research: snap.research || (window.BlvckAssets ? window.BlvckAssets.research() : null),
+      bible: snap.bible || (window.BlvckAssets ? window.BlvckAssets.bible() : null),
+      storyboard: snap.storyboard || (window.BlvckAssets && typeof window.BlvckAssets.scenes === 'function' ? window.BlvckAssets.scenes() : null)
+    };
+
+    if (!ctx.script) {
+      const batch = readLS('blvck-tts:batch');
+      if (batch && batch.items && batch.items.length) {
+        ctx.script = batch.items.map((i) => i.text).join(' ');
+      }
     }
-    // Feed research keywords into SEO so titles/tags reflect real search terms.
-    const research = window.BlvckAssets && window.BlvckAssets.research();
-    if (research) ctx.research = research;
-    // Bias SEO toward what performs for this channel.
-    const memory = window.BlvckBrain && window.BlvckBrain.promptBlock();
+
+    if (!ctx.bible) {
+      const sb = readLS('blvck-tts:storyboard');
+      if (sb && sb.bible) ctx.bible = sb.bible;
+    }
+
+    const memory = window.BlvckBrain && typeof window.BlvckBrain.promptBlock === 'function' ? window.BlvckBrain.promptBlock() : null;
     if (memory) ctx.channelMemory = memory;
+
     return ctx;
   }
 
   // --- Generate ----------------------------------------------------------
 
   async function generate() {
-    const ctx = getProjectContext();
-    if (!ctx.script && !ctx.subtitles && !ctx.bible) {
-      showStatus('This project has no story yet. Generate audio or a storyboard first, then optimize.');
-      return;
-    }
     clearStatus();
     setGenerating(true);
     try {
-      const body = await window.BlvckAI.generateJSON('/api/seo/generate', { project: ctx, channel: collectChannel() });
-      seo = body.seo;
+      const ctx = getProjectContext();
+      const title = ctx.title || 'Untitled Documentary';
+      let body;
+      
+      const prompt = `You are an elite YouTube Growth Mastermind and SEO Expert.
+Your task is to analyze the following documentary project and generate a complete, high-CTR YouTube packaging and SEO strategy.
+
+PROJECT DETAILS:
+Title: "${ctx.title}"
+Script Summary: "${(ctx.script || '').slice(0, 2000)}"
+Research: "${ctx.research || 'No specific research provided'}"
+
+CHANNEL CONTEXT:
+${JSON.stringify(collectChannel(), null, 2)}
+
+Return ONLY a valid JSON object matching exactly this schema:
+{
+  "seo": {
+    "recommendedTitle": "The absolute best high-CTR title",
+    "titles": {
+      "seo": [ { "title": "...", "seoScore": 90, "ctrScore": 85, "competitionScore": 40, "readabilityScore": 95 } ],
+      "ctr": [ { "title": "...", "seoScore": 80, "ctrScore": 98, "competitionScore": 60, "readabilityScore": 90 } ],
+      "balanced": [ { "title": "...", "seoScore": 92, "ctrScore": 92, "competitionScore": 45, "readabilityScore": 96 } ]
+    },
+    "description": {
+      "long": "Full YouTube description with chapters and hook",
+      "short": "2-3 sentence teaser for social sharing"
+    },
+    "keywords": {
+      "primary": "main keyword",
+      "secondary": ["kw1", "kw2"],
+      "longTail": ["long phrase 1"],
+      "intent": "Search intent"
+    },
+    "tags": {
+      "broad": ["tag1"], "niche": ["tag2"], "longTail": ["tag3"], "trending": ["tag4"]
+    },
+    "hashtags": {
+      "highVolume": ["#tag"], "niche": ["#tag"], "brand": ["#tag"]
+    },
+    "thumbnails": [
+      {
+        "version": "A",
+        "text": "2-3 WORD HOOK",
+        "visualFocus": "Description of subject",
+        "emotionalTrigger": "Emotion",
+        "curiosityTrigger": "Why they click",
+        "reasoning": "Why this works",
+        "prompt": "Image generation prompt",
+        "scores": { "curiosity": 90, "ctr": 95, "readability": 90, "mobile": 95, "brand": 85 }
+      }
+    ],
+    "recommendedThumbnail": "A"
+  }
+}
+
+Respond ONLY with valid JSON. No markdown formatting, no explanations.`;
+
+      try {
+        const rawRes = await window.BlvckAI.chat(prompt, { temperature: 0.7 });
+        const jsonMatch = rawRes.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          body = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error("No JSON object found in response");
+        }
+      } catch (e) {
+        throw new Error(`AI generation failed: ${e.message}`);
+      }
+
+      seo = body.seo || body;
       thumbs = [];
       thumbUrls.forEach((u) => URL.revokeObjectURL(u));
       thumbUrls.clear();
@@ -223,40 +299,75 @@
   }
 
   function render() {
+    const results = document.getElementById('yt-results');
+    if (!results) return;
+    
     if (!seo) {
       results.hidden = true;
       return;
     }
     results.hidden = false;
 
+    // Safely normalize titles structure
+    let titlesMap = { seo: [], ctr: [], balanced: [] };
+    if (Array.isArray(seo.titles)) {
+      titlesMap.seo = seo.titles;
+      titlesMap.ctr = seo.titles;
+      titlesMap.balanced = seo.titles;
+    } else if (seo.titles && typeof seo.titles === 'object') {
+      titlesMap.seo = Array.isArray(seo.titles.seo) ? seo.titles.seo : [];
+      titlesMap.ctr = Array.isArray(seo.titles.ctr) ? seo.titles.ctr : [];
+      titlesMap.balanced = Array.isArray(seo.titles.balanced) ? seo.titles.balanced : [];
+    }
+
+    const recTitle = seo.recommendedTitle || (titlesMap.seo[0] && titlesMap.seo[0].title) || projectTitle() || '';
     $('yt-recommended').innerHTML =
-      `<h3>Recommended title ${copyBtn('rec')}</h3><div class="yt-recommended-title" id="yt-rec-text">${esc(seo.recommendedTitle)}</div>`;
+      `<h3>Recommended title ${copyBtn('rec')}</h3><div class="yt-recommended-title" id="yt-rec-text">${esc(recTitle)}</div>`;
 
     const cat = window.__ytCat || 'seo';
-    const tabs = ['seo', 'ctr', 'balanced'].map((c) => `<button class="yt-copy ${c === cat ? '' : ''}" data-tab="${c}" ${c === cat ? 'style="color:var(--accent);border-color:var(--accent)"' : ''}>${c.toUpperCase()} (${seo.titles[c].length})</button>`).join('');
+    const activeList = titlesMap[cat] || titlesMap.seo || [];
+    const tabs = ['seo', 'ctr', 'balanced'].map((c) => {
+      const len = (titlesMap[c] || []).length;
+      return `<button class="yt-copy ${c === cat ? '' : ''}" data-tab="${c}" ${c === cat ? 'style="color:var(--accent);border-color:var(--accent)"' : ''}>${c.toUpperCase()} (${len})</button>`;
+    }).join('');
+
     $('yt-titles').innerHTML =
-      `<h3>Title variations</h3><div class="yt-tabs">${tabs}</div>` + seo.titles[cat].map(titleRow).join('');
+      `<h3>Title variations</h3><div class="yt-tabs">${tabs}</div>` + activeList.map(titleRow).join('');
+
+    const descLong = typeof seo.description === 'object' ? (seo.description.long || seo.description.full || '') : (typeof seo.description === 'string' ? seo.description : '');
+    const descShort = typeof seo.description === 'object' ? (seo.description.short || seo.description.summary || '') : (typeof seo.description === 'string' ? seo.description.slice(0, 150) : '');
 
     $('yt-desc').innerHTML =
-      `<h3>Description ${copyBtn('desc-long')}</h3><div class="yt-pre" id="yt-desc-long">${esc(seo.description.long)}</div>` +
-      `<h3 style="margin-top:.6rem">Short description ${copyBtn('desc-short')}</h3><div class="yt-pre" id="yt-desc-short">${esc(seo.description.short)}</div>`;
+      `<h3>Description ${copyBtn('desc-long')}</h3><div class="yt-pre" id="yt-desc-long">${esc(descLong)}</div>` +
+      `<h3 style="margin-top:.6rem">Short description ${copyBtn('desc-short')}</h3><div class="yt-pre" id="yt-desc-short">${esc(descShort)}</div>`;
 
-    const k = seo.keywords;
+    const kwPrimary = seo.keywords && typeof seo.keywords === 'object' ? (seo.keywords.primary || '') : (Array.isArray(seo.keywords) ? seo.keywords.join(', ') : '');
+    const kwSecondary = seo.keywords && typeof seo.keywords === 'object' && Array.isArray(seo.keywords.secondary) ? seo.keywords.secondary : [];
+    const kwLongTail = seo.keywords && typeof seo.keywords === 'object' && Array.isArray(seo.keywords.longTail) ? seo.keywords.longTail : [];
+    const kwIntent = seo.keywords && typeof seo.keywords === 'object' ? (seo.keywords.intent || '') : '';
+
     $('yt-keywords').innerHTML =
       `<h3>Keywords ${copyBtn('kw')}</h3>` +
-      `<div><strong>Primary:</strong> ${esc(k.primary)}</div>` +
-      `<div style="margin-top:.35rem"><strong>Secondary:</strong> <span class="yt-chips">${k.secondary.map((x) => `<span class="yt-chip">${esc(x)}</span>`).join('')}</span></div>` +
-      `<div style="margin-top:.35rem"><strong>Long-tail:</strong> <span class="yt-chips">${k.longTail.map((x) => `<span class="yt-chip">${esc(x)}</span>`).join('')}</span></div>` +
-      `<div style="margin-top:.35rem" class="field-note"><strong>Search intent:</strong> ${esc(k.intent)}</div>`;
+      `<div><strong>Primary:</strong> ${esc(kwPrimary)}</div>` +
+      `<div style="margin-top:.35rem"><strong>Secondary:</strong> <span class="yt-chips">${kwSecondary.map((x) => `<span class="yt-chip">${esc(x)}</span>`).join('')}</span></div>` +
+      `<div style="margin-top:.35rem"><strong>Long-tail:</strong> <span class="yt-chips">${kwLongTail.map((x) => `<span class="yt-chip">${esc(x)}</span>`).join('')}</span></div>` +
+      `<div style="margin-top:.35rem" class="field-note"><strong>Search intent:</strong> ${esc(kwIntent)}</div>`;
 
-    const tg = seo.tags;
+    const tgBroad = seo.tags && typeof seo.tags === 'object' && Array.isArray(seo.tags.broad) ? seo.tags.broad : (Array.isArray(seo.tags) ? seo.tags : []);
+    const tgNiche = seo.tags && typeof seo.tags === 'object' && Array.isArray(seo.tags.niche) ? seo.tags.niche : [];
+    const tgLongTail = seo.tags && typeof seo.tags === 'object' && Array.isArray(seo.tags.longTail) ? seo.tags.longTail : [];
+    const tgTrending = seo.tags && typeof seo.tags === 'object' && Array.isArray(seo.tags.trending) ? seo.tags.trending : [];
+
     const tagGroup = (label, list) => `<div style="margin-top:.35rem"><strong>${label}:</strong> <span class="yt-chips">${list.map((x) => `<span class="yt-chip">${esc(x)}</span>`).join('')}</span></div>`;
     $('yt-tags').innerHTML =
-      `<h3>Tags ${copyBtn('tags')}</h3>` + tagGroup('Broad', tg.broad) + tagGroup('Niche', tg.niche) + tagGroup('Long-tail', tg.longTail) + tagGroup('Trending', tg.trending);
+      `<h3>Tags ${copyBtn('tags')}</h3>` + tagGroup('Broad', tgBroad) + tagGroup('Niche', tgNiche) + tagGroup('Long-tail', tgLongTail) + tagGroup('Trending', tgTrending);
 
-    const h = seo.hashtags;
+    const hHigh = seo.hashtags && typeof seo.hashtags === 'object' && Array.isArray(seo.hashtags.highVolume) ? seo.hashtags.highVolume : (Array.isArray(seo.hashtags) ? seo.hashtags : []);
+    const hNiche = seo.hashtags && typeof seo.hashtags === 'object' && Array.isArray(seo.hashtags.niche) ? seo.hashtags.niche : [];
+    const hBrand = seo.hashtags && typeof seo.hashtags === 'object' && Array.isArray(seo.hashtags.brand) ? seo.hashtags.brand : [];
+
     $('yt-hashtags').innerHTML =
-      `<h3>Hashtags ${copyBtn('hashtags')}</h3>` + tagGroup('High volume', h.highVolume) + tagGroup('Niche', h.niche) + tagGroup('Brand', h.brand);
+      `<h3>Hashtags ${copyBtn('hashtags')}</h3>` + tagGroup('High volume', hHigh) + tagGroup('Niche', hNiche) + tagGroup('Brand', hBrand);
 
     renderThumbs();
   }
@@ -463,37 +574,49 @@
     download(`${projectTitle()} publishing package.zip`, window.BlvckZip.create(files));
   }
 
-  // --- Events ------------------------------------------------------------
+  // --- Events & Init -----------------------------------------------------
 
-  saveChannelBtn.addEventListener('click', saveChannel);
-  genBtn.addEventListener('click', generate);
-  results.addEventListener('click', (e) => {
-    const tab = e.target.closest('[data-tab]');
-    if (tab) {
-      window.__ytCat = tab.dataset.tab;
-      render();
-      return;
+  function initEvents() {
+    const saveChannelBtn = document.getElementById('yt-save-channel');
+    const genBtn = document.getElementById('yt-generate');
+    const results = document.getElementById('yt-results');
+    const exportSeo = document.getElementById('yt-export-seo');
+    const exportThumbs = document.getElementById('yt-export-thumbs');
+    const exportAll = document.getElementById('yt-export-all');
+
+    if (saveChannelBtn) saveChannelBtn.onclick = saveChannel;
+    if (genBtn) genBtn.onclick = generate;
+    if (exportSeo) exportSeo.onclick = exportSeoReport;
+    if (exportThumbs) exportThumbs.onclick = exportThumbPackage;
+    if (exportAll) exportAll.onclick = exportPublishing;
+
+    if (results) {
+      results.onclick = (e) => {
+        const tab = e.target.closest('[data-tab]');
+        if (tab) {
+          window.__ytCat = tab.dataset.tab;
+          render();
+          return;
+        }
+        const copyText = e.target.closest('[data-copytext]');
+        if (copyText) {
+          copy(copyText.dataset.copytext, 'Title');
+          return;
+        }
+        const c = e.target.closest('[data-copy]');
+        if (c) {
+          handleCopy(c.dataset.copy);
+          return;
+        }
+        const gen = e.target.closest('[data-gen-thumb]');
+        if (gen) {
+          const i = Number(gen.dataset.genThumb);
+          const sel = results.querySelector(`[data-thumb-count="${i}"]`);
+          generateThumbnails(i, Number(sel ? sel.value : 1));
+        }
+      };
     }
-    const copyText = e.target.closest('[data-copytext]');
-    if (copyText) {
-      copy(copyText.dataset.copytext, 'Title');
-      return;
-    }
-    const c = e.target.closest('[data-copy]');
-    if (c) {
-      handleCopy(c.dataset.copy);
-      return;
-    }
-    const gen = e.target.closest('[data-gen-thumb]');
-    if (gen) {
-      const i = Number(gen.dataset.genThumb);
-      const sel = results.querySelector(`[data-thumb-count="${i}"]`);
-      generateThumbnails(i, Number(sel ? sel.value : 1));
-    }
-  });
-  $('yt-export-seo').addEventListener('click', exportSeoReport);
-  $('yt-export-thumbs').addEventListener('click', exportThumbPackage);
-  $('yt-export-all').addEventListener('click', exportPublishing);
+  }
 
   function handleCopy(kind) {
     if (!seo) return;
@@ -505,8 +628,6 @@
     if (kind === 'hashtags') return copy([...seo.hashtags.highVolume, ...seo.hashtags.niche, ...seo.hashtags.brand].join(' '), 'Hashtags');
   }
 
-  // Re-hydrate from storage (used by the data manager after a clear or undo).
-  // The channel knowledge base is global and intentionally left alone.
   async function refresh() {
     seo = null;
     thumbs = [];
@@ -516,18 +637,75 @@
     render();
     await restore();
   }
+
+  function updateProjectName() {
+    const projectNameEl = document.getElementById('yt-project-name');
+    if (projectNameEl) projectNameEl.textContent = `Project: ${projectTitle()}`;
+  }
+
+  // ── BOOT — script loads after DOM so elements exist immediately ──────────
+
+  function boot() {
+    try {
+      const card = document.getElementById('youtube-card');
+      if (card) card.hidden = false;
+
+      // Bind generate button — direct & unconditional
+      const genBtn = document.getElementById('yt-generate');
+      if (genBtn) {
+        genBtn.onclick = null; // clear any stale handler
+        genBtn.addEventListener('click', generate);
+        console.log('[YouTube] ✅ Generate button bound');
+      } else {
+        console.warn('[YouTube] ⚠️ #yt-generate not found');
+      }
+
+      // Bind save channel button
+      const saveChannelBtn = document.getElementById('yt-save-channel');
+      if (saveChannelBtn) saveChannelBtn.onclick = saveChannel;
+
+      // Bind export buttons
+      const exportSeo    = document.getElementById('yt-export-seo');
+      const exportThumbs = document.getElementById('yt-export-thumbs');
+      const exportAll    = document.getElementById('yt-export-all');
+      if (exportSeo)    exportSeo.onclick    = exportSeoReport;
+      if (exportThumbs) exportThumbs.onclick = exportThumbPackage;
+      if (exportAll)    exportAll.onclick    = exportPublishing;
+
+      // Results delegated click
+      const results = document.getElementById('yt-results');
+      if (results) {
+        results.onclick = (e) => {
+          const tab = e.target.closest('[data-tab]');
+          if (tab) { window.__ytCat = tab.dataset.tab; render(); return; }
+          const copyText = e.target.closest('[data-copytext]');
+          if (copyText) { copy(copyText.dataset.copytext, 'Title'); return; }
+          const c = e.target.closest('[data-copy]');
+          if (c) { handleCopy(c.dataset.copy); return; }
+          const gen = e.target.closest('[data-gen-thumb]');
+          if (gen) {
+            const i = Number(gen.dataset.genThumb);
+            const sel = results.querySelector(`[data-thumb-count="${i}"]`);
+            generateThumbnails(i, Number(sel ? sel.value : 1));
+          }
+        };
+      }
+
+      loadChannel();
+      updateProjectName();
+      restore();
+    } catch (e) {
+      console.error('[YouTube Init Error]', e);
+    }
+  }
+
+  // Run boot immediately — DOM is ready since this script is at end of body
+  boot();
+
+  // Re-bind on route changes (SPA navigation)
+  window.addEventListener('hashchange', () => { setTimeout(boot, 50); });
+  window.addEventListener('blvck-assets-changed', updateProjectName);
   if (window.BlvckData) window.BlvckData.register('youtube', refresh);
 
-  // --- Init --------------------------------------------------------------
-
-  (async () => {
-    try {
-      card.hidden = false;
-      loadChannel();
-      projectNameEl.textContent = `Project: ${projectTitle()}`;
-      await restore();
-    } catch {
-      /* leave hidden */
-    }
-  })();
 })();
+

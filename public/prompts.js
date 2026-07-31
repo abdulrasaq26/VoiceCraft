@@ -276,10 +276,14 @@ Give 10 titles in each of the three categories. The "long" description must incl
 
   function seoPrompt(project, channel) {
     const parts = [];
-    parts.push(`VIDEO TITLE / WORKING NAME: ${project.title || 'Untitled'}`);
-    if (project.bible) parts.push(`PROJECT PROFILE:\n${JSON.stringify(project.bible, null, 2)}`);
-    if (project.script) parts.push(`SCRIPT / NARRATION:\n${String(project.script).slice(0, 8000)}`);
-    else if (project.subtitles) parts.push(`SUBTITLES:\n${String(project.subtitles).slice(0, 8000)}`);
+    parts.push(`PROJECT TITLE: "${project.title || 'Untitled'}"`);
+    if (project.research) parts.push(`RESEARCH BRIEF & SEARCH ANGLE:\n${JSON.stringify(project.research, null, 2)}`);
+    if (project.bible) parts.push(`STORY BIBLE & VISUAL PROFILE:\n${JSON.stringify(project.bible, null, 2)}`);
+    if (project.script) parts.push(`FULL SCRIPT & NARRATION:\n${String(project.script).slice(0, 10000)}`);
+    else if (project.subtitles) parts.push(`SUBTITLES / TIMED LINES:\n${String(project.subtitles).slice(0, 10000)}`);
+    if (project.storyboard && project.storyboard.scenes) {
+      parts.push(`STORYBOARD SCENES:\n${JSON.stringify(project.storyboard.scenes.map(s => ({ subtitle: s.subtitle, visual: s.visualConcept })), null, 2)}`);
+    }
     if (project.research && project.research.keywords) {
       const kw = project.research.keywords;
       parts.push(`RESEARCH KEYWORDS (weave these in): primary "${kw.primary || ''}", secondary ${JSON.stringify(kw.secondary || [])}, long-tail ${JSON.stringify(kw.longTail || [])}.`);
@@ -416,6 +420,14 @@ You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
     if (grounding) {
       lines.push(`\nGROUND THE SCRIPT IN THIS RESEARCH BRIEF (use these facts and angles; do not contradict them or invent conflicting specifics):\n${grounding}`);
     }
+
+    if (opts.vaultChunks && opts.vaultChunks.length > 0) {
+      const userContext = "\nRELEVANT KNOWLEDGE VAULT CHUNKS:\n" + 
+        opts.vaultChunks.map(c => `--- [Source: ${c.filename}] ---\n${c.text}`).join('\n\n') + 
+        "\n(Integrate details and context from these retrieved Vault documents into the script where relevant. IMPORTANT: Whenever you use a fact from the Vault, you MUST append a citation like [Source: filename.ext] at the end of the sentence.)\n";
+      lines.push(userContext);
+    }
+
     if (opts.channelMemory) lines.push(`\n${opts.channelMemory}`);
     if (opts.retention) {
       lines.push(

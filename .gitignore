@@ -4,3 +4,11 @@ node_modules/
 service-account.json
 *-credentials.json
 .DS_Store
+
+# Vendored/cloned third-party projects (own git history, not ours to track)
+fish-speech/
+Uncensored-Local-Studio-main/
+
+# Local scratch/test scripts and personal test media
+scratch/
+ted.wav
