@@ -131,10 +131,34 @@
     if (!primary) primary = FREE_NVIDIA_MODELS[0];
     if (!fallback) fallback = FREE_NVIDIA_MODELS[1];
 
+    let reason = rule.reason;
+
+    // Channel Brain: once this channel has logged enough real performance
+    // data for this task (see brain.js modelBias — requires >=2 comparably
+    // sampled models before it returns anything), prefer a model that has
+    // actually correlated with better results over the static pattern pick.
+    // Bounded: only promotes a model this Puter/NIM instance currently
+    // offers, and only when it's rated better than average — never
+    // discards the pattern pick, just demotes it to fallback.
+    if (window.BlvckBrain && typeof window.BlvckBrain.modelBias === 'function') {
+      try {
+        const bias = window.BlvckBrain.modelBias(taskType) || {};
+        const learnedBest = Object.keys(bias).sort((a, b) => bias[b] - bias[a])[0];
+        if (learnedBest && bias[learnedBest] > 0 && learnedBest !== primary.id) {
+          const learnedModel = allModels.find(m => m.id === learnedBest);
+          if (learnedModel) {
+            fallback = primary;
+            primary = learnedModel;
+            reason = `Channel history shows this model performs better for ${taskType} (learned from logged results).`;
+          }
+        }
+      } catch (_) { /* no learned signal yet */ }
+    }
+
     return {
       selectedModel: primary.id,
       fallbackModel: fallback.id,
-      reason: rule.reason,
+      reason,
       taskType
     };
   }

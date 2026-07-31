@@ -20,7 +20,8 @@
     storyboard: 'blvck-tts:storyboard',
     seo: 'blvck-tts:seo',
     channel: 'blvck-tts:channel',
-    editor: 'blvck-tts:editor'
+    editor: 'blvck-tts:editor',
+    modelsUsed: 'blvck-tts:models-used'
   };
 
   function read(key) {
@@ -92,6 +93,17 @@
     seo() { return read(K.seo); },
     channel() { return read(K.channel); },
     editor() { return read(K.editor); },
+
+    // Which model actually generated each task this project — a routing
+    // hint for the Director, and the join key Channel Brain uses to learn
+    // which models correlate with what performs. { task: modelId }
+    modelsUsed() { return read(K.modelsUsed) || {}; },
+    recordModelUsed(task, model) {
+      if (!task || !model) return;
+      const cur = read(K.modelsUsed) || {};
+      cur[task] = model;
+      write(K.modelsUsed, cur);
+    },
 
     // The research brief for this project (topic facts, angles, keywords).
     research() { const r = read(K.research); return (r && r.brief) || null; },

@@ -927,6 +927,22 @@
                 <div id="brain-insights" class="brain-insights"></div>
               </div>
             </div>
+
+            <div class="brain-log">
+              <h4 class="brain-h">Log a published video</h4>
+              <p class="field-note">Enter a video's real numbers so the brain learns which themes — and which models — actually perform. Tag a theme (e.g. "mystery", "daily life") to compare.</p>
+              <div class="brain-log-row">
+                <input id="brain-perf-title" type="text" placeholder="Video title" list="brain-perf-titles" />
+                <datalist id="brain-perf-titles"></datalist>
+                <input id="brain-perf-theme" type="text" placeholder="Theme (e.g. mystery)" />
+                <input id="brain-perf-views" type="text" inputmode="numeric" placeholder="Views" />
+                <input id="brain-perf-ctr" type="text" inputmode="decimal" placeholder="CTR %" />
+                <input id="brain-perf-ret" type="text" inputmode="decimal" placeholder="Retention %" />
+                <button id="brain-perf-log" class="btn primary small" type="button">Log</button>
+              </div>
+              <div id="brain-perf-list" class="brain-perf-list" hidden></div>
+            </div>
+            <div id="brain-status" class="status" hidden></div>
           </section>
         </div>
 

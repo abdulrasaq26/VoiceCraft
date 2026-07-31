@@ -31,6 +31,7 @@
     { id: 'seo', module: 'youtube', label: 'YouTube SEO & thumbnails', ls: ['blvck-tts:seo'], idb: [['blvck-thumbnails', 'images']], cats: ['generated', 'ai'] },
     { id: 'agent', module: 'agent', label: 'AI agent chat history', ls: ['blvck-tts:agent'], cats: ['ai'] },
     { id: 'director', module: 'director', label: 'Production audit', ls: ['blvck-tts:director-audit'], cats: ['ai'] },
+    { id: 'models-used', module: 'ai', label: 'Model routing memory', ls: ['blvck-tts:models-used'], cats: ['generated', 'ai'] },
     { id: 'narration', module: 'project', label: 'Project name & narration', ls: ['blvck-tts:narration'], cats: [] },
     { id: 'recents', module: 'cache', label: 'Recent & temporary items', ls: ['blvck-tts:recents'], cats: ['cache'] },
     // Channel Brain is cross-project memory — global:false keeps it out of the

@@ -12,6 +12,14 @@
 
   let lastRawResponseStr = '';
 
+  // Persist which model actually generated a task for the current project —
+  // Channel Brain joins this against logged performance to learn which
+  // models correlate with results (see brain.js modelBias()).
+  function recordModelUsed(task, model) {
+    if (!task || !model) return;
+    try { if (window.BlvckAssets && window.BlvckAssets.recordModelUsed) window.BlvckAssets.recordModelUsed(task, model); } catch (_) {}
+  }
+
   function getObjective() {
     return localStorage.getItem(OBJECTIVE_KEY) || 'balanced';
   }
@@ -102,7 +110,10 @@
 
     // 1. Local-Only Mode
     if (objective === 'local_only' && window.LLMAdapters) {
-      return await window.LLMAdapters.ollamaChat({ model: options.model || 'qwen2.5', messages });
+      const localModel = options.model || 'qwen2.5';
+      const text = await window.LLMAdapters.ollamaChat({ model: localModel, messages });
+      recordModelUsed(taskType, localModel);
+      return text;
     }
 
     const decision = await resolveChatModel(taskType);
@@ -129,6 +140,7 @@
           onChunk: options.onChunk
         });
         lastRawResponseStr = text;
+        recordModelUsed(taskType, oaModel);
         return text;
       } catch (oaErr) {
         console.warn(`[BlvckAI] OpenAI OAuth task [${taskType}] failed, attempting fallback:`, oaErr.message);
@@ -147,6 +159,7 @@
           onChunk: options.onChunk
         });
         lastRawResponseStr = text;
+        recordModelUsed(taskType, targetModel);
         return text;
       } catch (e) {
         lastNimError = e.message;
@@ -164,6 +177,7 @@
               onChunk: options.onChunk
             });
             lastRawResponseStr = text;
+            recordModelUsed(taskType, 'gpt-5.4-mini');
             return text;
           } catch (_) {}
         }
@@ -183,6 +197,7 @@
               onChunk: options.onChunk
             });
             lastRawResponseStr = text;
+            recordModelUsed(taskType, fallbackModel);
             return text;
           } catch (err2) {
             lastNimError = err2.message;
@@ -197,6 +212,7 @@
       try {
         const text = await window.LLMAdapters.openRouterChat({ model: 'openai/gpt-4o-mini', messages });
         lastRawResponseStr = text;
+        recordModelUsed(taskType, 'openai/gpt-4o-mini');
         return text;
       } catch (e) {}
     }
@@ -204,7 +220,9 @@
     // 4. Local Ollama Fallback
     if (window.LLMAdapters) {
       try {
-        return await window.LLMAdapters.ollamaChat({ model: 'qwen2.5', messages });
+        const text = await window.LLMAdapters.ollamaChat({ model: 'qwen2.5', messages });
+        recordModelUsed(taskType, 'qwen2.5');
+        return text;
       } catch (e) {}
     }
 
@@ -217,6 +235,7 @@
         const replyText = typeof res === 'string' ? res : (res?.message?.content || res?.text || String(res));
         if (replyText) {
           lastRawResponseStr = replyText;
+          recordModelUsed(taskType, 'puter-auto');
           return replyText;
         }
       } catch (puterErr) {

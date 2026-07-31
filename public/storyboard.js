@@ -441,7 +441,7 @@
     const onAttempt = (n, max) => { if (n > 1) setAnalyzing(true, `Reformatting response (attempt ${n} of ${max})…`); };
     try {
       // 1. Project profile (story + inferred/selected visual style)
-      const bibleRes = await window.BlvckAI.generateJSON('/api/storyboard/bible', { context: ctx }, { onAttempt });
+      const bibleRes = await window.BlvckAI.generateJSON('/api/storyboard/bible', { context: ctx }, { onAttempt, task: 'bible' });
       bible = bibleRes.bible;
       renderBible();
 
@@ -457,7 +457,7 @@
           style: ctx.style,
           instructions: ctx.instructions,
           priorSummaries: prior
-        }, { onAttempt });
+        }, { onAttempt, task: 'storyboard' });
         (res.scenes || []).forEach((s) => scenes.push({ ...s, status: 'pending', error: null }));
         renderScenes();
       }

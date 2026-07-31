@@ -223,7 +223,7 @@ Return ONLY a valid JSON object matching exactly this schema:
 Respond ONLY with valid JSON. No markdown formatting, no explanations.`;
 
       try {
-        const rawRes = await window.BlvckAI.chat(prompt, { temperature: 0.7 });
+        const rawRes = await window.BlvckAI.chat(prompt, { temperature: 0.7, task: 'seo' });
         const jsonMatch = rawRes.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           body = JSON.parse(jsonMatch[0]);
