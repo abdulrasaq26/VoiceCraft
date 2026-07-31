@@ -492,21 +492,68 @@
     return null;
   }
 
+  // bible.visualStyle is an OBJECT ({name, description, lighting, colorGrading,
+  // negative}). Interpolating it straight into a template literal produced the
+  // literal text "[object Object]", so every scene prompt carried that instead
+  // of the style, and the image model was left with no style anchor at all —
+  // which is why output drifted between scenes and ignored the chosen look.
+  // A seed derived from the project title, so every scene in one video draws
+  // from the same corner of the model's latent space and a re-run reproduces
+  // the same frame. The scene index is folded in only lightly — identical
+  // seeds across scenes would push every frame toward the same composition.
+  function projectSeed() {
+    const title = (window.BlvckAssets && window.BlvckAssets.title()) || 'aether';
+    let h = 2166136261;
+    for (let i = 0; i < title.length; i++) {
+      h ^= title.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return Math.abs(h % 1000000);
+  }
+
+  function sceneSeed(scene) {
+    const base = projectSeed();
+    const idx = Number.isFinite(scene && scene.index) ? scene.index : 0;
+    return (base + idx * 17) % 1000000;
+  }
+
+  function styleText(vs) {
+    if (!vs) return '';
+    if (typeof vs === 'string') return vs;
+    return [vs.description || vs.name, vs.lighting, vs.colorGrading]
+      .map((s) => String(s || '').trim())
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  function styleNegative(vs) {
+    if (!vs || typeof vs === 'string') return '';
+    return String(vs.negative || '').trim();
+  }
+
   async function generateSceneAsset(scene) {
     let finalPrompt = scene.prompt || '';
 
-    // Append master visual style to guarantee consistent art style across all generated scenes
-    if (bible && bible.visualStyle) {
-      finalPrompt = `${finalPrompt}. Visual Style: ${bible.visualStyle}`;
+    // Append the master visual style so every scene shares one look.
+    const styled = styleText(bible && bible.visualStyle);
+    if (styled) {
+      if (!finalPrompt.toLowerCase().includes(styled.slice(0, 24).toLowerCase())) {
+        finalPrompt = `${finalPrompt}. Visual style: ${styled}`;
+      }
+      const neg = styleNegative(bible && bible.visualStyle);
+      if (neg) finalPrompt = `${finalPrompt}. Avoid: ${neg}`;
     } else if (styleEl && styleEl.value && styleEl.value !== 'auto') {
-      finalPrompt = `${finalPrompt}. Visual Style: ${styleEl.value}`;
+      finalPrompt = `${finalPrompt}. Visual style: ${styleEl.value}`;
     }
 
     if (sceneAssetType(scene) === 'video') {
       return window.BlvckAI.generateVideo(finalPrompt, { seconds: 5, size: '1280x720' });
     }
     const imageUrl = sceneReference(scene);
-    return window.BlvckAI.generateImage(finalPrompt, ASPECT, imageUrl ? { imageUrl } : {});
+    return window.BlvckAI.generateImage(finalPrompt, ASPECT, {
+      ...(imageUrl ? { imageUrl } : {}),
+      seed: sceneSeed(scene)
+    });
   }
 
   // Video generation is far slower than images; pace the queue accordingly.

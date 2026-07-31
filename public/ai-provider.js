@@ -428,7 +428,8 @@
           return await window.ImageAdapters.pollinationsGenerateImage({
             prompt: enrichedPrompt,
             aspect_ratio: options.aspect_ratio || aspect_ratio || '16:9',
-            model: options.model || 'flux'
+            model: options.model || 'flux',
+            seed: options.seed != null ? options.seed : null
           });
         } catch (polErr) {
           console.warn('[BlvckAI] Pollinations.ai failed:', polErr.message);
