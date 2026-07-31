@@ -416,6 +416,9 @@ const server = http.createServer((req, res) => {
         'Content-Length': buffer.length,
         'ngrok-skip-browser-warning': 'true'
       };
+      // The official api.fish.audio endpoint is key-authenticated; without this
+      // passthrough every request to it comes back 401.
+      if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization'];
 
       const proxyOptions = {
         hostname: targetUrl.hostname,

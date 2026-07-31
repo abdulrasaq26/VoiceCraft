@@ -5,6 +5,7 @@
   let FISH_VOICES = [
     { id: 'default', name: 'Fish Audio (Default Colab Model)', grade: 'A' },
   ];
+  let lastError = '';
 
   function getFishEndpoint() {
     let ep = window.ProviderManager.getPoolState('fishaudio')?.endpoint || 'https://api.fish.audio';
@@ -26,19 +27,29 @@
     return headers;
   }
 
-  // Probe Fish Speech API health & fetch voices
+  // Probe Fish Speech API health & fetch voices.
+  // Reports the REAL reachability of the endpoint — a Colab/Kaggle tunnel that has
+  // expired must surface as offline, otherwise the UI silently offers voices that
+  // cannot synthesize anything.
   async function probeFish() {
     const ep = getFishEndpoint();
     const headers = getHeaders(ep);
     let online = false;
+    lastError = '';
 
     // Check health
     try {
       const res = await fetch(`/api/proxy/fish/v1/health`, { method: 'GET', headers }).catch(() => null);
       if (res && res.ok) {
         online = true;
+      } else if (res) {
+        lastError = `Health check returned ${res.status}.`;
+      } else {
+        lastError = `Could not reach ${ep}.`;
       }
-    } catch (e) {}
+    } catch (e) {
+      lastError = e.message;
+    }
 
     // Fetch voices dynamically
     try {
@@ -50,9 +61,12 @@
           if (data && data.items) {
              FISH_VOICES = data.items.map(m => ({ id: m._id, name: m.title || m.name || m._id, grade: 'A' }));
           }
+        } else {
+          lastError = `Voice list failed (${res.status}): ${(await res.text()).slice(0, 200)}`;
+          console.warn('[Fish Adapter]', lastError);
         }
       } else {
-        // Kaggle Local Server uses /v1/references/list
+        // Colab / Kaggle tunnel uses /v1/references/list
         const res = await fetch(`/api/proxy/fish/v1/references/list?format=json&t=${Date.now()}`, { method: 'GET', headers });
         if (res.ok) {
           const data = await res.json();
@@ -62,19 +76,22 @@
                { id: 'default', name: 'Fish Audio (Default Base Model)', grade: 'A' },
                ...customVoices
              ];
+             if (!customVoices.length) {
+               lastError = 'The Fish server reported zero reference voices — run the voice-pack cell in the notebook, then re-run the API server cell.';
+               console.warn('[Fish Adapter]', lastError);
+             }
           }
         } else {
-          const errText = await res.text();
-          alert(`[AETHERSTUDIO Debug] Proxy failed with status ${res.status}: ${errText}`);
+          lastError = `Voice list failed (${res.status}): ${(await res.text()).slice(0, 200)}`;
+          console.warn('[Fish Adapter]', lastError);
         }
       }
     } catch (e) {
+      lastError = e.message;
       console.warn('[Fish Adapter] Failed to fetch dynamic voices:', e);
-      alert(`[AETHERSTUDIO Debug] Fish Adapter Error: ${e.message}\nPlease copy this error and tell the assistant.`);
     }
 
-    // Return true by default for fallback behavior
-    return { online: online || true, endpoint: ep, voices: FISH_VOICES };
+    return { online, endpoint: ep, voices: FISH_VOICES, error: lastError };
   }
 
   function listVoices() {
@@ -141,12 +158,16 @@
   window.FishAdapter = {
     probeFish,
     listVoices,
-    textToSpeech
+    textToSpeech,
+    lastError: () => lastError
   };
 
   // Auto-check on load (non-blocking)
   probeFish().then(state => {
-    console.log(`[Fish Adapter] Backend status: ${state.online ? 'Online' : 'Offline'}`);
+    console.log(
+      `[Fish Adapter] Backend status: ${state.online ? 'Online' : 'Offline'} (${state.endpoint})` +
+      (state.error ? ` — ${state.error}` : ` — ${state.voices.length} voice(s)`)
+    );
     window.dispatchEvent(new CustomEvent('blvck:tts-provider-changed'));
   });
 
