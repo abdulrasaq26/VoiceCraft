@@ -450,6 +450,55 @@
               <p id="instructions-note" class="field-note"></p>
             </section>
 
+            <!-- Voice Cloning Studio — POST /v1/references/add. Only shown for
+                 engines whose caps declare cloning support. -->
+            <section id="voice-cloning-card" hidden class="card-sub-section" style="background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; margin: 15px 0;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h3 style="margin:0; font-size:15px; color:var(--accent, #6366f1);">🧬 Voice Cloning Studio</h3>
+                <span class="badge premium" style="font-size:11px;">Reference voices</span>
+              </div>
+              <p class="field-note" style="margin-top:0;">
+                Clone any voice from a 10–20&nbsp;second recording. The clip is converted to mono 44.1&nbsp;kHz,
+                trimmed to its cleanest stretch of speech and measured before upload — Fish reproduces a
+                recording's noise and frequency response along with the voice.
+              </p>
+
+              <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px;">
+                <input id="clone-file" type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" style="flex:1; min-width:200px;" />
+                <button id="clone-record" class="btn ghost small" type="button">🎤 Record</button>
+                <button id="clone-stop" class="btn ghost small" type="button" hidden>⏹ Stop</button>
+              </div>
+
+              <div id="clone-analysis" hidden style="margin-bottom:10px; padding:10px; border-radius:8px; font-size:12px;"></div>
+
+              <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:10px; margin-bottom:10px;">
+                <div>
+                  <label for="clone-name">Voice name</label>
+                  <input id="clone-name" type="text" placeholder="e.g. My_Narrator" />
+                  <p class="field-note" style="margin:2px 0 0;">Letters, numbers, spaces, - and _ only.</p>
+                </div>
+                <div>
+                  <label for="clone-transcript">Transcript <span style="opacity:0.7;">(required)</span></label>
+                  <textarea id="clone-transcript" rows="3" placeholder="Type exactly what the recording says…"></textarea>
+                  <p class="field-note" style="margin:2px 0 0;">Must match the audio — a wrong transcript degrades the clone.</p>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button id="clone-upload" class="btn primary" type="button" disabled>⬆ Create voice</button>
+                <button id="clone-preview" class="btn ghost small" type="button" hidden>▶ Preview processed clip</button>
+                <span id="clone-status" class="field-note" style="margin:0;"></span>
+              </div>
+
+              <div style="margin-top:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <strong style="font-size:13px;">Your reference voices</strong>
+                  <button id="clone-refresh" class="btn ghost small" type="button">↻ Refresh</button>
+                </div>
+                <div id="clone-list" style="display:flex; flex-direction:column; gap:6px; margin-top:8px;"></div>
+              </div>
+            </section>
+
             <!-- Speech Director Studio (engine-agnostic: rewrites punctuation, not engine markup) -->
             <section class="card-sub-section" style="background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; margin: 15px 0;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
@@ -1177,6 +1226,8 @@
   <script src="adapters/kokoro-adapter.js"></script>
   <script src="adapters/fish-adapter.js"></script>
   <script src="speech-director.js"></script>
+  <script src="voice-cloning.js"></script>
+  <script src="voice-cloning-ui.js"></script>
   <script src="adapters/direct-adapters.js"></script>
   <script src="provider-dashboard.js"></script>
   <script src="asset-consistency.js"></script>

@@ -81,7 +81,8 @@
       // No speed parameter exists in ServeTTSRequest, so the speed slider is
       // hidden rather than left visible doing nothing. Sampling controls are
       // real: temperature, top_p, repetition_penalty, seed.
-      caps: { voiceSettings: false, instructions: false, engine: false, speed: false, genParams: true },
+      // cloning: engine exposes reference add/delete endpoints.
+      caps: { voiceSettings: false, instructions: false, engine: false, speed: false, genParams: true, cloning: true },
       defaultModel: 'fishaudio',
       modelLabel: 'Model',
       modelHint: 'fishaudio',
