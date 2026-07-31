@@ -138,13 +138,32 @@
   }
 
   // Speech Analytics Engine
+  //
+  // Everything reported here is counted from the text. There is deliberately no
+  // "realism" or "retention potential" score: we cannot measure those, and a
+  // confident-looking number we invented would make the whole panel untrustworthy.
   function analyzeSpeechStats(script, speed = 1.0, style = 'documentary') {
     if (!script) {
-      return { durationText: '0m 0s', words: 0, wpm: 0, pauseCount: 0, style };
+      return {
+        durationText: '0m 0s', words: 0, wpm: 0, pauseCount: 0, style,
+        sentences: 0, avgSentenceWords: 0, longestRunWords: 0
+      };
     }
 
     const words = script.trim().split(/\s+/).filter(Boolean).length;
     const pauseCount = (script.match(/\.\.\.|\n\n/g) || []).length;
+
+    const sentenceList = script.split(/[.!?]+[\s\n]|\n\n/).map((s) => s.trim()).filter(Boolean);
+    const sentences = sentenceList.length;
+    const avgSentenceWords = sentences
+      ? Math.round(sentenceList.reduce((n, s) => n + s.split(/\s+/).filter(Boolean).length, 0) / sentences)
+      : 0;
+
+    // Longest stretch the listener gets with no pause of any kind. A very long
+    // run is the concrete, checkable version of "this will sound breathless".
+    const longestRunWords = script
+      .split(/\.\.\.|\n\n|[.!?]+[\s\n]/)
+      .reduce((max, run) => Math.max(max, run.split(/\s+/).filter(Boolean).length), 0);
 
     // Base WPM by style
     const baseWPM = {
@@ -167,7 +186,10 @@
       words,
       wpm: effectiveWPM,
       pauseCount,
-      style
+      style,
+      sentences,
+      avgSentenceWords,
+      longestRunWords
     };
   }
 

@@ -601,11 +601,42 @@
                 <label class="ssml-toggle"><input type="checkbox" id="toggle-naturalize-currencies" checked /> <span>✓ Convert currencies</span></label>
               </div>
 
-              <div style="display:flex; gap:10px; align-items:center;">
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
                 <button id="btn-generate-natural-narration" class="btn primary" type="button" style="background:linear-gradient(135deg, #6366f1, #8b5cf6);">
                   ✨ Generate Natural Narration
                 </button>
+                <button id="btn-preview-selection" class="btn ghost small" type="button" title="Synthesize only the text you have highlighted">
+                  ▶ Preview selection
+                </button>
                 <span id="speech-director-status" class="field-note" style="margin:0;"></span>
+              </div>
+
+              <!-- Before/after review. Narration generation rewrites the script
+                   in place, so the change is shown for approval first. -->
+              <div id="narration-diff-panel" hidden style="margin-top:12px; padding:12px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.12); border-radius:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                  <strong style="font-size:13px;">Proposed changes</strong>
+                  <span id="narration-diff-summary" class="field-note" style="margin:0;"></span>
+                </div>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+                  <div>
+                    <div class="field-note" style="margin:0 0 4px;">Current</div>
+                    <pre id="narration-diff-before" style="margin:0; max-height:180px; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:12px; background:rgba(0,0,0,0.3); padding:8px; border-radius:6px;"></pre>
+                  </div>
+                  <div>
+                    <div class="field-note" style="margin:0 0 4px;">After (what gets sent)</div>
+                    <pre id="narration-diff-after" style="margin:0; max-height:180px; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:12px; background:rgba(0,0,0,0.3); padding:8px; border-radius:6px;"></pre>
+                  </div>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                  <button id="btn-apply-narration" class="btn primary small" type="button">Apply</button>
+                  <button id="btn-discard-narration" class="btn ghost small" type="button">Discard</button>
+                </div>
+              </div>
+
+              <div id="selection-preview-panel" hidden style="margin-top:10px; padding:10px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.12); border-radius:8px;">
+                <div id="selection-preview-text" class="field-note" style="margin:0 0 6px;"></div>
+                <audio id="selection-preview-audio" controls style="width:100%; height:34px;"></audio>
               </div>
 
               <div id="speech-analytics-panel" style="margin-top:12px; padding:10px; background:rgba(16,185,129,0.1); border:1px solid #10b981; border-radius:8px; font-size:12px; color:#a7f3d0; display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">
@@ -613,7 +644,9 @@
                 <div><strong>📝 Words:</strong> <span id="stat-words">0</span></div>
                 <div><strong>🚀 Pace:</strong> <span id="stat-wpm">140 WPM</span></div>
                 <div><strong>⏸️ Pauses:</strong> <span id="stat-pauses">0</span></div>
-                <div><strong>🎙️ Active Voice:</strong> <span id="stat-voice">af_heart</span></div>
+                <div><strong>📐 Avg sentence:</strong> <span id="stat-avg-sentence">0</span></div>
+                <div title="Longest stretch with no pause of any kind"><strong>🌬️ Longest run:</strong> <span id="stat-longest-run">0</span></div>
+                <div><strong>🎙️ Active Voice:</strong> <span id="stat-voice">—</span></div>
               </div>
             </section>
 

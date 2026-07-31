@@ -2193,6 +2193,16 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     if (elWpm) elWpm.textContent = `${stats.wpm} WPM`;
     if (elPauses) elPauses.textContent = stats.pauseCount;
     if (elVoice) elVoice.textContent = activeVoice;
+
+    const elAvg = document.getElementById('stat-avg-sentence');
+    const elRun = document.getElementById('stat-longest-run');
+    if (elAvg) elAvg.textContent = `${stats.avgSentenceWords} words`;
+    if (elRun) {
+      elRun.textContent = `${stats.longestRunWords} words`;
+      // A long unbroken run is the checkable version of "this sounds
+      // breathless" — flag it rather than scoring the script out of ten.
+      elRun.style.color = stats.longestRunWords > 45 ? '#fbbf24' : '';
+    }
   }
 
   if (speedSlider && speedValOut) {
@@ -2225,6 +2235,92 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   }
   if (textInput) textInput.addEventListener('input', updateSpeechAnalytics);
 
+  // --- Narration review (before/after) -----------------------------------
+  let pendingNarration = null;
+
+  function showNarrationDiff(before, after) {
+    const panel = document.getElementById('narration-diff-panel');
+    const beforeEl = document.getElementById('narration-diff-before');
+    const afterEl = document.getElementById('narration-diff-after');
+    const summaryEl = document.getElementById('narration-diff-summary');
+    if (!panel) return;
+    if (beforeEl) beforeEl.textContent = before;
+    if (afterEl) afterEl.textContent = after;
+    if (summaryEl && window.BlvckSpeechDirector) {
+      const a = window.BlvckSpeechDirector.analyzeSpeechStats(before);
+      const b = window.BlvckSpeechDirector.analyzeSpeechStats(after);
+      const delta = b.pauseCount - a.pauseCount;
+      summaryEl.textContent =
+        `${delta >= 0 ? '+' : ''}${delta} pauses · longest run ${a.longestRunWords} → ${b.longestRunWords} words`;
+    }
+    panel.hidden = false;
+  }
+
+  function hideNarrationDiff() {
+    const panel = document.getElementById('narration-diff-panel');
+    if (panel) panel.hidden = true;
+    pendingNarration = null;
+  }
+
+  const btnApplyNarration = document.getElementById('btn-apply-narration');
+  if (btnApplyNarration) {
+    btnApplyNarration.addEventListener('click', () => {
+      if (pendingNarration == null || !textInput) return;
+      textInput.value = pendingNarration;
+      hideNarrationDiff();
+      updateCharCount();
+      updateSpeechAnalytics();
+      showStatus('✨ Narration applied.', 'info');
+    });
+  }
+  const btnDiscardNarration = document.getElementById('btn-discard-narration');
+  if (btnDiscardNarration) {
+    btnDiscardNarration.addEventListener('click', () => {
+      hideNarrationDiff();
+      showStatus('Discarded — the script is unchanged.', 'info');
+    });
+  }
+
+  // --- Preview selection --------------------------------------------------
+  // Synthesizing just the highlighted line is the fastest way to judge a voice
+  // or a parameter change without paying for the whole script each time.
+  const btnPreviewSelection = document.getElementById('btn-preview-selection');
+  if (btnPreviewSelection && textInput) {
+    btnPreviewSelection.addEventListener('click', async () => {
+      const sel = textInput.value.slice(textInput.selectionStart || 0, textInput.selectionEnd || 0).trim();
+      if (!sel) {
+        showStatus('Highlight some text in the script first, then press Preview selection.', 'error');
+        return;
+      }
+      const v = currentVoice();
+      if (!v || !v.id) { showStatus('Pick a voice first.', 'error'); return; }
+
+      const panel = document.getElementById('selection-preview-panel');
+      const label = document.getElementById('selection-preview-text');
+      const audioEl = document.getElementById('selection-preview-audio');
+      btnPreviewSelection.disabled = true;
+      showStatus(`Synthesizing ${sel.split(/\s+/).length} word(s)…`, 'info');
+      try {
+        const blob = await window.BlvckAI.speak(sel, v.id, { params: currentGenParams() });
+        if (!blob || !blob.size) throw new Error('the engine returned no audio');
+        if (audioEl) {
+          if (audioEl.dataset.url) URL.revokeObjectURL(audioEl.dataset.url);
+          const url = URL.createObjectURL(blob);
+          audioEl.dataset.url = url;
+          audioEl.src = url;
+        }
+        if (label) label.textContent = `"${sel.length > 120 ? sel.slice(0, 120) + '…' : sel}" — ${v.name || v.id}`;
+        if (panel) panel.hidden = false;
+        showStatus('Preview ready.', 'info');
+        if (audioEl) audioEl.play().catch(() => { /* autoplay may be blocked */ });
+      } catch (e) {
+        showStatus(`Preview failed: ${e.message}`, 'error');
+      } finally {
+        btnPreviewSelection.disabled = false;
+      }
+    });
+  }
+
   if (btnNaturalNarration && textInput) {
     btnNaturalNarration.addEventListener('click', () => {
       const rawText = textInput.value.trim();
@@ -2241,12 +2337,15 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
         naturalizeCurrencies: toggleCurrencies ? toggleCurrencies.checked : true
       });
 
-      textInput.value = optimized;
-      updateCharCount();
-      updateSpeechAnalytics();
-      showStatus('✨ Natural Narration & Prosody Generated!', 'info');
-      if (directorStatus) directorStatus.textContent = '✨ Natural Narration & Prosody Generated!';
-      setTimeout(() => { if (directorStatus) directorStatus.textContent = ''; }, 4000);
+      // Show the rewrite for approval instead of overwriting the script in
+      // place. This used to replace the textarea outright with no way back,
+      // which loses the author's own punctuation if they dislike the result.
+      if (optimized === rawText) {
+        showStatus('No changes needed — the script already reads the way this style wants.', 'info');
+        return;
+      }
+      pendingNarration = optimized;
+      showNarrationDiff(rawText, optimized);
     });
   }
 
