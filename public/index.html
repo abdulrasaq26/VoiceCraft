@@ -479,7 +479,7 @@
                   </select>
                 </div>
 
-                <div>
+                <div id="speech-speed-wrap">
                   <label for="speech-speed-slider">Speech Speed <output id="speech-speed-val">1.0x</output></label>
                   <input id="speech-speed-slider" type="range" min="0.5" max="2.0" step="0.05" value="1.0" style="width:100%;" />
                 </div>
@@ -488,6 +488,63 @@
                   <label for="pause-intensity-slider">Dramatic Pause Intensity <output id="pause-intensity-val">50%</output></label>
                   <input id="pause-intensity-slider" type="range" min="0" max="100" step="5" value="50" style="width:100%;" />
                 </div>
+              </div>
+
+              <!-- Engine sampling parameters. Every control maps 1:1 onto a
+                   ServeTTSRequest field; shown only for engines that have them. -->
+              <div id="gen-params-panel" hidden style="margin-bottom:12px; padding:12px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                  <strong style="font-size:13px;">🎛️ Engine parameters</strong>
+                  <button id="btn-reset-gen-params" class="btn ghost small" type="button">Reset to defaults</button>
+                </div>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:12px;">
+                  <div>
+                    <label for="gen-temperature">Expressiveness <output id="gen-temperature-val">0.80</output></label>
+                    <input id="gen-temperature" type="range" min="0.1" max="1.0" step="0.05" value="0.8" style="width:100%;" />
+                    <p class="field-note" style="margin:2px 0 0;">temperature — low is flat and consistent, high is varied but riskier.</p>
+                  </div>
+                  <div>
+                    <label for="gen-top-p">Word variety <output id="gen-top-p-val">0.80</output></label>
+                    <input id="gen-top-p" type="range" min="0.1" max="1.0" step="0.05" value="0.8" style="width:100%;" />
+                    <p class="field-note" style="margin:2px 0 0;">top_p — narrower keeps delivery safer.</p>
+                  </div>
+                  <div>
+                    <label for="gen-rep-penalty">Anti-repetition <output id="gen-rep-penalty-val">1.10</output></label>
+                    <input id="gen-rep-penalty" type="range" min="0.9" max="2.0" step="0.05" value="1.1" style="width:100%;" />
+                    <p class="field-note" style="margin:2px 0 0;">repetition_penalty — raise if the voice loops or stutters.</p>
+                  </div>
+                  <div>
+                    <label for="gen-seed">Seed</label>
+                    <div style="display:flex; gap:6px;">
+                      <input id="gen-seed" type="number" placeholder="random" style="flex:1; min-width:0;" />
+                      <button id="btn-roll-seed" class="btn ghost small" type="button" title="Pick a random seed">🎲</button>
+                    </div>
+                    <p class="field-note" style="margin:2px 0 0;">Fixed seed reproduces the same take; blank re-rolls each run.</p>
+                  </div>
+                </div>
+                <details style="margin-top:10px;">
+                  <summary style="cursor:pointer; font-size:12px; opacity:0.85;">Advanced</summary>
+                  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:12px; margin-top:10px;">
+                    <div>
+                      <label for="gen-chunk-length">Chunk size <output id="gen-chunk-length-val">200</output></label>
+                      <input id="gen-chunk-length" type="range" min="100" max="1000" step="50" value="200" style="width:100%;" />
+                      <p class="field-note" style="margin:2px 0 0;">chunk_length — longer gives more context, costs more VRAM.</p>
+                    </div>
+                    <div>
+                      <label for="gen-max-tokens">Max length <output id="gen-max-tokens-val">1024</output></label>
+                      <input id="gen-max-tokens" type="range" min="256" max="4096" step="256" value="1024" style="width:100%;" />
+                      <p class="field-note" style="margin:2px 0 0;">max_new_tokens — guards against runaway output.</p>
+                    </div>
+                    <div style="display:flex; align-items:center;">
+                      <label class="ssml-toggle"><input type="checkbox" id="gen-normalize" checked /> <span>Engine-side number &amp; date normalization</span></label>
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <div id="voice-variants-panel" hidden style="margin-bottom:12px; padding:12px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:8px;">
+                <strong style="font-size:13px;">🎲 Seed variants</strong>
+                <div id="voice-variants-list" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;"></div>
               </div>
 
               <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:12px; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">

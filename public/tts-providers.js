@@ -61,7 +61,9 @@
       id: 'kokoro',
       label: 'Kokoro Local (Zero Cost)',
       note: 'Offline zero-cost local TTS server running at http://localhost:8880.',
-      caps: { voiceSettings: false, instructions: false, engine: false },
+      // speed: engine honours a playback-rate parameter.
+      // genParams: engine exposes sampling controls (temperature/top_p/seed…).
+      caps: { voiceSettings: false, instructions: false, engine: false, speed: true, genParams: false },
       defaultModel: 'kokoro',
       modelLabel: 'Model',
       modelHint: 'kokoro',
@@ -76,7 +78,10 @@
       id: 'fishaudio',
       label: 'Fish Speech (Colab/API)',
       note: 'High-quality TTS engine running via Colab ngrok endpoint or official API.',
-      caps: { voiceSettings: false, instructions: false, engine: false },
+      // No speed parameter exists in ServeTTSRequest, so the speed slider is
+      // hidden rather than left visible doing nothing. Sampling controls are
+      // real: temperature, top_p, repetition_penalty, seed.
+      caps: { voiceSettings: false, instructions: false, engine: false, speed: false, genParams: true },
       defaultModel: 'fishaudio',
       modelLabel: 'Model',
       modelHint: 'fishaudio',

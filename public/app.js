@@ -848,7 +848,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     // ElevenLabs runs client-side; fetch the sample as a blob then play.
     // Previews use the LIVE voice_settings so users hear their own tuning.
     const phrase = 'Hello! This is a preview of my voice.';
-    window.BlvckAI.speak(phrase, v.id, { voice_settings: collectVoiceSettings(), instructions: instructionsInput.value.trim() })
+    window.BlvckAI.speak(phrase, v.id, { voice_settings: collectVoiceSettings(), instructions: instructionsInput.value.trim(), params: currentGenParams() })
       .then((blob) => {
         if (previewVoiceId !== voiceId) return;
         if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -1130,6 +1130,10 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       voice_settings: s.voice_settings,
       instructions: s.instructions,
       model: s.ttsModel,
+      // Engine sampling parameters ({} for engines that have none). Chunks of
+      // one script share these, so a locked seed keeps the whole run on the
+      // same take instead of drifting between chunks.
+      params: currentGenParams(),
       onProgress: (msg) => {
         item.progressMsg = msg;
         renderQueue();
@@ -2028,8 +2032,129 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     stopPreview();
     loadVoices();
     updateSpeechDirectorEngine();
+    updateEngineParamVisibility();
   });
   updateSpeechDirectorEngine();
+
+  // --- Engine generation parameters -------------------------------------
+  // Each control maps 1:1 onto a ServeTTSRequest field. Persisted so a tuned
+  // delivery survives a reload.
+  const GEN_PARAMS_KEY = 'blvck-tts:gen-params';
+  const GEN_DEFAULTS = {
+    temperature: 0.8, top_p: 0.8, repetition_penalty: 1.1,
+    seed: '', chunk_length: 200, max_new_tokens: 1024, normalize: true
+  };
+
+  // Starting points for each narration style, not claims from the engine —
+  // they still need a listening pass. Styles not listed keep the defaults.
+  const STYLE_PARAM_PRESETS = {
+    documentary: { temperature: 0.6, top_p: 0.75, repetition_penalty: 1.15 },
+    historical: { temperature: 0.6, top_p: 0.75, repetition_penalty: 1.15 },
+    storytelling: { temperature: 0.85, top_p: 0.9, repetition_penalty: 1.05 },
+    audiobook: { temperature: 0.7, top_p: 0.8, repetition_penalty: 1.1 },
+    news: { temperature: 0.5, top_p: 0.7, repetition_penalty: 1.2 },
+    motivational: { temperature: 0.9, top_p: 0.9, repetition_penalty: 1.05 }
+  };
+
+  const genEls = {
+    panel: document.getElementById('gen-params-panel'),
+    temperature: document.getElementById('gen-temperature'),
+    top_p: document.getElementById('gen-top-p'),
+    repetition_penalty: document.getElementById('gen-rep-penalty'),
+    seed: document.getElementById('gen-seed'),
+    chunk_length: document.getElementById('gen-chunk-length'),
+    max_new_tokens: document.getElementById('gen-max-tokens'),
+    normalize: document.getElementById('gen-normalize')
+  };
+
+  function readGenParams() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(GEN_PARAMS_KEY) || '{}');
+      return { ...GEN_DEFAULTS, ...stored };
+    } catch { return { ...GEN_DEFAULTS }; }
+  }
+  function writeGenParams(p) {
+    try { localStorage.setItem(GEN_PARAMS_KEY, JSON.stringify(p)); } catch { /* quota */ }
+  }
+
+  // The params actually sent for a run. Returns {} for engines with no
+  // sampling controls, so nothing meaningless is forwarded.
+  function currentGenParams() {
+    const def = window.getTtsProvider ? window.getTtsProvider(window.BlvckAI.ttsProvider()) : null;
+    if (!def || !def.caps || !def.caps.genParams) return {};
+    return readGenParams();
+  }
+
+  function syncGenParamOutputs(p) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    set('gen-temperature-val', Number(p.temperature).toFixed(2));
+    set('gen-top-p-val', Number(p.top_p).toFixed(2));
+    set('gen-rep-penalty-val', Number(p.repetition_penalty).toFixed(2));
+    set('gen-chunk-length-val', p.chunk_length);
+    set('gen-max-tokens-val', p.max_new_tokens);
+  }
+
+  function applyGenParamsToUI(p) {
+    if (genEls.temperature) genEls.temperature.value = p.temperature;
+    if (genEls.top_p) genEls.top_p.value = p.top_p;
+    if (genEls.repetition_penalty) genEls.repetition_penalty.value = p.repetition_penalty;
+    if (genEls.seed) genEls.seed.value = p.seed ?? '';
+    if (genEls.chunk_length) genEls.chunk_length.value = p.chunk_length;
+    if (genEls.max_new_tokens) genEls.max_new_tokens.value = p.max_new_tokens;
+    if (genEls.normalize) genEls.normalize.checked = !!p.normalize;
+    syncGenParamOutputs(p);
+  }
+
+  function collectGenParamsFromUI() {
+    const p = readGenParams();
+    if (genEls.temperature) p.temperature = parseFloat(genEls.temperature.value);
+    if (genEls.top_p) p.top_p = parseFloat(genEls.top_p.value);
+    if (genEls.repetition_penalty) p.repetition_penalty = parseFloat(genEls.repetition_penalty.value);
+    if (genEls.seed) p.seed = genEls.seed.value.trim();
+    if (genEls.chunk_length) p.chunk_length = parseInt(genEls.chunk_length.value, 10);
+    if (genEls.max_new_tokens) p.max_new_tokens = parseInt(genEls.max_new_tokens.value, 10);
+    if (genEls.normalize) p.normalize = genEls.normalize.checked;
+    return p;
+  }
+
+  function onGenParamChanged() {
+    const p = collectGenParamsFromUI();
+    writeGenParams(p);
+    syncGenParamOutputs(p);
+  }
+
+  ['temperature', 'top_p', 'repetition_penalty', 'chunk_length', 'max_new_tokens'].forEach((k) => {
+    if (genEls[k]) genEls[k].addEventListener('input', onGenParamChanged);
+  });
+  if (genEls.seed) genEls.seed.addEventListener('change', onGenParamChanged);
+  if (genEls.normalize) genEls.normalize.addEventListener('change', onGenParamChanged);
+
+  const btnRollSeed = document.getElementById('btn-roll-seed');
+  if (btnRollSeed && genEls.seed) {
+    btnRollSeed.addEventListener('click', () => {
+      genEls.seed.value = Math.floor(Math.random() * 2147483647);
+      onGenParamChanged();
+    });
+  }
+  const btnResetGen = document.getElementById('btn-reset-gen-params');
+  if (btnResetGen) {
+    btnResetGen.addEventListener('click', () => {
+      writeGenParams({ ...GEN_DEFAULTS });
+      applyGenParamsToUI({ ...GEN_DEFAULTS });
+      showStatus('Engine parameters reset to defaults.', 'info');
+    });
+  }
+
+  // Show sampling controls only for engines that have them, and hide the speed
+  // slider for engines with no speed parameter (Fish) instead of leaving a
+  // control on screen that silently does nothing.
+  function updateEngineParamVisibility() {
+    const def = window.getTtsProvider ? window.getTtsProvider(window.BlvckAI.ttsProvider()) : null;
+    const caps = (def && def.caps) || {};
+    if (genEls.panel) genEls.panel.hidden = !caps.genParams;
+    const speedWrap = document.getElementById('speech-speed-wrap');
+    if (speedWrap) speedWrap.style.display = caps.speed === false ? 'none' : '';
+  }
 
   // --- Speech Director Studio Controls Binding --------------------------
   const btnNaturalNarration = document.getElementById('btn-generate-natural-narration');
@@ -2049,7 +2174,11 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     const text = textInput ? textInput.value : '';
     const speed = speedSlider ? parseFloat(speedSlider.value) : 1.0;
     const style = styleSelect ? styleSelect.value : 'documentary';
-    const activeVoice = currentVoice ? (currentVoice.name || currentVoice.id) : 'af_heart';
+    // currentVoice is a function; reading .name off it without calling it
+    // returned the string "currentVoice", which is what the analytics panel
+    // was displaying as the active voice.
+    const v = currentVoice();
+    const activeVoice = v ? (v.name || v.id) : '—';
 
     const stats = window.BlvckSpeechDirector.analyzeSpeechStats(text, speed, style);
 
@@ -2080,7 +2209,20 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     });
   }
 
-  if (styleSelect) styleSelect.addEventListener('change', updateSpeechAnalytics);
+  // Narration style also nudges the sampling parameters, since "documentary"
+  // vs "storytelling" is as much about delivery variance as about punctuation.
+  // The seed and advanced fields are left alone.
+  if (styleSelect) {
+    styleSelect.addEventListener('change', () => {
+      const preset = STYLE_PARAM_PRESETS[styleSelect.value];
+      if (preset) {
+        const p = { ...readGenParams(), ...preset };
+        writeGenParams(p);
+        applyGenParamsToUI(p);
+      }
+      updateSpeechAnalytics();
+    });
+  }
   if (textInput) textInput.addEventListener('input', updateSpeechAnalytics);
 
   if (btnNaturalNarration && textInput) {
@@ -2135,16 +2277,69 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
         showStatus('Please enter a script to test voice variants.', 'error');
         return;
       }
-      const testText = text.slice(0, 150);
-      showStatus('🎙️ Generating 5 Voice Variants (A: Heart, B: Bella, C: Michael, D: Emma, E: Fable)…', 'info');
-
-      const variantIds = ['af_heart', 'af_bella', 'am_michael', 'bf_emma', 'bm_fable'];
-      for (const vid of variantIds) {
-        try {
-          await window.BlvckAI.speak(testText, { voice: vid, speed: speedSlider ? parseFloat(speedSlider.value) : 1.0 });
-        } catch (e) {}
+      // Five takes of the SAME voice at different seeds. This used to request
+      // five hardcoded Kokoro voice ids regardless of provider, swallow every
+      // failure with an empty catch, and then report success — on Fish that
+      // was five failed calls announced as "✓ 5 Voice Variants generated!".
+      const variantVoice = currentVoice();
+      if (!variantVoice || !variantVoice.id) {
+        showStatus('Pick a voice first.', 'error');
+        return;
       }
-      showStatus('✓ 5 Voice Variants generated! Preview available in audio player.', 'info');
+      const testText = text.slice(0, 150);
+      const panel = document.getElementById('voice-variants-panel');
+      const list = document.getElementById('voice-variants-list');
+      if (list) list.innerHTML = '';
+      if (panel) panel.hidden = false;
+
+      btnVoiceVariants.disabled = true;
+      const base = currentGenParams();
+      const seeds = Array.from({ length: 5 }, () => Math.floor(Math.random() * 2147483647));
+      let ok = 0;
+      const failures = [];
+
+      for (let i = 0; i < seeds.length; i++) {
+        showStatus(`🎲 Generating take ${i + 1} of ${seeds.length} (seed ${seeds[i]})…`, 'info');
+        try {
+          const blob = await window.BlvckAI.speak(testText, variantVoice.id, {
+            params: { ...base, seed: seeds[i] }
+          });
+          if (!blob || !blob.size) throw new Error('empty audio');
+          ok++;
+          if (list) {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; gap:8px; font-size:12px;';
+            const label = document.createElement('span');
+            label.style.cssText = 'min-width:110px; opacity:0.85;';
+            label.textContent = `Seed ${seeds[i]}`;
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = URL.createObjectURL(blob);
+            audio.style.cssText = 'flex:1; height:32px;';
+            const use = document.createElement('button');
+            use.className = 'btn ghost small';
+            use.type = 'button';
+            use.textContent = 'Use this seed';
+            use.addEventListener('click', () => {
+              if (genEls.seed) { genEls.seed.value = seeds[i]; onGenParamChanged(); }
+              showStatus(`Seed ${seeds[i]} locked in.`, 'info');
+            });
+            row.append(label, audio, use);
+            list.appendChild(row);
+          }
+        } catch (e) {
+          failures.push(`seed ${seeds[i]}: ${e.message}`);
+        }
+      }
+
+      btnVoiceVariants.disabled = false;
+      if (ok === 0) {
+        showStatus(`All ${seeds.length} takes failed — ${failures[0] || 'unknown error'}`, 'error');
+      } else if (failures.length) {
+        showStatus(`${ok} of ${seeds.length} takes generated; ${failures.length} failed.`, 'error');
+      } else {
+        showStatus(`✓ ${ok} takes generated — play them below and keep the seed you like.`, 'info');
+      }
     });
   }
 
@@ -2158,4 +2353,6 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   loadVoices();
   restoreBatch();
   updateSpeechAnalytics();
+  applyGenParamsToUI(readGenParams());
+  updateEngineParamVisibility();
 })();

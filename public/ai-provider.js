@@ -290,15 +290,27 @@
 
   // Multi-Provider TTS Router
   async function speak(text, voiceOrOptions = {}, extraOpts = {}) {
+    // extraOpts must survive both call shapes. It used to be merged only when
+    // the second argument was a string, so speak(text, undefined, {params})
+    // — which happens whenever the caller's voice id is missing — silently
+    // dropped every option including the generation parameters.
     let options = {};
     if (typeof voiceOrOptions === 'string') {
       options = { voice: voiceOrOptions, ...extraOpts };
     } else {
-      options = voiceOrOptions || {};
+      options = { ...(voiceOrOptions || {}), ...extraOpts };
     }
 
     const provider = options.provider || getTtsProvider();
-    const voice = options.voice || 'af_heart';
+    // Fall back to the active provider's own first catalog voice. This was
+    // hardcoded to 'af_heart', a Kokoro id, which is not a valid reference on
+    // any other engine.
+    let voice = options.voice;
+    if (!voice) {
+      const def = window.getTtsProvider && window.getTtsProvider(provider);
+      const list = (def && typeof def.voices === 'function' && def.voices()) || [];
+      voice = (list[0] && list[0].id) || 'default';
+    }
 
     async function urlToBlob(url) {
       if (url instanceof Blob) return url;
@@ -330,11 +342,13 @@
       if (provider === 'fishaudio' && window.FishAdapter) {
         try {
           console.log(`[BlvckAI] Synthesizing Fish Speech with voice [${voice}]...`);
+          // No speed/instructions: Fish Speech has neither parameter. Passing
+          // them was silently doing nothing. `params` carries the real
+          // ServeTTSRequest fields (temperature, top_p, seed, ...).
           const audioUrl = await window.FishAdapter.textToSpeech({
             input: text,
             voice,
-            speed: options.speed || 1.0,
-            instructions: options.instructions || '',
+            params: options.params || {},
             onProgress: options.onProgress
           });
           if (audioUrl) return await urlToBlob(audioUrl);

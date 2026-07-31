@@ -98,8 +98,36 @@
     return FISH_VOICES;
   }
 
-  // Generate TTS via Fish Speech /v1/tts endpoint with chunk streaming
-  async function textToSpeech({ input, voice = 'default', speed = 1.0, instructions = '', onProgress }) {
+  // Ranges are taken from ServeTTSRequest in fish_speech/utils/schema.py.
+  // The server rejects out-of-range values outright, so clamp rather than
+  // forward whatever a slider happened to emit.
+  const clamp = (v, lo, hi, dflt) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return dflt;
+    return Math.min(hi, Math.max(lo, n));
+  };
+
+  // Build the subset of ServeTTSRequest fields we expose. Only defined values
+  // are sent so the server's own defaults apply to anything left unset.
+  function buildGenParams(p = {}) {
+    const out = {};
+    if (p.temperature != null) out.temperature = clamp(p.temperature, 0.1, 1.0, 0.8);
+    if (p.top_p != null) out.top_p = clamp(p.top_p, 0.1, 1.0, 0.8);
+    if (p.repetition_penalty != null) out.repetition_penalty = clamp(p.repetition_penalty, 0.9, 2.0, 1.1);
+    if (p.chunk_length != null) out.chunk_length = Math.round(clamp(p.chunk_length, 100, 1000, 200));
+    if (p.max_new_tokens != null) out.max_new_tokens = Math.round(clamp(p.max_new_tokens, 128, 4096, 1024));
+    if (p.normalize != null) out.normalize = !!p.normalize;
+    if (p.seed != null && p.seed !== '') {
+      const s = parseInt(p.seed, 10);
+      if (Number.isFinite(s)) out.seed = s;
+    }
+    return out;
+  }
+
+  // Generate TTS via Fish Speech /v1/tts endpoint with chunk streaming.
+  // `params` maps onto ServeTTSRequest; note there is deliberately no `speed`
+  // — the engine has no such parameter (see docs/FISH_VOICE_STUDIO_SPEC.md).
+  async function textToSpeech({ input, voice = 'default', params = {}, onProgress }) {
     if (!input || !input.trim()) return null;
 
     const ep = getFishEndpoint();
@@ -124,15 +152,18 @@
     }
     if (currentChunk.trim()) textChunks.push(currentChunk.trim());
 
+    const gen = buildGenParams(params);
     const allAudioBuffers = [];
 
     for (let i = 0; i < textChunks.length; i++) {
       if (onProgress) onProgress(`Generating part ${i+1} of ${textChunks.length}...`);
       
-      const payload = { text: textChunks[i], format: 'mp3' };
+      const payload = { text: textChunks[i], format: 'mp3', ...gen };
       if (voice && voice !== 'default') {
         payload.reference_id = voice;
       }
+      // A fixed seed must stay fixed across chunks, otherwise each chunk is a
+      // different take and the delivery drifts mid-script.
 
       const res = await fetch(`/api/proxy/fish/v1/tts`, {
         method: 'POST',
