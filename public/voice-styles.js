@@ -92,7 +92,42 @@
     return segmentScript(text, voiceId, voices).length > 1;
   }
 
+  // Fish returns nothing but a reference id, so the picker's gender/style
+  // filters have nothing to work with unless we read the id itself. Our own
+  // pack encodes both (Aria_Female_Warm, Atlas_Documentary), so infer from
+  // those tokens — and stay neutral for user-cloned names we cannot know,
+  // rather than guessing someone's voice wrong.
+  const GENDER_TOKENS = [
+    [/(^|[_\- ])(female|woman|fem)([_\- ]|$)/i, 'FEMALE'],
+    [/(^|[_\- ])(male|man)([_\- ]|$)/i, 'MALE']
+  ];
+
+  // Maps to the picker's own style vocabulary; anything unrecognised is left
+  // as plain narration instead of inventing a category.
+  const STYLE_TOKENS = [
+    [/documentary/i, 'documentary'],
+    [/narrator|narration/i, 'narration'],
+    [/storytell|story|sage/i, 'storytelling'],
+    [/audiobook/i, 'audiobook'],
+    [/expressive|dramatic|urgent|angry|excited/i, 'dramatic'],
+    [/whisper|asmr|calm|somber|sad/i, 'asmr'],
+    [/conversation|warm|natural|happy|friendly/i, 'conversational'],
+    [/educational|teach|lesson/i, 'educational'],
+    [/cinematic|trailer|epic/i, 'cinematic'],
+    [/character|charact/i, 'character']
+  ];
+
+  function inferTraits(id) {
+    const hay = String(id || '').replace(/__/g, ' ');
+    let gender = 'NEUTRAL';
+    for (const [re, g] of GENDER_TOKENS) if (re.test(hay)) { gender = g; break; }
+    const styles = [];
+    for (const [re, s] of STYLE_TOKENS) if (re.test(hay) && !styles.includes(s)) styles.push(s);
+    return { gender, styles: styles.length ? styles : ['narration'] };
+  }
+
   window.BlvckVoiceStyles = {
+    inferTraits,
     SEP,
     parseId,
     makeId,

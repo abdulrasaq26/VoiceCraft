@@ -896,7 +896,32 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     }
   });
 
+  // Dim chips that cannot match anything in the current catalogue. Fish grades
+  // every reference the same, so its tier chips would otherwise look broken
+  // rather than inapplicable.
+  function updateChipAvailability() {
+    const count = (pred) => allVoices.filter(pred).length;
+    const mark = (group, attr, matches) => {
+      if (!group) return;
+      group.querySelectorAll('.chip').forEach((c) => {
+        const val = c.dataset[attr];
+        if (!val || val === 'all') return;
+        const n = matches(val);
+        c.disabled = n === 0;
+        c.style.opacity = n === 0 ? '0.35' : '';
+        c.title = n === 0 ? 'No voices in this catalogue match' : `${n} voice(s)`;
+      });
+    };
+    mark(tierFilters, 'tier', (v) => count((x) => (x.tier || '').toLowerCase() === v.toLowerCase()));
+    mark(genderFilters, 'gender', (v) => count((x) => (x.gender || '').toUpperCase() === v.toUpperCase()));
+    mark(styleFilters, 'style', (v) => count((x) => {
+      const s = Array.isArray(x.styles) ? x.styles : (x.styles ? [x.styles] : []);
+      return s.some((y) => String(y).toLowerCase() === v.toLowerCase());
+    }));
+  }
+
   function renderVoiceList() {
+    updateChipAvailability();
     let listToRender = allVoices.slice();
     if (filters.search) {
       const s = filters.search.toLowerCase();
@@ -906,9 +931,47 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       });
     }
 
+    // Tier / gender / style were being written by the chip handlers and then
+    // never read here, so every filter except search did nothing.
+    if (filters.tier && filters.tier !== 'all') {
+      listToRender = listToRender.filter((v) => (v.tier || '').toLowerCase() === filters.tier.toLowerCase());
+    }
+    if (filters.gender && filters.gender !== 'all') {
+      listToRender = listToRender.filter((v) => (v.gender || '').toUpperCase() === filters.gender.toUpperCase());
+    }
+    if (filters.style && filters.style !== 'all') {
+      listToRender = listToRender.filter((v) => {
+        const styles = Array.isArray(v.styles) ? v.styles : (v.styles ? [v.styles] : []);
+        return styles.some((s) => String(s).toLowerCase() === filters.style.toLowerCase());
+      });
+    }
+
     voiceList.innerHTML = '';
     if (!listToRender.length) {
-      listToRender = allVoices.slice();
+      // Falling back to the full catalogue here (the previous behaviour) makes
+      // a filter that matches nothing look identical to one that is broken.
+      const empty = document.createElement('div');
+      empty.className = 'field-note';
+      empty.style.cssText = 'padding:12px; text-align:center;';
+      empty.textContent = 'No voices match these filters.';
+      const reset = document.createElement('button');
+      reset.className = 'btn ghost small';
+      reset.type = 'button';
+      reset.textContent = 'Clear filters';
+      reset.style.marginLeft = '8px';
+      reset.addEventListener('click', () => {
+        filters.tier = 'all'; filters.gender = 'all'; filters.style = 'all'; filters.search = '';
+        if (voiceSearch) voiceSearch.value = '';
+        [tierFilters, genderFilters, styleFilters].forEach((group) => {
+          if (!group) return;
+          group.querySelectorAll('.chip').forEach((c) => c.classList.toggle(
+            'active', c.dataset.tier === 'all' || c.dataset.gender === 'all' || c.dataset.style === 'all'));
+        });
+        renderVoiceList();
+      });
+      empty.appendChild(reset);
+      voiceList.appendChild(empty);
+      return;
     }
 
     const appendSection = (title, voices) => {
