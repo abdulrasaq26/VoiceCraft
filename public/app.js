@@ -761,12 +761,16 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     }
     const providerId = (window.BlvckAI && window.BlvckAI.ttsProvider && window.BlvckAI.ttsProvider()) || 'kokoro';
     const notes = {
-      kokoro: 'Kokoro Local 82M: Speech Director automatically injects prosody pauses, speed, and dates naturalization.',
+      kokoro: 'Kokoro Local 82M: Speech Director shapes pacing by rewriting punctuation, and naturalizes dates and numbers.',
+      // Fish clones delivery from the reference clip and has no instructions or
+      // performance-tag parameter, so saying otherwise would be misleading.
+      fishaudio: 'Fish Speech takes its delivery from the reference voice itself — pick a reference that already sounds the way you want. Speech Director still shapes pacing through punctuation.',
       elevenlabs: 'ElevenLabs listens to natural-language delivery cues in the prompt — describe emotion, pacing, emphasis, and pauses directly.',
       gemini: 'Gemini follows the instructions above as spoken-style direction.',
       openai: 'OpenAI uses the instructions above to steer tone and delivery.'
     };
-    instructionsNote.textContent = notes[providerId] || notes.kokoro;
+    instructionsNote.textContent = notes[providerId]
+      || 'Speech Director shapes pacing by rewriting punctuation in the script.';
   }
 
   // Show provider-relevant controls: the stability/similarity/style sliders
@@ -2008,13 +2012,26 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     }
   });
 
+  // Name the engine the Speech Director is currently shaping text for. The
+  // studio itself is engine-agnostic (it only rewrites punctuation), but the
+  // label should never claim to be driving an engine that isn't selected.
+  function updateSpeechDirectorEngine() {
+    const el = document.getElementById('speech-director-engine');
+    if (!el || !window.BlvckAI) return;
+    const id = window.BlvckAI.ttsProvider();
+    const provider = window.getTtsProvider ? window.getTtsProvider(id) : null;
+    el.textContent = provider ? provider.label : id;
+  }
+
   // Reload the voice catalog when the TTS provider changes in AI settings.
   window.addEventListener('blvck:tts-provider-changed', () => {
     stopPreview();
     loadVoices();
+    updateSpeechDirectorEngine();
   });
+  updateSpeechDirectorEngine();
 
-  // --- Kokoro Speech Director Studio Controls Binding -------------------
+  // --- Speech Director Studio Controls Binding --------------------------
   const btnNaturalNarration = document.getElementById('btn-generate-natural-narration');
   const btnAutoVoice = document.getElementById('btn-auto-voice');
   const btnVoiceVariants = document.getElementById('btn-voice-variants');
@@ -2028,13 +2045,13 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   const directorStatus = document.getElementById('speech-director-status');
 
   function updateSpeechAnalytics() {
-    if (!window.KokoroSpeechDirector) return;
+    if (!window.BlvckSpeechDirector) return;
     const text = textInput ? textInput.value : '';
     const speed = speedSlider ? parseFloat(speedSlider.value) : 1.0;
     const style = styleSelect ? styleSelect.value : 'documentary';
     const activeVoice = currentVoice ? (currentVoice.name || currentVoice.id) : 'af_heart';
 
-    const stats = window.KokoroSpeechDirector.analyzeSpeechStats(text, speed, style);
+    const stats = window.BlvckSpeechDirector.analyzeSpeechStats(text, speed, style);
 
     const elDur = document.getElementById('stat-dur');
     const elWords = document.getElementById('stat-words');
@@ -2073,9 +2090,9 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
         showStatus('Please enter or generate a script first.', 'error');
         return;
       }
-      if (!window.KokoroSpeechDirector) return;
+      if (!window.BlvckSpeechDirector) return;
 
-      const optimized = window.KokoroSpeechDirector.optimizeScript(rawText, {
+      const optimized = window.BlvckSpeechDirector.optimizeScript(rawText, {
         style: styleSelect ? styleSelect.value : 'documentary',
         intensity: pauseSlider ? parseInt(pauseSlider.value, 10) : 50,
         naturalizeDates: toggleDates ? toggleDates.checked : true,
@@ -2093,17 +2110,19 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
   if (btnAutoVoice) {
     btnAutoVoice.addEventListener('click', () => {
-      if (!window.KokoroSpeechDirector) return;
+      if (!window.BlvckSpeechDirector) return;
       const topic = textInput ? textInput.value.slice(0, 100) : '';
       const style = styleSelect ? styleSelect.value : 'documentary';
-      const rec = window.KokoroSpeechDirector.autoSelectBestVoice(topic, style);
+      // Recommend from the voices actually loaded for the active provider,
+      // otherwise the pick can name a voice this engine does not have.
+      const rec = window.BlvckSpeechDirector.autoSelectBestVoice(topic, style, allVoices);
 
-      const foundVoice = allVoices.find(v => v.id === rec.voiceId);
+      const foundVoice = rec.voiceId && allVoices.find(v => v.id === rec.voiceId);
       if (foundVoice) {
         selectVoice(foundVoice.id);
         showStatus(`🎙️ AI Director selected [${rec.voiceName}] — ${rec.reason}`, 'info');
       } else {
-        showStatus(`🎙️ AI Director recommendation: ${rec.voiceName}`, 'info');
+        showStatus(`🎙️ ${rec.reason}`, 'error');
       }
       updateSpeechAnalytics();
     });

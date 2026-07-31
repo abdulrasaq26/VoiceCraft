@@ -450,11 +450,11 @@
               <p id="instructions-note" class="field-note"></p>
             </section>
 
-            <!-- Kokoro Speech Director Studio -->
+            <!-- Speech Director Studio (engine-agnostic: rewrites punctuation, not engine markup) -->
             <section class="card-sub-section" style="background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; margin: 15px 0;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                 <h3 style="margin:0; font-size:15px; color:var(--accent, #6366f1); display:flex; align-items:center; gap:8px;">
-                  🎙️ Kokoro Speech Director Studio
+                  🎙️ Speech Director Studio <span id="speech-director-engine" class="badge" style="font-size:11px; opacity:0.8;"></span>
                 </h3>
                 <div style="display:flex; gap:8px;">
                   <button id="btn-auto-voice" class="btn ghost small" type="button">🎙 Auto Select Best Voice</button>
@@ -1119,7 +1119,7 @@
   <script src="adapters/video-adapters.js"></script>
   <script src="adapters/kokoro-adapter.js"></script>
   <script src="adapters/fish-adapter.js"></script>
-  <script src="kokoro-speech-director.js"></script>
+  <script src="speech-director.js"></script>
   <script src="adapters/direct-adapters.js"></script>
   <script src="provider-dashboard.js"></script>
   <script src="asset-consistency.js"></script>
