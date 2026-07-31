@@ -20,7 +20,8 @@
     storyboard: 'blvck-tts:storyboard',
     seo: 'blvck-tts:seo',
     channel: 'blvck-tts:channel',
-    editor: 'blvck-tts:editor'
+    editor: 'blvck-tts:editor',
+    modelsUsed: 'blvck-tts:models-used'
   };
 
   function read(key) {
@@ -93,6 +94,17 @@
     channel() { return read(K.channel); },
     editor() { return read(K.editor); },
 
+    // Which model actually generated each task this project — a routing
+    // hint for the Director, and the join key Channel Brain uses to learn
+    // which models correlate with what performs. { task: modelId }
+    modelsUsed() { return read(K.modelsUsed) || {}; },
+    recordModelUsed(task, model) {
+      if (!task || !model) return;
+      const cur = read(K.modelsUsed) || {};
+      cur[task] = model;
+      write(K.modelsUsed, cur);
+    },
+
     // The research brief for this project (topic facts, angles, keywords).
     research() { const r = read(K.research); return (r && r.brief) || null; },
     researchTopic() { const r = read(K.research); return (r && r.topic) || ''; },
@@ -142,9 +154,214 @@
     emit() { window.dispatchEvent(new CustomEvent('blvck-assets-changed')); }
   };
 
+  async function renderAssetLibrary() {
+    const container = document.getElementById('asset-library-content');
+    if (!container) return;
+
+    const script = BlvckAssets.script();
+    const research = BlvckAssets.research();
+    const scenes = BlvckAssets.scenes();
+    const seo = BlvckAssets.seo();
+    const hasAudio = BlvckAssets.hasAudio();
+
+    if (!script && !research && !scenes.length && !seo && !hasAudio) {
+      container.innerHTML = `
+        <div style="text-align:center; padding:30px; color:var(--text-dim, #888);">
+          <div style="font-size:2.5rem; margin-bottom:10px;">📁</div>
+          <p>Your generated audio, script files, storyboard images, and video renders will appear here automatically as you create them.</p>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '<div class="asset-grid" style="display:flex; flex-direction:column; gap:20px;">';
+
+    // 1. Script & Research Section
+    if (script || research) {
+      html += `
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px;">
+          <h3 style="margin:0 0 10px 0; color:var(--accent, #6366f1); font-size:1.1rem; display:flex; align-items:center; gap:8px;">
+            📝 Script & Research Brief
+          </h3>
+          ${script ? `<p style="font-size:0.9rem; line-height:1.5; background:rgba(0,0,0,0.3); padding:10px; border-radius:6px; max-height:120px; overflow-y:auto; color:#eee;">${String(script).slice(0, 500)}...</p>` : ''}
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button class="btn ghost small" type="button" onclick="window.AetherRouter.switchWorkspace('script')">Open Script Studio →</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // 2. Audio Narration Section
+    if (hasAudio) {
+      const batch = read(K.batch);
+      const items = (batch && batch.items) || [];
+      html += `
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px;">
+          <h3 style="margin:0 0 10px 0; color:var(--accent, #6366f1); font-size:1.1rem; display:flex; align-items:center; gap:8px;">
+            🎙️ Audio Narration (${items.filter(i=>i.status==='done').length} parts)
+          </h3>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:10px;">
+      `;
+      for (const item of items) {
+        if (item.status === 'done') {
+          html += `
+            <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:6px;">
+              <div style="font-weight:bold; font-size:0.85rem; margin-bottom:6px; color:#fff;">Part ${item.part || item.index}: ${item.text.slice(0, 45)}...</div>
+              <div id="asset-audio-container-${item.index}"><span style="font-size:0.8rem; color:#888;">Loading audio...</span></div>
+            </div>
+          `;
+        }
+      }
+      html += `
+          </div>
+        </div>
+      `;
+    }
+
+    // 3. Storyboard & Scene Stills Section
+    if (scenes.length) {
+      const doneScenes = scenes.filter(s => s.status === 'done');
+      html += `
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px;">
+          <h3 style="margin:0 0 10px 0; color:var(--accent, #6366f1); font-size:1.1rem; display:flex; align-items:center; gap:8px;">
+            🎬 Storyboard Scene Stills (${doneScenes.length} rendered)
+          </h3>
+          <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:12px;">
+      `;
+      for (const s of doneScenes) {
+        html += `
+          <div style="background:rgba(0,0,0,0.4); border-radius:8px; overflow:hidden; border:1px solid rgba(255,255,255,0.1);">
+            <div id="asset-img-container-${s.index}" style="width:100%; height:110px; background:#111; display:flex; align-items:center; justify-content:center;">
+              <span style="font-size:0.8rem; color:#666;">Scene ${s.index}</span>
+            </div>
+            <div style="padding:8px; font-size:0.75rem; color:#aaa; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              Scene ${s.index}: ${s.subtitle || s.sceneSummary || ''}
+            </div>
+          </div>
+        `;
+      }
+      html += `
+          </div>
+        </div>
+      `;
+    }
+
+    // 4. YouTube Thumbnails Section
+    const projName = BlvckAssets.title() || 'Untitled';
+    const thumbsMeta = JSON.parse(localStorage.getItem('blvck-tts:thumbnails') || '[]').filter((t) => t.project === projName || !t.project);
+    if (thumbsMeta.length) {
+      html += `
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px;">
+          <h3 style="margin:0 0 10px 0; color:var(--accent, #6366f1); font-size:1.1rem; display:flex; align-items:center; gap:8px;">
+            🖼️ YouTube Thumbnails (${thumbsMeta.length} generated)
+          </h3>
+          <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px;">
+      `;
+      for (const t of thumbsMeta) {
+        html += `
+          <div style="background:rgba(0,0,0,0.4); border-radius:8px; overflow:hidden; border:1px solid rgba(255,255,255,0.1);">
+            <div id="asset-thumb-container-${t.id}" style="width:100%; aspect-ratio:16/9; background:#111; display:flex; align-items:center; justify-content:center;">
+              <span style="font-size:0.8rem; color:#666;">Thumbnail #${t.id}</span>
+            </div>
+            <div style="padding:8px; font-size:0.75rem; color:#aaa; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              Thumbnail Concept #${t.id}
+            </div>
+          </div>
+        `;
+      }
+      html += `
+          </div>
+        </div>
+      `;
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+
+    // Async hydration of Audio, Scene Images, and Thumbnails from IndexedDB
+    if (hasAudio) {
+      const batch = read(K.batch);
+      if (batch && batch.items) {
+        for (const item of batch.items) {
+          if (item.status === 'done') {
+            const el = document.getElementById(`asset-audio-container-${item.index}`);
+            if (el) {
+              try {
+                const req = indexedDB.open('blvck-tts');
+                req.onsuccess = () => {
+                  const db = req.result;
+                  if (db.objectStoreNames.contains('audio')) {
+                    const r2 = db.transaction('audio', 'readonly').objectStore('audio').get(`${batch.id}:${item.index}`);
+                    r2.onsuccess = () => {
+                      if (r2.result) {
+                        const url = URL.createObjectURL(r2.result);
+                        el.innerHTML = `<audio src="${url}" controls style="width:100%; height:32px;"></audio>`;
+                      }
+                    };
+                  }
+                };
+              } catch (_) {}
+            }
+          }
+        }
+      }
+    }
+
+    if (scenes.length) {
+      for (const s of scenes) {
+        if (s.status === 'done') {
+          const el = document.getElementById(`asset-img-container-${s.index}`);
+          if (el) {
+            try {
+              const req = indexedDB.open('blvck-storyboard');
+              req.onsuccess = () => {
+                const db = req.result;
+                if (db.objectStoreNames.contains('images')) {
+                  const r2 = db.transaction('images', 'readonly').objectStore('images').get(String(s.index));
+                  r2.onsuccess = () => {
+                    if (r2.result) {
+                      const url = URL.createObjectURL(r2.result);
+                      el.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />`;
+                    }
+                  };
+                }
+              };
+            } catch (_) {}
+          }
+        }
+      }
+    }
+
+    if (thumbsMeta.length) {
+      for (const t of thumbsMeta) {
+        const el = document.getElementById(`asset-thumb-container-${t.id}`);
+        if (el) {
+          try {
+            const req = indexedDB.open('blvck-thumbnails');
+            req.onsuccess = () => {
+              const db = req.result;
+              if (db.objectStoreNames.contains('images')) {
+                const r2 = db.transaction('images', 'readonly').objectStore('images').get(`${projName}:thumb-${t.id}`);
+                r2.onsuccess = () => {
+                  if (r2.result) {
+                    const url = URL.createObjectURL(r2.result);
+                    el.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />`;
+                  }
+                };
+              }
+            };
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
   window.BlvckAssets = BlvckAssets;
+  BlvckAssets.renderAssetLibrary = renderAssetLibrary;
 
   // Re-emit on cross-tab storage changes and on the storyboard's own event.
-  window.addEventListener('storage', () => BlvckAssets.emit());
-  window.addEventListener('blvck-storyboard-updated', () => BlvckAssets.emit());
+  window.addEventListener('storage', () => { BlvckAssets.emit(); renderAssetLibrary(); });
+  window.addEventListener('blvck-storyboard-updated', () => { BlvckAssets.emit(); renderAssetLibrary(); });
+  window.addEventListener('blvck-assets-changed', () => renderAssetLibrary());
+  document.addEventListener('DOMContentLoaded', () => renderAssetLibrary());
 })();

@@ -1,125 +1,174 @@
-// Model-capability registry + task-aware router — the first piece of AI
-// Director 2.0. It answers one question: given the models THIS Puter instance
-// actually offers, which one is best for a specific production task under the
-// current cost objective?
-//
-// It replaces the old static family-preference regex (one order for every
-// task) with per-task scoring over capability profiles. Unknown models get a
-// sensible heuristic profile so a self-hosted instance with an unfamiliar
-// roster still routes well.
-//
-// window.BlvckModels
-//   profileFor(model)                 -> capability profile {0..1}
-//   score(model, task, objective)     -> number
-//   orderForTask(models, task, opts)  -> model ids, best first
-//   pickForTask(models, task, opts)   -> best model id (or null)
-//   OBJECTIVES / TASKS                -> introspection for the UI
+// Dynamic Free-Endpoint Model Registry & Intelligence Router for Blvck-TTS v5.1
+// Filters and prioritizes 100% Free Developer Tier Endpoints on NVIDIA Build (https://integrate.api.nvidia.com/v1)
 (() => {
   'use strict';
 
-  // Capability profile dimensions, each 0..1. `cost` is a spend tier
-  // (0 = cheapest, 1 = most expensive); `speed` is throughput (1 = fastest).
-  const DEFAULT = { reasoning: .70, storytelling: .70, planning: .70, coding: .72, structure: .76, speed: .70, cost: .40, reliability: .70 };
+  const registry = new Map(); // modelId -> modelObj
+  let lastSyncTimestamp = null;
 
-  // Known families, matched by id/name substring (first match wins). Values are
-  // relative judgements, not benchmarks — enough to rank sensibly per task.
-  const FAMILIES = [
-    { re: /(claude).*(opus)/i,            caps: { reasoning: .95, storytelling: .95, planning: .92, coding: .90, structure: .90, speed: .38, cost: .95, reliability: .92 } },
-    { re: /(claude).*(sonnet)/i,          caps: { reasoning: .89, storytelling: .91, planning: .89, coding: .89, structure: .90, speed: .62, cost: .60, reliability: .93 } },
-    { re: /(claude).*(haiku)/i,           caps: { reasoning: .72, storytelling: .76, planning: .73, coding: .77, structure: .84, speed: .90, cost: .25, reliability: .89 } },
-    { re: /\bo[13]\b|gpt-.*o[13]|reasoning/i, caps: { reasoning: .96, storytelling: .70, planning: .92, coding: .90, structure: .82, speed: .30, cost: .90, reliability: .86 } },
-    { re: /gpt-5.*nano|gpt-.*nano/i,      caps: { reasoning: .63, storytelling: .61, planning: .63, coding: .70, structure: .82, speed: .95, cost: .15, reliability: .82 } },
-    { re: /gpt-5.*mini|gpt-.*mini/i,      caps: { reasoning: .80, storytelling: .78, planning: .80, coding: .83, structure: .86, speed: .82, cost: .38, reliability: .85 } },
-    { re: /gpt-5/i,                       caps: { reasoning: .93, storytelling: .88, planning: .90, coding: .91, structure: .88, speed: .52, cost: .85, reliability: .88 } },
-    { re: /gpt-4o|gpt-4\.1|gpt-4/i,       caps: { reasoning: .83, storytelling: .83, planning: .81, coding: .83, structure: .83, speed: .70, cost: .52, reliability: .86 } },
-    { re: /gemini.*(flash|lite)/i,        caps: { reasoning: .73, storytelling: .73, planning: .73, coding: .75, structure: .83, speed: .92, cost: .20, reliability: .83 } },
-    { re: /gemini/i,                      caps: { reasoning: .88, storytelling: .83, planning: .86, coding: .85, structure: .85, speed: .56, cost: .58, reliability: .84 } },
-    { re: /deepseek.*(reason|r1)/i,       caps: { reasoning: .91, storytelling: .70, planning: .86, coding: .89, structure: .78, speed: .44, cost: .30, reliability: .81 } },
-    { re: /deepseek/i,                    caps: { reasoning: .79, storytelling: .77, planning: .77, coding: .81, structure: .81, speed: .70, cost: .20, reliability: .81 } },
-    { re: /qwen/i,                        caps: { reasoning: .79, storytelling: .75, planning: .77, coding: .83, structure: .81, speed: .72, cost: .20, reliability: .79 } },
-    { re: /grok/i,                        caps: { reasoning: .83, storytelling: .83, planning: .81, coding: .81, structure: .81, speed: .60, cost: .52, reliability: .81 } },
-    { re: /llama/i,                       caps: { reasoning: .75, storytelling: .75, planning: .73, coding: .77, structure: .77, speed: .72, cost: .18, reliability: .77 } },
-    { re: /mistral|mixtral/i,             caps: { reasoning: .75, storytelling: .75, planning: .73, coding: .77, structure: .79, speed: .76, cost: .20, reliability: .79 } },
-    { re: /glm/i,                         caps: { reasoning: .77, storytelling: .75, planning: .75, coding: .83, structure: .79, speed: .70, cost: .22, reliability: .77 } },
-    { re: /kimi|moonshot/i,               caps: { reasoning: .81, storytelling: .79, planning: .79, coding: .81, structure: .79, speed: .60, cost: .30, reliability: .79 } },
-    { re: /phi/i,                         caps: { reasoning: .68, storytelling: .64, planning: .66, coding: .73, structure: .77, speed: .90, cost: .12, reliability: .75 } }
+  // Curated 100% Free Developer Tier Models on NVIDIA Build Gateway
+  const FREE_NVIDIA_MODELS = [
+    { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B (Free Tier)', type: 'creative' },
+    { id: 'deepseek-ai/deepseek-r1', name: 'DeepSeek R1 (Free Tier)', type: 'reasoning' },
+    { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B (Free Tier)', type: 'agent' },
+    { id: 'mistralai/mistral-large-2-instruct', name: 'Mistral Large 2 (Free Tier)', type: 'analysis' },
+    { id: 'qwen/qwen2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder (Free Tier)', type: 'coding' },
+    { id: 'google/gemma-2-27b-it', name: 'Gemma 2 27B (Free Tier)', type: 'general' }
   ];
 
-  // Per-task capability weights (the dims that matter for that job). cost and
-  // speed are handled separately by the objective, not here.
-  const TASKS = {
-    research:      { reasoning: .55, planning: .15, structure: .10, storytelling: .20 },
-    script:        { storytelling: .60, reasoning: .25, planning: .15 },
-    refine:        { storytelling: .55, reasoning: .30, structure: .15 },
-    bible:         { reasoning: .40, storytelling: .35, structure: .25 },
-    storyboard:    { planning: .40, structure: .35, reasoning: .25 },
-    'image-prompt':{ storytelling: .70, structure: .30 },
-    seo:           { structure: .40, reasoning: .35, storytelling: .25 },
-    director:      { reasoning: .45, storytelling: .35, structure: .20 },
-    audit:         { reasoning: .45, structure: .35, storytelling: .20 },
-    code:          { coding: .70, reasoning: .30 },
-    chat:          { reasoning: .40, storytelling: .30, structure: .30 }
+  const TASK_RULES = {
+    research:     { primaryPattern: /deepseek.*r1|r1/i, fallbackPattern: /llama-3\.3-70b|mistral/i, type: 'reasoning', reason: 'Highest reasoning score on NVIDIA Free Tier for research.' },
+    fact_check:   { primaryPattern: /deepseek.*r1|r1/i, fallbackPattern: /llama-3\.3-70b/i, type: 'reasoning', reason: 'DeepSeek-R1 free reasoning verification.' },
+    script:       { primaryPattern: /llama-3\.3-70b/i, fallbackPattern: /deepseek.*v3|nemotron/i, type: 'creative', reason: 'Llama 3.3 70B free endpoint for long-form narrative.' },
+    code:         { primaryPattern: /deepseek.*r1|coder|qwen/i, fallbackPattern: /llama-3\.3-70b/i, type: 'coding', reason: 'Free DeepSeek-R1 / Qwen Coder endpoint for code.' },
+    agent:        { primaryPattern: /nemotron/i, fallbackPattern: /llama-3\.3-70b/i, type: 'agent', reason: 'Nemotron 70B free endpoint for agent workflows.' },
+    brainstorm:   { primaryPattern: /qwen|gemma/i, fallbackPattern: /llama-3\.3-70b/i, type: 'creative', reason: 'Free Qwen / Gemma endpoint for rapid brainstorming.' },
+    general:      { primaryPattern: /llama-3\.3-70b/i, fallbackPattern: /nemotron|deepseek/i, type: 'general', reason: 'Balanced free general intelligence endpoint.' }
   };
 
-  // Objective modes weight cost and speed against quality.
-  const OBJECTIVES = {
-    quality:  { cost: .04, speed: .03 },
-    balanced: { cost: .18, speed: .08 },
-    cost:     { cost: .55, speed: .22 }
-  };
-
-  function idOf(model) { return typeof model === 'string' ? model : (model && (model.id || model.model || model.name)) || ''; }
-
-  function profileFor(model) {
-    const hay = typeof model === 'string' ? model
-      : [model && model.id, model && model.name, model && model.provider].filter(Boolean).join(' ');
-    for (const f of FAMILIES) if (f.re.test(hay)) return f.caps;
-    return DEFAULT;
+  function classifyModel(id) {
+    if (/r1|reason/i.test(id)) return 'reasoning';
+    if (/nemotron/i.test(id)) return 'agent';
+    if (/qwen/i.test(id)) return 'coding';
+    if (/llama-3\.3-70b/i.test(id)) return 'scripting';
+    if (/mistral/i.test(id)) return 'analysis';
+    return 'general';
   }
 
-  function isDated(id) { return /\d{8}|\d{4}-\d{2}-\d{2}/.test(String(id)); }
+  function registerModel(raw, provider = 'nvidia') {
+    const id = typeof raw === 'string' ? raw : raw.id;
+    if (!id) return;
 
-  function score(model, task, objective) {
-    const caps = profileFor(model);
-    const weights = TASKS[task] || TASKS.chat;
-    const obj = OBJECTIVES[objective] || OBJECTIVES.balanced;
-    let base = 0;
-    for (const k in weights) base += weights[k] * (caps[k] != null ? caps[k] : DEFAULT[k]);
-    // Quality-forward score, minus spend, plus a little for speed and proven reliability.
-    let s = base + 0.10 * caps.reliability - obj.cost * caps.cost + obj.speed * caps.speed;
-    if (isDated(idOf(model))) s -= 0.03; // prefer undated (dated snapshots get retired)
-    return s;
+    const def = {
+      id,
+      name: raw.name || id,
+      provider: provider || 'nvidia',
+      type: classifyModel(id),
+      isFree: true,
+      contextWindow: raw.contextWindow || 128000,
+      supportsReasoning: /r1|reason/i.test(id)
+    };
+
+    registry.set(id, def);
+    return def;
   }
 
-  function normalizeObjective(o) { return OBJECTIVES[o] ? o : 'balanced'; }
-
-  function orderForTask(models, task, opts) {
-    const objective = normalizeObjective(opts && opts.objective);
-    const exclude = new Set((opts && opts.exclude) || []);
-    return (models || [])
-      .map((m) => ({ id: idOf(m), s: score(m, task, objective) }))
-      .filter((x) => x.id && !exclude.has(x.id))
-      .sort((a, b) => b.s - a.s)
-      .map((x) => x.id);
+  // Populate curated free models by default
+  function initFreeCatalog() {
+    FREE_NVIDIA_MODELS.forEach(m => registerModel(m, 'nvidia'));
   }
+  initFreeCatalog();
 
-  function pickForTask(models, task, opts) {
-    return orderForTask(models, task, opts)[0] || null;
-  }
+  // Dynamic Discovery via GET /v1/models (NVIDIA NIM Gateway)
+  async function fetchNimModels(apiKey) {
+    const key = apiKey || (window.ProviderManager ? window.ProviderManager.getActiveKey('nim') : '');
+    if (!key) return Array.from(registry.values());
 
-  window.BlvckModels = {
-    TASKS: Object.keys(TASKS),
-    OBJECTIVES: Object.keys(OBJECTIVES),
-    profileFor,
-    score,
-    orderForTask,
-    pickForTask,
-    // Short human explanation of a pick, for transparency UIs.
-    explain(model, task) {
-      const c = profileFor(model);
-      const top = Object.entries(TASKS[task] || TASKS.chat).sort((a, b) => b[1] - a[1])[0];
-      const dim = top && top[0];
-      return dim ? `${idOf(model)} — strong ${dim} (${Math.round((c[dim] || 0) * 100)}/100)` : idOf(model);
+    try {
+      const res = await fetch('https://integrate.api.nvidia.com/v1/models', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const list = json.data || json.models || [];
+
+        for (const item of list) {
+          if (item && item.id) {
+            registerModel(item, 'nvidia');
+          }
+        }
+        lastSyncTimestamp = new Date().toLocaleTimeString();
+      }
+    } catch (e) {
+      console.warn('[ModelRegistry] Network warning fetching NIM models, using Free catalog:', e);
     }
+
+    window.dispatchEvent(new CustomEvent('blvck:models-updated'));
+    return Array.from(registry.values());
+  }
+
+  // Dynamic Discovery via GET /v1/models (OpenAI OAuth local proxy)
+  async function fetchOpenAiOauthModels() {
+    const PM = window.ProviderManager;
+    const ep = (PM && PM.getPoolState('openai_oauth')?.endpoint) || 'http://127.0.0.1:10531/v1';
+    try {
+      const res = await fetch('/api/proxy/openai-oauth/models', {
+        method: 'GET',
+        headers: { 'x-openai-oauth-endpoint': ep },
+        signal: AbortSignal.timeout(3000)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const list = json.data || json.models || [];
+        for (const item of list) {
+          if (item && item.id) {
+            registerModel({ id: item.id, name: `${item.id} (ChatGPT Account)` }, 'openai_oauth');
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  async function syncAllGateways() {
+    const PM = window.ProviderManager;
+    const nimKey = PM ? PM.getActiveKey('nim') : null;
+    await Promise.allSettled([fetchNimModels(nimKey), fetchOpenAiOauthModels()]);
+    return Array.from(registry.values());
+  }
+
+  function selectModelForTask(taskType = 'general') {
+    const allModels = Array.from(registry.values());
+    const rule = TASK_RULES[taskType] || TASK_RULES.general;
+
+    let primary = allModels.find(m => rule.primaryPattern.test(m.id));
+    let fallback = allModels.find(m => rule.fallbackPattern.test(m.id));
+
+    if (!primary) primary = FREE_NVIDIA_MODELS[0];
+    if (!fallback) fallback = FREE_NVIDIA_MODELS[1];
+
+    let reason = rule.reason;
+
+    // Channel Brain: once this channel has logged enough real performance
+    // data for this task (see brain.js modelBias — requires >=2 comparably
+    // sampled models before it returns anything), prefer a model that has
+    // actually correlated with better results over the static pattern pick.
+    // Bounded: only promotes a model this Puter/NIM instance currently
+    // offers, and only when it's rated better than average — never
+    // discards the pattern pick, just demotes it to fallback.
+    if (window.BlvckBrain && typeof window.BlvckBrain.modelBias === 'function') {
+      try {
+        const bias = window.BlvckBrain.modelBias(taskType) || {};
+        const learnedBest = Object.keys(bias).sort((a, b) => bias[b] - bias[a])[0];
+        if (learnedBest && bias[learnedBest] > 0 && learnedBest !== primary.id) {
+          const learnedModel = allModels.find(m => m.id === learnedBest);
+          if (learnedModel) {
+            fallback = primary;
+            primary = learnedModel;
+            reason = `Channel history shows this model performs better for ${taskType} (learned from logged results).`;
+          }
+        }
+      } catch (_) { /* no learned signal yet */ }
+    }
+
+    return {
+      selectedModel: primary.id,
+      fallbackModel: fallback.id,
+      reason,
+      taskType
+    };
+  }
+
+  window.ModelRegistry = {
+    registerModel,
+    fetchNimModels,
+    syncAllGateways,
+    getDiscoveredModels: () => Array.from(registry.values()),
+    selectModelForTask,
+    lastSyncTime: () => lastSyncTimestamp || 'Free Tier Catalog Active'
   };
 })();

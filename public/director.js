@@ -1,512 +1,218 @@
-// AI Production Director — the global intelligence layer. It sits above every
-// tool, sees the whole project (via BlvckAssets), advises across the pipeline,
-// runs a scored quality audit, and (in Director Mode) proactively points to
-// the next step. Everything runs through Puter chat; project context is the
-// BlvckAssets snapshot.
+// AI Production Director 3.0 & Decision Transparency Engine for Blvck-TTS v5.1
+// Displays transparent decision logic, selected models, reasoning, and handles task-aware model routing over NVIDIA NIM Gateway
 (() => {
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const card = $('director-card');
-  if (!card || !window.BlvckAssets) return;
 
-  const modeEl = $('director-mode');
-  const nextEl = $('director-next');
-  const autorunBtn = $('director-autorun');
-  const autorunAutoEl = $('director-autorun-auto');
-  const autorunPanel = $('director-autorun-panel');
-  const auditBtn = $('director-audit');
-  const auditResult = $('director-audit-result');
-  const chatEl = $('director-chat');
-  const inputEl = $('director-input');
-  const sendBtn = $('director-send');
-  const stopBtn = $('director-stop');
-  const statusEl = $('director-status');
-  const spinner = sendBtn.querySelector('.spinner');
-  const sendLabel = sendBtn.querySelector('.btn-label');
+  // Director Elements
+  const directorInput = $('director-input');
+  const directorSendBtn = $('director-send');
+  const directorChat = $('director-chat');
+  const directorStatus = $('director-status');
+  const directorAuditBtn = $('director-audit');
 
-  const LS_MODE = 'blvck-tts:director-mode';
-  const LS_AUDIT = 'blvck-tts:director-audit';
+  // Agent Elements
+  const agentInput = $('agent-input');
+  const agentSendBtn = $('agent-send');
+  const agentMessages = $('agent-messages');
+  const agentStatus = $('agent-status');
 
-  const messages = []; // { role, content }
-  let stopRequested = false;
-  let busy = false;
+  const DIRECTOR_AUTHORITY_KEY = 'blvck:director_authority_mode'; // AUTO | SEMI-AUTO | MANUAL
 
-  function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  }
-  function showStatus(msg, type = 'error') { statusEl.textContent = msg; statusEl.className = `status ${type}`; statusEl.hidden = false; }
-  function clearStatus() { statusEl.hidden = true; }
-
-  function setBusy(b) {
-    busy = b;
-    sendBtn.disabled = b;
-    auditBtn.disabled = b;
-    if (autorunBtn) autorunBtn.disabled = b;
-    spinner.hidden = !b;
-    sendLabel.textContent = b ? 'Thinking…' : 'Ask';
-    stopBtn.hidden = !b;
-    card.querySelectorAll('[data-dcmd]').forEach((x) => (x.disabled = b));
+  function getAuthorityMode() {
+    return localStorage.getItem(DIRECTOR_AUTHORITY_KEY) || 'AUTO';
   }
 
-  // --- Next-step guidance (Director Mode) --------------------------------
-
-  const STAGE_INFO = {
-    research: { label: 'Research the topic', target: 'research-card', tip: 'Ground the video in facts, angles and keywords before you write.' },
-    script: { label: 'Generate a script', target: 'script-card', tip: 'Start with a script — a strong hook decides everything downstream.' },
-    voice: { label: 'Generate the voiceover', target: null, tip: 'Turn your script into narration in the voice studio.' },
-    storyboard: { label: 'Build the storyboard', target: 'storyboard-card', tip: 'Analyze the story into scenes with a fitting visual style.' },
-    images: { label: 'Generate scene images', target: 'storyboard-card', tip: 'Generate the visuals for your scenes.' },
-    video: { label: 'Assemble the video', target: 'editor-card', tip: 'Auto-assemble scenes into a timeline with motion + subtitles.' },
-    youtube: { label: 'Optimize for YouTube', target: 'youtube-card', tip: 'Generate titles, thumbnail, description and SEO.' }
-  };
-  const STAGE_ORDER = ['research', 'script', 'voice', 'storyboard', 'images', 'video', 'youtube'];
-
-  function nextStage() {
-    const st = window.BlvckAssets.status();
-    for (const k of STAGE_ORDER) if (!st[k]) return k;
-    return null;
+  function setAuthorityMode(mode) {
+    localStorage.setItem(DIRECTOR_AUTHORITY_KEY, mode);
   }
 
-  function renderNext() {
-    if (!modeEl.checked) { nextEl.hidden = true; return; }
-    const k = nextStage();
-    nextEl.hidden = false;
-    if (!k) {
-      nextEl.innerHTML = '<strong>✓ All core stages done.</strong> Run a production audit before you export.';
-      return;
+  // Preflight Cost & Time Estimator
+  function calculatePreflightCostTime(sceneCount = 10, wordCount = 800) {
+    const tokens = Math.round(wordCount * 1.35);
+    const audioMinutes = Math.round((wordCount / 150) * 10) / 10;
+    const scriptCost = (tokens / 1000) * 0.002;
+    const ttsCost = audioMinutes * 0.03;
+    const imageCost = sceneCount * 0.04;
+    const videoCost = sceneCount * 0.20;
+    const totalCost = Math.round((scriptCost + ttsCost + imageCost + videoCost) * 100) / 100;
+    const estimatedTimeSec = Math.round(30 + (sceneCount * 15));
+    const estimatedTimeMin = Math.round((estimatedTimeSec / 60) * 10) / 10;
+
+    return {
+      wordCount,
+      sceneCount,
+      audioMinutes,
+      scriptCost: scriptCost.toFixed(3),
+      ttsCost: ttsCost.toFixed(2),
+      imageCost: imageCost.toFixed(2),
+      videoCost: videoCost.toFixed(2),
+      totalCost: `$${totalCost.toFixed(2)}`,
+      estimatedTime: `~${estimatedTimeMin} mins`
+    };
+  }
+
+  // AI Director Chat Handler with Transparent Model Decision UI
+  async function askDirector(prompt, task = 'director') {
+    if (!prompt || !prompt.trim()) return;
+    const userMsg = prompt.trim();
+    if (directorInput) directorInput.value = '';
+
+    // Inspect Director Model Selection Decision
+    const decision = await window.BlvckAI.resolveChatModel(task);
+
+    if (directorChat) {
+      directorChat.hidden = false;
+      const userBubble = document.createElement('div');
+      userBubble.style.cssText = 'background: rgba(99,102,241,0.2); padding: 10px 14px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #6366f1; color: #fff;';
+      userBubble.innerHTML = `<strong>👤 You:</strong> ${escapeHTML(userMsg)}`;
+      directorChat.appendChild(userBubble);
+
+      // Render Transparent AI Director Decision Badge
+      const decisionBadge = document.createElement('div');
+      decisionBadge.style.cssText = 'background: rgba(16,185,129,0.1); border: 1px dashed #10b981; border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; font-size: 12px; color: #a7f3d0; line-height: 1.5;';
+      decisionBadge.innerHTML = `
+        <strong>🎬 AI Director Model Decision</strong><br>
+        <strong>Provider:</strong> NVIDIA NIM Gateway<br>
+        <strong>Selected Model:</strong> <code>${decision.selectedModel}</code><br>
+        <strong>Reason:</strong> ${decision.reason}<br>
+        <strong>Fallback Model:</strong> <code>${decision.fallbackModel}</code>
+      `;
+      directorChat.appendChild(decisionBadge);
+      directorChat.scrollTop = directorChat.scrollHeight;
     }
-    const info = STAGE_INFO[k];
-    nextEl.innerHTML = `<strong>Next step:</strong> ${esc(info.label)} — <span class="director-next-tip">${esc(info.tip)}</span> `;
-    const go = document.createElement('button');
-    go.className = 'btn ghost small';
-    go.type = 'button';
-    go.textContent = 'Go →';
-    go.addEventListener('click', () => {
-      const node = info.target ? document.getElementById(info.target) : document.querySelector('main.card');
-      if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-    nextEl.appendChild(go);
-  }
 
-  // --- Advisory chat -----------------------------------------------------
+    if (directorStatus) {
+      directorStatus.hidden = false;
+      directorStatus.textContent = `🎬 Executing via NVIDIA NIM [${decision.selectedModel}]…`;
+    }
 
-  function renderChat() {
-    if (!messages.length) { chatEl.hidden = true; return; }
-    chatEl.hidden = false;
-    chatEl.innerHTML = '';
-    messages.forEach((m) => {
-      const row = document.createElement('div');
-      row.className = `director-msg director-msg-${m.role}`;
-      const who = document.createElement('div');
-      who.className = 'director-msg-role';
-      who.textContent = m.role === 'user' ? 'You' : 'Director';
-      const body = document.createElement('div');
-      body.className = 'director-msg-body';
-      body.textContent = m.content;
-      row.append(who, body);
-      chatEl.appendChild(row);
-    });
-    chatEl.scrollTop = chatEl.scrollHeight;
-  }
-
-  function contextMessages() {
-    const snap = window.BlvckAssets.snapshot();
-    return [
-      { role: 'system', content: window.BlvckPrompts.directorChatSystem() },
-      { role: 'system', content: `CURRENT PROJECT SNAPSHOT (JSON):\n${JSON.stringify(snap, null, 2)}` }
-    ];
-  }
-
-  async function ask(text) {
-    if (busy || !text.trim()) return;
-    clearStatus();
-    messages.push({ role: 'user', content: text.trim() });
-    renderChat();
-    setBusy(true);
-    stopRequested = false;
-    const reply = { role: 'assistant', content: '' };
-    messages.push(reply);
-    renderChat();
     try {
-      const req = contextMessages().concat(messages.slice(0, -1).map((m) => ({ role: m.role, content: m.content })));
-      await window.BlvckAI.chatStream(req, {
-        task: 'director',
-        onToken: (_d, full) => { reply.content = full; renderChat(); },
-        shouldStop: () => stopRequested
-      });
-      if (!reply.content) reply.content = '(no response)';
-      renderChat();
-    } catch (err) {
-      if (!reply.content) messages.pop();
-      showStatus(err.message || 'The Director could not respond.');
-      renderChat();
-    } finally {
-      setBusy(false);
-    }
-  }
+      const systemPrompt = `You are the Executive AI Production Director for Blvck-TTS. Provide actionable, concise advice on scripting, narration, asset consistency, historical accuracy, and YouTube CTR optimization. Input: ${userMsg}`;
+      const reply = await window.BlvckAI.chat(systemPrompt, { task });
 
-  // --- Quality audit -----------------------------------------------------
-
-  const SCORE_FIELDS = [
-    ['overall', 'Overall'], ['script', 'Script'], ['retention', 'Retention'],
-    ['storytelling', 'Storytelling'], ['visualConsistency', 'Visual consistency'],
-    ['thumbnail', 'Thumbnail'], ['seo', 'SEO'], ['monetization', 'Monetization']
-  ];
-  function scoreClass(v) { return v >= 75 ? 'good' : v >= 50 ? 'ok' : 'bad'; }
-
-  function renderAudit(audit) {
-    auditResult.hidden = false;
-    const s = audit.scores || {};
-    const bars = SCORE_FIELDS.map(([k, label]) => {
-      const v = s[k] || 0;
-      return `<div class="director-score ${k === 'overall' ? 'overall' : ''}">
-        <div class="director-score-head"><span>${label}</span><span class="director-score-val ${scoreClass(v)}">${v}</span></div>
-        <div class="director-score-track"><div class="director-score-fill ${scoreClass(v)}" style="width:${v}%"></div></div>
-      </div>`;
-    }).join('');
-    const list = (title, items) => items && items.length
-      ? `<div class="director-audit-block"><strong>${title}</strong><ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
-    const recs = (audit.recommendations || []).length
-      ? `<div class="director-audit-block"><strong>Recommendations</strong>${audit.recommendations.map((r) => `<div class="director-rec pri-${r.priority}"><span class="director-rec-pri">${esc(r.priority)}</span> <strong>${esc(r.area)}:</strong> ${esc(r.action)}</div>`).join('')}</div>` : '';
-    auditResult.innerHTML =
-      `<div class="director-scores">${bars}</div>` +
-      (audit.summary ? `<p class="director-summary">${esc(audit.summary)}</p>` : '') +
-      list('Strengths', audit.strengths) +
-      list('Weaknesses', audit.weaknesses) +
-      recs +
-      (audit.nextStep ? `<div class="director-audit-block"><strong>Do this next:</strong> ${esc(audit.nextStep)}</div>` : '');
-  }
-
-  async function runAudit() {
-    if (busy) return;
-    const snap = window.BlvckAssets.snapshot();
-    if (!snap.script && !snap.sceneCount && !snap.seo) {
-      showStatus('Nothing to audit yet — generate a script, storyboard or SEO first.');
-      return;
-    }
-    clearStatus();
-    setBusy(true);
-    auditBtn.textContent = 'Auditing…';
-    try {
-      const body = await window.BlvckAI.generateJSON('/api/director/audit', { project: snap });
-      renderAudit(body.audit);
-      try { localStorage.setItem(LS_AUDIT, JSON.stringify(body.audit)); } catch { /* quota */ }
-    } catch (err) {
-      showStatus(err.message || 'Audit failed.');
-    } finally {
-      setBusy(false);
-      auditBtn.textContent = 'Run production audit';
-    }
-  }
-
-  // --- Auto-run (opt-in autopilot with approval gates) -------------------
-  // The Director drives each module's own button and waits for the project
-  // state (via BlvckAssets) to report the stage done. Between stages it opens
-  // an approval gate — Approve / Skip / Stop — unless "Hands-free" is on. This
-  // is a separate, explicit action from the Director Mode toggle (which only
-  // controls proactive tips).
-
-  const clickBtn = (id) => { const el = document.getElementById(id); if (el && !el.disabled) el.click(); return !!el; };
-  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  // Poll a predicate until true, timeout, or a stop is requested.
-  function waitUntil(pred, timeout, isStopped) {
-    return new Promise((resolve) => {
-      const start = Date.now();
-      (function tick() {
-        if (isStopped && isStopped()) return resolve('stopped');
-        let ok = false; try { ok = !!pred(); } catch { ok = false; }
-        if (ok) return resolve(true);
-        if (Date.now() - start >= timeout) return resolve(false);
-        setTimeout(tick, 500);
-      })();
-    });
-  }
-
-  const A = () => window.BlvckAssets;
-
-  const AUTO_STAGES = [
-    {
-      key: 'research', label: 'Research the topic', target: 'research-card', optional: true, task: 'research',
-      precheck() {
-        if (A().status().research) return null;
-        const topic = (document.getElementById('research-topic') || {}).value || '';
-        const scriptTopic = (document.getElementById('script-topic') || {}).value || '';
-        if (!topic.trim() && !scriptTopic.trim()) return 'Enter a topic to research (or in the Script studio), then approve.';
-        return null;
-      },
-      async run(isStopped) {
-        // Seed the research topic from the script topic if it's empty.
-        const rt = document.getElementById('research-topic');
-        const st = document.getElementById('script-topic');
-        if (rt && !rt.value.trim() && st && st.value.trim()) rt.value = st.value.trim();
-        clickBtn('research-generate');
-        // Once the brief lands, push its topic into the Script studio so the
-        // script stage has a topic and gets grounded in the research.
-        await waitUntil(() => A().status().research, 130000, isStopped);
-        const use = document.getElementById('research-use');
-        if (use) use.click();
-      },
-      done: () => A().status().research,
-      timeout: 150000
-    },
-    {
-      key: 'script', label: 'Generate script', target: 'script-card', task: 'script',
-      precheck() {
-        if (A().status().script) return null;
-        const topic = (document.getElementById('script-topic') || {}).value || '';
-        if (!topic.trim()) return 'Enter a topic in the Script studio first, then approve.';
-        return null;
-      },
-      async run() { clickBtn('script-generate'); },
-      done: () => A().status().script,
-      timeout: 150000
-    },
-    {
-      key: 'voice', label: 'Generate voiceover', target: null,
-      async run() { clickBtn('script-use'); await delay(350); clickBtn('speak-btn'); },
-      done: () => A().hasAudio(),
-      timeout: 180000
-    },
-    {
-      key: 'storyboard', label: 'Build storyboard & images', target: 'storyboard-card', task: 'storyboard',
-      async run(isStopped) {
-        clickBtn('sb-import'); await delay(350); clickBtn('sb-analyze');
-        // In Prompt Review mode analyze only produces prompts — once scenes
-        // exist, kick "Generate all images" if it surfaced.
-        await waitUntil(() => A().status().storyboard, 120000, isStopped);
-        const genAll = document.getElementById('sb-generate-all');
-        if (genAll && !genAll.hidden) genAll.click();
-      },
-      done: () => A().status().images,
-      timeout: 300000
-    },
-    {
-      key: 'video', label: 'Assemble the video', target: 'editor-card', optional: true,
-      async run() { clickBtn('ed-assemble'); },
-      done: () => A().status().video,
-      timeout: 240000
-    },
-    {
-      key: 'youtube', label: 'Optimize for YouTube', target: 'youtube-card', task: 'seo',
-      async run() { clickBtn('yt-generate'); },
-      done: () => A().status().youtube,
-      timeout: 150000
-    }
-  ];
-
-  // Per-stage model the Director routes each task to (resolved at run start via
-  // the capability registry) — surfaced in the panel for transparency.
-  const stageModel = {};
-  async function resolveStageModels() {
-    if (!window.BlvckAI || !window.BlvckAI.modelForTask) return;
-    for (const s of AUTO_STAGES) {
-      if (!s.task) continue;
-      try { stageModel[s.key] = await window.BlvckAI.modelForTask(s.task); }
-      catch { stageModel[s.key] = ''; }
-    }
-  }
-
-  let autoRunning = false;
-  let autoStopReq = false;
-  let autoSummary = '';
-  const stageState = {}; // key -> pending|active|done|skipped|failed
-  let gateResolver = null;
-  let currentGate = null; // { key, message, optional }
-
-  const ICON = { pending: '', active: '⋯', done: '✓', skipped: '–', failed: '✕' };
-
-  function renderAutorun() {
-    if (!autoRunning && !autoSummary) { autorunPanel.hidden = true; autorunPanel.innerHTML = ''; return; }
-    autorunPanel.hidden = false;
-    const head = document.createElement('div');
-    head.className = 'director-autorun-head';
-    const title = document.createElement('strong');
-    const obj = (window.BlvckAI && window.BlvckAI.objective && window.BlvckAI.objective()) || 'balanced';
-    title.textContent = autoRunning ? `▶ Auto-run in progress · ${obj}` : autoSummary || 'Auto-run finished';
-    head.appendChild(title);
-    if (autoRunning) {
-      const stop = document.createElement('button');
-      stop.className = 'btn ghost small';
-      stop.type = 'button';
-      stop.textContent = '■ Stop';
-      stop.addEventListener('click', requestAutoStop);
-      head.appendChild(stop);
-    }
-
-    const steps = document.createElement('div');
-    steps.className = 'director-autorun-steps';
-    AUTO_STAGES.forEach((s, i) => {
-      const st = stageState[s.key] || 'pending';
-      const row = document.createElement('div');
-      row.className = `director-autorun-step ${st}`;
-      const icon = document.createElement('span');
-      icon.className = 'das-icon';
-      icon.textContent = ICON[st] || String(i + 1);
-      const label = document.createElement('span');
-      label.textContent = s.label + (s.optional ? ' (optional)' : '');
-      row.append(icon, label);
-      // Transparency: show which model the Director routed this stage's task to.
-      if (s.task && stageModel[s.key]) {
-        const m = document.createElement('span');
-        m.className = 'das-model';
-        m.textContent = `↳ ${stageModel[s.key]}`;
-        m.title = `Model chosen for the ${s.task} task at the current objective`;
-        row.appendChild(m);
+      if (directorChat) {
+        const aiBubble = document.createElement('div');
+        aiBubble.style.cssText = 'background: rgba(255,255,255,0.05); padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; border-left: 3px solid #10b981; color: #e2e8f0; line-height: 1.5;';
+        aiBubble.innerHTML = `<strong>🎬 AI Director:</strong><br><br>${formatReply(reply)}`;
+        directorChat.appendChild(aiBubble);
+        directorChat.scrollTop = directorChat.scrollHeight;
       }
-      if (st === 'active') { const d = document.createElement('span'); d.className = 'das-detail'; d.textContent = 'working…'; row.appendChild(d); }
-      if (st === 'skipped') { const d = document.createElement('span'); d.className = 'das-detail'; d.textContent = 'skipped'; row.appendChild(d); }
-      if (st === 'failed') { const d = document.createElement('span'); d.className = 'das-detail'; d.textContent = 'needs attention'; row.appendChild(d); }
-      steps.appendChild(row);
-    });
-
-    autorunPanel.innerHTML = '';
-    autorunPanel.append(head, steps);
-
-    if (currentGate) {
-      const gate = document.createElement('div');
-      gate.className = 'director-autorun-gate';
-      const msg = document.createElement('span');
-      msg.className = 'das-gate-msg';
-      msg.textContent = currentGate.message;
-      gate.appendChild(msg);
-      const mk = (txt, cls, choice) => {
-        const b = document.createElement('button');
-        b.className = `btn ${cls} small`;
-        b.type = 'button';
-        b.textContent = txt;
-        b.addEventListener('click', () => resolveGate(choice));
-        return b;
-      };
-      gate.appendChild(mk('Approve', 'primary', 'approve'));
-      gate.appendChild(mk('Skip', 'ghost', 'skip'));
-      gate.appendChild(mk('Stop', 'ghost', 'stop'));
-      autorunPanel.appendChild(gate);
-    }
-  }
-
-  function resolveGate(choice) {
-    const r = gateResolver;
-    currentGate = null; gateResolver = null;
-    renderAutorun();
-    if (r) r(choice);
-  }
-
-  function requestAutoStop() {
-    autoStopReq = true;
-    if (gateResolver) resolveGate('stop');
-  }
-
-  function gate(stage, message) {
-    return new Promise((resolve) => {
-      currentGate = { key: stage.key, message, optional: !!stage.optional };
-      gateResolver = resolve;
-      renderAutorun();
-    });
-  }
-
-  async function autorun() {
-    if (autoRunning || busy) return;
-    autoRunning = true;
-    autoStopReq = false;
-    autoSummary = '';
-    AUTO_STAGES.forEach((s) => { stageState[s.key] = 'pending'; });
-    autorunBtn.disabled = true;
-    auditBtn.disabled = true;
-    sendBtn.disabled = true;
-    clearStatus();
-    renderAutorun();
-    // Resolve which model each stage's task routes to, then show it live.
-    await resolveStageModels();
-    renderAutorun();
-
-    const handsFree = autorunAutoEl.checked;
-    let stoppedEarly = false;
-
-    try {
-      for (const stage of AUTO_STAGES) {
-        if (autoStopReq) { stoppedEarly = true; break; }
-
-        if (stage.done()) { stageState[stage.key] = 'done'; renderAutorun(); continue; }
-
-        const problem = stage.precheck ? stage.precheck() : null;
-
-        if (!handsFree) {
-          const message = problem
-            ? `⚠ ${problem}`
-            : `Ready to ${stage.label.toLowerCase()}. Approve to run, Skip to move on, or Stop.`;
-          const choice = await gate(stage, message);
-          if (choice === 'stop') { autoStopReq = true; stoppedEarly = true; break; }
-          if (choice === 'skip') { stageState[stage.key] = 'skipped'; renderAutorun(); continue; }
-          // Approved but precondition still unmet → can't run.
-          if (problem && !stage.done()) {
-            stageState[stage.key] = stage.optional ? 'skipped' : 'failed';
-            renderAutorun();
-            if (stage.optional) continue; else break;
-          }
-        } else if (problem) {
-          // Hands-free can't satisfy a missing precondition on its own.
-          stageState[stage.key] = stage.optional ? 'skipped' : 'failed';
-          renderAutorun();
-          if (stage.optional) continue; else break;
-        }
-
-        stageState[stage.key] = 'active';
-        renderAutorun();
-        try { await stage.run(() => autoStopReq); } catch { /* wait decides success */ }
-        const res = await waitUntil(stage.done, stage.timeout, () => autoStopReq);
-        if (res === 'stopped') { autoStopReq = true; stoppedEarly = true; break; }
-        stageState[stage.key] = res === true ? 'done' : (stage.optional ? 'skipped' : 'failed');
-        renderAutorun();
-        if (stageState[stage.key] === 'failed') break;
+    } catch (err) {
+      if (directorChat) {
+        const errBubble = document.createElement('div');
+        errBubble.style.cssText = 'background: rgba(239,68,68,0.15); padding: 10px; border-radius: 8px; color: #f87171;';
+        errBubble.textContent = `❌ Director Error: ${err.message}`;
+        directorChat.appendChild(errBubble);
       }
     } finally {
-      autoRunning = false;
-      const failed = Object.values(stageState).includes('failed');
-      autoSummary = stoppedEarly
-        ? '■ Auto-run stopped.'
-        : failed
-          ? '✕ Auto-run paused — a stage needs your attention.'
-          : '✓ Auto-run complete.';
-      autorunBtn.disabled = false;
-      auditBtn.disabled = busy;
-      sendBtn.disabled = busy;
-      currentGate = null; gateResolver = null;
-      renderAutorun();
+      if (directorStatus) directorStatus.hidden = true;
     }
   }
 
-  // --- Wiring ------------------------------------------------------------
+  // AI Coding Agent Handler
+  async function askAgent(prompt) {
+    if (!prompt || !prompt.trim()) return;
+    const userMsg = prompt.trim();
+    if (agentInput) agentInput.value = '';
 
-  autorunBtn.addEventListener('click', autorun);
-  auditBtn.addEventListener('click', runAudit);
-  sendBtn.addEventListener('click', () => { const t = inputEl.value; inputEl.value = ''; ask(t); });
-  stopBtn.addEventListener('click', () => { stopRequested = true; });
-  inputEl.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { const t = inputEl.value; inputEl.value = ''; ask(t); } });
-  card.querySelectorAll('[data-dcmd]').forEach((b) => b.addEventListener('click', () => ask(b.dataset.dcmd)));
-  modeEl.addEventListener('change', () => {
-    try { localStorage.setItem(LS_MODE, modeEl.checked ? '1' : '0'); } catch { /* quota */ }
-    renderNext();
+    const decision = await window.BlvckAI.resolveChatModel('code');
+
+    if (agentMessages) {
+      const userBubble = document.createElement('div');
+      userBubble.style.cssText = 'background: rgba(99,102,241,0.2); padding: 10px 14px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #6366f1; color: #fff;';
+      userBubble.innerHTML = `<strong>👨‍💻 You:</strong> ${escapeHTML(userMsg)}`;
+      agentMessages.appendChild(userBubble);
+
+      const decisionBadge = document.createElement('div');
+      decisionBadge.style.cssText = 'background: rgba(59,130,246,0.1); border: 1px dashed #3b82f6; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; font-size: 12px; color: #93c5fd;';
+      decisionBadge.innerHTML = `⚡ <strong>Coding Agent Model Decision:</strong> Selected <code>${decision.selectedModel}</code> via NVIDIA NIM Gateway (${decision.reason})`;
+      agentMessages.appendChild(decisionBadge);
+      agentMessages.scrollTop = agentMessages.scrollHeight;
+    }
+
+    if (agentStatus) {
+      agentStatus.hidden = false;
+      agentStatus.textContent = `⚡ Coding Agent running [${decision.selectedModel}]…`;
+    }
+
+    try {
+      const systemPrompt = `You are an expert AI Coding Agent for Blvck-TTS. Write clean, bug-free HTML/CSS/JS code snippets to answer the request. Input: ${userMsg}`;
+      const reply = await window.BlvckAI.chat(systemPrompt, { task: 'code' });
+
+      if (agentMessages) {
+        const aiBubble = document.createElement('div');
+        aiBubble.style.cssText = 'background: rgba(255,255,255,0.05); padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; border-left: 3px solid #3b82f6; color: #e2e8f0; line-height: 1.5;';
+        aiBubble.innerHTML = `<strong>⚡ Coding Agent:</strong><br><br>${formatReply(reply)}`;
+        agentMessages.appendChild(aiBubble);
+        agentMessages.scrollTop = agentMessages.scrollHeight;
+      }
+    } catch (err) {
+      if (agentMessages) {
+        const errBubble = document.createElement('div');
+        errBubble.style.cssText = 'background: rgba(239,68,68,0.15); padding: 10px; border-radius: 8px; color: #f87171;';
+        errBubble.textContent = `❌ Agent Error: ${err.message}`;
+        agentMessages.appendChild(errBubble);
+      }
+    } finally {
+      if (agentStatus) agentStatus.hidden = true;
+    }
+  }
+
+  // Model Failover Toast Event Listener
+  window.addEventListener('blvck:model-failover', (e) => {
+    const { failedModel, activeModel } = e.detail;
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed; bottom:20px; right:20px; z-index:9999; background:#7f1d1d; color:#fca5a5; padding:12px 18px; border-radius:8px; border:1px solid #ef4444; font-size:13px; box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+    toast.innerHTML = `⚠️ <strong>${failedModel}</strong> unavailable<br>✓ Automatically switched to <strong>${activeModel}</strong> on NVIDIA NIM`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 6000);
   });
 
-  window.BlvckAssets.on(renderNext);
-  setInterval(renderNext, 1500);
+  function escapeHTML(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
 
-  // Re-hydrate the audit from storage (used by the data manager on clear/undo).
-  if (window.BlvckData) {
-    window.BlvckData.register('director', () => {
-      try {
-        const a = JSON.parse(localStorage.getItem(LS_AUDIT) || 'null');
-        if (a) renderAudit(a);
-        else { auditResult.hidden = true; auditResult.innerHTML = ''; }
-      } catch { auditResult.hidden = true; }
-      renderNext();
+  function formatReply(text) {
+    return escapeHTML(text)
+      .replace(/```([\s\S]*?)```/g, '<pre style="background:#0f172a; padding:10px; border-radius:6px; overflow-x:auto;"><code>$1</code></pre>')
+      .replace(/\n/g, '<br>');
+  }
+
+  // Event Binding
+  if (directorSendBtn && directorInput) {
+    directorSendBtn.addEventListener('click', () => askDirector(directorInput.value));
+    directorInput.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey || e.key === 'Enter') && !e.shiftKey) {
+        if (e.key === 'Enter') e.preventDefault();
+        askDirector(directorInput.value);
+      }
     });
   }
 
-  // Restore
-  try { modeEl.checked = localStorage.getItem(LS_MODE) === '1'; } catch { /* ignore */ }
-  try { const a = JSON.parse(localStorage.getItem(LS_AUDIT) || 'null'); if (a) renderAudit(a); } catch { /* ignore */ }
-  renderNext();
+  document.querySelectorAll('[data-dcmd]').forEach(btn => {
+    btn.addEventListener('click', () => askDirector(btn.dataset.dcmd));
+  });
+
+  if (directorAuditBtn) {
+    directorAuditBtn.addEventListener('click', () => askDirector('Run a full production audit on my current project script, voices, and scene pacing.'));
+  }
+
+  if (agentSendBtn && agentInput) {
+    agentSendBtn.addEventListener('click', () => askAgent(agentInput.value));
+    agentInput.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey || e.key === 'Enter') && !e.shiftKey) {
+        if (e.key === 'Enter') e.preventDefault();
+        askAgent(agentInput.value);
+      }
+    });
+  }
+
+  window.Director = {
+    getAuthorityMode,
+    setAuthorityMode,
+    askDirector,
+    askAgent
+  };
 })();

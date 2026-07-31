@@ -12,6 +12,7 @@
   const insightsEl = $('brain-insights');
   const perfListEl = $('brain-perf-list');
   const titleEl = $('brain-perf-title');
+  const titleListEl = $('brain-perf-titles');
   const themeEl = $('brain-perf-theme');
   const viewsEl = $('brain-perf-views');
   const ctrEl = $('brain-perf-ctr');
@@ -63,7 +64,18 @@
     }));
   }
 
-  function render() { renderPrefs(); renderInsights(); renderPerfList(); }
+  // Offer known project titles so a logged result's title matches the
+  // project brain learned it from — that match is how modelBias() learns
+  // which model generated a well-performing (or poorly-performing) video.
+  function renderTitleList() {
+    if (!titleListEl) return;
+    const projects = window.BlvckBrain.get().projects;
+    titleListEl.innerHTML = Object.values(projects)
+      .map((p) => p.title ? `<option value="${esc(p.title)}"></option>` : '')
+      .join('');
+  }
+
+  function render() { renderPrefs(); renderInsights(); renderPerfList(); renderTitleList(); }
 
   logBtn.addEventListener('click', () => {
     const rec = window.BlvckBrain.logPerformance({

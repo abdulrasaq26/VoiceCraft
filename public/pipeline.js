@@ -19,8 +19,12 @@
   ];
 
   function scrollToStep(step) {
-    const node = step.target ? document.getElementById(step.target) : document.querySelector('main.card');
-    if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (window.AetherRouter) {
+      window.AetherRouter.switchWorkspace(step.key);
+    } else {
+      const node = step.target ? document.getElementById(step.target) : document.querySelector('main.card');
+      if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }
 
   let els = [];

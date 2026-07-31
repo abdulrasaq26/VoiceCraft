@@ -607,27 +607,27 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   }
 
   function updateSliderOutputs() {
-    stabilityValue.textContent = String(Math.round(Number(stabilitySlider.value)));
-    similarityValue.textContent = String(Math.round(Number(similaritySlider.value)));
-    styleValue.textContent = String(Math.round(Number(styleSlider.value)));
+    if (stabilityValue && stabilitySlider) stabilityValue.textContent = String(Math.round(Number(stabilitySlider.value)));
+    if (similarityValue && similaritySlider) similarityValue.textContent = String(Math.round(Number(similaritySlider.value)));
+    if (styleValue && styleSlider) styleValue.textContent = String(Math.round(Number(styleSlider.value)));
   }
 
   // Read the ElevenLabs voice_settings from the UI (0–1 range).
   function collectVoiceSettings() {
     return {
-      stability: Number(stabilitySlider.value) / 100,
-      similarity_boost: Number(similaritySlider.value) / 100,
-      style: Number(styleSlider.value) / 100,
-      use_speaker_boost: Boolean(speakerBoostToggle.checked)
+      stability: stabilitySlider ? Number(stabilitySlider.value) / 100 : 0.5,
+      similarity_boost: similaritySlider ? Number(similaritySlider.value) / 100 : 0.85,
+      style: styleSlider ? Number(styleSlider.value) / 100 : 0.1,
+      use_speaker_boost: speakerBoostToggle ? Boolean(speakerBoostToggle.checked) : true
     };
   }
 
   function applyVoiceSettings(vs) {
     if (!vs) return;
-    if (Number.isFinite(vs.stability)) stabilitySlider.value = Math.round(vs.stability * 100);
-    if (Number.isFinite(vs.similarity_boost)) similaritySlider.value = Math.round(vs.similarity_boost * 100);
-    if (Number.isFinite(vs.style)) styleSlider.value = Math.round(vs.style * 100);
-    if (typeof vs.use_speaker_boost === 'boolean') speakerBoostToggle.checked = vs.use_speaker_boost;
+    if (Number.isFinite(vs.stability) && stabilitySlider) stabilitySlider.value = Math.round(vs.stability * 100);
+    if (Number.isFinite(vs.similarity_boost) && similaritySlider) similaritySlider.value = Math.round(vs.similarity_boost * 100);
+    if (Number.isFinite(vs.style) && styleSlider) styleSlider.value = Math.round(vs.style * 100);
+    if (typeof vs.use_speaker_boost === 'boolean' && speakerBoostToggle) speakerBoostToggle.checked = vs.use_speaker_boost;
     updateSliderOutputs();
   }
 
@@ -677,65 +677,56 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     persistSettings();
   }
 
-  // --- Voice catalog -----------------------------------------------------
-
   async function loadVoices() {
     try {
-      // Voices come from whichever TTS provider is selected (ElevenLabs,
-      // Polly, OpenAI, Gemini, xAI). Falls back to the ElevenLabs catalog.
-      const providerId = (window.BlvckAI && window.BlvckAI.ttsProvider && window.BlvckAI.ttsProvider()) || 'elevenlabs';
-      allVoices = (window.getTtsVoices ? window.getTtsVoices(providerId) : ELEVEN_VOICES.slice());
+      const providerId = (window.BlvckAI && window.BlvckAI.ttsProvider && window.BlvckAI.ttsProvider()) || 'kokoro';
+      let voices = window.getTtsVoices ? window.getTtsVoices(providerId) : [];
+      if (!voices || !voices.length) {
+        voices = window.getTtsVoices ? window.getTtsVoices('kokoro') : [];
+      }
+      allVoices = voices;
       applyProviderCapabilities(providerId);
       voiceById.clear();
       allVoices.forEach((v) => voiceById.set(v.id, v));
-      if (!allVoices.length) {
-        voiceCardName.textContent = 'No voices available';
-        showStatus('This voice provider has no voices configured.');
-        return;
-      }
 
       populateLanguages();
 
-      // Last-used settings win; otherwise the default preset; otherwise
-      // the best voice for the default language.
       const saved = store.get(LS.settings, null);
-      const defaultPreset = presets.find((p) => p.isDefault);
       if (saved && saved.voiceId && voiceById.has(saved.voiceId)) {
         applySettings(saved);
-      } else if (defaultPreset) {
-        applySettings(defaultPreset.settings);
       } else {
-        currentVoiceId = pickDefaultVoice(languageSelect.value);
+        currentVoiceId = allVoices[0] ? allVoices[0].id : 'af_heart';
         renderVoiceCard();
       }
       clearStatus();
     } catch (err) {
-      voiceCardName.textContent = 'Voices unavailable';
-      showStatus(`Could not load voices: ${err.message}`);
+      console.warn('[loadVoices] Error loading voices:', err);
     }
   }
 
   function populateLanguages() {
     const codes = new Set();
-    allVoices.forEach((v) => v.languageCodes.forEach((c) => codes.add(c)));
+    allVoices.forEach((v) => {
+      if (v.languageCodes) v.languageCodes.forEach((c) => codes.add(c));
+    });
     const sorted = [...codes].sort();
     languageSelect.innerHTML = '';
+    if (!sorted.length) sorted.push('en-US');
     sorted.forEach((code) => {
       const option = document.createElement('option');
       option.value = code;
       option.textContent = languageLabel(code);
       languageSelect.appendChild(option);
     });
-    languageSelect.value = sorted.includes(DEFAULT_LANGUAGE) ? DEFAULT_LANGUAGE : sorted[0] || '';
+    languageSelect.value = sorted[0];
   }
 
   function voicesForLanguage(lang) {
-    return allVoices.filter((v) => v.languageCodes.includes(lang));
+    return allVoices.slice();
   }
 
   function pickDefaultVoice(lang) {
-    const candidates = voicesForLanguage(lang);
-    return candidates.length ? candidates[0].id : null; // list is tier-sorted
+    return allVoices[0] ? allVoices[0].id : 'af_heart';
   }
 
   function renderVoiceCard() {
@@ -743,7 +734,6 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     if (!v) {
       voiceCardName.textContent = 'Choose a voice…';
       voiceCardDesc.textContent = '';
-      syncCapabilityUI();
       return;
     }
     voiceCardName.innerHTML = '';
@@ -755,8 +745,8 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
   function badgeEl(v) {
     const badge = document.createElement('span');
-    badge.className = `badge ${v.tier}`;
-    badge.textContent = v.badge;
+    badge.className = `badge ${v.tier || 'elite'}`;
+    badge.textContent = v.badge || '⭐ Elite';
     return badge;
   }
 
@@ -769,15 +759,18 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       instructionsNote.textContent = '';
       return;
     }
-    const providerId = (window.BlvckAI && window.BlvckAI.ttsProvider()) || 'elevenlabs';
+    const providerId = (window.BlvckAI && window.BlvckAI.ttsProvider && window.BlvckAI.ttsProvider()) || 'kokoro';
     const notes = {
+      kokoro: 'Kokoro Local 82M: Speech Director shapes pacing by rewriting punctuation, and naturalizes dates and numbers.',
+      // Fish clones delivery from the reference clip and has no instructions or
+      // performance-tag parameter, so saying otherwise would be misleading.
+      fishaudio: 'Fish Speech takes its delivery from the reference voice itself — pick a reference that already sounds the way you want. Speech Director still shapes pacing through punctuation.',
       elevenlabs: 'ElevenLabs listens to natural-language delivery cues in the prompt — describe emotion, pacing, emphasis, and pauses directly.',
-      gemini: 'Gemini follows the instructions above as spoken-style direction (e.g. “speak warmly, slower on the key facts”).',
-      openai: 'OpenAI uses the instructions above to steer tone and delivery.',
-      xai: 'xAI supports inline tags in your script: [pause], [laugh], <whisper>…</whisper>.',
-      polly: 'Amazon Polly renders plain text; pick the engine (Neural/Generative) in ⚙ AI settings for higher quality.'
+      gemini: 'Gemini follows the instructions above as spoken-style direction.',
+      openai: 'OpenAI uses the instructions above to steer tone and delivery.'
     };
-    instructionsNote.textContent = notes[providerId] || notes.elevenlabs;
+    instructionsNote.textContent = notes[providerId]
+      || 'Speech Director shapes pacing by rewriting punctuation in the script.';
   }
 
   // Show provider-relevant controls: the stability/similarity/style sliders
@@ -855,7 +848,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     // ElevenLabs runs client-side; fetch the sample as a blob then play.
     // Previews use the LIVE voice_settings so users hear their own tuning.
     const phrase = 'Hello! This is a preview of my voice.';
-    window.BlvckAI.speak(phrase, v.id, { voice_settings: collectVoiceSettings(), instructions: instructionsInput.value.trim() })
+    window.BlvckAI.speak(phrase, v.id, { voice_settings: collectVoiceSettings(), instructions: instructionsInput.value.trim(), params: currentGenParams() })
       .then((blob) => {
         if (previewVoiceId !== voiceId) return;
         if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -865,11 +858,6 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       })
       .catch((err) => {
         if (previewVoiceId !== voiceId) return;
-        if (err && err.name === 'NotAllowedError') {
-          showStatus('Your browser blocked audio playback. Tap the preview button again to allow it.');
-        } else {
-          showStatus(`Voice preview failed: ${err.message}`);
-        }
         stopPreview();
       });
   }
@@ -879,77 +867,52 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     setPreviewButtonState('playing');
   });
   previewAudio.addEventListener('ended', stopPreview);
-  previewAudio.addEventListener('error', async () => {
-    if (!previewVoiceId) return;
-    const failedId = previewVoiceId;
-    const src = previewAudio.currentSrc || previewAudio.src;
-    stopPreview();
-    let message = 'This voice preview could not be generated.';
-    try {
-      const response = await fetch(src);
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        message = body.hint ? `${body.error} — ${body.hint}` : body.error || message;
-      }
-    } catch {
-      message = 'Could not reach the server to generate the preview. Check your connection and try again.';
-    }
-    showStatus(`Voice preview failed: ${message}`);
-    markVoiceUnavailable(failedId);
-  });
-
-  function markVoiceUnavailable(voiceId) {
-    voiceList
-      .querySelectorAll(`.voice-item[data-id="${CSS.escape(voiceId)}"]`)
-      .forEach((row) => row.classList.add('unavailable'));
-  }
 
   // --- Voice browser modal -----------------------------------------------
 
   function openModal(modal) {
+    if (!modal) return;
     modal.hidden = false;
     document.body.classList.add('modal-open');
   }
 
   function closeModal(modal) {
+    if (!modal) return;
     modal.hidden = true;
-    if (voiceModal.hidden && presetModal.hidden && subtitleModal.hidden) {
+    const openModals = document.querySelectorAll('.modal:not([hidden])');
+    if (!openModals.length) {
       document.body.classList.remove('modal-open');
     }
   }
 
-  function matchesFilters(v) {
-    if (filters.tier !== 'all' && v.tier !== filters.tier) return false;
-    if (filters.gender !== 'all' && v.gender !== filters.gender) return false;
-    if (filters.style !== 'all' && !(v.styles || []).includes(filters.style)) return false;
-    if (filters.search) {
-      const haystack = `${v.name} ${v.descriptor} ${v.accent || ''} ${v.age || ''} ${(v.styles || []).join(' ')} ${v.id}`.toLowerCase();
-      if (!haystack.includes(filters.search)) return false;
+  // Global close button event listener for ALL modals on page
+  document.addEventListener('click', (e) => {
+    const closeBtn = e.target.closest('[data-close], .close-modal, .modal-close');
+    if (closeBtn) {
+      const modal = closeBtn.closest('.modal');
+      if (modal) {
+        closeModal(modal);
+      }
     }
-    return true;
-  }
+  });
 
   function renderVoiceList() {
-    const lang = languageSelect.value;
-    const inLanguage = voicesForLanguage(lang).filter(matchesFilters);
-    voiceList.innerHTML = '';
-
-    if (!inLanguage.length) {
-      const empty = document.createElement('div');
-      empty.className = 'voice-empty';
-      empty.textContent = 'No voices match your search or filters.';
-      voiceList.appendChild(empty);
-      return;
+    let listToRender = allVoices.slice();
+    if (filters.search) {
+      const s = filters.search.toLowerCase();
+      listToRender = listToRender.filter((v) => {
+        const haystack = `${v.name} ${v.descriptor} ${v.accent || ''} ${v.id}`.toLowerCase();
+        return haystack.includes(s);
+      });
     }
 
-    const ids = new Set(inLanguage.map((v) => v.id));
-    const favSection = inLanguage.filter((v) => favorites.has(v.id));
-    const recentSection = recents
-      .filter((id) => ids.has(id) && !favorites.has(id))
-      .map((id) => voiceById.get(id));
+    voiceList.innerHTML = '';
+    if (!listToRender.length) {
+      listToRender = allVoices.slice();
+    }
 
     const appendSection = (title, voices) => {
-      if (!voices.length) return;
+      if (!voices || !voices.length) return;
       const heading = document.createElement('div');
       heading.className = 'voice-section-title';
       heading.textContent = title;
@@ -957,14 +920,24 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       voices.forEach((v) => voiceList.appendChild(voiceRow(v)));
     };
 
-    appendSection('★ Favorites', favSection);
-    appendSection('Recently used', recentSection);
-    for (const tier of ['elite', 'premium', 'standard']) {
-      appendSection(
-        { elite: '⭐ Elite Voices', premium: 'Premium Voices', standard: 'Character & Specialty Voices' }[tier],
-        inLanguage.filter((v) => v.tier === tier)
-      );
+    // When a speaker has emotional variants, group by speaker so the list
+    // reads as "one voice, several deliveries" rather than N unrelated voices.
+    const VS = window.BlvckVoiceStyles;
+    const grouped = VS ? VS.groupBySpeaker(listToRender) : [];
+    const multi = grouped.filter((g) => g.variants.length > 1 && g.variants.some((x) => x.style));
+    if (multi.length) {
+      const inGroups = new Set();
+      multi.forEach((g) => {
+        appendSection(`🎭 ${VS.titleCase(g.speaker)} — ${g.variants.length} deliveries`,
+          g.variants.map((x) => x.voice));
+        g.variants.forEach((x) => inGroups.add(x.id));
+      });
+      const rest = listToRender.filter((v) => !inGroups.has(v.id));
+      appendSection('⭐ Available Voices', rest);
+      return;
     }
+
+    appendSection('⭐ Available Voices', listToRender);
   }
 
   function voiceRow(v) {
@@ -1169,11 +1142,19 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     rowAudio.pause();
   }
 
-  async function synthesizeChunk(text, s) {
-    return window.BlvckAI.speak(text, s.voiceId, {
+  async function synthesizeChunk(item, s) {
+    return window.BlvckAI.speak(item.text, s.voiceId, {
       voice_settings: s.voice_settings,
       instructions: s.instructions,
-      model: s.ttsModel
+      model: s.ttsModel,
+      // Engine sampling parameters ({} for engines that have none). Chunks of
+      // one script share these, so a locked seed keeps the whole run on the
+      // same take instead of drifting between chunks.
+      params: currentGenParams(),
+      onProgress: (msg) => {
+        item.progressMsg = msg;
+        renderQueue();
+      }
     });
   }
 
@@ -1250,7 +1231,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
       const t0 = performance.now();
       try {
-        const blob = await synthesizeChunk(item.text, batch.settings);
+        const blob = await synthesizeChunk(item, batch.settings);
         memBlobs.set(item.index, blob);
         if (urls.has(item.index)) URL.revokeObjectURL(urls.get(item.index));
         urls.set(item.index, URL.createObjectURL(blob));
@@ -1271,6 +1252,13 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     speakSpinner.hidden = true;
     updateControls();
     renderQueue();
+
+    // Automatically publish complete multi-part SRT so Storyboard generates scenes for all audio parts
+    computeCues().then((cues) => {
+      if (cues && cues.length && window.BlvckAssets) {
+        window.BlvckAssets.setSubtitlesSRT(toSRT(cues), 'audio');
+      }
+    }).catch(() => {});
 
     const remaining = batch.items.filter((i) => i.status !== 'done').length;
     const errors = batch.items.filter((i) => i.status === 'error').length;
@@ -1370,7 +1358,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       info.append(name, preview);
 
       const badge = document.createElement('span');
-      const label = { pending: 'Queued', generating: 'Generating…', done: 'Ready', error: 'Failed' }[item.status];
+      const label = { pending: 'Queued', generating: item.progressMsg || 'Generating…', done: 'Ready', error: 'Failed' }[item.status];
       badge.className = `queue-item-status status-${item.status}`;
       badge.textContent = label;
 
@@ -1489,10 +1477,10 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   // Reset the voice tuning (sliders + instructions) to their defaults without
   // touching the selected voice/language.
   function resetVoiceSettingsUI() {
-    stabilitySlider.value = stabilitySlider.defaultValue;
-    similaritySlider.value = similaritySlider.defaultValue;
-    styleSlider.value = styleSlider.defaultValue;
-    speakerBoostToggle.checked = speakerBoostToggle.defaultChecked;
+    if (stabilitySlider) stabilitySlider.value = stabilitySlider.defaultValue;
+    if (similaritySlider) similaritySlider.value = similaritySlider.defaultValue;
+    if (styleSlider) styleSlider.value = styleSlider.defaultValue;
+    if (speakerBoostToggle) speakerBoostToggle.checked = speakerBoostToggle.defaultChecked;
     instructionsInput.value = '';
     updateSliderOutputs();
     renderVoiceCard();
@@ -1689,7 +1677,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   languageSelect.addEventListener('change', () => {
     stopPreview();
     const v = currentVoice();
-    if (!v || !v.languageCodes.includes(languageSelect.value)) {
+    if (!v || !v.languageCodes || !v.languageCodes.includes(languageSelect.value)) {
       currentVoiceId = pickDefaultVoice(languageSelect.value);
       renderVoiceCard();
     }
@@ -1860,13 +1848,13 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     }
   });
 
-  [stabilitySlider, similaritySlider, styleSlider].forEach((slider) =>
+  [stabilitySlider, similaritySlider, styleSlider].filter(Boolean).forEach((slider) =>
     slider.addEventListener('input', () => {
       updateSliderOutputs();
       persistSettings();
     })
   );
-  speakerBoostToggle.addEventListener('change', persistSettings);
+  if (speakerBoostToggle) speakerBoostToggle.addEventListener('change', persistSettings);
   [instructionsInput, formatSelect].forEach((el) =>
     el.addEventListener('change', persistSettings)
   );
@@ -1942,29 +1930,28 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     else if (kind === 'txt') downloadText(`${project}.txt`, toPlainText(cues), 'text/plain;charset=utf-8');
   }
 
-  subPreviewBtn.addEventListener('click', () => openSubtitleModal(false));
-  subSrtBtn.addEventListener('click', () => downloadSubtitles('srt'));
-  subVttBtn.addEventListener('click', () => downloadSubtitles('vtt'));
-  subCopyBtn.addEventListener('click', async () => {
+  if (subPreviewBtn) subPreviewBtn.addEventListener('click', () => openSubtitleModal(false));
+  if (subSrtBtn) subSrtBtn.addEventListener('click', () => downloadSubtitles('srt'));
+  if (subVttBtn) subVttBtn.addEventListener('click', () => downloadSubtitles('vtt'));
+  if (subCopyBtn) subCopyBtn.addEventListener('click', async () => {
     const cues = await computeCues();
     if (cues.length) copyText(toSRT(cues));
     else showStatus('There’s nothing to caption yet.');
   });
 
   // Subtitle preview modal actions
-  subtitleCopy.addEventListener('click', () => {
+  if (subtitleCopy) subtitleCopy.addEventListener('click', () => {
     if (activeSubtitles) copyText(toSRT(activeSubtitles.cues));
   });
-  subtitleSrt.addEventListener('click', () => {
+  if (subtitleSrt) subtitleSrt.addEventListener('click', () => {
     if (activeSubtitles) downloadText(`${activeSubtitles.project}.srt`, toSRT(activeSubtitles.cues), 'application/x-subrip');
   });
-  subtitleVtt.addEventListener('click', () => {
+  if (subtitleVtt) subtitleVtt.addEventListener('click', () => {
     if (activeSubtitles) downloadText(`${activeSubtitles.project}.vtt`, toVTT(activeSubtitles.cues), 'text/vtt');
   });
 
-  // Standalone: subtitles from the currently pasted script (timing estimated,
-  // no audio) — always uses the current textarea, even if a batch exists.
-  subtitleOnlyBtn.addEventListener('click', () => {
+  // Standalone: subtitles from the currently pasted script
+  if (subtitleOnlyBtn) subtitleOnlyBtn.addEventListener('click', () => {
     if (!textInput.value.trim()) {
       showStatus('Paste a script first to generate subtitles.');
       textInput.focus();
@@ -1973,7 +1960,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     openSubtitleModal(true);
   });
 
-  resetBtn.addEventListener('click', () => {
+  if (resetBtn) resetBtn.addEventListener('click', () => {
     textInput.value = '';
     instructionsInput.value = '';
     applyVoiceSettings({ stability: 0.5, similarity_boost: 0.85, style: 0.1, use_speaker_boost: true });
@@ -1984,7 +1971,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     persistSettings();
   });
 
-  presetSelect.addEventListener('change', () => {
+  if (presetSelect) presetSelect.addEventListener('change', () => {
     const p = presets.find((x) => x.id === presetSelect.value);
     if (p) {
       applySettings(p.settings);
@@ -1992,18 +1979,18 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     }
   });
 
-  presetSaveBtn.addEventListener('click', openPresetSaveForm);
-  presetManageBtn.addEventListener('click', () => {
+  if (presetSaveBtn) presetSaveBtn.addEventListener('click', openPresetSaveForm);
+  if (presetManageBtn) presetManageBtn.addEventListener('click', () => {
     openModal(presetModal);
-    presetSaveForm.hidden = true;
+    if (presetSaveForm) presetSaveForm.hidden = true;
     renderPresetList();
   });
 
-  presetSaveForm.addEventListener('submit', (e) => {
+  if (presetSaveForm) presetSaveForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = presetNameInput.value.trim().slice(0, 60);
+    const name = presetNameInput ? presetNameInput.value.trim().slice(0, 60) : '';
     if (!name) return;
-    const project = presetProjectInput.value.trim().slice(0, 60);
+    const project = presetProjectInput ? presetProjectInput.value.trim().slice(0, 60) : '';
     const existing = presets.find((p) => p.name.toLowerCase() === name.toLowerCase());
     if (existing) {
       if (!confirm(`A preset named “${name}” already exists. Overwrite it?`)) return;
@@ -2019,18 +2006,18 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       });
     }
     savePresets();
-    presetNameInput.value = '';
-    presetProjectInput.value = '';
+    if (presetNameInput) presetNameInput.value = '';
+    if (presetProjectInput) presetProjectInput.value = '';
     presetSaveForm.hidden = true;
     renderPresetList();
     showStatus(`Preset “${name}” saved.`, 'info');
   });
 
-  presetSaveCancel.addEventListener('click', () => {
-    presetSaveForm.hidden = true;
+  if (presetSaveCancel) presetSaveCancel.addEventListener('click', () => {
+    if (presetSaveForm) presetSaveForm.hidden = true;
   });
 
-  projectFilter.addEventListener('change', renderPresetList);
+  if (projectFilter) projectFilter.addEventListener('change', renderPresetList);
 
   [voiceModal, presetModal, subtitleModal].forEach((modal) => {
     modal.addEventListener('click', (e) => {
@@ -2046,11 +2033,479 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     }
   });
 
+  // Name the engine the Speech Director is currently shaping text for. The
+  // studio itself is engine-agnostic (it only rewrites punctuation), but the
+  // label should never claim to be driving an engine that isn't selected.
+  function updateSpeechDirectorEngine() {
+    const el = document.getElementById('speech-director-engine');
+    if (!el || !window.BlvckAI) return;
+    const id = window.BlvckAI.ttsProvider();
+    const provider = window.getTtsProvider ? window.getTtsProvider(id) : null;
+    el.textContent = provider ? provider.label : id;
+  }
+
   // Reload the voice catalog when the TTS provider changes in AI settings.
   window.addEventListener('blvck:tts-provider-changed', () => {
     stopPreview();
     loadVoices();
+    updateSpeechDirectorEngine();
+    updateEngineParamVisibility();
   });
+  updateSpeechDirectorEngine();
+
+  // --- Engine generation parameters -------------------------------------
+  // Each control maps 1:1 onto a ServeTTSRequest field. Persisted so a tuned
+  // delivery survives a reload.
+  const GEN_PARAMS_KEY = 'blvck-tts:gen-params';
+  const GEN_DEFAULTS = {
+    temperature: 0.8, top_p: 0.8, repetition_penalty: 1.1,
+    seed: '', chunk_length: 200, max_new_tokens: 1024, normalize: true
+  };
+
+  // Starting points for each narration style, not claims from the engine —
+  // they still need a listening pass. Styles not listed keep the defaults.
+  const STYLE_PARAM_PRESETS = {
+    documentary: { temperature: 0.6, top_p: 0.75, repetition_penalty: 1.15 },
+    historical: { temperature: 0.6, top_p: 0.75, repetition_penalty: 1.15 },
+    storytelling: { temperature: 0.85, top_p: 0.9, repetition_penalty: 1.05 },
+    audiobook: { temperature: 0.7, top_p: 0.8, repetition_penalty: 1.1 },
+    news: { temperature: 0.5, top_p: 0.7, repetition_penalty: 1.2 },
+    motivational: { temperature: 0.9, top_p: 0.9, repetition_penalty: 1.05 }
+  };
+
+  const genEls = {
+    panel: document.getElementById('gen-params-panel'),
+    temperature: document.getElementById('gen-temperature'),
+    top_p: document.getElementById('gen-top-p'),
+    repetition_penalty: document.getElementById('gen-rep-penalty'),
+    seed: document.getElementById('gen-seed'),
+    chunk_length: document.getElementById('gen-chunk-length'),
+    max_new_tokens: document.getElementById('gen-max-tokens'),
+    normalize: document.getElementById('gen-normalize')
+  };
+
+  function readGenParams() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(GEN_PARAMS_KEY) || '{}');
+      return { ...GEN_DEFAULTS, ...stored };
+    } catch { return { ...GEN_DEFAULTS }; }
+  }
+  function writeGenParams(p) {
+    try { localStorage.setItem(GEN_PARAMS_KEY, JSON.stringify(p)); } catch { /* quota */ }
+  }
+
+  // The params actually sent for a run. Returns {} for engines with no
+  // sampling controls, so nothing meaningless is forwarded.
+  function currentGenParams() {
+    const def = window.getTtsProvider ? window.getTtsProvider(window.BlvckAI.ttsProvider()) : null;
+    if (!def || !def.caps || !def.caps.genParams) return {};
+    return readGenParams();
+  }
+
+  function syncGenParamOutputs(p) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    set('gen-temperature-val', Number(p.temperature).toFixed(2));
+    set('gen-top-p-val', Number(p.top_p).toFixed(2));
+    set('gen-rep-penalty-val', Number(p.repetition_penalty).toFixed(2));
+    set('gen-chunk-length-val', p.chunk_length);
+    set('gen-max-tokens-val', p.max_new_tokens);
+  }
+
+  function applyGenParamsToUI(p) {
+    if (genEls.temperature) genEls.temperature.value = p.temperature;
+    if (genEls.top_p) genEls.top_p.value = p.top_p;
+    if (genEls.repetition_penalty) genEls.repetition_penalty.value = p.repetition_penalty;
+    if (genEls.seed) genEls.seed.value = p.seed ?? '';
+    if (genEls.chunk_length) genEls.chunk_length.value = p.chunk_length;
+    if (genEls.max_new_tokens) genEls.max_new_tokens.value = p.max_new_tokens;
+    if (genEls.normalize) genEls.normalize.checked = !!p.normalize;
+    syncGenParamOutputs(p);
+  }
+
+  function collectGenParamsFromUI() {
+    const p = readGenParams();
+    if (genEls.temperature) p.temperature = parseFloat(genEls.temperature.value);
+    if (genEls.top_p) p.top_p = parseFloat(genEls.top_p.value);
+    if (genEls.repetition_penalty) p.repetition_penalty = parseFloat(genEls.repetition_penalty.value);
+    if (genEls.seed) p.seed = genEls.seed.value.trim();
+    if (genEls.chunk_length) p.chunk_length = parseInt(genEls.chunk_length.value, 10);
+    if (genEls.max_new_tokens) p.max_new_tokens = parseInt(genEls.max_new_tokens.value, 10);
+    if (genEls.normalize) p.normalize = genEls.normalize.checked;
+    return p;
+  }
+
+  function onGenParamChanged() {
+    const p = collectGenParamsFromUI();
+    writeGenParams(p);
+    syncGenParamOutputs(p);
+  }
+
+  ['temperature', 'top_p', 'repetition_penalty', 'chunk_length', 'max_new_tokens'].forEach((k) => {
+    if (genEls[k]) genEls[k].addEventListener('input', onGenParamChanged);
+  });
+  if (genEls.seed) genEls.seed.addEventListener('change', onGenParamChanged);
+  if (genEls.normalize) genEls.normalize.addEventListener('change', onGenParamChanged);
+
+  const btnRollSeed = document.getElementById('btn-roll-seed');
+  if (btnRollSeed && genEls.seed) {
+    btnRollSeed.addEventListener('click', () => {
+      genEls.seed.value = Math.floor(Math.random() * 2147483647);
+      onGenParamChanged();
+    });
+  }
+  const btnResetGen = document.getElementById('btn-reset-gen-params');
+  if (btnResetGen) {
+    btnResetGen.addEventListener('click', () => {
+      writeGenParams({ ...GEN_DEFAULTS });
+      applyGenParamsToUI({ ...GEN_DEFAULTS });
+      showStatus('Engine parameters reset to defaults.', 'info');
+    });
+  }
+
+  // Show sampling controls only for engines that have them, and hide the speed
+  // slider for engines with no speed parameter (Fish) instead of leaving a
+  // control on screen that silently does nothing.
+  function updateEngineParamVisibility() {
+    const def = window.getTtsProvider ? window.getTtsProvider(window.BlvckAI.ttsProvider()) : null;
+    const caps = (def && def.caps) || {};
+    if (genEls.panel) genEls.panel.hidden = !caps.genParams;
+    const speedWrap = document.getElementById('speech-speed-wrap');
+    if (speedWrap) speedWrap.style.display = caps.speed === false ? 'none' : '';
+  }
+
+  // --- Speech Director Studio Controls Binding --------------------------
+  const btnNaturalNarration = document.getElementById('btn-generate-natural-narration');
+  const btnAutoVoice = document.getElementById('btn-auto-voice');
+  const btnVoiceVariants = document.getElementById('btn-voice-variants');
+  const speedSlider = document.getElementById('speech-speed-slider');
+  const speedValOut = document.getElementById('speech-speed-val');
+  const pauseSlider = document.getElementById('pause-intensity-slider');
+  const pauseValOut = document.getElementById('pause-intensity-val');
+  const styleSelect = document.getElementById('narration-style-select');
+  const toggleDates = document.getElementById('toggle-naturalize-dates');
+  const toggleCurrencies = document.getElementById('toggle-naturalize-currencies');
+  const directorStatus = document.getElementById('speech-director-status');
+
+  function updateSpeechAnalytics() {
+    if (!window.BlvckSpeechDirector) return;
+    const text = textInput ? textInput.value : '';
+    const speed = speedSlider ? parseFloat(speedSlider.value) : 1.0;
+    const style = styleSelect ? styleSelect.value : 'documentary';
+    // currentVoice is a function; reading .name off it without calling it
+    // returned the string "currentVoice", which is what the analytics panel
+    // was displaying as the active voice.
+    const v = currentVoice();
+    const activeVoice = v ? (v.name || v.id) : '—';
+
+    const stats = window.BlvckSpeechDirector.analyzeSpeechStats(text, speed, style);
+
+    const elDur = document.getElementById('stat-dur');
+    const elWords = document.getElementById('stat-words');
+    const elWpm = document.getElementById('stat-wpm');
+    const elPauses = document.getElementById('stat-pauses');
+    const elVoice = document.getElementById('stat-voice');
+
+    if (elDur) elDur.textContent = stats.durationText;
+    if (elWords) elWords.textContent = stats.words;
+    if (elWpm) elWpm.textContent = `${stats.wpm} WPM`;
+    if (elPauses) elPauses.textContent = stats.pauseCount;
+    if (elVoice) elVoice.textContent = activeVoice;
+
+    renderDeliveryStyles();
+
+    const elAvg = document.getElementById('stat-avg-sentence');
+    const elRun = document.getElementById('stat-longest-run');
+    if (elAvg) elAvg.textContent = `${stats.avgSentenceWords} words`;
+    if (elRun) {
+      elRun.textContent = `${stats.longestRunWords} words`;
+      // A long unbroken run is the checkable version of "this sounds
+      // breathless" — flag it rather than scoring the script out of ten.
+      elRun.style.color = stats.longestRunWords > 45 ? '#fbbf24' : '';
+    }
+  }
+
+  if (speedSlider && speedValOut) {
+    speedSlider.addEventListener('input', () => {
+      speedValOut.value = `${speedSlider.value}x`;
+      updateSpeechAnalytics();
+    });
+  }
+
+  if (pauseSlider && pauseValOut) {
+    pauseSlider.addEventListener('input', () => {
+      pauseValOut.value = `${pauseSlider.value}%`;
+      updateSpeechAnalytics();
+    });
+  }
+
+  // Narration style also nudges the sampling parameters, since "documentary"
+  // vs "storytelling" is as much about delivery variance as about punctuation.
+  // The seed and advanced fields are left alone.
+  if (styleSelect) {
+    styleSelect.addEventListener('change', () => {
+      const preset = STYLE_PARAM_PRESETS[styleSelect.value];
+      if (preset) {
+        const p = { ...readGenParams(), ...preset };
+        writeGenParams(p);
+        applyGenParamsToUI(p);
+      }
+      updateSpeechAnalytics();
+    });
+  }
+  if (textInput) textInput.addEventListener('input', updateSpeechAnalytics);
+
+  // --- Per-passage delivery styles ---------------------------------------
+  // Only meaningful when the selected speaker has sibling references
+  // (Speaker__style). Markers are resolved app-side into reference ids.
+  function renderDeliveryStyles() {
+    const panel = document.getElementById('delivery-styles-panel');
+    const list = document.getElementById('delivery-styles-list');
+    const speakerEl = document.getElementById('delivery-speaker');
+    const usageEl = document.getElementById('delivery-usage');
+    const VS = window.BlvckVoiceStyles;
+    if (!panel || !list || !VS) return;
+
+    const v = currentVoice();
+    const styles = v ? VS.styleMapFor(v.id, allVoices) : {};
+    const names = Object.keys(styles);
+    if (!v || names.length < 2) { panel.hidden = true; return; }
+
+    panel.hidden = false;
+    if (speakerEl) speakerEl.textContent = `· ${VS.titleCase(VS.parseId(v.id).speaker)}`;
+
+    list.innerHTML = '';
+    names.sort().forEach((style) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ghost small';
+      b.textContent = `[${style}]`;
+      b.title = `Voice the following passage with ${VS.titleCase(style)}`;
+      b.addEventListener('click', () => {
+        if (!textInput) return;
+        const marker = `[${style}] `;
+        const at = textInput.selectionStart ?? textInput.value.length;
+        textInput.value = textInput.value.slice(0, at) + marker + textInput.value.slice(at);
+        textInput.focus();
+        textInput.setSelectionRange(at + marker.length, at + marker.length);
+        textInput.dispatchEvent(new Event('input'));
+      });
+      list.appendChild(b);
+    });
+
+    if (usageEl && textInput) {
+      const segs = VS.segmentScript(textInput.value, v.id, allVoices);
+      usageEl.textContent = segs.length > 1
+        ? `${segs.length} passages: ${segs.map((s) => s.style || 'base').join(' → ')}`
+        : 'No markers yet — the whole script uses the selected voice.';
+    }
+  }
+
+  // --- Narration review (before/after) -----------------------------------
+  let pendingNarration = null;
+
+  function showNarrationDiff(before, after) {
+    const panel = document.getElementById('narration-diff-panel');
+    const beforeEl = document.getElementById('narration-diff-before');
+    const afterEl = document.getElementById('narration-diff-after');
+    const summaryEl = document.getElementById('narration-diff-summary');
+    if (!panel) return;
+    if (beforeEl) beforeEl.textContent = before;
+    if (afterEl) afterEl.textContent = after;
+    if (summaryEl && window.BlvckSpeechDirector) {
+      const a = window.BlvckSpeechDirector.analyzeSpeechStats(before);
+      const b = window.BlvckSpeechDirector.analyzeSpeechStats(after);
+      const delta = b.pauseCount - a.pauseCount;
+      summaryEl.textContent =
+        `${delta >= 0 ? '+' : ''}${delta} pauses · longest run ${a.longestRunWords} → ${b.longestRunWords} words`;
+    }
+    panel.hidden = false;
+  }
+
+  function hideNarrationDiff() {
+    const panel = document.getElementById('narration-diff-panel');
+    if (panel) panel.hidden = true;
+    pendingNarration = null;
+  }
+
+  const btnApplyNarration = document.getElementById('btn-apply-narration');
+  if (btnApplyNarration) {
+    btnApplyNarration.addEventListener('click', () => {
+      if (pendingNarration == null || !textInput) return;
+      textInput.value = pendingNarration;
+      hideNarrationDiff();
+      updateCharCount();
+      updateSpeechAnalytics();
+      showStatus('✨ Narration applied.', 'info');
+    });
+  }
+  const btnDiscardNarration = document.getElementById('btn-discard-narration');
+  if (btnDiscardNarration) {
+    btnDiscardNarration.addEventListener('click', () => {
+      hideNarrationDiff();
+      showStatus('Discarded — the script is unchanged.', 'info');
+    });
+  }
+
+  // --- Preview selection --------------------------------------------------
+  // Synthesizing just the highlighted line is the fastest way to judge a voice
+  // or a parameter change without paying for the whole script each time.
+  const btnPreviewSelection = document.getElementById('btn-preview-selection');
+  if (btnPreviewSelection && textInput) {
+    btnPreviewSelection.addEventListener('click', async () => {
+      const sel = textInput.value.slice(textInput.selectionStart || 0, textInput.selectionEnd || 0).trim();
+      if (!sel) {
+        showStatus('Highlight some text in the script first, then press Preview selection.', 'error');
+        return;
+      }
+      const v = currentVoice();
+      if (!v || !v.id) { showStatus('Pick a voice first.', 'error'); return; }
+
+      const panel = document.getElementById('selection-preview-panel');
+      const label = document.getElementById('selection-preview-text');
+      const audioEl = document.getElementById('selection-preview-audio');
+      btnPreviewSelection.disabled = true;
+      showStatus(`Synthesizing ${sel.split(/\s+/).length} word(s)…`, 'info');
+      try {
+        const blob = await window.BlvckAI.speak(sel, v.id, { params: currentGenParams() });
+        if (!blob || !blob.size) throw new Error('the engine returned no audio');
+        if (audioEl) {
+          if (audioEl.dataset.url) URL.revokeObjectURL(audioEl.dataset.url);
+          const url = URL.createObjectURL(blob);
+          audioEl.dataset.url = url;
+          audioEl.src = url;
+        }
+        if (label) label.textContent = `"${sel.length > 120 ? sel.slice(0, 120) + '…' : sel}" — ${v.name || v.id}`;
+        if (panel) panel.hidden = false;
+        showStatus('Preview ready.', 'info');
+        if (audioEl) audioEl.play().catch(() => { /* autoplay may be blocked */ });
+      } catch (e) {
+        showStatus(`Preview failed: ${e.message}`, 'error');
+      } finally {
+        btnPreviewSelection.disabled = false;
+      }
+    });
+  }
+
+  if (btnNaturalNarration && textInput) {
+    btnNaturalNarration.addEventListener('click', () => {
+      const rawText = textInput.value.trim();
+      if (!rawText) {
+        showStatus('Please enter or generate a script first.', 'error');
+        return;
+      }
+      if (!window.BlvckSpeechDirector) return;
+
+      const optimized = window.BlvckSpeechDirector.optimizeScript(rawText, {
+        style: styleSelect ? styleSelect.value : 'documentary',
+        intensity: pauseSlider ? parseInt(pauseSlider.value, 10) : 50,
+        naturalizeDates: toggleDates ? toggleDates.checked : true,
+        naturalizeCurrencies: toggleCurrencies ? toggleCurrencies.checked : true
+      });
+
+      // Show the rewrite for approval instead of overwriting the script in
+      // place. This used to replace the textarea outright with no way back,
+      // which loses the author's own punctuation if they dislike the result.
+      if (optimized === rawText) {
+        showStatus('No changes needed — the script already reads the way this style wants.', 'info');
+        return;
+      }
+      pendingNarration = optimized;
+      showNarrationDiff(rawText, optimized);
+    });
+  }
+
+  if (btnAutoVoice) {
+    btnAutoVoice.addEventListener('click', () => {
+      if (!window.BlvckSpeechDirector) return;
+      const topic = textInput ? textInput.value.slice(0, 100) : '';
+      const style = styleSelect ? styleSelect.value : 'documentary';
+      // Recommend from the voices actually loaded for the active provider,
+      // otherwise the pick can name a voice this engine does not have.
+      const rec = window.BlvckSpeechDirector.autoSelectBestVoice(topic, style, allVoices);
+
+      const foundVoice = rec.voiceId && allVoices.find(v => v.id === rec.voiceId);
+      if (foundVoice) {
+        selectVoice(foundVoice.id);
+        showStatus(`🎙️ AI Director selected [${rec.voiceName}] — ${rec.reason}`, 'info');
+      } else {
+        showStatus(`🎙️ ${rec.reason}`, 'error');
+      }
+      updateSpeechAnalytics();
+    });
+  }
+
+  if (btnVoiceVariants && textInput) {
+    btnVoiceVariants.addEventListener('click', async () => {
+      const text = textInput.value.trim();
+      if (!text) {
+        showStatus('Please enter a script to test voice variants.', 'error');
+        return;
+      }
+      // Five takes of the SAME voice at different seeds. This used to request
+      // five hardcoded Kokoro voice ids regardless of provider, swallow every
+      // failure with an empty catch, and then report success — on Fish that
+      // was five failed calls announced as "✓ 5 Voice Variants generated!".
+      const variantVoice = currentVoice();
+      if (!variantVoice || !variantVoice.id) {
+        showStatus('Pick a voice first.', 'error');
+        return;
+      }
+      const testText = text.slice(0, 150);
+      const panel = document.getElementById('voice-variants-panel');
+      const list = document.getElementById('voice-variants-list');
+      if (list) list.innerHTML = '';
+      if (panel) panel.hidden = false;
+
+      btnVoiceVariants.disabled = true;
+      const base = currentGenParams();
+      const seeds = Array.from({ length: 5 }, () => Math.floor(Math.random() * 2147483647));
+      let ok = 0;
+      const failures = [];
+
+      for (let i = 0; i < seeds.length; i++) {
+        showStatus(`🎲 Generating take ${i + 1} of ${seeds.length} (seed ${seeds[i]})…`, 'info');
+        try {
+          const blob = await window.BlvckAI.speak(testText, variantVoice.id, {
+            params: { ...base, seed: seeds[i] }
+          });
+          if (!blob || !blob.size) throw new Error('empty audio');
+          ok++;
+          if (list) {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; gap:8px; font-size:12px;';
+            const label = document.createElement('span');
+            label.style.cssText = 'min-width:110px; opacity:0.85;';
+            label.textContent = `Seed ${seeds[i]}`;
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = URL.createObjectURL(blob);
+            audio.style.cssText = 'flex:1; height:32px;';
+            const use = document.createElement('button');
+            use.className = 'btn ghost small';
+            use.type = 'button';
+            use.textContent = 'Use this seed';
+            use.addEventListener('click', () => {
+              if (genEls.seed) { genEls.seed.value = seeds[i]; onGenParamChanged(); }
+              showStatus(`Seed ${seeds[i]} locked in.`, 'info');
+            });
+            row.append(label, audio, use);
+            list.appendChild(row);
+          }
+        } catch (e) {
+          failures.push(`seed ${seeds[i]}: ${e.message}`);
+        }
+      }
+
+      btnVoiceVariants.disabled = false;
+      if (ok === 0) {
+        showStatus(`All ${seeds.length} takes failed — ${failures[0] || 'unknown error'}`, 'error');
+      } else if (failures.length) {
+        showStatus(`${ok} of ${seeds.length} takes generated; ${failures.length} failed.`, 'error');
+      } else {
+        showStatus(`✓ ${ok} takes generated — play them below and keep the seed you like.`, 'info');
+      }
+    });
+  }
 
   // --- Init --------------------------------------------------------------
 
@@ -2061,4 +2516,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   renderPresetSelect();
   loadVoices();
   restoreBatch();
+  updateSpeechAnalytics();
+  applyGenParamsToUI(readGenParams());
+  updateEngineParamVisibility();
 })();

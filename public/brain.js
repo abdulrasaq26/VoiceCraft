@@ -71,6 +71,7 @@
       thumbnailText: thumb,
       hook: firstSentence(script),
       topic: (assets && assets.researchTopic && assets.researchTopic()) || (assets && assets.title()) || '',
+      modelsUsed: (assets && assets.modelsUsed && assets.modelsUsed()) || {},
       at: Date.now()
     };
   }
@@ -110,6 +111,12 @@
       };
       if (!rec.title && rec.ctr == null && rec.views == null) return null;
       const b = current();
+      // Join against a learned project by title, so we know which model
+      // generated each task of this video — the input for modelBias().
+      if (rec.title) {
+        const proj = b.projects[rec.title.toLowerCase()];
+        if (proj && proj.modelsUsed) rec.modelsUsed = proj.modelsUsed;
+      }
       b.channel = channelName() || b.channel;
       b.performance.push(rec);
       write(b);
@@ -175,6 +182,60 @@
         avgCtr: allCtr.length ? round(avg(allCtr)) : null,
         avgRet: allRet.length ? round(avg(allRet)) : null
       };
+    },
+
+    // Which model tends to correlate with better CTR, per task — grouped
+    // from performance entries that carry a modelsUsed join (see
+    // logPerformance). Sorted best-CTR-first within each task.
+    modelInsights() {
+      const perf = current().performance;
+      const round = (n) => Math.round(n * 10) / 10;
+      const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+      const byTask = {};
+      perf.forEach((p) => {
+        const mu = p.modelsUsed || {};
+        Object.keys(mu).forEach((task) => {
+          const model = mu[task];
+          if (!model) return;
+          if (!byTask[task]) byTask[task] = new Map();
+          const g = byTask[task].get(model) || { model, n: 0, ctr: [], ret: [] };
+          g.n++;
+          if (p.ctr != null) g.ctr.push(p.ctr);
+          if (p.retention != null) g.ret.push(p.retention);
+          byTask[task].set(model, g);
+        });
+      });
+      const out = {};
+      Object.keys(byTask).forEach((task) => {
+        out[task] = [...byTask[task].values()]
+          .map((g) => ({
+            model: g.model, n: g.n,
+            avgCtr: g.ctr.length ? round(avg(g.ctr)) : null,
+            avgRet: g.ret.length ? round(avg(g.ret)) : null
+          }))
+          .sort((a, b) => (b.avgCtr || 0) - (a.avgCtr || 0));
+      });
+      return out;
+    },
+
+    // A small routing nudge per model for a task, learned from logged CTR.
+    // Requires at least 2 comparably-sampled models before trusting the
+    // signal — with too little data this returns {} (a complete no-op, so
+    // routing matches the unbiased default until real data accumulates).
+    modelBias(task) {
+      const list = this.modelInsights()[task];
+      if (!list || !list.length) return {};
+      const MIN_N = 2, MAX_BIAS = 0.08;
+      const trusted = list.filter((m) => m.n >= MIN_N && m.avgCtr != null);
+      if (trusted.length < 2) return {};
+      const avgAll = trusted.reduce((s, m) => s + m.avgCtr, 0) / trusted.length;
+      if (!avgAll) return {};
+      const bias = {};
+      trusted.forEach((m) => {
+        const rel = (m.avgCtr - avgAll) / avgAll;
+        bias[m.model] = Math.max(-MAX_BIAS, Math.min(MAX_BIAS, rel * MAX_BIAS));
+      });
+      return bias;
     },
 
     // A compact CHANNEL MEMORY block to bias generation prompts.

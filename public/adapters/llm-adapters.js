@@ -1,0 +1,210 @@
+// Modular LLM Provider Adapters for Blvck-TTS v5.1
+// Proxies NVIDIA NIM Gateway requests through server.js to bypass browser CORS / NetworkError
+(() => {
+  'use strict';
+
+  // NVIDIA NIM Gateway Infrastructure Client
+  async function nvidiaNimChat({ model, messages, temperature = 0.7, max_tokens = 1024, onChunk }) {
+    const key = window.ProviderManager.getActiveKey('nim');
+    // Try local proxy first (prevents CORS NetworkError), fallback to direct API
+    const proxyEndpoint = '/api/proxy/nvidia/v1/chat/completions';
+    const directEndpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
+
+    if (!key) {
+      throw new Error('NVIDIA NIM API Key is missing. Please enter your nvapi-... key in Settings.');
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`
+    };
+
+    const targetModel = model || (window.ModelRegistry ? window.ModelRegistry.selectModelForTask('general').selectedModel : 'meta/llama-3.3-70b-instruct');
+
+    const body = {
+      model: targetModel,
+      messages,
+      temperature,
+      max_tokens,
+      stream: typeof onChunk === 'function'
+    };
+
+    let res;
+    try {
+      res = await fetch(proxyEndpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      });
+    } catch (e) {
+      console.warn('[NVIDIA NIM] Local proxy failed, attempting direct fetch:', e);
+      res = await fetch(directEndpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      });
+    }
+
+    if (res.status === 429 || res.status === 401 || res.status === 403) {
+      const errText = await res.text();
+      window.ProviderManager.handleKeyError('nim', `HTTP ${res.status}: ${errText}`);
+      const nextKey = window.ProviderManager.getActiveKey('nim');
+      if (nextKey && nextKey !== key) {
+        headers['Authorization'] = `Bearer ${nextKey}`;
+        res = await fetch(proxyEndpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+      }
+    }
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`NVIDIA NIM Error (${res.status}): ${err}`);
+    }
+
+    if (typeof onChunk === 'function' && res.body) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let fullText = '';
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const json = JSON.parse(trimmed.slice(6));
+              const delta = json.choices?.[0]?.delta?.content || '';
+              if (delta) {
+                fullText += delta;
+                onChunk(delta, fullText);
+              }
+            } catch (e) {}
+          }
+        }
+      }
+      return fullText;
+    } else {
+      const json = await res.json();
+      return json.choices?.[0]?.message?.content || '';
+    }
+  }
+
+  // OpenRouter Gateway Adapter
+  async function openRouterChat({ model, messages, temperature = 0.7, max_tokens, onChunk }) {
+    const key = window.ProviderManager.getActiveKey('openrouter');
+    const endpoint = 'https://openrouter.ai/api/v1';
+
+    if (!key) throw new Error('OpenRouter API Key is missing.');
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+      'HTTP-Referer': window.location.origin,
+      'X-Title': 'Blvck-TTS'
+    };
+
+    const res = await fetch(`${endpoint}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: model || 'openai/gpt-4o-mini',
+        messages,
+        temperature,
+        max_tokens
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      window.ProviderManager.handleKeyError('openrouter', `HTTP ${res.status}: ${err}`);
+      throw new Error(`OpenRouter Error (${res.status}): ${err}`);
+    }
+
+    const json = await res.json();
+    return json.choices?.[0]?.message?.content || '';
+  }
+
+  // Ollama Local Adapter
+  async function ollamaChat({ model = 'qwen2.5', messages, temperature = 0.7 }) {
+    const endpoint = 'http://localhost:11434/v1';
+    const res = await fetch(`${endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: model || 'qwen2.5',
+        messages,
+        temperature
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Ollama Local Error (${res.status}): ${err}`);
+    }
+
+    const json = await res.json();
+    return json.choices?.[0]?.message?.content || '';
+  }
+
+  // OpenAI OAuth Proxy Adapter (ChatGPT Free/Plus Account via npx openai-oauth)
+  async function openaiOauthChat({ model = 'gpt-4o', messages, temperature = 0.7, max_tokens = 1024, onChunk }) {
+    const PM = window.ProviderManager;
+    const ep = (PM && PM.getPoolState('openai_oauth')?.endpoint) || 'http://127.0.0.1:10531/v1';
+    const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : 'http://localhost:3000';
+    const proxyEndpoint = `${origin}/api/proxy/openai-oauth/chat/completions`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-openai-oauth-endpoint': ep
+    };
+
+    const targetModel = (model && !model.includes('/')) ? model : 'gpt-4o';
+    const body = {
+      model: targetModel,
+      messages,
+      temperature,
+      max_tokens,
+      stream: typeof onChunk === 'function'
+    };
+
+    let res;
+    try {
+      res = await fetch(proxyEndpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      });
+    } catch (e) {
+      console.warn('[OpenAI OAuth] Proxy failed, attempting direct fetch:', e);
+      try {
+        res = await fetch(`${ep}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      } catch (err2) {
+        throw new Error(`OpenAI OAuth server unreachable at ${ep}. Make sure "npx openai-oauth" is running.`);
+      }
+    }
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenAI OAuth Error (${res.status}): ${err}\n\nMake sure "npx openai-oauth" is running in your terminal.`);
+    }
+
+    const json = await res.json();
+    return json.choices?.[0]?.message?.content || json.choices?.[0]?.delta?.content || '';
+  }
+
+  window.LLMAdapters = {
+    nvidiaNimChat,
+    openRouterChat,
+    ollamaChat,
+    openaiOauthChat
+  };
+})();

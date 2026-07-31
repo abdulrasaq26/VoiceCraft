@@ -1,0 +1,76 @@
+const fs = require('fs');
+const path = 'C:/Users/abdul/.gemini/antigravity/scratch/Blvck-TTS/AETHER_FishSpeech_Colab.ipynb';
+const nb = JSON.parse(fs.readFileSync(path, 'utf8'));
+
+let targetCell = nb.cells.find(c => c.cell_type === 'code' && c.source.some(line => line.includes('Premium Voice Pack')));
+
+if (targetCell) {
+    targetCell.source = [
+        'import os\n',
+        'import requests\n',
+        '\n',
+        'print("🎙️ Downloading AETHERSTUDIO Premium Voice Pack (10 Ultra-Quality Human Voices)...")\n',
+        '\n',
+        'voices = {\n',
+        '    "JFK_Presidential": {\n',
+        '        "url": "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/jfk.wav",\n',
+        '        "text": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country."\n',
+        '    },\n',
+        '    "MLK_Historical": {\n',
+        '        "url": "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/mlk.wav",\n',
+        '        "text": "I have a dream that one day this nation will rise up and live out the true meaning of its creed."\n',
+        '    },\n',
+        '    "Professional_Female": {\n',
+        '        "url": "https://raw.githubusercontent.com/coqui-ai/TTS/dev/tests/data/ljspeech/wavs/LJ001-0001.wav",\n',
+        '        "text": "Printing, in the only sense with which we are at present concerned, differs from most if not from all the arts and crafts represented in the Exhibition"\n',
+        '    },\n',
+        '    "XTTS_Male_1": {\n',
+        '        "url": "https://huggingface.co/spaces/coqui/xtts/resolve/main/examples/male.wav",\n',
+        '        "text": "When I wake up, I expect a coffee ready and waiting for me."\n',
+        '    },\n',
+        '    "XTTS_Female_1": {\n',
+        '        "url": "https://huggingface.co/spaces/coqui/xtts/resolve/main/examples/female.wav",\n',
+        '        "text": "This is a great day to learn something new about artificial intelligence."\n',
+        '    },\n',
+        '    "TED_Talk_Speaker": {\n',
+        '        "url": "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/ted_60_16k.wav",\n',
+        '        "text": "Today I want to share with you a story about the future of technology."\n',
+        '    },\n',
+        '    "OpenVoice_Speaker_0": {\n',
+        '        "url": "https://raw.githubusercontent.com/myshell-ai/OpenVoice/main/resources/demo_speaker0.mp3",\n',
+        '        "text": "I am a high quality human reference voice used for cloning."\n',
+        '    },\n',
+        '    "OpenVoice_Speaker_1": {\n',
+        '        "url": "https://raw.githubusercontent.com/myshell-ai/OpenVoice/main/resources/demo_speaker1.mp3",\n',
+        '        "text": "I am a high quality human reference voice used for cloning."\n',
+        '    },\n',
+        '    "OpenVoice_Speaker_2": {\n',
+        '        "url": "https://raw.githubusercontent.com/myshell-ai/OpenVoice/main/resources/demo_speaker2.mp3",\n',
+        '        "text": "I am a high quality human reference voice used for cloning."\n',
+        '    },\n',
+        '    "French_Speaker": {\n',
+        '        "url": "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/french-audio.wav",\n',
+        '        "text": "Bonjour, je suis une voix française de haute qualité."\n',
+        '    }\n',
+        '}\n',
+        '\n',
+        'for voice_id, data in voices.items():\n',
+        '    os.makedirs(f"/content/fish-speech/references/{voice_id}", exist_ok=True)\n',
+        '    wav_path = f"/content/fish-speech/references/{voice_id}/audio.wav"\n',
+        '    if not os.path.exists(wav_path):\n',
+        '        print(f"Downloading {voice_id}...")\n',
+        '        with open(wav_path, "wb") as f:\n',
+        '            f.write(requests.get(data["url"]).content)\n',
+        '    \n',
+        '    lab_path = f"/content/fish-speech/references/{voice_id}/audio.lab"\n',
+        '    with open(lab_path, "w", encoding="utf-8") as f:\n',
+        '        f.write(data["text"])\n',
+        '    \n',
+        '    print(f"✅ {voice_id} installed!")\n',
+        '\n',
+        'print("🎉 All 10 voices installed! Restart the API Server cell below!")\n'
+    ];
+}
+
+fs.writeFileSync(path, JSON.stringify(nb, null, 1), 'utf8');
+console.log('Notebook updated successfully via Node with 10 voices.');
