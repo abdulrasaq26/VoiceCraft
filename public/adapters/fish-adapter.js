@@ -147,11 +147,17 @@
 
     // Split text into safe chunk sizes to prevent GPU OOM on 16GB cards.
     //
-    // 200 was too high on a 15 GB T4. Generation finishes with only tens of MiB
-    // spare and the DAC decode then needs ~70-85 MiB, so ~170-190 character
-    // chunks (≈200 generated tokens) reliably OOM at the decode step while
-    // short ones succeed. 140 keeps generations near the length that works.
-    const MAX_CHUNK_CHARS = Math.max(60, Math.min(400, Number(params.maxChunkChars) || 140));
+    // On a 15 GB T4 the engine OOMs past roughly 180 GENERATED tokens, and
+    // character count predicts that badly: measured on real runs, 121/145/148/
+    // 158/171-token generations succeeded while 189/193/194/199 failed — yet
+    // the 199-token failure came from a 113-character line and the 145-token
+    // success from a 139-character one. Pause markers are the reason: "..."
+    // and ",.." become long silences that cost tokens.
+    //
+    // So this is only a first guess. renderOne() below halves and retries any
+    // chunk the GPU actually rejects, which is what makes long scripts work
+    // regardless of how pause-heavy they are.
+    const MAX_CHUNK_CHARS = Math.max(60, Math.min(400, Number(params.maxChunkChars) || 120));
     const splitIntoChunks = (text) => {
       const out = [];
       let cur = '';
@@ -188,14 +194,28 @@
     const gen = buildGenParams(params);
     const allAudioBuffers = [];
 
-    for (let i = 0; i < work.length; i++) {
-      const item = work[i];
-      if (onProgress) {
-        onProgress(item.style
-          ? `Generating part ${i + 1} of ${work.length} (${item.style})...`
-          : `Generating part ${i + 1} of ${work.length}...`);
+    // Split a chunk roughly in half on a sentence, then clause, then word
+    // boundary — whichever exists — so a retry never cuts mid-word.
+    const halve = (text) => {
+      const t = String(text).trim();
+      if (t.length < 24) return null;
+      const mid = Math.floor(t.length / 2);
+      for (const re of [/[.!?]\s+/g, /[,;:]\s+/g, /\s+/g]) {
+        let best = -1, m;
+        re.lastIndex = 0;
+        while ((m = re.exec(t)) !== null) {
+          const end = m.index + m[0].length;
+          if (best === -1 || Math.abs(end - mid) < Math.abs(best - mid)) best = end;
+        }
+        if (best > 8 && best < t.length - 8) return [t.slice(0, best).trim(), t.slice(best).trim()];
       }
+      return null;
+    };
 
+    const isOom = (status, body) =>
+      status === 500 && /out of memory|CUDA|Failed to generate speech/i.test(String(body));
+
+    async function renderOne(item, depth = 0) {
       const payload = { text: item.text, format: 'mp3', ...gen };
       if (item.reference_id && item.reference_id !== 'default') {
         payload.reference_id = item.reference_id;
@@ -209,13 +229,39 @@
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Fish Audio API error (${res.status}): ${err}`);
-      }
+      if (res.ok) return [await res.arrayBuffer()];
 
-      const buffer = await res.arrayBuffer();
-      allAudioBuffers.push(buffer);
+      const err = await res.text();
+
+      // The engine OOMs as a function of GENERATED tokens, not input length,
+      // and the two correlate poorly: pause markers ("...", ",..") become long
+      // silences that cost many tokens, so a 113-character line can generate
+      // more than a 139-character one. No fixed character limit can be right
+      // for every script, so shrink the failing chunk and retry instead of
+      // failing the whole run.
+      if (isOom(res.status, err) && depth < 3) {
+        const parts = halve(item.text);
+        if (parts) {
+          if (onProgress) onProgress(`Chunk too large for the GPU — splitting and retrying…`);
+          const out = [];
+          for (const p of parts) {
+            if (!p) continue;
+            out.push(...await renderOne({ ...item, text: p }, depth + 1));
+          }
+          return out;
+        }
+      }
+      throw new Error(`Fish Audio API error (${res.status}): ${err}`);
+    }
+
+    for (let i = 0; i < work.length; i++) {
+      const item = work[i];
+      if (onProgress) {
+        onProgress(item.style
+          ? `Generating part ${i + 1} of ${work.length} (${item.style})...`
+          : `Generating part ${i + 1} of ${work.length}...`);
+      }
+      allAudioBuffers.push(...await renderOne(item));
     }
 
     if (onProgress) onProgress('Finalizing audio...');
