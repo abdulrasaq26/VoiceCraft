@@ -97,6 +97,11 @@
                  // as a real style rather than labelling everything 'narration'.
                  const p = VS ? VS.parseId(v.id) : { speaker: v.id, style: null };
                  const isDefault = v.name === 'Fish Audio (Default Base Model)';
+                 // Fish tells us nothing but the id, so gender/style are read
+                 // from the name where it actually encodes them. Without this
+                 // every voice was NEUTRAL/narration and the picker's gender
+                 // and style filters could never match anything.
+                 const t = VS ? VS.inferTraits(v.id) : { gender: 'NEUTRAL', styles: ['narration'] };
                  return {
                    id: v.id,
                    name: p.style && VS ? `${VS.titleCase(p.speaker)} — ${VS.titleCase(p.style)}` : v.name,
@@ -108,10 +113,10 @@
                    family: isDefault ? 'Fish Audio' : (VS ? VS.titleCase(p.speaker) : 'Fish Audio'),
                    speaker: p.speaker,
                    style: p.style,
-                   gender: 'NEUTRAL',
+                   gender: t.gender,
                    accent: 'Neutral',
                    age: '',
-                   styles: p.style ? [p.style] : ['narration'],
+                   styles: t.styles,
                    language: 'en-US',
                    languageCodes: ['en-US']
                  };

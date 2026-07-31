@@ -117,6 +117,10 @@
     if (p.chunk_length != null) out.chunk_length = Math.round(clamp(p.chunk_length, 100, 1000, 200));
     if (p.max_new_tokens != null) out.max_new_tokens = Math.round(clamp(p.max_new_tokens, 128, 4096, 1024));
     if (p.normalize != null) out.normalize = !!p.normalize;
+    // On by default: the server re-encodes the reference clip on every single
+    // request otherwise (visible as "Loaded audio ... Encoded prompt" per call),
+    // which wastes VRAM churn on a card that has tens of MiB to spare.
+    out.use_memory_cache = p.use_memory_cache === 'off' ? 'off' : 'on';
     if (p.seed != null && p.seed !== '') {
       const s = parseInt(p.seed, 10);
       if (Number.isFinite(s)) out.seed = s;
@@ -141,12 +145,18 @@
       throw new Error('Fish Audio API key is required for the official endpoint.');
     }
 
-    // Split text into safe chunk sizes to prevent GPU OOM on 16GB cards
+    // Split text into safe chunk sizes to prevent GPU OOM on 16GB cards.
+    //
+    // 200 was too high on a 15 GB T4. Generation finishes with only tens of MiB
+    // spare and the DAC decode then needs ~70-85 MiB, so ~170-190 character
+    // chunks (≈200 generated tokens) reliably OOM at the decode step while
+    // short ones succeed. 140 keeps generations near the length that works.
+    const MAX_CHUNK_CHARS = Math.max(60, Math.min(400, Number(params.maxChunkChars) || 140));
     const splitIntoChunks = (text) => {
       const out = [];
       let cur = '';
       for (const s of String(text).split(/(?<=[.!?\n])\s+/)) {
-        if ((cur.length + s.length) > 200) {
+        if ((cur.length + s.length) > MAX_CHUNK_CHARS) {
           if (cur) out.push(cur);
           cur = s;
         } else {
