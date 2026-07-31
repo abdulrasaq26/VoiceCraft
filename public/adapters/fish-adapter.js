@@ -127,7 +127,10 @@
   // Generate TTS via Fish Speech /v1/tts endpoint with chunk streaming.
   // `params` maps onto ServeTTSRequest; note there is deliberately no `speed`
   // — the engine has no such parameter (see docs/FISH_VOICE_STUDIO_SPEC.md).
-  async function textToSpeech({ input, voice = 'default', params = {}, onProgress }) {
+  // `segments` (optional) is [{text, reference_id}] from BlvckVoiceStyles —
+  // per-passage emotion, where each stretch of script is voiced by a different
+  // reference of the same speaker. When absent the whole script uses `voice`.
+  async function textToSpeech({ input, voice = 'default', params = {}, segments = null, onProgress }) {
     if (!input || !input.trim()) return null;
 
     const ep = getFishEndpoint();
@@ -139,28 +142,53 @@
     }
 
     // Split text into safe chunk sizes to prevent GPU OOM on 16GB cards
-    const textChunks = [];
-    let currentChunk = '';
-    const sentences = input.split(/(?<=[.!?\n])\s+/);
-    for (const s of sentences) {
-       if ((currentChunk.length + s.length) > 200) {
-          if (currentChunk) textChunks.push(currentChunk);
-          currentChunk = s;
-       } else {
-          currentChunk += (currentChunk ? ' ' : '') + s;
-       }
+    const splitIntoChunks = (text) => {
+      const out = [];
+      let cur = '';
+      for (const s of String(text).split(/(?<=[.!?\n])\s+/)) {
+        if ((cur.length + s.length) > 200) {
+          if (cur) out.push(cur);
+          cur = s;
+        } else {
+          cur += (cur ? ' ' : '') + s;
+        }
+      }
+      if (cur.trim()) out.push(cur.trim());
+      return out;
+    };
+
+    // Each chunk carries the reference it should be voiced with, so a script
+    // using per-passage emotion switches reference mid-run while a plain one
+    // behaves exactly as before.
+    // Last guard before the wire: any bracket marker still present here was not
+    // resolved into a reference (unknown style, or a speaker with no variants),
+    // and Fish has no tag parser — it would speak the word. Strip it.
+    const deTag = (t) => String(t).replace(/\[[^\]\n]{1,40}\]/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+
+    const work = [];
+    const passages = (segments && segments.length) ? segments : [{ text: input, reference_id: voice }];
+    for (const seg of passages) {
+      for (const chunk of splitIntoChunks(deTag(seg.text))) {
+        if (!chunk.trim()) continue;
+        work.push({ text: chunk, reference_id: seg.reference_id || voice, style: seg.style || null });
+      }
     }
-    if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+    if (!work.length) return null;
 
     const gen = buildGenParams(params);
     const allAudioBuffers = [];
 
-    for (let i = 0; i < textChunks.length; i++) {
-      if (onProgress) onProgress(`Generating part ${i+1} of ${textChunks.length}...`);
-      
-      const payload = { text: textChunks[i], format: 'mp3', ...gen };
-      if (voice && voice !== 'default') {
-        payload.reference_id = voice;
+    for (let i = 0; i < work.length; i++) {
+      const item = work[i];
+      if (onProgress) {
+        onProgress(item.style
+          ? `Generating part ${i + 1} of ${work.length} (${item.style})...`
+          : `Generating part ${i + 1} of ${work.length}...`);
+      }
+
+      const payload = { text: item.text, format: 'mp3', ...gen };
+      if (item.reference_id && item.reference_id !== 'default') {
+        payload.reference_id = item.reference_id;
       }
       // A fixed seed must stay fixed across chunks, otherwise each chunk is a
       // different take and the delivery drifts mid-script.

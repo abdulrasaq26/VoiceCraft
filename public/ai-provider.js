@@ -345,10 +345,23 @@
           // No speed/instructions: Fish Speech has neither parameter. Passing
           // them was silently doing nothing. `params` carries the real
           // ServeTTSRequest fields (temperature, top_p, seed, ...).
+          // Resolve [style] markers into per-passage reference ids here, so the
+          // engine only ever receives plain text plus a reference. It has no
+          // tag parser and would otherwise read the marker aloud.
+          let segments = options.segments || null;
+          if (!segments && window.BlvckVoiceStyles && window.getTtsProvider) {
+            try {
+              const catalog = window.getTtsProvider('fishaudio').voices() || [];
+              if (window.BlvckVoiceStyles.hasVariants(voice, catalog)) {
+                segments = window.BlvckVoiceStyles.segmentScript(text, voice, catalog);
+              }
+            } catch { /* fall through to a single-reference run */ }
+          }
           const audioUrl = await window.FishAdapter.textToSpeech({
             input: text,
             voice,
             params: options.params || {},
+            segments,
             onProgress: options.onProgress
           });
           if (audioUrl) return await urlToBlob(audioUrl);

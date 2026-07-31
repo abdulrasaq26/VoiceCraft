@@ -90,21 +90,32 @@
         if (window.FishAdapter && window.FishAdapter.listVoices) {
            const adapterVoices = window.FishAdapter.listVoices();
            if (adapterVoices && adapterVoices.length > 0) {
-              return adapterVoices.map(v => ({
-                 id: v.id,
-                 name: v.name,
-                 descriptor: v.name === 'Fish Audio (Default Base Model)' ? 'Default base model' : 'Custom Cloned Voice',
-                 tier: v.grade === 'A' ? 'elite' : 'premium',
-                 tierLabel: v.grade === 'A' ? 'Elite' : 'Premium',
-                 badge: v.grade === 'A' ? '⭐ Elite' : 'Premium',
-                 family: 'Fish Audio',
-                 gender: 'NEUTRAL',
-                 accent: 'Neutral',
-                 age: '',
-                 styles: ['narration'],
-                 language: 'en-US',
-                 languageCodes: ['en-US']
-              }));
+              const VS = window.BlvckVoiceStyles;
+              return adapterVoices.map(v => {
+                 // `Speaker__style` references are emotional variants of one
+                 // speaker, so surface the speaker as the family and the style
+                 // as a real style rather than labelling everything 'narration'.
+                 const p = VS ? VS.parseId(v.id) : { speaker: v.id, style: null };
+                 const isDefault = v.name === 'Fish Audio (Default Base Model)';
+                 return {
+                   id: v.id,
+                   name: p.style && VS ? `${VS.titleCase(p.speaker)} — ${VS.titleCase(p.style)}` : v.name,
+                   descriptor: isDefault ? 'Default base model'
+                     : p.style && VS ? `${VS.titleCase(p.style)} delivery` : 'Custom Cloned Voice',
+                   tier: v.grade === 'A' ? 'elite' : 'premium',
+                   tierLabel: v.grade === 'A' ? 'Elite' : 'Premium',
+                   badge: v.grade === 'A' ? '⭐ Elite' : 'Premium',
+                   family: isDefault ? 'Fish Audio' : (VS ? VS.titleCase(p.speaker) : 'Fish Audio'),
+                   speaker: p.speaker,
+                   style: p.style,
+                   gender: 'NEUTRAL',
+                   accent: 'Neutral',
+                   age: '',
+                   styles: p.style ? [p.style] : ['narration'],
+                   language: 'en-US',
+                   languageCodes: ['en-US']
+                 };
+              });
            }
         }
         return FISHAUDIO;

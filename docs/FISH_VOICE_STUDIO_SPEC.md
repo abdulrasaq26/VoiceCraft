@@ -1,7 +1,16 @@
 # Fish Voice Studio — implementation spec (self-hosted Fish Speech S2 Pro)
 
-Status: proposed, not started.
+Status: **all five phases implemented.** Kept as the record of what the engine
+does and does not support, and why each control exists.
 Target engine: **self-hosted** `fish-speech` S2 Pro via the Kaggle/ngrok tunnel.
+
+| Phase | Status |
+|---|---|
+| 4 — rename + retune Speech Director | done (`964c6bd`) |
+| 2 — real generation parameters | done (`aabacf6`) |
+| 1 — Voice Cloning Studio | done (`4408538`) |
+| 5 — preview selection + review | done (`6328760`) |
+| 3 — multi-reference emotion | done |
 
 ## Why this document exists
 

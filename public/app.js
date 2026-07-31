@@ -920,6 +920,23 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       voices.forEach((v) => voiceList.appendChild(voiceRow(v)));
     };
 
+    // When a speaker has emotional variants, group by speaker so the list
+    // reads as "one voice, several deliveries" rather than N unrelated voices.
+    const VS = window.BlvckVoiceStyles;
+    const grouped = VS ? VS.groupBySpeaker(listToRender) : [];
+    const multi = grouped.filter((g) => g.variants.length > 1 && g.variants.some((x) => x.style));
+    if (multi.length) {
+      const inGroups = new Set();
+      multi.forEach((g) => {
+        appendSection(`🎭 ${VS.titleCase(g.speaker)} — ${g.variants.length} deliveries`,
+          g.variants.map((x) => x.voice));
+        g.variants.forEach((x) => inGroups.add(x.id));
+      });
+      const rest = listToRender.filter((v) => !inGroups.has(v.id));
+      appendSection('⭐ Available Voices', rest);
+      return;
+    }
+
     appendSection('⭐ Available Voices', listToRender);
   }
 
@@ -2194,6 +2211,8 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     if (elPauses) elPauses.textContent = stats.pauseCount;
     if (elVoice) elVoice.textContent = activeVoice;
 
+    renderDeliveryStyles();
+
     const elAvg = document.getElementById('stat-avg-sentence');
     const elRun = document.getElementById('stat-longest-run');
     if (elAvg) elAvg.textContent = `${stats.avgSentenceWords} words`;
@@ -2234,6 +2253,52 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     });
   }
   if (textInput) textInput.addEventListener('input', updateSpeechAnalytics);
+
+  // --- Per-passage delivery styles ---------------------------------------
+  // Only meaningful when the selected speaker has sibling references
+  // (Speaker__style). Markers are resolved app-side into reference ids.
+  function renderDeliveryStyles() {
+    const panel = document.getElementById('delivery-styles-panel');
+    const list = document.getElementById('delivery-styles-list');
+    const speakerEl = document.getElementById('delivery-speaker');
+    const usageEl = document.getElementById('delivery-usage');
+    const VS = window.BlvckVoiceStyles;
+    if (!panel || !list || !VS) return;
+
+    const v = currentVoice();
+    const styles = v ? VS.styleMapFor(v.id, allVoices) : {};
+    const names = Object.keys(styles);
+    if (!v || names.length < 2) { panel.hidden = true; return; }
+
+    panel.hidden = false;
+    if (speakerEl) speakerEl.textContent = `· ${VS.titleCase(VS.parseId(v.id).speaker)}`;
+
+    list.innerHTML = '';
+    names.sort().forEach((style) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ghost small';
+      b.textContent = `[${style}]`;
+      b.title = `Voice the following passage with ${VS.titleCase(style)}`;
+      b.addEventListener('click', () => {
+        if (!textInput) return;
+        const marker = `[${style}] `;
+        const at = textInput.selectionStart ?? textInput.value.length;
+        textInput.value = textInput.value.slice(0, at) + marker + textInput.value.slice(at);
+        textInput.focus();
+        textInput.setSelectionRange(at + marker.length, at + marker.length);
+        textInput.dispatchEvent(new Event('input'));
+      });
+      list.appendChild(b);
+    });
+
+    if (usageEl && textInput) {
+      const segs = VS.segmentScript(textInput.value, v.id, allVoices);
+      usageEl.textContent = segs.length > 1
+        ? `${segs.length} passages: ${segs.map((s) => s.style || 'base').join(' → ')}`
+        : 'No markers yet — the whole script uses the selected voice.';
+    }
+  }
 
   // --- Narration review (before/after) -----------------------------------
   let pendingNarration = null;

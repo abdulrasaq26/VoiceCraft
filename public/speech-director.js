@@ -14,13 +14,33 @@
   // literally by every engine we support, so they are stripped before the text
   // can reach synthesis. Bounded to short spans so ordinary bracketed prose is
   // left alone.
-  function stripPerformanceTags(text) {
+  // `keep` names markers that ARE meaningful to us — the emotion styles in
+  // voice-styles.js, which the app resolves into per-passage reference ids
+  // before synthesis. Those must survive; everything else in brackets is a tag
+  // no engine understands and is removed.
+  function stripPerformanceTags(text, keep) {
     if (!text) return '';
+    const keepSet = new Set((keep || []).map((k) => String(k).toLowerCase()));
     return String(text)
-      .replace(/\[[^\]\n]{1,40}\]/g, '')
+      .replace(/\[([^\]\n]{1,40})\]/g, (m, inner) =>
+        keepSet.has(String(inner).trim().toLowerCase()) ? m : '')
       .replace(/[ \t]{2,}/g, ' ')
       .replace(/ +([,.!?;:])/g, '$1')
       .trim();
+  }
+
+  // Styles of the currently selected voice, so the narration pass does not
+  // destroy markers the user deliberately placed.
+  function activeStyleNames() {
+    try {
+      const VS = window.BlvckVoiceStyles;
+      if (!VS || !window.BlvckAI || !window.getTtsProvider) return [];
+      const provider = window.getTtsProvider(window.BlvckAI.ttsProvider());
+      if (!provider || !provider.caps || !provider.caps.cloning) return [];
+      const catalog = provider.voices() || [];
+      const settings = JSON.parse(localStorage.getItem('blvck-tts:settings') || '{}');
+      return Object.keys(VS.styleMapFor(settings.voiceId || '', catalog));
+    } catch { return []; }
   }
 
   // Number & Date Naturalizer
@@ -78,7 +98,7 @@
   function generateProsodyPauses(script, style = 'documentary', intensityPercent = 50) {
     if (!script) return '';
     // Never let a pasted performance tag survive into synthesis.
-    let text = stripPerformanceTags(String(script).trim());
+    let text = stripPerformanceTags(String(script).trim(), activeStyleNames());
 
     const intensity = Math.max(0, Math.min(100, intensityPercent)) / 100;
 
@@ -126,7 +146,7 @@
       naturalizeCurrencies = true
     } = options;
 
-    let processed = stripPerformanceTags(script);
+    let processed = stripPerformanceTags(script, activeStyleNames());
 
     if (naturalizeDates || naturalizeCurrencies) {
       processed = naturalizeNumbersAndDates(processed);
