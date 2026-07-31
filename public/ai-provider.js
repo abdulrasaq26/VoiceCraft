@@ -395,6 +395,19 @@
     throw new Error('No working TTS provider available.');
   }
 
+  // Quality guardrails every Stable Diffusion request should carry. A caller's
+  // style negatives are ADDED to these, not swapped for them: passing
+  // `options.negative_prompt || ''` used to hand the adapter an empty string
+  // whenever no style negative existed, silently discarding its own defaults.
+  const SD_BASE_NEGATIVE = 'watermark, text, signature, blurry, deformed, worst quality, low quality, jpeg artifacts';
+
+  function mergeNegative(extra) {
+    const parts = [SD_BASE_NEGATIVE];
+    const e = String(extra || '').trim();
+    if (e) parts.push(e);
+    return parts.join(', ');
+  }
+
   // Image Generation Router — Local Stable Diffusion (Uncensored Local Studio)
   async function generateImage(promptOrOptions = {}, aspect_ratio = '16:9', extraOpts = {}) {
     let options = {};
@@ -474,6 +487,26 @@
       }
     }
 
+    // 1.9 Explicitly-chosen local Stable Diffusion.
+    // This has to run BEFORE the unconditional Cloudflare fallback below.
+    // Choosing local_sd previously still sent every prompt to Cloudflare SDXL
+    // first, reaching the local machine only if Cloudflare happened to fail —
+    // so the chosen engine, and its models, samplers and seeds, was bypassed.
+    if ((activeImgProvider === 'local_sd' || options.model === 'local_sd') && window.StableDiffusionAdapter) {
+      return await window.StableDiffusionAdapter.generateImage({
+        prompt: enrichedPrompt,
+        negative_prompt: mergeNegative(options.negative_prompt),
+        aspect_ratio: options.aspect_ratio || aspect_ratio || '16:9',
+        steps: options.steps,
+        cfg_scale: options.cfg_scale,
+        sampler: options.sampler,
+        seed: options.seed,
+        model: null,
+        width: options.width,
+        height: options.height
+      });
+    }
+
     // 2. Secondary: Cloudflare Worker AI (SDXL Base 1.0)
     if (window.ImageAdapters && window.ImageAdapters.cloudflareWorkerGenerateImage) {
       try {
@@ -490,7 +523,7 @@
       try {
         return await window.StableDiffusionAdapter.generateImage({
           prompt: enrichedPrompt,
-          negative_prompt: options.negative_prompt || '',
+          negative_prompt: mergeNegative(options.negative_prompt),
           aspect_ratio: options.aspect_ratio || aspect_ratio || '16:9',
           steps: options.steps,
           cfg_scale: options.cfg_scale,

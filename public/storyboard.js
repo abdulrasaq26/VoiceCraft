@@ -540,11 +540,14 @@
       if (!finalPrompt.toLowerCase().includes(styled.slice(0, 24).toLowerCase())) {
         finalPrompt = `${finalPrompt}. Visual style: ${styled}`;
       }
-      const neg = styleNegative(bible && bible.visualStyle);
-      if (neg) finalPrompt = `${finalPrompt}. Avoid: ${neg}`;
     } else if (styleEl && styleEl.value && styleEl.value !== 'auto') {
       finalPrompt = `${finalPrompt}. Visual style: ${styleEl.value}`;
     }
+    // The style's negatives go to the engine's own negative_prompt where one
+    // exists (Stable Diffusion, SDXL). They must NOT be appended to the
+    // positive prompt: writing "avoid sepia, film grain" there describes those
+    // things to the sampler and makes them MORE likely, not less.
+    const negative = styleNegative(bible && bible.visualStyle);
 
     if (sceneAssetType(scene) === 'video') {
       return window.BlvckAI.generateVideo(finalPrompt, { seconds: 5, size: '1280x720' });
@@ -552,7 +555,8 @@
     const imageUrl = sceneReference(scene);
     return window.BlvckAI.generateImage(finalPrompt, ASPECT, {
       ...(imageUrl ? { imageUrl } : {}),
-      seed: sceneSeed(scene)
+      seed: sceneSeed(scene),
+      negative_prompt: negative || undefined
     });
   }
 
