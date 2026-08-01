@@ -529,9 +529,19 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       // ElevenLabs has no per-request speaking-rate; assume 1× for estimation.
       const rate = 1;
       const segments = [];
+      // ONLY the parts that actually rendered. The exported audio is a
+      // concatenation of the done items, so counting a failed part here gave
+      // it an estimated slice of the timeline that no audio occupies — every
+      // cue after it then ran early by that amount, and because the storyboard
+      // takes its scene timings from these cues, the pictures drifted too.
+      // One failed part was enough to desync a whole video.
       for (const item of batch.items) {
+        if (item.status !== 'done') continue;
         const blob = memBlobs.get(item.index);
         let dur = blob ? await audioDuration(blob) : 0;
+        // A done part with no decodable blob still occupies real time in the
+        // export, so estimate rather than drop it — dropping would desync in
+        // the other direction.
         if (!dur) dur = estimateDurationSec(item.text, rate);
         segments.push({ text: item.text, durationSec: dur });
       }
