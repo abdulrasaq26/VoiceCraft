@@ -236,10 +236,250 @@
     }
   }
 
+  // --- data beats ----------------------------------------------------------
+
+  // Accepts either ["2019: 40", "2020: 65"] or [{label, value}]. The string form
+  // is what a language model reliably produces, so it has to be first-class.
+  function parseSeries(items) {
+    return (Array.isArray(items) ? items : [])
+      .map((it) => {
+        if (it && typeof it === 'object') {
+          return { label: String(it.label || ''), value: Number(it.value) };
+        }
+        const s = String(it || '');
+        const m = s.match(/^(.*?)[:–-]\s*([-+]?[\d.,]+)\s*(.*)$/);
+        if (!m) return { label: s, value: NaN };
+        return {
+          label: m[1].trim(),
+          value: Number(String(m[2]).replace(/,/g, '')),
+          suffix: (m[3] || '').trim()
+        };
+      })
+      .filter((d) => d.label || Number.isFinite(d.value));
+  }
+
+  function headline(ctx, t, text, y) {
+    if (!text) return y;
+    ctx.fillStyle = t.ink;
+    ctx.font = `800 56px ${FONT}`;
+    const lines = wrap(ctx, text, W - 200).slice(0, 2);
+    lines.forEach((l, i) => ctx.fillText(l, 100, y + i * 64));
+    return y + lines.length * 64;
+  }
+
+  // Bar chart. Deliberately plain: a documentary chart's job is to make one
+  // comparison obvious in two seconds, not to be a dashboard.
+  function drawChart(ctx, t, spec) {
+    const data = parseSeries(spec.items).filter((d) => Number.isFinite(d.value));
+    let y = headline(ctx, t, spec.title, 120);
+    if (!data.length) {
+      ctx.fillStyle = t.dim;
+      ctx.font = `500 34px ${FONT}`;
+      ctx.fillText('No numeric data supplied for this chart.', 100, y + 70);
+      return;
+    }
+
+    const top = y + 60;
+    const bottom = H - 150;
+    const plotH = bottom - top;
+    const max = Math.max(...data.map((d) => d.value));
+    const min = Math.min(0, ...data.map((d) => d.value));
+    const span = (max - min) || 1;
+    const n = data.length;
+    const gap = 28;
+    const barW = Math.min(150, (W - 200 - gap * (n - 1)) / n);
+    const totalW = barW * n + gap * (n - 1);
+    const x0 = (W - totalW) / 2;
+
+    // Baseline
+    ctx.strokeStyle = t.rule;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(100, bottom);
+    ctx.lineTo(W - 100, bottom);
+    ctx.stroke();
+
+    data.forEach((d, i) => {
+      const h = Math.max(4, ((d.value - min) / span) * (plotH - 40));
+      const x = x0 + i * (barW + gap);
+      const yTop = bottom - h;
+      // The last bar is the payoff in most comparisons; give it the accent and
+      // mute the rest so the eye lands in the right place.
+      ctx.fillStyle = i === n - 1 ? t.accent : t.rule;
+      roundRect(ctx, x, yTop, barW, h, 8);
+      ctx.fill();
+
+      ctx.fillStyle = t.ink;
+      ctx.font = `800 34px ${FONT}`;
+      const v = String(d.value) + (d.suffix ? d.suffix : '');
+      const vw = ctx.measureText(v).width;
+      ctx.fillText(v, x + (barW - vw) / 2, yTop - 16);
+
+      ctx.fillStyle = t.dim;
+      ctx.font = `500 28px ${FONT}`;
+      const lw = ctx.measureText(d.label).width;
+      ctx.fillText(d.label, x + (barW - lw) / 2, bottom + 44);
+    });
+  }
+
+  // Timeline. Items are "1914: War begins" style; the date is the left column.
+  function drawTimeline(ctx, t, spec) {
+    const rows = parseSeries(spec.items).length
+      ? (Array.isArray(spec.items) ? spec.items : [])
+      : [];
+    const items = rows
+      .map((it) => {
+        const s = String(it || '');
+        const m = s.match(/^(.*?)[:–-]\s*(.*)$/);
+        return m ? { when: m[1].trim(), what: m[2].trim() } : { when: '', what: s };
+      })
+      .slice(0, 6);
+
+    headline(ctx, t, spec.title, 110);
+    if (!items.length) return;
+
+    const top = 250;
+    const step = Math.min(110, (H - top - 90) / items.length);
+    const railX = 300;
+
+    ctx.strokeStyle = t.rule;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(railX, top - 20);
+    ctx.lineTo(railX, top + step * (items.length - 1) + 30);
+    ctx.stroke();
+
+    items.forEach((d, i) => {
+      const y = top + i * step;
+      ctx.fillStyle = t.accent;
+      ctx.beginPath();
+      ctx.arc(railX, y, 13, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = t.accent;
+      ctx.font = `800 38px ${FONT}`;
+      const ww = ctx.measureText(d.when).width;
+      ctx.fillText(d.when, railX - 46 - ww, y + 13);
+
+      ctx.fillStyle = t.ink;
+      ctx.font = `500 36px ${FONT}`;
+      ctx.fillText(wrap(ctx, d.what, W - railX - 160)[0] || '', railX + 46, y + 13);
+    });
+  }
+
+  // Whiteboard: light ground, marker-weight strokes, numbered steps with
+  // connectors. Reads as "someone is explaining this", which is the point.
+  function drawWhiteboard(ctx, t, spec) {
+    ctx.fillStyle = '#f4f2ec';
+    ctx.fillRect(0, 0, W, H);
+
+    const ink = '#1d2026';
+    const marker = t.accent;
+
+    ctx.fillStyle = ink;
+    ctx.font = `800 58px ${FONT}`;
+    const title = wrap(ctx, String(spec.title || ''), W - 200).slice(0, 1);
+    title.forEach((l) => ctx.fillText(l, 100, 130));
+
+    // Hand-drawn underline: a slight wobble reads as a marker rather than a
+    // vector rule.
+    if (title.length) {
+      ctx.strokeStyle = marker;
+      ctx.lineWidth = 7;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      const uw = ctx.measureText(title[0]).width;
+      for (let x = 0; x <= uw; x += 12) {
+        const y = 152 + Math.sin(x / 26) * 2.5;
+        if (x === 0) ctx.moveTo(100 + x, y);
+        else ctx.lineTo(100 + x, y);
+      }
+      ctx.stroke();
+    }
+
+    const steps = (Array.isArray(spec.items) ? spec.items : []).map(String).filter(Boolean).slice(0, 5);
+    const top = 240;
+    const step = Math.min(105, (H - top - 90) / Math.max(steps.length, 1));
+
+    steps.forEach((s, i) => {
+      const y = top + i * step;
+      ctx.strokeStyle = marker;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(150, y, 30, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = marker;
+      ctx.font = `800 34px ${FONT}`;
+      const num = String(i + 1);
+      ctx.fillText(num, 150 - ctx.measureText(num).width / 2, y + 12);
+
+      ctx.fillStyle = ink;
+      ctx.font = `600 38px ${FONT}`;
+      ctx.fillText(wrap(ctx, s, W - 380)[0] || '', 216, y + 13);
+
+      // Connector arrow down to the next step.
+      if (i < steps.length - 1) {
+        ctx.strokeStyle = '#b9b4a8';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(150, y + 34);
+        ctx.lineTo(150, y + step - 34);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(142, y + step - 44);
+        ctx.lineTo(150, y + step - 32);
+        ctx.lineTo(158, y + step - 44);
+        ctx.stroke();
+      }
+    });
+  }
+
+  // Locator card, NOT cartography.
+  //
+  // Real maps need real geodata; drawing an invented coastline would be worse
+  // than drawing none, because a wrong map is confidently wrong on screen. This
+  // presents the places and their order legibly and leaves the geography to
+  // footage or a proper basemap layer.
+  function drawMap(ctx, t, spec) {
+    headline(ctx, t, spec.title || 'Locations', 120);
+    const places = (Array.isArray(spec.items) ? spec.items : []).map(String).filter(Boolean).slice(0, 5);
+    const top = 260;
+    const step = Math.min(96, (H - top - 90) / Math.max(places.length, 1));
+
+    places.forEach((p, i) => {
+      const y = top + i * step;
+      // Pin
+      ctx.fillStyle = t.accent;
+      ctx.beginPath();
+      ctx.arc(140, y - 8, 16, Math.PI, 0);
+      ctx.lineTo(140, y + 22);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = t.ink;
+      ctx.font = `600 40px ${FONT}`;
+      ctx.fillText(wrap(ctx, p, W - 320)[0] || '', 200, y + 14);
+
+      if (i < places.length - 1) {
+        // t.rule is only a couple of steps off the background — fine for a
+        // solid rail, but a dashed line at that contrast disappears entirely.
+        ctx.strokeStyle = t.dim;
+        ctx.lineWidth = 4;
+        ctx.setLineDash([10, 10]);
+        ctx.beginPath();
+        ctx.moveTo(140, y + 28);
+        ctx.lineTo(140, y + step - 26);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
+  }
+
   // --- public ------------------------------------------------------------
 
-  // spec: { kind: 'title'|'checklist'|'stat', title, subtitle, items[], value,
-  //         label, theme: 'dark'|'light' }
+  // spec: { kind: 'title'|'checklist'|'stat'|'chart'|'timeline'|'whiteboard'|'map',
+  //         title, subtitle, items[], value, label, theme: 'dark'|'light' }
   async function render(spec = {}) {
     const canvas = document.createElement('canvas');
     canvas.width = W;
@@ -254,10 +494,16 @@
     const kind = String(spec.kind || 'title').toLowerCase();
     if (kind === 'checklist' || kind === 'list') drawChecklist(ctx, t, spec);
     else if (kind === 'stat' || kind === 'number') drawStat(ctx, t, spec);
+    else if (kind === 'chart' || kind === 'graph' || kind === 'bar') drawChart(ctx, t, spec);
+    else if (kind === 'timeline') drawTimeline(ctx, t, spec);
+    else if (kind === 'whiteboard') drawWhiteboard(ctx, t, spec);
+    else if (kind === 'map') drawMap(ctx, t, spec);
     else drawTitle(ctx, t, spec);
 
-    // A hairline keeps the card from floating when cut against footage.
-    ctx.strokeStyle = t.rule;
+    // A hairline keeps the card from floating when cut against footage. The
+    // whiteboard draws its own light ground, so a dark rule would frame it
+    // wrongly.
+    ctx.strokeStyle = kind === 'whiteboard' ? '#d9d4c8' : t.rule;
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, W - 2, H - 2);
 

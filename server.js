@@ -176,6 +176,80 @@ const server = http.createServer((req, res) => {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
+  // LTX-2.3 Video Proxy
+  // Forwards /api/proxy/ltx/* → the Kaggle notebook's FastAPI (via ngrok).
+  // Shaped like the SD proxy, with one important difference: a single clip can
+  // take several minutes on a T4, so every default timeout in the chain has to
+  // be pushed out or the render dies half-finished and looks like a backend
+  // failure. Also streams binary (video/mp4) straight through for /outputs/*.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (req.url.startsWith('/api/proxy/ltx')) {
+    const LTX_TIMEOUT_MS = 20 * 60 * 1000; // a 30s clip at 720p can genuinely take this long
+    let LTX_HOST = '127.0.0.1';
+    let LTX_PORT = 7860;
+    let isHttps = false;
+
+    const headerEp = req.headers['x-ltx-endpoint'];
+    if (headerEp) {
+      try {
+        const u = new URL(headerEp.startsWith('http') ? headerEp : `http://${headerEp}`);
+        isHttps = u.protocol === 'https:';
+        if (u.hostname) LTX_HOST = u.hostname === 'localhost' ? '127.0.0.1' : u.hostname;
+        LTX_PORT = u.port ? parseInt(u.port, 10) : (isHttps ? 443 : 80);
+      } catch (_) {}
+    }
+
+    const transport = isHttps ? https : http;
+    const targetPath = req.url.replace('/api/proxy/ltx', '') || '/';
+    const body = [];
+
+    // Keep the inbound connection alive while the GPU works.
+    req.setTimeout(LTX_TIMEOUT_MS);
+    res.setTimeout(LTX_TIMEOUT_MS);
+
+    req.on('data', (chunk) => body.push(chunk));
+    req.on('end', () => {
+      const buffer = Buffer.concat(body);
+      const proxyReq = transport.request({
+        hostname: LTX_HOST,
+        port: LTX_PORT,
+        path: targetPath,
+        method: req.method,
+        headers: {
+          'Content-Type': req.headers['content-type'] || 'application/json',
+          'Content-Length': buffer.length,
+          'ngrok-skip-browser-warning': 'true'
+        }
+      }, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, {
+          'Content-Type': proxyRes.headers['content-type'] || 'application/octet-stream',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache'
+        });
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.setTimeout(LTX_TIMEOUT_MS, () => {
+        proxyReq.destroy(new Error(`no response within ${LTX_TIMEOUT_MS / 60000} minutes`));
+      });
+
+      proxyReq.on('error', (err) => {
+        console.warn(`⚠️  LTX Proxy: cannot reach LTX backend at ${LTX_HOST}:${LTX_PORT} — ${err.message}`);
+        if (res.headersSent) return res.end();
+        res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({
+          error: `LTX backend unavailable at ${LTX_HOST}:${LTX_PORT}: ${err.message}`,
+          hint: 'Run AETHER_LTX_Kaggle.ipynb on Kaggle (T4 x2) and paste its ngrok URL into AI Settings → LTX Video.'
+        }));
+      });
+
+      if (buffer.length > 0) proxyReq.write(buffer);
+      proxyReq.end();
+    });
+    return;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
   // OpenAI OAuth Proxy (ChatGPT Account Proxy via npx openai-oauth at :10531)
   // Forwards /api/proxy/openai-oauth/* → http://127.0.0.1:10531/v1/*
   // ──────────────────────────────────────────────────────────────────────────

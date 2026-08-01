@@ -462,6 +462,17 @@
         (res.scenes || []).forEach((s) => scenes.push({ ...s, status: 'pending', error: null }));
         renderScenes();
       }
+      // Continuity across batch boundaries. parseScenes already carried
+      // environment/time/weather/lighting forward WITHIN each batch, but the
+      // model never sees earlier batches, so the first scene of batch 2 usually
+      // comes back blank. One pass over the finished list closes those seams.
+      if (window.BlvckPrompts && window.BlvckPrompts.applyContinuity) {
+        scenes = window.BlvckPrompts.applyContinuity(scenes);
+        renderScenes();
+      }
+      // Seed the character library from the bible so every recurring person has
+      // a profile to attach a portrait (and later an LTX subject reference) to.
+      if (window.BlvckCast) window.BlvckCast.importFromBible(bible);
       saveProject();
       // Build reference portraits for anyone who actually recurs, before the
       // scene queue runs, so the cast is locked in first.
