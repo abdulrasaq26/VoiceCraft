@@ -966,6 +966,22 @@
               <input type="text" id="thumb-topic-input" class="input-text" placeholder="Thumbnail Topic / Focus (e.g. A Day in the Life of a Snake)..." style="flex:1;" />
               <button id="thumb-generate-btn" class="btn primary" type="button">✨ Generate High-CTR Concepts</button>
             </div>
+            <!-- Presenter cut-out. A real face beats a generated one at feed
+                 size, where model artefacts show first. -->
+            <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; padding:10px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:8px;">
+              <img id="presenter-preview" alt="" hidden
+                   style="height:56px; width:56px; object-fit:cover; border-radius:8px; background:repeating-conic-gradient(#2a2a2a 0% 25%, #1b1b1b 0% 50%) 50%/12px 12px;" />
+              <div style="flex:1; min-width:200px;">
+                <strong style="font-size:13px;">🧑 Your face on every thumbnail</strong>
+                <p class="field-note" style="margin:2px 0 0;">
+                  Upload a photo of yourself. A plain background is removed automatically;
+                  for a busy one, upload a PNG you've already cut out. Stored on this device only.
+                </p>
+              </div>
+              <input id="presenter-file" type="file" accept="image/*" style="max-width:210px;" />
+              <button id="presenter-clear" class="btn ghost small" type="button" hidden>Remove</button>
+            </div>
+
             <div id="thumb-status" class="status" hidden></div>
             <div id="thumb-results" class="thumb-results-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:15px; margin-top:15px;"></div>
           </section>

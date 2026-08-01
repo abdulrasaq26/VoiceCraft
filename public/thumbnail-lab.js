@@ -196,6 +196,20 @@ Return ONLY valid JSON array, no markdown:
   // vanishes at that size — the commonest reason a thumbnail loses to the ones
   // beside it. This fills the frame, grades the image, and gives the eye one
   // hot word to land on.
+  // Decoded once and reused; a data URL decode per thumbnail is wasteful when
+  // the same presenter appears on all of them.
+  let presenterImg = null;
+  function refreshPresenter() {
+    const data = window.BlvckGraphic && window.BlvckGraphic.getFace();
+    if (!data) { presenterImg = null; return; }
+    const img = new Image();
+    img.onload = () => { presenterImg = img; };
+    img.onerror = () => { presenterImg = null; };
+    img.src = data;
+  }
+  if (window.BlvckGraphic) refreshPresenter();
+  window.addEventListener('blvck:presenter-changed', refreshPresenter);
+
   function renderYouTubeText(imgElement, concept, selectedText) {
     const W = 1280, H = 720;
     const canvas = document.createElement('canvas');
@@ -218,6 +232,14 @@ Return ONLY valid JSON array, no markdown:
       ctx.filter = 'saturate(1.35) contrast(1.18) brightness(1.04)';
       ctx.drawImage(imgElement, 0, 0, W, H);
       ctx.filter = 'none';
+    }
+
+    // 1b. If a presenter cut-out has been saved, it replaces the generated
+    //     face. At feed size a model-drawn face is where the artefacts show
+    //     first, and viewers read "AI" from a face faster than from anything
+    //     else — a real one also builds the recognition that drives clicks.
+    if (presenterImg && window.BlvckGraphic) {
+      window.BlvckGraphic.drawFace(ctx, presenterImg, { side: 'right', heightPct: 0.94 });
     }
 
     // 2. Radial vignette rather than a flat left-hand scrim — it darkens the
@@ -248,7 +270,11 @@ Return ONLY valid JSON array, no markdown:
     // 4. Grow to fill rather than capping small.
     const maxW = W * 0.88, maxLineH = (H * 0.46) / lines.length;
     let size = 240;
-    const fontAt = (px) => `900 ${px}px "Arial Black", Impact, sans-serif`;
+    // Uses the brand font when public/fonts/thumbnail.woff2 exists, else the
+    // heaviest guaranteed-available face.
+    const fontAt = (px) => (window.BlvckGraphic && window.BlvckGraphic.displayFont)
+      ? window.BlvckGraphic.displayFont(px)
+      : `900 ${px}px "Arial Black", Impact, sans-serif`;
     for (;;) {
       ctx.font = fontAt(size);
       const widest = Math.max(...lines.map((l) => ctx.measureText(l).width));
@@ -535,6 +561,56 @@ Return ONLY valid JSON array, no markdown:
     const resultsEl = $('thumb-results');
 
     if (!genBtn || !resultsEl) return;
+
+    // --- presenter cut-out -------------------------------------------------
+    const faceInput = $('presenter-file');
+    const facePrev = $('presenter-preview');
+    const faceClear = $('presenter-clear');
+    const G = window.BlvckGraphic;
+
+    function paintPresenter() {
+      const data = G && G.getFace();
+      if (facePrev) { facePrev.src = data || ''; facePrev.hidden = !data; }
+      if (faceClear) faceClear.hidden = !data;
+    }
+    paintPresenter();
+
+    if (faceInput && G) {
+      faceInput.addEventListener('change', async () => {
+        const file = faceInput.files && faceInput.files[0];
+        if (!file) return;
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.className = 'status info';
+          statusEl.textContent = 'Preparing your cut-out…';
+        }
+        try {
+          const dataUrl = await G.prepareFace(file);
+          G.saveFace(dataUrl);
+          paintPresenter();
+          // Tell the renderer to pick up the new face without a reload.
+          window.dispatchEvent(new CustomEvent('blvck:presenter-changed'));
+          if (statusEl) {
+            statusEl.className = 'status info';
+            statusEl.textContent = '✓ Saved — regenerate a thumbnail to see yourself on it.';
+          }
+        } catch (e) {
+          if (statusEl) {
+            statusEl.className = 'status error';
+            statusEl.textContent = `Could not read that image: ${e.message}`;
+          }
+        }
+        faceInput.value = '';
+      });
+    }
+
+    if (faceClear && G) {
+      faceClear.addEventListener('click', () => {
+        G.clearFace();
+        paintPresenter();
+        window.dispatchEvent(new CustomEvent('blvck:presenter-changed'));
+      });
+    }
 
     // Auto-populate topic from active project
     const syncTopic = () => {

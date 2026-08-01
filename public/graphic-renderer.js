@@ -69,6 +69,53 @@
 
   const FONT = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
+  // --- brand font ---------------------------------------------------------
+  //
+  // Arial Black is the heaviest face guaranteed to exist everywhere, but the
+  // thumbnail look people are after uses a tighter geometric sans. Drop a file
+  // at public/fonts/thumbnail.woff2 (or .otf/.ttf) and it is picked up
+  // automatically — no config, no rebuild. Everything falls back cleanly if
+  // no file is present, so this never breaks a machine that has none.
+  const BRAND_FAMILY = 'BlvckDisplay';
+  const FONT_CANDIDATES = [
+    '/fonts/thumbnail.woff2', '/fonts/thumbnail.woff',
+    '/fonts/thumbnail.otf', '/fonts/thumbnail.ttf'
+  ];
+  let brandFontReady = null;   // Promise<boolean>
+  let brandFontLoaded = false;
+
+  function loadBrandFont() {
+    if (brandFontReady) return brandFontReady;
+    brandFontReady = (async () => {
+      if (typeof FontFace === 'undefined' || !document.fonts) return false;
+      for (const url of FONT_CANDIDATES) {
+        try {
+          // HEAD first so a missing file does not surface as a console error.
+          const head = await fetch(url, { method: 'HEAD' });
+          if (!head.ok) continue;
+          const face = new FontFace(BRAND_FAMILY, `url(${url})`, { weight: '400 900' });
+          await face.load();
+          document.fonts.add(face);
+          brandFontLoaded = true;
+          console.log(`[Graphic] Brand font loaded from ${url}`);
+          return true;
+        } catch (e) { /* try the next candidate */ }
+      }
+      return false;
+    })();
+    return brandFontReady;
+  }
+
+  // The display stack used for headlines and thumbnails.
+  function displayFont(px, weight = 900) {
+    const stack = brandFontLoaded
+      ? `"${BRAND_FAMILY}", "Arial Black", Impact, sans-serif`
+      : `"Arial Black", Impact, sans-serif`;
+    return `${weight} ${px}px ${stack}`;
+  }
+
+  loadBrandFont();
+
   // A card's look = base theme (light/dark ground) + the subject's own accent.
   function theme(name, palette) {
     const base = THEMES[name] || THEMES.dark;
@@ -226,6 +273,126 @@
     return String(scene.sceneType || '').toLowerCase() === 'graphic';
   }
 
+  // --- presenter cut-out --------------------------------------------------
+  //
+  // Generated faces are the weakest part of an SDXL thumbnail: at feed size the
+  // eyes and teeth are where the artefacts land, and viewers read "AI" from a
+  // face faster than from anything else in the frame. A real photograph of the
+  // channel's own presenter beats anything the model can produce, and it also
+  // builds the face recognition that actually drives clicks on a channel.
+  //
+  // Accepts a PNG that already has alpha, or strips a plain background itself.
+
+  const FACE_KEY = 'blvck-tts:presenter-face';
+
+  function saveFace(dataUrl) {
+    try { localStorage.setItem(FACE_KEY, dataUrl || ''); } catch { /* quota */ }
+  }
+  function getFace() {
+    try { return localStorage.getItem(FACE_KEY) || null; } catch { return null; }
+  }
+  function clearFace() {
+    try { localStorage.removeItem(FACE_KEY); } catch { /* ignore */ }
+  }
+
+  function hasAlpha(data) {
+    for (let i = 3; i < data.length; i += 4 * 97) if (data[i] < 250) return true;
+    return false;
+  }
+
+  // Flood from the edges, clearing pixels close in colour to the border. Handles
+  // the common case — a portrait shot against a wall or a plain backdrop. A
+  // photo with a busy background should be cut out properly first; this is a
+  // convenience, not a matting algorithm, and it says so in the UI.
+  function stripBackground(canvas, tolerance = 42) {
+    const ctx = canvas.getContext('2d');
+    const { width: w, height: h } = canvas;
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    if (hasAlpha(d)) return canvas; // already cut out — leave it alone
+
+    const at = (x, y) => (y * w + x) * 4;
+    const corners = [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)];
+    const key = corners.map((i) => [d[i], d[i + 1], d[i + 2]]);
+    const near = (i) => key.some(([r, g, b]) =>
+      Math.abs(d[i] - r) + Math.abs(d[i + 1] - g) + Math.abs(d[i + 2] - b) < tolerance * 3);
+
+    const stack = [];
+    const seen = new Uint8Array(w * h);
+    for (let x = 0; x < w; x++) { stack.push([x, 0]); stack.push([x, h - 1]); }
+    for (let y = 0; y < h; y++) { stack.push([0, y]); stack.push([w - 1, y]); }
+
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      const p = y * w + x;
+      if (seen[p]) continue;
+      const i = p * 4;
+      if (!near(i)) continue;
+      seen[p] = 1;
+      d[i + 3] = 0;
+      stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
+
+    // Soften the cut so the edge does not look scissored against the artwork.
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const p = y * w + x;
+        if (seen[p]) continue;
+        const i = p * 4;
+        let clearNeighbours = 0;
+        if (seen[p - 1]) clearNeighbours++;
+        if (seen[p + 1]) clearNeighbours++;
+        if (seen[p - w]) clearNeighbours++;
+        if (seen[p + w]) clearNeighbours++;
+        if (clearNeighbours) d[i + 3] = Math.round(255 * (1 - clearNeighbours / 5));
+      }
+    }
+
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+  }
+
+  // Prepare an uploaded photo for compositing. Returns a data URL with alpha.
+  async function prepareFace(fileOrBlob, { autoCut = true } = {}) {
+    const url = URL.createObjectURL(fileOrBlob);
+    try {
+      const img = new Image();
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+      // Cap the long edge: a 12MP phone photo is pointless here and makes the
+      // flood fill crawl.
+      const scale = Math.min(1, 900 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * scale);
+      c.height = Math.round(img.naturalHeight * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      if (autoCut) stripBackground(c);
+      return c.toDataURL('image/png');
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  // Draw the presenter into a thumbnail: right-hand side by default, which is
+  // where the concept prompts already reserve space, with a dark rim so the
+  // subject separates from whatever is behind them.
+  function drawFace(ctx, faceImg, { side = 'right', heightPct = 0.92 } = {}) {
+    if (!faceImg) return;
+    const targetH = H * heightPct;
+    const scale = targetH / faceImg.naturalHeight;
+    const fw = faceImg.naturalWidth * scale;
+    const x = side === 'left' ? W * 0.02 : W - fw - W * 0.02;
+    const y = H - targetH;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.75)';
+    ctx.shadowBlur = 46;
+    ctx.shadowOffsetX = side === 'left' ? 18 : -18;
+    ctx.shadowOffsetY = 10;
+    ctx.drawImage(faceImg, x, y, fw, targetH);
+    ctx.restore();
+  }
+
   // --- thumbnails --------------------------------------------------------
   //
   // The look people mean by "MrBeast thumbnail" is mostly four things, none of
@@ -347,6 +514,11 @@
   }
 
   window.BlvckGraphic = {
-    render, renderThumbnail, looksLikeGraphic, paletteFor, THEMES, SUBJECT_PALETTES
+    render, renderThumbnail, looksLikeGraphic, paletteFor, THEMES, SUBJECT_PALETTES,
+    // presenter cut-out
+    prepareFace, saveFace, getFace, clearFace, drawFace, stripBackground,
+    // typography
+    loadBrandFont, displayFont,
+    brandFontLoaded: () => brandFontLoaded
   };
 })();
