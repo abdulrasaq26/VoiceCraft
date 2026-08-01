@@ -175,6 +175,7 @@ Descriptions must be concrete and visual so they can be pasted verbatim into ima
 
 Rules:
 - NEVER depict readable text, documents, checklists, forms, charts, signage, screens, labels or user interfaces. Image models cannot render text — it always comes out as scrambled pseudo-letters, and it is the clearest possible sign of an AI-generated image. When a beat mentions a checklist, guide, list, printable, app or a number, film the HUMAN ACTION around it instead: hands working, someone testing a device, a finger pointing at the thing being discussed. Never the artefact itself.
+- If a beat genuinely needs words on screen — a list the viewer should read, a headline, a single striking number — do NOT write an image prompt for it. Set "sceneType" to "Graphic" and fill in the "graphic" object instead. Those frames are typeset with real fonts rather than generated, so the text comes out correct. Use this sparingly: a handful per video, for moments that are genuinely about information. Everything else is footage.
 - Every prompt must show a real person or a real physical object in a real space performing ONE concrete physical action. Never illustrate an abstract idea, a statistic or a concept. "Fifty safety checks" is not a picture; a person crouching to press the test button on a smoke alarm is.
 - Write like a cinematographer, not a graphic designer. Name the shot, the light source, and a specific surface or material detail — "close-up, weathered hands smoothing a rug corner against hardwood, low afternoon sun raking across the floor, shallow depth of field". Vague prompts are what produce generic stock-looking output.
 - Depict what actually happens in the beat. Resolve who "he/she/they" refer to using the profile; place each beat in the correct location and era.
@@ -188,7 +189,15 @@ Respond ONLY with JSON:
   "scenes": [
     {
       "index": number,          // echo the beat index
-      "sceneType": string,      // e.g. "Establishing", "Reaction", "Detail"
+      "sceneType": string,      // "Establishing" | "Reaction" | "Detail" | "Graphic"
+      "graphic": {              // ONLY when sceneType is "Graphic"; omit otherwise
+        "kind": string,         // "checklist" | "stat" | "title"
+        "title": string,        // headline, or the list's heading
+        "subtitle": string,     // optional supporting line (title cards)
+        "items": [string],      // checklist only — max 7, each under ~8 words
+        "value": string,        // stat only — the number itself, e.g. "50"
+        "label": string         // stat only — what the number means
+      },
       "camera": string,
       "detectedAction": string, // what is happening in this beat, one line
       "visualGoal": string,     // the emotional/narrative goal of the shot
@@ -240,6 +249,23 @@ Respond ONLY with JSON:
       visualFocus: str(s && s.visualFocus),
       characters: arr(s && s.characters).map(String).slice(0, 8),
       sceneSummary: str(s && s.sceneSummary, source.text || ''),
+      // Typeset frames carry a spec instead of relying on the prompt. Kept only
+      // when it has something to actually draw, so a stray empty object cannot
+      // route a beat away from the camera and leave a blank card.
+      graphic: (() => {
+        const g = s && s.graphic;
+        if (!g || typeof g !== 'object') return null;
+        const items = arr(g.items).map(String).filter(Boolean).slice(0, 7);
+        const spec = {
+          kind: str(g.kind, 'title').toLowerCase(),
+          title: str(g.title),
+          subtitle: str(g.subtitle),
+          items,
+          value: str(g.value),
+          label: str(g.label)
+        };
+        return (spec.title || spec.value || items.length) ? spec : null;
+      })(),
       prompt
     };
   }

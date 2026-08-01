@@ -545,6 +545,14 @@
   // from the same corner of the model's latent space and a re-run reproduces
   // the same frame. The scene index is folded in only lightly — identical
   // seeds across scenes would push every frame toward the same composition.
+  // Match the card background to the project's own grade so graphics cut
+  // against the footage rather than flashing white in a dark video.
+  function graphicTheme() {
+    const vs = (bible && bible.visualStyle) || {};
+    const hay = `${vs.description || ''} ${vs.colorGrading || ''} ${vs.lighting || ''}`.toLowerCase();
+    return /bright|light|airy|white|daylight|clean|pastel/.test(hay) ? 'light' : 'dark';
+  }
+
   function hash32(s) {
     let h = 2166136261;
     const str = String(s || '');
@@ -597,6 +605,15 @@
   }
 
   async function generateSceneAsset(scene) {
+    // Frames that are really about words are typeset, not generated. Diffusion
+    // models cannot spell, so a checklist or a big number rendered on the GPU
+    // comes back as pseudo-lettering; drawn here it is correct every time, on
+    // brand, and returns in milliseconds without touching the queue's GPU time.
+    if (window.BlvckGraphic && window.BlvckGraphic.looksLikeGraphic(scene)) {
+      const spec = scene.graphic || { kind: 'title', title: scene.sceneSummary || scene.subtitle || '' };
+      return window.BlvckGraphic.render({ ...spec, theme: graphicTheme() });
+    }
+
     let finalPrompt = scene.prompt || '';
 
     // Append the master visual style so every scene shares one look.
