@@ -386,6 +386,21 @@
       rawCues = parseSubtitles(subs.content);
       if (!rawCues.length) rawCues = cuesFromScript(subs.content); // txt without timecodes
     }
+    // Fall back to the project's own subtitles even when the user never clicked
+    // "Import from project".
+    //
+    // This is not a convenience. Timecodes are the ONLY thing that ties a scene
+    // to a moment in the narration — without them every beat gets a flat
+    // default and the pictures drift against the voice. Making that depend on
+    // remembering a button meant the most common path silently produced an
+    // out-of-sync video.
+    if (!rawCues.some((c) => c.timestamp) && window.BlvckAssets) {
+      const projectSrt = window.BlvckAssets.subtitlesSRT();
+      if (projectSrt) {
+        const timed = parseSubtitles(projectSrt);
+        if (timed.length) rawCues = timed;
+      }
+    }
     const script = files.find((f) => f.kind === 'script');
     if (script) {
       ctx.script = script.content;

@@ -482,10 +482,11 @@
     cancelled = false;
 
     const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
-    // Text-to-video beats do not need a storyboard still to exist first, so the
-    // queue can no longer require status 'done' across the board — that check
-    // was written when every scene had to be animated from an image.
-    const all = scenes().filter((s) => s.status === 'done' || isTextDriven(s));
+    // Every PLANNED scene is renderable: text-driven beats need no still and
+    // canvas beats draw themselves. Only an unplanned scene is skipped, and
+    // planWithDirector is what fixes that. Requiring status 'done' here was a
+    // leftover from when every scene had to be animated from an image.
+    const all = scenes().filter((s) => s.visualType || s.status === 'done');
     const st = readState();
     const todo = opts.regenerate
       ? all
@@ -595,8 +596,16 @@
    * up, and returns the strategy and any warnings for display.
    */
   async function planWithDirector(opts = {}) {
-    const list = scenes().filter((s) => s.status === 'done');
-    if (!list.length) throw new Error('No generated storyboard scenes to plan.');
+    // Plan EVERY scene, whatever happened to its still.
+    //
+    // This used to require status 'done', which created a deadlock the moment
+    // text-to-video existed: planning needs no image, but it assigned the
+    // visualType that told the renderer a beat needed no image. With SDXL
+    // offline every scene sat at 'error', so there was nothing to plan, so
+    // nothing ever got a visualType, so nothing could render. The Director
+    // works from narration text and timing — neither depends on a picture.
+    const list = scenes();
+    if (!list.length) throw new Error('No storyboard scenes to plan — generate a storyboard first.');
 
     const cast = window.BlvckCast
       ? window.BlvckCast.list().map((c) => ({

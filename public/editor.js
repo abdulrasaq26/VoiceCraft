@@ -440,11 +440,14 @@
       sb = null;
     }
     const scenes = (sb && sb.scenes) || [];
-    const done = scenes.filter((s) => s.status === 'done');
-    if (!done.length) {
-      showStatus('No generated storyboard images found. Generate a storyboard first (its images are the video scenes).');
+    if (!scenes.length) {
+      showStatus('No storyboard scenes yet — generate a storyboard first. Its beats are the video scenes.');
       return;
     }
+    // Deliberately NOT gated on scenes having stills. A text-to-video project
+    // never generates any, and a canvas beat writes its image without the
+    // scene's status ever becoming 'done'. Whether there is anything to show is
+    // decided below, from what actually loaded.
     assembleBtn.disabled = true;
     summaryEl.textContent = 'Assembling…';
 
@@ -459,7 +462,9 @@
     for (let i = 0; i < scenes.length; i++) {
       const s = scenes[i];
       const secs = Math.max(1, clipDuration(s.timestamp));
-      const blob = s.status === 'done' ? await idbGet(SB_DB, SB_STORE, String(s.index)) : null;
+      // Ask storage, don't trust the label: a canvas-rendered chart writes its
+      // image without ever flipping the scene's status to 'done'.
+      const blob = await idbGet(SB_DB, SB_STORE, String(s.index));
       let img = null;
       if (blob) {
         try {
