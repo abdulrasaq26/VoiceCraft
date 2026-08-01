@@ -91,6 +91,10 @@
 
 CRITICAL: Determine the visual identity FROM THE CONTENT. Do NOT assume the project is historical, medieval, 2D, or fiction. A finance explainer must look like modern finance visuals; a cooking video like food photography; a sci-fi story like cinematic sci-fi; a children's lesson like a children's book. Infer genre, era, setting, tone, audience and format (documentary vs narrative, educational vs entertainment) from what is actually written.
 
+DEFAULT TO PHOTOGRAPHY. If the subject is anything that exists in the real world — homes, health, safety, money, food, travel, how-to, history, news — the visual style MUST be photographic: real people, real rooms, real objects, natural light, believable lenses and depth of field. Flat vector art, "modern explainer graphics", corporate illustration and infographic styles read as cheap AI filler on a professional channel and must not be chosen for real-world subjects. Reserve illustrated or animated styles for content that genuinely cannot be photographed: abstract fiction, fantasy, children's stories, or explicitly stylised branding.
+
+The chosen style must be SPECIFIC enough that every scene lands the same. "Documentary photography" is too loose — one scene will come back photoreal and the next flat. Name the camera character, the light and the grade, e.g. "Photographic, 35mm documentary style, soft natural window light, muted warm grade, shallow depth of field, candid unposed framing".
+
 Identify recurring characters with FIXED, reusable visual descriptions (face, hair, age, build, clothing, accessories) and locations with fixed architectural/lighting/weather descriptions, so they stay consistent across scenes.
 
 Respond ONLY with JSON of this exact shape:
@@ -170,6 +174,9 @@ Descriptions must be concrete and visual so they can be pasted verbatim into ima
   const SCENES_SYSTEM = `You are an expert storyboard artist and visual director. You are given a project profile (with a defined visual style, characters and locations) and a batch of story beats. For EACH beat, write a complete, self-contained image/video prompt.
 
 Rules:
+- NEVER depict readable text, documents, checklists, forms, charts, signage, screens, labels or user interfaces. Image models cannot render text — it always comes out as scrambled pseudo-letters, and it is the clearest possible sign of an AI-generated image. When a beat mentions a checklist, guide, list, printable, app or a number, film the HUMAN ACTION around it instead: hands working, someone testing a device, a finger pointing at the thing being discussed. Never the artefact itself.
+- Every prompt must show a real person or a real physical object in a real space performing ONE concrete physical action. Never illustrate an abstract idea, a statistic or a concept. "Fifty safety checks" is not a picture; a person crouching to press the test button on a smoke alarm is.
+- Write like a cinematographer, not a graphic designer. Name the shot, the light source, and a specific surface or material detail — "close-up, weathered hands smoothing a rug corner against hardwood, low afternoon sun raking across the floor, shallow depth of field". Vague prompts are what produce generic stock-looking output.
 - Depict what actually happens in the beat. Resolve who "he/she/they" refer to using the profile; place each beat in the correct location and era.
 - Embed the project's visual style VERBATIM in every prompt (its description, lighting and color grading). Never substitute a different style. Never add historical/medieval styling unless the profile says so.
 - Maintain character consistency: when a character appears, paste their exact description from the profile.

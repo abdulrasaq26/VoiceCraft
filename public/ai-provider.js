@@ -399,7 +399,22 @@
   // style negatives are ADDED to these, not swapped for them: passing
   // `options.negative_prompt || ''` used to hand the adapter an empty string
   // whenever no style negative existed, silently discarding its own defaults.
-  const SD_BASE_NEGATIVE = 'watermark, text, signature, blurry, deformed, worst quality, low quality, jpeg artifacts';
+  // Two groups here, both learned from real output on this pipeline.
+  //
+  // Text: SDXL cannot spell. Any document, label or sign it renders comes back
+  // as scrambled pseudo-letters and instantly reads as AI-generated, so the
+  // whole family is suppressed — the scene prompts are separately instructed
+  // to film the human action rather than the artefact.
+  //
+  // Illustration: for real-world subjects the flat-vector "explainer graphic"
+  // look is the other giveaway. Naming it here keeps scenes photographic even
+  // when a prompt drifts toward stock-illustration phrasing.
+  const SD_BASE_NEGATIVE = [
+    'watermark, signature, logo',
+    'text, letters, words, caption, subtitle, label, signage, handwriting, gibberish text, distorted text, misspelled',
+    'flat vector, corporate illustration, infographic, clipart, cartoon, 3d render, cgi',
+    'blurry, deformed, extra fingers, malformed hands, worst quality, low quality, jpeg artifacts'
+  ].join(', ');
 
   function mergeNegative(extra) {
     const parts = [SD_BASE_NEGATIVE];
