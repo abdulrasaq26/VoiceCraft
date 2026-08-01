@@ -500,9 +500,50 @@
       setAnalyzing(false);
       return;
     }
-    setAnalyzing(false);
     exportsEl.hidden = false;
-    // 3. Generate assets — unless the user wants to review/edit prompts first.
+
+    // 3. Plan the shots BEFORE generating anything.
+    //
+    // This used to jump straight into rendering a still for every scene, which
+    // is work decided before anyone knew what the scenes were for. Planning is
+    // one cheap LLM call and it determines what each beat actually needs: a
+    // chart or map is drawn on canvas and needs no image at all, and a filmed
+    // beat is rendered from text and needs no image either. Generating first
+    // meant paying for pictures the video would never use.
+    let planned = null;
+    if (window.BlvckLTX && window.BlvckLTX.planWithDirector) {
+      try {
+        setAnalyzing(true, 'Planning shots — deciding what each beat should be…');
+        planned = await window.BlvckLTX.planWithDirector();
+        renderScenes();
+      } catch (err) {
+        // A failed plan is not fatal; the scenes are still usable by hand.
+        console.warn('[Storyboard] Shot planning failed:', err.message);
+      }
+    }
+    setAnalyzing(false);
+
+    if (planned) {
+      const mix = Object.entries(planned.mix || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, n]) => `${n}× ${k}`)
+        .join(', ');
+      const warn = planned.warnings && planned.warnings.length
+        ? ` ⚠ ${planned.warnings.join('; ')}`
+        : '';
+      const ret = planned.retention && planned.retention.issues && planned.retention.issues.length
+        ? ` 📉 ${planned.retention.issues.slice(0, 2).map((i) => `[${i.where}] ${i.message}`).join(' ')}`
+        : '';
+      showStatus(
+        `${scenes.length} beat(s) planned as ${planned.mode || 'default'} — ${mix}. ` +
+        `Review below, then click “Generate all scene clips”.${warn}${ret}`,
+        'info'
+      );
+      if (generateAllBtn) generateAllBtn.hidden = false;
+      return;
+    }
+
+    // No planner available — fall back to the original still-image behaviour.
     if (modeEl && modeEl.value === 'review') {
       if (generateAllBtn) generateAllBtn.hidden = false;
       showStatus(`${scenes.length} scene prompt(s) ready. Review or edit them, then click “Generate all images”.`, 'info');
