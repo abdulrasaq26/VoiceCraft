@@ -663,6 +663,17 @@
           });
         });
         localStorage.setItem(SB_LS, JSON.stringify(sb));
+        // Tell the storyboard to pull the plan into ITS copy of the scenes.
+        // It holds them in memory and writes that array back on every save, so
+        // without this the very next saveProject() overwrites the plan with
+        // unplanned scenes and the whole pass is silently undone.
+        try {
+          window.dispatchEvent(new CustomEvent('blvck:scenes-planned', {
+            detail: { scenes: sb.scenes }
+          }));
+        } catch {
+          /* no-op */
+        }
       }
     } catch (err) {
       throw new Error(`Could not save the video plan: ${err.message}`);

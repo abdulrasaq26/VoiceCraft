@@ -1177,6 +1177,30 @@
 
   // --- Persistence -------------------------------------------------------
 
+  // The Director writes its plan into localStorage, but this module keeps its
+  // own in-memory copy of `scenes` and writes that back on every save. Without
+  // pulling the plan in here, the next saveProject() would overwrite it — the
+  // plan would appear to work and then silently vanish.
+  //
+  // Only the planned fields are copied; status, prompt and image state stay
+  // whatever this module already believes, since it owns those.
+  window.addEventListener('blvck:scenes-planned', (ev) => {
+    const planned = (ev && ev.detail && ev.detail.scenes) || [];
+    if (!planned.length || !scenes.length) return;
+    const byIndex = new Map(planned.map((s) => [s.index, s]));
+    const FIELDS = ['visualType', 'hostOverlay', 'shotType', 'cameraMovement', 'motion', 'emotion', 'transition'];
+    scenes = scenes.map((s) => {
+      const p = byIndex.get(s.index);
+      if (!p) return s;
+      const out = { ...s };
+      FIELDS.forEach((f) => {
+        if (p[f] !== undefined && p[f] !== '') out[f] = p[f];
+      });
+      return out;
+    });
+    renderScenes();
+  });
+
   function saveProject() {
     try {
       localStorage.setItem(
