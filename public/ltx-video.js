@@ -530,12 +530,36 @@
   // previous version of this function was invented and wrong by roughly 20x,
   // which is worse than having no estimate at all — a number on screen gets
   // believed.
-  const THROUGHPUT = {
-    '480p': 60,    // measured
-    '540p': 79,    // 522k px  -> 1.31x of 480p
-    '720p': 152,   // measured
-    '1080p': 315   // 2089k px -> 5.23x of 480p
-  };
+  // Cost is NOT proportional to clip length. Measured on a Kaggle T4, 480p,
+  // 8 steps, same prompt and seed:
+  //
+  //    2s ( 49 frames)  269s
+  //    3s ( 73 frames)  302s
+  //    5s (121 frames)  301s     <- 60 s per second of video, the sweet spot
+  //   15s (361 frames) 1200s     <- 80 s/s, markedly worse
+  //
+  // There is a hard floor around 300s that even a 2s clip pays, and beyond
+  // about 5s the marginal cost climbs steeply. So a 15s beat rendered as three
+  // 5s clips costs ~900s instead of 1200s -- 25% cheaper AND better paced,
+  // since the retention check wants shot variety anyway.
+  //
+  // Two earlier versions of this were guesses: first "cost scales with
+  // duration" (wrong), then "duration barely matters" (also wrong, from three
+  // points that happened to sit under the floor). This one is fitted to all
+  // four measurements and reproduces each within 2%.
+  const CLIP_FLOOR_SEC = 300;   // 480p; nothing is faster than this
+  const FLOOR_COVERS_SEC = 5;   // the floor already pays for this much video
+  const MARGINAL_SEC = 90;      // 480p cost of each extra second beyond that
+
+  // Scaled by pixel count, anchored on the measured 480p/720p pair
+  // (758/301 = 2.52 at 5s).
+  const RES_SCALE = { '480p': 1, '540p': 1.31, '720p': 2.52, '1080p': 5.23 };
+
+  /** GPU seconds for one clip of `sec` seconds at `resolution`. */
+  function clipCostSec(sec, resolution) {
+    const scale = RES_SCALE[resolution] || RES_SCALE['480p'];
+    return (CLIP_FLOOR_SEC + Math.max(0, sec - FLOOR_COVERS_SEC) * MARGINAL_SEC) * scale;
+  }
 
   /**
    * Wall-clock estimate for rendering a set of scenes.
@@ -545,13 +569,13 @@
    * Canvas beats cost nothing.
    */
   function estimateMinutes(sceneList, resolution) {
-    const rate = THROUGHPUT[resolution || '480p'] || THROUGHPUT['480p'];
-    const list = sceneList || scenes().filter((s) => s.status === 'done' || isTextDriven(s));
+    const res = resolution || '480p';
+    const list = sceneList || scenes().filter((s) => s.visualType || s.status === 'done');
     const gpuSec = list.reduce((a, s) => {
       if (rendersOnCanvas(s)) return a;
       const target = Math.min(sceneDuration(s), 30);
       const rendered = window.LTXAdapter ? window.LTXAdapter.pickDuration(target) : Math.ceil(target);
-      return a + rendered * rate;
+      return a + clipCostSec(rendered, res);
     }, 0);
     return Math.round(gpuSec / 60);
   }
@@ -726,7 +750,8 @@
     planWithDirector,
     estimateMinutes,
     estimateRun,
-    THROUGHPUT,
+    clipCostSec,
+    RES_SCALE,
     clipBlob,
     status,
     allStatus,
