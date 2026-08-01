@@ -451,13 +451,22 @@
     // If the server told us its routes, trust that rather than probing.
     const routes = await serverRoutes();
     if (routes.length) {
-      const known = attempts.filter(([p]) => routes.includes(p));
-      if (!known.length) {
-        console.warn(`[SD Adapter] Server advertises ${routes.length} route(s) and none is img2img (${routes.join(', ')}) — staying on seed-locked txt2img.`);
+      // Match on shape, not on an exact string. A server that follows its own
+      // convention — /img2img alongside /generate, say — would be missed by a
+      // hardcoded list even though it implements exactly what we need.
+      const looksLikeImg2Img = (p) => /img2?_?2?img|image[-_]to[-_]image|images\/edits/i.test(p);
+      const advertised = routes.filter(looksLikeImg2Img);
+      if (!advertised.length) {
+        console.warn(`[SD Adapter] Server advertises no img2img route (${routes.join(', ')}) — staying on seed-locked txt2img.`);
         img2imgSupport = false;
         return null;
       }
-      attempts = known;
+      // Prefer a route we have a known body shape for; otherwise send the
+      // generic one, which covers the common field spellings.
+      attempts = advertised.map((p) => {
+        const known = attempts.find(([kp]) => kp === p);
+        return known || [p, genericBody];
+      });
     }
 
     if (typeof img2imgSupport === 'string') {
