@@ -611,7 +611,13 @@
     // brand, and returns in milliseconds without touching the queue's GPU time.
     if (window.BlvckGraphic && window.BlvckGraphic.looksLikeGraphic(scene)) {
       const spec = scene.graphic || { kind: 'title', title: scene.sceneSummary || scene.subtitle || '' };
-      return window.BlvckGraphic.render({ ...spec, theme: graphicTheme() });
+      // Palette comes from the project's own subject, so a safety video's cards
+      // read as safety and a finance video's do not look identical to them.
+      return window.BlvckGraphic.render({
+        ...spec,
+        theme: graphicTheme(),
+        palette: window.BlvckGraphic.paletteFor(bible)
+      });
     }
 
     let finalPrompt = scene.prompt || '';
