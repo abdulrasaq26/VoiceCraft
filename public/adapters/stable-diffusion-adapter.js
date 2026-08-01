@@ -348,11 +348,116 @@
     throw new Error('SD server returned an unexpected response format.');
   }
 
+  // Shared response decoder — servers here answer with either JSON carrying
+  // base64, or a raw image body.
+  async function decodeImageResponse(res) {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const json = await res.json();
+      const images = json.images || json.data || [];
+      if (!images.length) return null;
+      const first = images[0];
+      const b64 = typeof first === 'string'
+        ? first
+        : (first.base64 || first.data || first.image || first.b64_json || '');
+      if (!b64) return null;
+      const byteStr = atob(String(b64).replace(/^data:image\/\w+;base64,/, ''));
+      const ab = new ArrayBuffer(byteStr.length);
+      const view = new Uint8Array(ab);
+      for (let i = 0; i < byteStr.length; i++) view[i] = byteStr.charCodeAt(i);
+      return new Blob([ab], { type: 'image/png' });
+    }
+    if (contentType.includes('image/')) return await res.blob();
+    return null;
+  }
+
+  // --- img2img ------------------------------------------------------------
+  //
+  // Carries a character's reference portrait into their scenes. This backend is
+  // stable-diffusion.cpp behind a custom API (/api/health, /api/models), not
+  // Automatic1111 — so, exactly as txt2img already does, we try the known
+  // request shapes in turn instead of assuming one. The outcome is remembered,
+  // so a server without img2img is asked once rather than once per scene.
+  let img2imgSupport = null; // null = untested, false = unsupported, string = working path
+
+  function dataUrlToBase64(dataUrl) {
+    const s = String(dataUrl || '');
+    const i = s.indexOf(',');
+    return i === -1 ? s : s.slice(i + 1);
+  }
+
+  async function generateImageFromImage({
+    prompt,
+    init_image,
+    negative_prompt = 'watermark, blurry, deformed, worst quality, low quality',
+    aspect_ratio = '16:9',
+    denoising_strength = 0.65,
+    steps = 20,
+    cfg_scale = 7.0,
+    sampler = 'Euler a',
+    seed = -1,
+    width,
+    height
+  } = {}) {
+    if (!prompt) throw new Error('Prompt is required for image generation.');
+    if (!init_image) return null;
+    if (img2imgSupport === false) return null; // known unsupported; caller falls back
+
+    const [w, h] = (width && height) ? [width, height] : aspectToSize(aspect_ratio);
+    const baseUrl = getSdBaseUrl();
+    const headers = { 'Content-Type': 'application/json', 'x-sd-endpoint': baseUrl };
+    const b64 = dataUrlToBase64(init_image);
+
+    const a1111Body = JSON.stringify({
+      init_images: [b64], denoising_strength, prompt, negative_prompt,
+      width: w, height: h, steps, cfg_scale, sampler_name: sampler, seed
+    });
+    const genericBody = JSON.stringify({
+      prompt, negative_prompt, image: b64, init_image: b64,
+      strength: denoising_strength, denoising_strength,
+      width: w, height: h, steps, cfg_scale, sampler, seed
+    });
+
+    const attempts = [
+      ['/sdapi/v1/img2img', a1111Body],
+      ['/api/img2img', genericBody],
+      ['/v1/images/edits', genericBody]
+    ];
+    if (typeof img2imgSupport === 'string') {
+      attempts.sort((a, b) => (a[0] === img2imgSupport ? -1 : b[0] === img2imgSupport ? 1 : 0));
+    }
+
+    for (const [path, body] of attempts) {
+      try {
+        const res = await fetch(`${SD_PROXY}${path}`, {
+          method: 'POST', headers, body, signal: AbortSignal.timeout(300000)
+        });
+        if (!res.ok) continue;
+        const blob = await decodeImageResponse(res);
+        if (blob) {
+          if (img2imgSupport !== path) {
+            console.log(`[SD Adapter] img2img available at ${path}`);
+            img2imgSupport = path;
+          }
+          return blob;
+        }
+      } catch (e) { /* try the next shape */ }
+    }
+
+    console.warn('[SD Adapter] No img2img endpoint on this server — character reference portraits cannot drive generation; staying on seed-locked txt2img.');
+    img2imgSupport = false;
+    return null;
+  }
+
+  function supportsImg2Img() { return img2imgSupport !== false; }
+
   // -------------------------------------------------------------------
   // Expose globally
   // -------------------------------------------------------------------
   window.StableDiffusionAdapter = {
     generateImage,
+    generateImageFromImage,
+    supportsImg2Img,
     listModels,
     loadModel,
     checkOnline,

@@ -493,7 +493,7 @@
     // first, reaching the local machine only if Cloudflare happened to fail —
     // so the chosen engine, and its models, samplers and seeds, was bypassed.
     if ((activeImgProvider === 'local_sd' || options.model === 'local_sd') && window.StableDiffusionAdapter) {
-      return await window.StableDiffusionAdapter.generateImage({
+      const sdArgs = {
         prompt: enrichedPrompt,
         negative_prompt: mergeNegative(options.negative_prompt),
         aspect_ratio: options.aspect_ratio || aspect_ratio || '16:9',
@@ -501,10 +501,28 @@
         cfg_scale: options.cfg_scale,
         sampler: options.sampler,
         seed: options.seed,
-        model: null,
         width: options.width,
         height: options.height
-      });
+      };
+
+      // With a character reference to hand, drive generation from it — but only
+      // if this server actually implements img2img. generateImageFromImage
+      // returns null instead of throwing when it does not, so an unsupported
+      // server quietly stays on seed-locked txt2img rather than failing a run.
+      if (options.imageUrl && window.StableDiffusionAdapter.generateImageFromImage) {
+        try {
+          const fromRef = await window.StableDiffusionAdapter.generateImageFromImage({
+            ...sdArgs,
+            init_image: options.imageUrl,
+            denoising_strength: options.denoising_strength != null ? options.denoising_strength : 0.65
+          });
+          if (fromRef) return fromRef;
+        } catch (e) {
+          console.warn('[BlvckAI] img2img attempt failed, falling back to txt2img:', e.message);
+        }
+      }
+
+      return await window.StableDiffusionAdapter.generateImage({ ...sdArgs, model: null });
     }
 
     // 2. Secondary: Cloudflare Worker AI (SDXL Base 1.0)
