@@ -146,27 +146,71 @@
     // Only send a crop when asked; the backend leaves height alone otherwise.
     if (o.outputHeight) body.output_height = Number(o.outputHeight);
 
+    // Enqueue, then poll.
+    //
+    // This is NOT a stylistic choice. Measured against the live tunnel: a 269s
+    // render returned fine, while 301s and 302s renders both died with
+    // ERR_NGROK_3004 — ngrok cuts any single request at ~300 seconds, and every
+    // useful render here takes longer than that. A blocking request would throw
+    // away work the GPU had already done.
     const res = await fetch(`${PROXY}/generate`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(body),
-      // No AbortSignal here on purpose: a T4 render legitimately runs for
-      // minutes and any client-side timeout would abort perfectly good work.
       signal: o.signal
     });
 
+    const started = await readJson(res, 'starting the render');
+    if (!started.job) throw new Error('LTX did not return a job id.');
+
+    const job = await pollJob(started.job, o);
+    if (!job.video_url) throw new Error('Finished job contained no video_url.');
+    const blob = await fetchClip(job.video_url);
+    return { blob, meta: job };
+  }
+
+  async function readJson(res, what) {
     const text = await res.text();
     let json;
     try {
       json = JSON.parse(text);
     } catch {
-      throw new Error(`LTX returned a non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`);
+      // The ngrok interstitial and error pages are HTML — say so plainly
+      // rather than dumping markup at the user.
+      const looksHtml = /^\s*</.test(text);
+      throw new Error(
+        looksHtml
+          ? `The LTX tunnel returned an error page while ${what}. Check the endpoint is still live.`
+          : `LTX returned a non-JSON response (HTTP ${res.status}) while ${what}: ${text.slice(0, 160)}`
+      );
     }
     if (!res.ok || json.error) throw new Error(json.error || `LTX error (HTTP ${res.status})`);
-    if (!json.video_url) throw new Error('LTX response contained no video_url.');
+    return json;
+  }
 
-    const blob = await fetchClip(json.video_url);
-    return { blob, meta: json };
+  /** Poll a job to completion. Reports progress through opts.onProgress. */
+  async function pollJob(jobId, opts = {}) {
+    const intervalMs = opts.pollMs || 5000;
+    const maxMs = opts.maxWaitMs || 60 * 60 * 1000; // an hour is generous even for 30s at 1080p
+    const t0 = Date.now();
+
+    for (;;) {
+      if (opts.signal && opts.signal.aborted) throw new Error('Render cancelled.');
+      await new Promise((r) => setTimeout(r, intervalMs));
+
+      const res = await fetch(`${PROXY}/jobs/${jobId}`, { headers: headers() });
+      const job = await readJson(res, 'checking render progress');
+
+      if (typeof opts.onProgress === 'function') {
+        opts.onProgress({ status: job.status, elapsedSec: job.elapsed_sec || 0, job });
+      }
+      if (job.status === 'done') return job;
+      if (job.status === 'error') throw new Error(job.error || 'render failed');
+
+      if (Date.now() - t0 > maxMs) {
+        throw new Error(`Render still ${job.status} after ${Math.round(maxMs / 60000)} minutes — giving up.`);
+      }
+    }
   }
 
   async function fetchClip(videoUrl) {
@@ -184,6 +228,7 @@
     checkOnline,
     selfTestTextToVideo,
     generateScene,
+    pollJob,
     fetchClip,
     pickDuration,
     DURATIONS,

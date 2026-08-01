@@ -435,7 +435,9 @@
         guideScale: opts.guideScale,
         steps: opts.steps,
         msrScale: opts.msrScale,
-        outputHeight: opts.outputHeight
+        outputHeight: opts.outputHeight,
+        // Renders run for minutes; surface the wait rather than freezing the UI.
+        onProgress: opts.onSceneProgress
       });
 
       await idbPut(clipKey(scene.index), blob);
