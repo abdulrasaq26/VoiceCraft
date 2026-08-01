@@ -518,13 +518,63 @@
     return result;
   }
 
-  // Rough wall-clock estimate so the user knows whether this is a coffee break
-  // or an overnight job. Calibrated for a T4 at 720p/8 steps and deliberately
-  // pessimistic — under-promising here is much kinder than the reverse.
-  function estimateMinutes(sceneList) {
-    const list = sceneList || scenes().filter((s) => s.status === 'done');
-    const secs = list.reduce((a, s) => a + sceneDuration(s), 0);
-    return Math.ceil((secs * 1.6 + list.length * 0.7) / 6) / 10 * 6;
+  // Seconds of GPU time per second of finished video, MEASURED on a Kaggle T4
+  // at 8 steps. Two real data points, same prompt and seed:
+  //
+  //   480p (832x480, 399k px)   5s clip -> 301s   =  60.2 s/s
+  //   720p (1248x704, 879k px)  5s clip -> 758s   = 151.6 s/s
+  //
+  // Cost tracks pixel count closely (2.20x the pixels, 2.52x the time), so the
+  // untested resolutions are scaled from 480p by area rather than guessed. The
+  // previous version of this function was invented and wrong by roughly 20x,
+  // which is worse than having no estimate at all — a number on screen gets
+  // believed.
+  const THROUGHPUT = {
+    '480p': 60,    // measured
+    '540p': 79,    // 522k px  -> 1.31x of 480p
+    '720p': 152,   // measured
+    '1080p': 315   // 2089k px -> 5.23x of 480p
+  };
+
+  /**
+   * Wall-clock estimate for rendering a set of scenes.
+   *
+   * Uses the duration LTX will actually render, not the narration length:
+   * a 6.4s beat is rendered at 8s and trimmed, so it costs 8s of GPU time.
+   * Canvas beats cost nothing.
+   */
+  function estimateMinutes(sceneList, resolution) {
+    const rate = THROUGHPUT[resolution || '480p'] || THROUGHPUT['480p'];
+    const list = sceneList || scenes().filter((s) => s.status === 'done' || isTextDriven(s));
+    const gpuSec = list.reduce((a, s) => {
+      if (rendersOnCanvas(s)) return a;
+      const target = Math.min(sceneDuration(s), 30);
+      const rendered = window.LTXAdapter ? window.LTXAdapter.pickDuration(target) : Math.ceil(target);
+      return a + rendered * rate;
+    }, 0);
+    return Math.round(gpuSec / 60);
+  }
+
+  /**
+   * What a full run will cost, broken down. The point is to make an
+   * unaffordable plan visible BEFORE it starts, not after two hours.
+   */
+  function estimateRun(resolution) {
+    const list = scenes().filter((s) => s.status === 'done' || isTextDriven(s));
+    const st = readState();
+    const todo = list.filter((s) => !(st[String(s.index)] && st[String(s.index)].status === 'done'));
+    const gpu = todo.filter((s) => !rendersOnCanvas(s));
+    const canvas = todo.length - gpu.length;
+    const minutes = estimateMinutes(gpu, resolution);
+    return {
+      total: list.length,
+      todo: todo.length,
+      gpuBeats: gpu.length,
+      canvasBeats: canvas,
+      minutes,
+      hours: Math.round((minutes / 60) * 10) / 10,
+      resolution: resolution || '480p'
+    };
   }
 
   function reset() {
@@ -651,6 +701,8 @@
     generateAll,
     planWithDirector,
     estimateMinutes,
+    estimateRun,
+    THROUGHPUT,
     clipBlob,
     status,
     allStatus,

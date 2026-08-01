@@ -49,14 +49,17 @@
 
   function refreshSummary() {
     if (!el.summary || !window.BlvckLTX) return;
-    const total = sceneCount();
-    if (!total) {
-      el.summary.textContent = 'No storyboard images yet.';
+    const est = window.BlvckLTX.estimateRun(el.res ? el.res.value : '480p');
+    if (!est.total) {
+      el.summary.textContent = 'No scenes to render yet — plan the storyboard first.';
       return;
     }
     const done = window.BlvckLTX.doneCount();
-    const mins = window.BlvckLTX.estimateMinutes();
-    el.summary.textContent = `${done}/${total} clips rendered · roughly ${mins} min for a full run`;
+    const cost = est.minutes >= 90 ? `${est.hours} hours` : `${est.minutes} min`;
+    el.summary.textContent =
+      `${done}/${est.total} rendered · ${est.gpuBeats} beat(s) need the GPU` +
+      `${est.canvasBeats ? `, ${est.canvasBeats} drawn instantly` : ''}` +
+      ` · about ${cost} at ${est.resolution}`;
   }
 
   function opts() {
@@ -107,8 +110,21 @@
 
   async function onGenerate() {
     if (!window.BlvckLTX) return;
-    const total = sceneCount();
-    if (!total) return status('Generate the storyboard images first — LTX animates those frames.');
+    const est = window.BlvckLTX.estimateRun(el.res ? el.res.value : '480p');
+    if (!est.todo) return status('Nothing left to render — every scene already has a clip.');
+
+    // Renders are measured in hours, not seconds. Make the cost explicit and
+    // get a yes before committing the GPU, rather than discovering it later.
+    if (est.minutes >= 45) {
+      const ok = confirm(
+        `This run will take roughly ${est.hours} hours.\n\n` +
+        `${est.gpuBeats} beat(s) at ${est.resolution}` +
+        `${est.canvasBeats ? `, plus ${est.canvasBeats} drawn instantly` : ''}.\n\n` +
+        'Renders continue on the backend and can be resumed, but the Kaggle ' +
+        'session must stay alive. Start now?'
+      );
+      if (!ok) return status('Cancelled — try a lower resolution, or plan fewer filmed beats.', 'info');
+    }
 
     el.generate.disabled = true;
     el.plan.disabled = true;
