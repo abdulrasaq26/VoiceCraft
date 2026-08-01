@@ -354,6 +354,17 @@
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      // The AETHER SDXL notebook's /generate answers with a bare
+      // {"image_base64": "..."} rather than an images array, so accept both.
+      const single = json.image_base64 || json.image || null;
+      if (single && typeof single === 'string') {
+        const bs = atob(single.replace(/^data:image\/\w+;base64,/, ''));
+        const buf = new ArrayBuffer(bs.length);
+        const v = new Uint8Array(buf);
+        for (let i = 0; i < bs.length; i++) v[i] = bs.charCodeAt(i);
+        return new Blob([buf], { type: 'image/png' });
+      }
       const images = json.images || json.data || [];
       if (!images.length) return null;
       const first = images[0];
