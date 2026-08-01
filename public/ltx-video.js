@@ -622,6 +622,13 @@
     // before spending GPU hours on it.
     const drift = window.BlvckModes ? window.BlvckModes.compareMix(mode, mix) : [];
 
+    // Audit the plan for watchability before any GPU time is spent on it. Runs
+    // against the SAVED scenes, so it sees the merged result rather than the
+    // model's raw answer.
+    const retention = window.BlvckRetention
+      ? window.BlvckRetention.analyze(scenes().filter((s) => byIndex.has(s.index)))
+      : { issues: [], stats: {} };
+
     return {
       strategy: plan.strategy,
       warnings: plan.warnings || [],
@@ -629,7 +636,8 @@
       mix,
       hostShots,
       mode: mode ? mode.label : '',
-      mixDrift: drift
+      mixDrift: drift,
+      retention
     };
   }
 

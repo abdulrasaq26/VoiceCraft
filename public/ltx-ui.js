@@ -85,9 +85,17 @@
       const drift = r.mixDrift && r.mixDrift.length
         ? ` ⚠ Off-mode: ${r.mixDrift.join('; ')}.`
         : '';
+      // Retention notes come last but matter most — they are the difference
+      // between a correct video and a watchable one.
+      const ret = r.retention && r.retention.issues && r.retention.issues.length
+        ? ' 📉 ' + r.retention.issues
+          .slice(0, 3)
+          .map((i) => `[${i.where}] ${i.message}`)
+          .join(' ')
+        : ' ✓ No retention problems found.';
       status(
         `Planned ${r.applied} scene(s) as ${r.mode || 'default'} — ${mix || 'no mix reported'}; ` +
-        `host on screen in ${r.hostShots}. ${r.strategy || ''}${warn}${drift}`,
+        `host on screen in ${r.hostShots}. ${r.strategy || ''}${warn}${drift}${ret}`,
         'info'
       );
     } catch (err) {

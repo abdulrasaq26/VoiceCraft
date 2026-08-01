@@ -761,6 +761,14 @@ Choose "chart", "map", "timeline" and "whiteboard" when the beat is ABOUT inform
 - "none" for pure footage moments, and for anything cinematic or emotional where a facecam would break the spell.
 Keep the host visible for a meaningful share of an explainer, and sparing in a documentary.
 
+PLAN FOR RETENTION, not just for correctness. A sequence can be perfectly continuous and still lose the viewer:
+- The first 15 seconds decide the retention curve. Open on the strongest available image or the host making the promise of the video — never on a slow establishing shot, and never on a single long held beat.
+- Never let more than four consecutive beats share a visualType. A run of identical beats is where viewers leave; break it with a chart, a whiteboard, or the host.
+- Vary shot scale. Consecutive shots at the same size make an edit feel assembled rather than cut.
+- Vary beat length. Evenly paced beats feel metronomic; alternate longer moments with short ones.
+- Put a pattern interrupt roughly every 30-40 seconds: a change of visual kind, a return to the host, or a hard change of scale.
+- Give every filmed beat real "motion". A beat with none comes back as a near-still frame, which is the slideshow look we are trying to escape.
+
 Also enforce continuity across the sequence. Consecutive shots in the same place, at the same time of day, must not change weather or light. Flag any beat where the storyboard has drifted.
 
 Respond ONLY with JSON:
