@@ -40,9 +40,17 @@
 
   const ACTIVE_PRESET_KEY = 'blvck:active_channel_preset';
 
+  // Defaulting to "Historical Documentary Animation" meant any project that had
+  // not explicitly chosen a preset inherited its sepia, muted-earth palette —
+  // which is why unrelated topics came out looking like archive footage. The
+  // fallback is now a neutral modern look; historical remains a deliberate
+  // choice rather than what you get by saying nothing.
+  const DEFAULT_PRESET = 'Cinematic Realism';
+
   function getActivePreset() {
-    const key = localStorage.getItem(ACTIVE_PRESET_KEY) || 'Historical Documentary Animation';
-    return { name: key, ...PRESETS[key] || PRESETS['Historical Documentary Animation'] };
+    const stored = localStorage.getItem(ACTIVE_PRESET_KEY);
+    const key = (stored && PRESETS[stored]) ? stored : DEFAULT_PRESET;
+    return { name: key, ...(PRESETS[key] || PRESETS[DEFAULT_PRESET]) };
   }
 
   function setActivePreset(presetName) {

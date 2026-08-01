@@ -395,6 +395,34 @@
     throw new Error('No working TTS provider available.');
   }
 
+  // Quality guardrails every Stable Diffusion request should carry. A caller's
+  // style negatives are ADDED to these, not swapped for them: passing
+  // `options.negative_prompt || ''` used to hand the adapter an empty string
+  // whenever no style negative existed, silently discarding its own defaults.
+  // Two groups here, both learned from real output on this pipeline.
+  //
+  // Text: SDXL cannot spell. Any document, label or sign it renders comes back
+  // as scrambled pseudo-letters and instantly reads as AI-generated, so the
+  // whole family is suppressed — the scene prompts are separately instructed
+  // to film the human action rather than the artefact.
+  //
+  // Illustration: for real-world subjects the flat-vector "explainer graphic"
+  // look is the other giveaway. Naming it here keeps scenes photographic even
+  // when a prompt drifts toward stock-illustration phrasing.
+  const SD_BASE_NEGATIVE = [
+    'watermark, signature, logo',
+    'text, letters, words, caption, subtitle, label, signage, handwriting, gibberish text, distorted text, misspelled',
+    'flat vector, corporate illustration, infographic, clipart, cartoon, 3d render, cgi',
+    'blurry, deformed, extra fingers, malformed hands, worst quality, low quality, jpeg artifacts'
+  ].join(', ');
+
+  function mergeNegative(extra) {
+    const parts = [SD_BASE_NEGATIVE];
+    const e = String(extra || '').trim();
+    if (e) parts.push(e);
+    return parts.join(', ');
+  }
+
   // Image Generation Router — Local Stable Diffusion (Uncensored Local Studio)
   async function generateImage(promptOrOptions = {}, aspect_ratio = '16:9', extraOpts = {}) {
     let options = {};
@@ -428,7 +456,8 @@
           return await window.ImageAdapters.pollinationsGenerateImage({
             prompt: enrichedPrompt,
             aspect_ratio: options.aspect_ratio || aspect_ratio || '16:9',
-            model: options.model || 'flux'
+            model: options.model || 'flux',
+            seed: options.seed != null ? options.seed : null
           });
         } catch (polErr) {
           console.warn('[BlvckAI] Pollinations.ai failed:', polErr.message);
@@ -473,6 +502,44 @@
       }
     }
 
+    // 1.9 Explicitly-chosen local Stable Diffusion.
+    // This has to run BEFORE the unconditional Cloudflare fallback below.
+    // Choosing local_sd previously still sent every prompt to Cloudflare SDXL
+    // first, reaching the local machine only if Cloudflare happened to fail —
+    // so the chosen engine, and its models, samplers and seeds, was bypassed.
+    if ((activeImgProvider === 'local_sd' || options.model === 'local_sd') && window.StableDiffusionAdapter) {
+      const sdArgs = {
+        prompt: enrichedPrompt,
+        negative_prompt: mergeNegative(options.negative_prompt),
+        aspect_ratio: options.aspect_ratio || aspect_ratio || '16:9',
+        steps: options.steps,
+        cfg_scale: options.cfg_scale,
+        sampler: options.sampler,
+        seed: options.seed,
+        width: options.width,
+        height: options.height
+      };
+
+      // With a character reference to hand, drive generation from it — but only
+      // if this server actually implements img2img. generateImageFromImage
+      // returns null instead of throwing when it does not, so an unsupported
+      // server quietly stays on seed-locked txt2img rather than failing a run.
+      if (options.imageUrl && window.StableDiffusionAdapter.generateImageFromImage) {
+        try {
+          const fromRef = await window.StableDiffusionAdapter.generateImageFromImage({
+            ...sdArgs,
+            init_image: options.imageUrl,
+            denoising_strength: options.denoising_strength != null ? options.denoising_strength : 0.65
+          });
+          if (fromRef) return fromRef;
+        } catch (e) {
+          console.warn('[BlvckAI] img2img attempt failed, falling back to txt2img:', e.message);
+        }
+      }
+
+      return await window.StableDiffusionAdapter.generateImage({ ...sdArgs, model: null });
+    }
+
     // 2. Secondary: Cloudflare Worker AI (SDXL Base 1.0)
     if (window.ImageAdapters && window.ImageAdapters.cloudflareWorkerGenerateImage) {
       try {
@@ -489,7 +556,7 @@
       try {
         return await window.StableDiffusionAdapter.generateImage({
           prompt: enrichedPrompt,
-          negative_prompt: options.negative_prompt || '',
+          negative_prompt: mergeNegative(options.negative_prompt),
           aspect_ratio: options.aspect_ratio || aspect_ratio || '16:9',
           steps: options.steps,
           cfg_scale: options.cfg_scale,

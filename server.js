@@ -248,6 +248,7 @@ const server = http.createServer((req, res) => {
       let width = 1280;
       let height = 720;
       let model = 'flux';
+      let seed = null;
 
       try {
         if (body.length > 0) {
@@ -256,11 +257,20 @@ const server = http.createServer((req, res) => {
           if (parsed.width) width = parsed.width;
           if (parsed.height) height = parsed.height;
           if (parsed.model) model = parsed.model;
+          if (parsed.seed != null && Number.isFinite(Number(parsed.seed))) {
+            seed = Math.abs(Math.trunc(Number(parsed.seed)));
+          }
         }
       } catch (_) {}
 
+      // The seed was previously randomised here on every request, which made a
+      // consistent look across a storyboard impossible: the same prompt would
+      // render a different world each time. Callers now supply a seed derived
+      // from the project so a series holds together, and a re-run of one scene
+      // reproduces it. Random remains the fallback for one-off images.
+      if (seed == null) seed = Math.floor(Math.random() * 1000000);
+
       const cleanPrompt = encodeURIComponent(prompt.slice(0, 400));
-      const seed = Math.floor(Math.random() * 1000000);
       const targetUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=${width}&height=${height}&model=${encodeURIComponent(model)}&nologo=true&seed=${seed}`;
 
       const options = {

@@ -443,6 +443,7 @@
       // 1. Project profile (story + inferred/selected visual style)
       const bibleRes = await window.BlvckAI.generateJSON('/api/storyboard/bible', { context: ctx }, { onAttempt, task: 'bible' });
       bible = bibleRes.bible;
+      syncBibleToConsistency();
       renderBible();
 
       // 2. Scene prompts in batches (with prior summaries for continuity)
@@ -462,6 +463,9 @@
         renderScenes();
       }
       saveProject();
+      // Build reference portraits for anyone who actually recurs, before the
+      // scene queue runs, so the cast is locked in first.
+      await autoBuildRecurringReferences();
     } catch (err) {
       lastRaw = (err && err.raw) || (window.BlvckAI.lastRawResponse && window.BlvckAI.lastRawResponse()) || '';
       if (rawBtn) rawBtn.hidden = !lastRaw;
@@ -492,21 +496,161 @@
     return null;
   }
 
+  // bible.visualStyle is an OBJECT ({name, description, lighting, colorGrading,
+  // negative}). Interpolating it straight into a template literal produced the
+  // literal text "[object Object]", so every scene prompt carried that instead
+  // of the style, and the image model was left with no style anchor at all —
+  // which is why output drifted between scenes and ignored the chosen look.
+  // Copy the project's cast, locations and style into the consistency engine.
+  //
+  // These were two disconnected stores: the bible held characters and
+  // locations, AssetConsistency held its own, and nothing moved between them.
+  // Since buildConsistencyPromptBlock only emits a CHARACTER or LOCATION line
+  // when its OWN store knows that name, it never emitted any — the engine had
+  // no idea who was in the film.
+  function syncBibleToConsistency() {
+    const AC = window.AssetConsistency;
+    if (!AC || !bible) return;
+    (bible.characters || []).forEach((c) => {
+      if (!c || !c.name) return;
+      const existing = (AC.getBibles().characters || {})[c.name] || {};
+      // Keep any reference portrait already captured for this character.
+      AC.setCharacter(c.name, { ...existing, traits: c.description || existing.traits || '' });
+    });
+    (bible.locations || []).forEach((l) => {
+      if (!l || !l.name) return;
+      AC.setLocation(l.name, { description: l.description || '' });
+    });
+    const vs = bible.visualStyle || {};
+    if (vs.name || vs.description) {
+      AC.setStyle(vs.name || 'Project style', {
+        palette: vs.colorGrading || '',
+        camera: ''
+      });
+    }
+  }
+
+  // Which of the bible's locations this scene is set in, if any. Used to pull
+  // that location's canonical description into the prompt so the same place
+  // looks the same every time it appears.
+  function sceneLocation(scene) {
+    const locs = (bible && bible.locations) || [];
+    if (!locs.length) return '';
+    const hay = `${scene.sceneSummary || ''} ${scene.prompt || ''} ${scene.visualFocus || ''}`.toLowerCase();
+    const hit = locs.find((l) => l.name && hay.includes(String(l.name).toLowerCase()));
+    return hit ? hit.name : '';
+  }
+
+  // A seed derived from the project title, so every scene in one video draws
+  // from the same corner of the model's latent space and a re-run reproduces
+  // the same frame. The scene index is folded in only lightly — identical
+  // seeds across scenes would push every frame toward the same composition.
+  // Match the card background to the project's own grade so graphics cut
+  // against the footage rather than flashing white in a dark video.
+  function graphicTheme() {
+    const vs = (bible && bible.visualStyle) || {};
+    const hay = `${vs.description || ''} ${vs.colorGrading || ''} ${vs.lighting || ''}`.toLowerCase();
+    return /bright|light|airy|white|daylight|clean|pastel/.test(hay) ? 'light' : 'dark';
+  }
+
+  function hash32(s) {
+    let h = 2166136261;
+    const str = String(s || '');
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return Math.abs(h % 1000000);
+  }
+
+  function projectSeed() {
+    return hash32((window.BlvckAssets && window.BlvckAssets.title()) || 'aether');
+  }
+
+  // Seeding strategy, and why it is shaped this way:
+  //
+  // Our Stable Diffusion adapter is text2img only, so the character reference
+  // PORTRAITS cannot be fed back in as an init image — the imageUrl we pass is
+  // dropped by that path. With no img2img, the only lever that actually keeps a
+  // face recognisable between scenes is the seed. So every scene featuring a
+  // given character is rendered from that character's own fixed seed, which
+  // puts them in the same region of latent space each time; the prompts still
+  // differ per scene, so composition and action vary.
+  //
+  // Scenes with no character fall back to the project seed offset by index, so
+  // they stay in the project's look without all collapsing into one frame.
+  function sceneSeed(scene) {
+    const base = projectSeed();
+    const names = Array.isArray(scene && scene.characters) ? scene.characters.filter(Boolean) : [];
+    if (names.length) {
+      const primary = String(names[0]).trim().toLowerCase();
+      return (base + hash32(primary)) % 1000000;
+    }
+    const idx = Number.isFinite(scene && scene.index) ? scene.index : 0;
+    return (base + idx * 17) % 1000000;
+  }
+
+  function styleText(vs) {
+    if (!vs) return '';
+    if (typeof vs === 'string') return vs;
+    return [vs.description || vs.name, vs.lighting, vs.colorGrading]
+      .map((s) => String(s || '').trim())
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  function styleNegative(vs) {
+    if (!vs || typeof vs === 'string') return '';
+    return String(vs.negative || '').trim();
+  }
+
   async function generateSceneAsset(scene) {
+    // Frames that are really about words are typeset, not generated. Diffusion
+    // models cannot spell, so a checklist or a big number rendered on the GPU
+    // comes back as pseudo-lettering; drawn here it is correct every time, on
+    // brand, and returns in milliseconds without touching the queue's GPU time.
+    if (window.BlvckGraphic && window.BlvckGraphic.looksLikeGraphic(scene)) {
+      const spec = scene.graphic || { kind: 'title', title: scene.sceneSummary || scene.subtitle || '' };
+      // Palette comes from the project's own subject, so a safety video's cards
+      // read as safety and a finance video's do not look identical to them.
+      return window.BlvckGraphic.render({
+        ...spec,
+        theme: graphicTheme(),
+        palette: window.BlvckGraphic.paletteFor(bible)
+      });
+    }
+
     let finalPrompt = scene.prompt || '';
 
-    // Append master visual style to guarantee consistent art style across all generated scenes
-    if (bible && bible.visualStyle) {
-      finalPrompt = `${finalPrompt}. Visual Style: ${bible.visualStyle}`;
+    // Append the master visual style so every scene shares one look.
+    const styled = styleText(bible && bible.visualStyle);
+    if (styled) {
+      if (!finalPrompt.toLowerCase().includes(styled.slice(0, 24).toLowerCase())) {
+        finalPrompt = `${finalPrompt}. Visual style: ${styled}`;
+      }
     } else if (styleEl && styleEl.value && styleEl.value !== 'auto') {
-      finalPrompt = `${finalPrompt}. Visual Style: ${styleEl.value}`;
+      finalPrompt = `${finalPrompt}. Visual style: ${styleEl.value}`;
     }
+    // The style's negatives go to the engine's own negative_prompt where one
+    // exists (Stable Diffusion, SDXL). They must NOT be appended to the
+    // positive prompt: writing "avoid sepia, film grain" there describes those
+    // things to the sampler and makes them MORE likely, not less.
+    const negative = styleNegative(bible && bible.visualStyle);
 
     if (sceneAssetType(scene) === 'video') {
       return window.BlvckAI.generateVideo(finalPrompt, { seconds: 5, size: '1280x720' });
     }
     const imageUrl = sceneReference(scene);
-    return window.BlvckAI.generateImage(finalPrompt, ASPECT, imageUrl ? { imageUrl } : {});
+    // characters/location were never passed, so the consistency engine always
+    // received empty arrays and could not emit the per-character or
+    // per-location rules that keep a cast and a world looking the same.
+    return window.BlvckAI.generateImage(finalPrompt, ASPECT, {
+      ...(imageUrl ? { imageUrl } : {}),
+      seed: sceneSeed(scene),
+      negative_prompt: negative || undefined,
+      characters: Array.isArray(scene.characters) ? scene.characters : [],
+      location: sceneLocation(scene)
+    });
   }
 
   // Video generation is far slower than images; pace the queue accordingly.
@@ -682,6 +826,51 @@
       `Head-and-shoulders, neutral plain background, front-facing, clear consistent character design. ` +
       `${vs.description || ''}${vs.lighting ? `, ${vs.lighting}` : ''}`.trim()
     );
+  }
+
+  // A character is worth a reference sheet once they appear in more than one
+  // scene — a one-off extra does not need locking down, and generating a
+  // portrait for every named person in the script wastes a lot of GPU time.
+  function recurringCharacters(minScenes = 2) {
+    const counts = new Map();
+    scenes.forEach((s) => {
+      (Array.isArray(s.characters) ? s.characters : []).forEach((n) => {
+        const key = String(n || '').trim();
+        if (key) counts.set(key, (counts.get(key) || 0) + 1);
+      });
+    });
+    const named = (bible && bible.characters) || [];
+    return [...counts.entries()]
+      .filter(([, n]) => n >= minScenes)
+      .map(([name]) => {
+        const match = named.find((c) => c.name && c.name.toLowerCase() === name.toLowerCase());
+        return { name, description: (match && match.description) || '', scenes: counts.get(name) };
+      });
+  }
+
+  async function autoBuildRecurringReferences() {
+    const recurring = recurringCharacters();
+    if (!recurring.length) return;
+    const todo = recurring.filter((c) => !refDataUrls.has(c.name));
+    if (!todo.length) return;
+
+    setAnalyzing(true, `Building reference portraits for ${todo.length} recurring character(s)…`);
+    for (const c of todo) {
+      try {
+        // Each portrait uses that character's own seed — the same one their
+        // scenes will use — so the sheet and the scenes agree.
+        const blob = await window.BlvckAI.generateImage(
+          referencePrompt(c.name, c.description), '1:1',
+          { seed: (projectSeed() + hash32(c.name.toLowerCase())) % 1000000 }
+        );
+        await setReference(c.name, blob);
+      } catch (err) {
+        console.warn(`[Storyboard] Could not build a reference for ${c.name}:`, err.message);
+      }
+    }
+    renderCast();
+    saveProject();
+    setAnalyzing(false);
   }
 
   async function generateCharacterReference(name, description) {

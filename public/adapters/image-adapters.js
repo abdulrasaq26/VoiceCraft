@@ -199,7 +199,7 @@
   }
 
   // Pollinations.ai FLUX / SD Adapter via server proxy (Bypasses Turnstile & CORS)
-  async function pollinationsGenerateImage({ prompt, aspect_ratio = '16:9', model = 'flux' }) {
+  async function pollinationsGenerateImage({ prompt, aspect_ratio = '16:9', model = 'flux', seed = null }) {
     let width = 1280;
     let height = 720;
 
@@ -208,10 +208,12 @@
     else if (aspect_ratio === '4:3') { width = 1024; height = 768; }
     else if (aspect_ratio === '3:4') { width = 768; height = 1024; }
 
+    // The seed is what holds a storyboard together: one seed family plus one
+    // style string keeps scenes recognisably part of the same video.
     const res = await fetch('/api/proxy/pollinations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, width, height, model })
+      body: JSON.stringify({ prompt, width, height, model, seed })
     });
 
     if (!res.ok) {

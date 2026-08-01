@@ -191,85 +191,135 @@ Return ONLY valid JSON array, no markdown:
   // Renders MrBeast-style text directly onto the thumbnail canvas
   // Rules: HUGE font, pure white/yellow, thick black stroke, strong shadow, NO boxes
 
+  // A thumbnail is judged at roughly 360x200 in a feed, smaller on a phone.
+  // The previous version capped type at 130px inside a 540px column, which
+  // vanishes at that size — the commonest reason a thumbnail loses to the ones
+  // beside it. This fills the frame, grades the image, and gives the eye one
+  // hot word to land on.
+  // Decoded once and reused; a data URL decode per thumbnail is wasteful when
+  // the same presenter appears on all of them.
+  let presenterImg = null;
+  function refreshPresenter() {
+    const data = window.BlvckGraphic && window.BlvckGraphic.getFace();
+    if (!data) { presenterImg = null; return; }
+    const img = new Image();
+    img.onload = () => { presenterImg = img; };
+    img.onerror = () => { presenterImg = null; };
+    img.src = data;
+  }
+  if (window.BlvckGraphic) refreshPresenter();
+  window.addEventListener('blvck:presenter-changed', refreshPresenter);
+
   function renderYouTubeText(imgElement, concept, selectedText) {
+    const W = 1280, H = 720;
     const canvas = document.createElement('canvas');
-    canvas.width  = 1280;
-    canvas.height = 720;
+    canvas.width = W;
+    canvas.height = H;
     const ctx = canvas.getContext('2d');
 
-    // 1. Draw base image
-    ctx.drawImage(imgElement, 0, 0, 1280, 720);
+    // Subject-aware colour, so a safety video and a finance video do not ship
+    // the same yellow. An explicit concept palette still wins.
+    const project = (window.BlvckAssets && window.BlvckAssets.snapshot()) || {};
+    const pal = (window.BlvckGraphic && window.BlvckGraphic.paletteFor(
+      [project.title, concept && concept.angle, selectedText,
+       concept && concept.overlayText].filter(Boolean).join(' ')
+    )) || { hot: '#ffe066' };
+    const hot = (concept && concept.colorPalette && concept.colorPalette.textColor) || pal.hot;
 
-    // 2. Dark gradient vignette on left 55% only — preserves face on right
-    const grad = ctx.createLinearGradient(0, 0, 700, 0);
-    grad.addColorStop(0,   'rgba(0,0,0,0.88)');
-    grad.addColorStop(0.5, 'rgba(0,0,0,0.55)');
-    grad.addColorStop(1,   'transparent');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1280, 720);
-
-    // 3. Text rendering
-    const rawText = (selectedText || concept.overlayText || 'THEY LIED').toUpperCase();
-    const palette = concept.colorPalette || CTR_PALETTES[0];
-    const words   = rawText.split(/\s+/);
-
-    // Split into max 2 lines (2 words each line for max impact)
-    let lines = [];
-    if (words.length <= 2) {
-      lines = [rawText];
-    } else if (words.length <= 4) {
-      const mid = Math.ceil(words.length / 2);
-      lines = [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
-    } else {
-      lines = [words.slice(0, 2).join(' '), words.slice(2, 4).join(' ')];
+    // 1. Base frame, graded. Saturation and contrast are most of why a
+    //    professional thumbnail jumps out of a grey feed.
+    if (imgElement) {
+      ctx.filter = 'saturate(1.35) contrast(1.18) brightness(1.04)';
+      ctx.drawImage(imgElement, 0, 0, W, H);
+      ctx.filter = 'none';
     }
 
-    // Auto-fit font size based on longest line
-    const maxW   = 540; // max text width in pixels
-    let fontSize = 130;
-    ctx.font = `900 ${fontSize}px Impact, "Arial Black", sans-serif`;
-    const longestLine = lines.reduce((a, b) => a.length > b.length ? a : b);
-    while (ctx.measureText(longestLine).width > maxW && fontSize > 60) {
-      fontSize -= 4;
-      ctx.font = `900 ${fontSize}px Impact, "Arial Black", sans-serif`;
+    // 1b. If a presenter cut-out has been saved, it replaces the generated
+    //     face. At feed size a model-drawn face is where the artefacts show
+    //     first, and viewers read "AI" from a face faster than from anything
+    //     else — a real one also builds the recognition that drives clicks.
+    if (presenterImg && window.BlvckGraphic) {
+      window.BlvckGraphic.drawFace(ctx, presenterImg, { side: 'right', heightPct: 0.94 });
     }
 
-    const lineHeight = fontSize * 1.1;
-    const totalH     = lines.length * lineHeight;
-    let startY        = (720 - totalH) / 2 - 20; // vertically centered, shifted up slightly
-    const startX      = 50;
+    // 2. Radial vignette rather than a flat left-hand scrim — it darkens the
+    //    edges without laying a grey slab across half the picture.
+    const vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.95);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.62)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
 
-    ctx.save();
+    // 3. Weight under the type only, so words stay legible over a busy
+    //    photograph without flattening the subject.
+    const base = ctx.createLinearGradient(0, H * 0.45, 0, H);
+    base.addColorStop(0, 'rgba(0,0,0,0)');
+    base.addColorStop(1, 'rgba(0,0,0,0.72)');
+    ctx.fillStyle = base;
+    ctx.fillRect(0, H * 0.45, W, H * 0.55);
+
+    const raw = (selectedText || (concept && concept.overlayText) || '').toUpperCase();
+    const words = raw.split(/\s+/).filter(Boolean).slice(0, 5);
+    if (!words.length) return canvas;
+
+    const lines = words.length <= 2
+      ? [words.join(' ')]
+      : [words.slice(0, Math.ceil(words.length / 2)).join(' '),
+         words.slice(Math.ceil(words.length / 2)).join(' ')];
+
+    // 4. Grow to fill rather than capping small.
+    const maxW = W * 0.88, maxLineH = (H * 0.46) / lines.length;
+    let size = 240;
+    // Uses the brand font when public/fonts/thumbnail.woff2 exists, else the
+    // heaviest guaranteed-available face.
+    const fontAt = (px) => (window.BlvckGraphic && window.BlvckGraphic.displayFont)
+      ? window.BlvckGraphic.displayFont(px)
+      : `900 ${px}px "Arial Black", Impact, sans-serif`;
+    for (;;) {
+      ctx.font = fontAt(size);
+      const widest = Math.max(...lines.map((l) => ctx.measureText(l).width));
+      if ((widest <= maxW && size * 1.04 <= maxLineH) || size <= 72) break;
+      size -= 4;
+    }
+
+    const lineH = size * 1.02;
+    const startY = H - lines.length * lineH - H * 0.085;
+    const padX = W * 0.05;
+
     ctx.textBaseline = 'top';
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
 
-    lines.forEach((line) => {
-      // Shadow pass — large offset for depth
-      ctx.shadowColor   = 'rgba(0,0,0,0.95)';
-      ctx.shadowBlur    = 30;
-      ctx.shadowOffsetX = 6;
-      ctx.shadowOffsetY = 8;
+    // The longest word takes the emphasis colour: one focal point reads better
+    // than a uniform wall of capitals.
+    const emph = words.slice().sort((a, b) => b.length - a.length)[0];
 
-      // Thick black stroke — gives the text readable border
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth   = Math.round(fontSize * 0.16); // 16% of fontSize
-      ctx.lineJoin    = 'miter';
-      ctx.miterLimit  = 2;
-      ctx.strokeText(line, startX, startY);
+    lines.forEach((line, li) => {
+      ctx.font = fontAt(size);
+      const y = startY + li * lineH;
+      let cx = padX;
+      const segments = line.includes(emph)
+        ? [line.slice(0, line.indexOf(emph)), emph, line.slice(line.indexOf(emph) + emph.length)]
+        : [line];
 
-      // Clear shadow before fill
-      ctx.shadowColor   = 'transparent';
-      ctx.shadowBlur    = 0;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
+      segments.forEach((seg) => {
+        if (!seg) return;
+        ctx.shadowColor = 'rgba(0,0,0,0.92)';
+        ctx.shadowBlur = size * 0.14;
+        ctx.shadowOffsetY = size * 0.05;
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = size * 0.155;
+        ctx.strokeText(seg, cx, y);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
 
-      // Crisp text fill
-      ctx.fillStyle = palette.textColor;
-      ctx.fillText(line, startX, startY);
-
-      startY += lineHeight;
+        ctx.fillStyle = seg === emph ? hot : '#ffffff';
+        ctx.fillText(seg, cx, y);
+        cx += ctx.measureText(seg).width;
+      });
     });
 
-    ctx.restore();
     return canvas;
   }
 
@@ -511,6 +561,56 @@ Return ONLY valid JSON array, no markdown:
     const resultsEl = $('thumb-results');
 
     if (!genBtn || !resultsEl) return;
+
+    // --- presenter cut-out -------------------------------------------------
+    const faceInput = $('presenter-file');
+    const facePrev = $('presenter-preview');
+    const faceClear = $('presenter-clear');
+    const G = window.BlvckGraphic;
+
+    function paintPresenter() {
+      const data = G && G.getFace();
+      if (facePrev) { facePrev.src = data || ''; facePrev.hidden = !data; }
+      if (faceClear) faceClear.hidden = !data;
+    }
+    paintPresenter();
+
+    if (faceInput && G) {
+      faceInput.addEventListener('change', async () => {
+        const file = faceInput.files && faceInput.files[0];
+        if (!file) return;
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.className = 'status info';
+          statusEl.textContent = 'Preparing your cut-out…';
+        }
+        try {
+          const dataUrl = await G.prepareFace(file);
+          G.saveFace(dataUrl);
+          paintPresenter();
+          // Tell the renderer to pick up the new face without a reload.
+          window.dispatchEvent(new CustomEvent('blvck:presenter-changed'));
+          if (statusEl) {
+            statusEl.className = 'status info';
+            statusEl.textContent = '✓ Saved — regenerate a thumbnail to see yourself on it.';
+          }
+        } catch (e) {
+          if (statusEl) {
+            statusEl.className = 'status error';
+            statusEl.textContent = `Could not read that image: ${e.message}`;
+          }
+        }
+        faceInput.value = '';
+      });
+    }
+
+    if (faceClear && G) {
+      faceClear.addEventListener('click', () => {
+        G.clearFace();
+        paintPresenter();
+        window.dispatchEvent(new CustomEvent('blvck:presenter-changed'));
+      });
+    }
 
     // Auto-populate topic from active project
     const syncTopic = () => {
