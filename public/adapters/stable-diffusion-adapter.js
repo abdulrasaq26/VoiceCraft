@@ -380,6 +380,30 @@
   // so a server without img2img is asked once rather than once per scene.
   let img2imgSupport = null; // null = untested, false = unsupported, string = working path
 
+  // Ask the server what it actually implements instead of guessing.
+  // These backends are FastAPI, which publishes /openapi.json, so one request
+  // gives the real route list — far better than firing three POSTs at paths
+  // that may not exist. The AETHER SDXL notebook, for instance, exposes only
+  // /v1/health, /api/health and /generate, so img2img can be ruled out up
+  // front rather than discovered by three 404s.
+  let routeCache = null;
+  async function serverRoutes() {
+    if (routeCache) return routeCache;
+    try {
+      const r = await fetch(`${SD_PROXY}/openapi.json`, {
+        headers: { 'x-sd-endpoint': getSdBaseUrl() },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (r.ok) {
+        const spec = await r.json();
+        routeCache = Object.keys(spec.paths || {});
+        return routeCache;
+      }
+    } catch (e) { /* not a FastAPI server, or unreachable */ }
+    routeCache = []; // unknown — fall back to probing
+    return routeCache;
+  }
+
   function dataUrlToBase64(dataUrl) {
     const s = String(dataUrl || '');
     const i = s.indexOf(',');
@@ -418,11 +442,24 @@
       width: w, height: h, steps, cfg_scale, sampler, seed
     });
 
-    const attempts = [
+    let attempts = [
       ['/sdapi/v1/img2img', a1111Body],
       ['/api/img2img', genericBody],
       ['/v1/images/edits', genericBody]
     ];
+
+    // If the server told us its routes, trust that rather than probing.
+    const routes = await serverRoutes();
+    if (routes.length) {
+      const known = attempts.filter(([p]) => routes.includes(p));
+      if (!known.length) {
+        console.warn(`[SD Adapter] Server advertises ${routes.length} route(s) and none is img2img (${routes.join(', ')}) — staying on seed-locked txt2img.`);
+        img2imgSupport = false;
+        return null;
+      }
+      attempts = known;
+    }
+
     if (typeof img2imgSupport === 'string') {
       attempts.sort((a, b) => (a[0] === img2imgSupport ? -1 : b[0] === img2imgSupport ? 1 : 0));
     }
