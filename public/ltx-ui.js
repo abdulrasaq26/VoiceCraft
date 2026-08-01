@@ -9,6 +9,19 @@
     plan: null, generate: null, cancel: null, summary: null, status: null
   };
 
+  // True once the user has been shown the cost of a long run and the button is
+  // waiting for a second, deliberate click.
+  let armed = false;
+
+  function disarm() {
+    armed = false;
+    const b = $('ltx-generate');
+    if (b) {
+      b.textContent = 'Generate all scene clips';
+      b.classList.remove('danger');
+    }
+  }
+
   function status(msg, kind) {
     if (!el.status) return;
     el.status.hidden = !msg;
@@ -113,18 +126,26 @@
     const est = window.BlvckLTX.estimateRun(el.res ? el.res.value : '480p');
     if (!est.todo) return status('Nothing left to render — every scene already has a clip.');
 
-    // Renders are measured in hours, not seconds. Make the cost explicit and
-    // get a yes before committing the GPU, rather than discovering it later.
-    if (est.minutes >= 45) {
-      const ok = confirm(
-        `This run will take roughly ${est.hours} hours.\n\n` +
-        `${est.gpuBeats} beat(s) at ${est.resolution}` +
-        `${est.canvasBeats ? `, plus ${est.canvasBeats} drawn instantly` : ''}.\n\n` +
-        'Renders continue on the backend and can be resumed, but the Kaggle ' +
-        'session must stay alive. Start now?'
+    // Two-step confirm, deliberately NOT window.confirm().
+    //
+    // A native dialog is suppressed outright in some embedded browsers: it
+    // returns false without ever appearing, so a long run could never be
+    // started and the panel just kept reporting "Cancelled". Arming the button
+    // in-page always works and shows the cost in the same place as the result.
+    if (est.minutes >= 45 && !armed) {
+      armed = true;
+      el.generate.textContent = `Confirm — start ~${est.hours}h run`;
+      el.generate.classList.add('danger');
+      status(
+        `This run is about ${est.hours} hours: ${est.gpuBeats} beat(s) at ${est.resolution}` +
+        `${est.canvasBeats ? `, plus ${est.canvasBeats} drawn instantly` : ''}. ` +
+        'Renders continue on the backend and resume if interrupted, but the Kaggle session must stay alive. ' +
+        'Click again to start, or lower the resolution first.',
+        'info'
       );
-      if (!ok) return status('Cancelled — try a lower resolution, or plan fewer filmed beats.', 'info');
+      return;
     }
+    disarm();
 
     el.generate.disabled = true;
     el.plan.disabled = true;
@@ -166,6 +187,7 @@
       el.generate.disabled = false;
       el.plan.disabled = false;
       if (el.cancel) el.cancel.hidden = true;
+      disarm();
       refreshSummary();
     }
   }
@@ -225,6 +247,16 @@
     }
     const st = $('ltx-selftest');
     if (st) st.addEventListener('click', onSelfTest);
+
+    // Changing resolution changes the cost, so re-price the run and cancel any
+    // armed confirmation — otherwise a second click could start a run the user
+    // was never shown the price of.
+    if (el.res) {
+      el.res.addEventListener('change', () => {
+        disarm();
+        refreshSummary();
+      });
+    }
     el.endpoint = $('ltx-endpoint');
     el.online = $('ltx-online');
     el.res = $('ltx-res');

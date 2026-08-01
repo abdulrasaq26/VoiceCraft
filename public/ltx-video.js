@@ -561,7 +561,11 @@
    * unaffordable plan visible BEFORE it starts, not after two hours.
    */
   function estimateRun(resolution) {
-    const list = scenes().filter((s) => s.status === 'done' || isTextDriven(s));
+    // Must use the SAME filter as generateAll, or the summary describes a
+    // different run from the one the button performs. Filtering on
+    // isTextDriven() dropped canvas beats before counting them, so a 6-beat
+    // storyboard reported "4 total, 0 drawn instantly".
+    const list = scenes().filter((s) => s.visualType || s.status === 'done');
     const st = readState();
     const todo = list.filter((s) => !(st[String(s.index)] && st[String(s.index)].status === 'done'));
     const gpu = todo.filter((s) => !rendersOnCanvas(s));
