@@ -431,6 +431,40 @@
     upSubs.value = '';
   }
 
+  /**
+   * Draw a card for a beat that has no asset.
+   *
+   * Uses whatever the Director already decided — a chart beat draws a chart,
+   * a stickman beat draws figures — and falls back to a title card carrying
+   * the narration. Rendered in about a millisecond, so a full rough cut is
+   * available immediately instead of after an hour of GPU time.
+   */
+  async function fallbackCard(scene) {
+    if (!window.BlvckGraphic) return null;
+    const text = scene.subtitle || scene.sceneSummary || '';
+    if (!text.trim()) return null;
+    const vt = String(scene.visualType || '');
+    const canvasKind = window.BlvckScenes && window.BlvckScenes.rendersOnCanvas({ visualType: vt });
+    try {
+      const blob = await window.BlvckGraphic.render({
+        // Honour the plan when there is one; otherwise a title card, which
+        // reads as a deliberate beat rather than a missing asset.
+        kind: canvasKind ? vt : 'title',
+        title: (scene.graphic && scene.graphic.title) || text,
+        subtitle: (scene.graphic && scene.graphic.subtitle) || '',
+        items: (scene.graphic && scene.graphic.items) || [],
+        palette: window.BlvckGraphic.paletteFor(text)
+      });
+      if (!blob) return null;
+      // Keep it, so a re-assemble does not redraw and the scene card shows it.
+      await idbPut(SB_DB, SB_STORE, String(scene.index), blob);
+      return await loadImage(blob);
+    } catch (err) {
+      console.warn('[Editor] fallback card failed for scene', scene.index, err.message);
+      return null;
+    }
+  }
+
   async function assemble() {
     clearStatus();
     let sb;
@@ -505,11 +539,20 @@
       const video = videos[0] || null;
 
       if (!img && !video) {
-        // Bank the time onto the previous clip, or carry it forward to the
-        // first clip that does have something to show.
-        if (clips.length) clips[clips.length - 1].durationSec += secs;
-        else heldSec += secs;
-        continue;
+        // Draw one rather than skipping the beat.
+        //
+        // A scene that has narration is ALWAYS renderable — text is a
+        // legitimate explainer visual, and in a procedural-first product
+        // there is no reason for assembly to fail waiting on a generator.
+        // The old behaviour banked the time onto the previous clip, so a
+        // project whose images had not been generated produced either
+        // nothing or one enormous held frame.
+        img = await fallbackCard(s);
+        if (!img) {
+          if (clips.length) clips[clips.length - 1].durationSec += secs;
+          else heldSec += secs;
+          continue;
+        }
       }
       // Split the beat's screen time between its parts. The parts sum to the
       // beat, so the narration stays aligned however many cuts it became.
@@ -537,7 +580,7 @@
       heldSec = 0;
     }
     if (!clips.length) {
-      showStatus('Storyboard scenes found but their images could not be loaded.');
+      showStatus('Scenes were found but nothing could be drawn for them. Plan shots with the Director, then generate — every procedural beat renders in milliseconds.');
       assembleBtn.disabled = false;
       return;
     }
