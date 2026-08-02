@@ -225,9 +225,33 @@
       let job;
       try {
         const res = await fetch(`${PROXY}/jobs/${jobId}`, { headers: headers() });
-        job = await readJson(res, 'checking render progress');
+        const text = await res.text();
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          const looksHtml = /^\s*</.test(text);
+          throw new Error(looksHtml
+            ? 'the LTX tunnel returned an error page'
+            : `non-JSON progress response (HTTP ${res.status})`);
+        }
+        if (!res.ok && !parsed.status) {
+          throw new Error(parsed.error || `progress check failed (HTTP ${res.status})`);
+        }
+        // A job RECORD reporting an error is not a transport failure — the
+        // server answered, and the answer is "this render died". Retrying it
+        // as a network blip burned a minute and then left the scene marked
+        // 'rendering', which generateAll skips, so the beat could never be
+        // retried or reported. Fatal must be told apart from flaky.
+        if (parsed.status === 'error') {
+          const fatal = new Error(parsed.error || 'render failed on the backend');
+          fatal.fatal = true;
+          throw fatal;
+        }
+        job = parsed;
         consecutiveErrors = 0;
       } catch (err) {
+        if (err && err.fatal) throw err;
         consecutiveErrors++;
         if (typeof opts.onProgress === 'function') {
           opts.onProgress({ status: 'unreachable', attempt: consecutiveErrors, error: err.message });
