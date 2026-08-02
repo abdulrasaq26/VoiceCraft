@@ -77,7 +77,10 @@
     'motion-graphics': { label: 'Motion Graphics', render: 'Motion-graphics keyframe style, bold flat shapes, gradients, dynamic layout, sleek modern brand look', negative: 'photoreal, sketchy, historical' },
     whiteboard: { label: 'Whiteboard Explainer', render: 'Whiteboard-style line illustration, hand-drawn marker look, simple black strokes on white, clear diagrammatic figures', negative: 'color-heavy, photoreal, painterly' },
     'tech-ui': { label: 'Tech / UI Style', render: 'Modern tech illustration, sleek UI-inspired shapes, cool gradients, glassy surfaces, clean product-design aesthetic', negative: 'historical, painterly, photoreal grit' },
-    lifestyle: { label: 'Contemporary Lifestyle', render: 'Clean contemporary lifestyle photography, bright natural light, relatable modern settings, aspirational but authentic', negative: 'historical, cartoon, dark, staged studio' }
+    lifestyle: { label: 'Contemporary Lifestyle', render: 'Clean contemporary lifestyle photography, bright natural light, relatable modern settings, aspirational but authentic', negative: 'historical, cartoon, dark, staged studio' },
+    // The negatives carry this one. Left to itself a model "improves" a stick
+    // figure into a rendered character, so the absent detail has to be stated.
+    stickman: { label: 'Stickman', render: 'Minimalist stick figure drawing on plain white, simple black stick figures with circle heads and straight limb lines, hand-drawn marker linework, dot-and-line expressions, generous white space, educational sketch', negative: 'detailed character, muscles, clothing detail, facial features, shading, gradients, colour background, realistic proportions, 3d, photoreal, anatomy' }
   };
 
   function styleBrief(id) {
@@ -184,6 +187,9 @@ Rules:
 - Maintain location continuity: reuse the same architecture, lighting and weather for the same place.
 - Vary the camera across the batch (wide, medium, close-up, over-the-shoulder, overhead, detail, establishing) to keep visual interest.
 - Honor the profile's negative guidance (things to avoid).
+- CONTINUITY IS A HARD CONSTRAINT. "environment", "timeOfDay", "weather" and "lighting" carry forward from the previous beat and may only change when the narration actually says they change. A character who was in a wheat field at dawn is still in that wheat field at dawn in the next beat unless the script moved them. Reuse the EXACT same environment string when it is the same place — "north wheat field" every time, never "the field" then "farmland". Same for props: a tool a character was holding is still in their hand.
+- "motion" is what makes a beat filmable rather than a photograph. Name one or two things that physically move, and keep them small and plausible for a few seconds of footage: breath, wind, a slow head turn, hands working, dust in a light shaft. Never describe a cut, a scene change or several actions in sequence — one continuous moment only.
+- Choose "cameraMovement" for meaning, not variety: Static and Slow Push In for reflection, Handheld for tension, Drone and Crane for scale. Most beats should be Static or Slow Push In; a video where every shot swoops looks amateur.
 Respond ONLY with JSON:
 {
   "scenes": [
@@ -199,7 +205,16 @@ Respond ONLY with JSON:
         "label": string         // stat only — what the number means
       },
       "camera": string,
+      "shotType": string,       // "Extreme Wide" | "Wide" | "Medium" | "Close Up" | "Extreme Close Up" | "Over Shoulder" | "POV"
+      "cameraMovement": string, // "Static" | "Slow Push In" | "Dolly In" | "Dolly Out" | "Pan Left" | "Pan Right" | "Crane Up" | "Crane Down" | "Handheld" | "Drone"
       "detectedAction": string, // what is happening in this beat, one line
+      "motion": string,         // what physically MOVES in the shot — required for video: "wind crosses the wheat, he turns his head slowly"
+      "emotion": string,        // dominant feeling of the beat, one or two words
+      "environment": string,    // the place, named IDENTICALLY every time it recurs ("north wheat field")
+      "timeOfDay": string,      // "dawn" | "morning" | "midday" | "afternoon" | "dusk" | "night"
+      "weather": string,        // "clear" | "overcast" | "rain" | "snow" | "fog" | "wind"; "" when indoors
+      "lighting": string,       // light source and quality
+      "props": [string],        // objects that must persist across scenes
       "visualGoal": string,     // the emotional/narrative goal of the shot
       "visualFocus": string,    // the subject of the frame
       "characters": [string],   // names (from the profile) of characters visible in this beat
@@ -228,6 +243,65 @@ Respond ONLY with JSON:
     return { system: SCENES_SYSTEM, user: parts.join('\n\n') };
   }
 
+  // Controlled vocabularies. Everything downstream (LTX prompt building, the
+  // scene editor dropdowns, the Director's plan) assumes these exact strings.
+  const SHOT_TYPES = [
+    'Extreme Wide', 'Wide', 'Medium', 'Close Up', 'Extreme Close Up', 'Over Shoulder', 'POV'
+  ];
+  const CAMERA_MOVES = [
+    'Static', 'Slow Push In', 'Dolly In', 'Dolly Out', 'Pan Left', 'Pan Right',
+    'Crane Up', 'Crane Down', 'Handheld', 'Drone'
+  ];
+  const TIMES_OF_DAY = ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'];
+  const WEATHERS = ['clear', 'overcast', 'rain', 'snow', 'fog', 'wind'];
+  // How a beat gets put on screen. This is a ROUTING vocabulary, not a
+  // stylistic one: each value sends the beat to a different renderer —
+  // 't2v'/'broll' to the video model, 'presenter' to the host compositor, and
+  // the rest to the canvas typesetter, which draws real text correctly instead
+  // of asking a diffusion model to hallucinate letters.
+  const VISUAL_TYPES = ['stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram', 't2v', 'presenter', 'broll'];
+  const HOST_OVERLAYS = ['none', 'circle', 'rect', 'corner', 'full'];
+
+  // Snap a model's answer onto the vocabulary. Case-insensitive, and tolerates
+  // near misses ("closeup", "push in") so a good answer is not thrown away on
+  // punctuation, but anything genuinely unrecognised falls back rather than
+  // being passed through — an invented term breaks the prompt translation.
+  function oneOf(value, allowed, fallback) {
+    const v = String(value == null ? '' : value).trim();
+    if (!v) return fallback;
+    const norm = (x) => x.toLowerCase().replace(/[^a-z]/g, '');
+    const target = norm(v);
+    const hit = allowed.find((a) => norm(a) === target);
+    if (hit) return hit;
+    const loose = allowed.find((a) => norm(a).includes(target) || target.includes(norm(a)));
+    return loose || fallback;
+  }
+
+  // Continuity carry-forward.
+  //
+  // Scenes are generated in batches, so the model literally cannot see the
+  // earlier beats when it writes a later one — asking it for continuity is
+  // necessary but not sufficient. This closes the gap deterministically: any
+  // continuity field a scene left blank inherits the previous scene's value.
+  //
+  // Only blanks are filled. When the model DID state a value it is respected,
+  // because that is how a legitimate change of place or time gets through.
+  function applyContinuity(scenes) {
+    const carry = { environment: '', timeOfDay: '', weather: '', lighting: '' };
+    let props = [];
+    return (Array.isArray(scenes) ? scenes : []).map((s) => {
+      const out = Object.assign({}, s);
+      for (const k of Object.keys(carry)) {
+        if (!String(out[k] || '').trim()) out[k] = carry[k];
+        else carry[k] = out[k];
+      }
+      // Props persist until a scene names its own set.
+      if (Array.isArray(out.props) && out.props.length) props = out.props.slice(0, 8);
+      else out.props = props.slice();
+      return out;
+    });
+  }
+
   function normalizeScene(s, cue, cues, bible) {
     const idx = Number.isFinite(s && s.index) ? s.index : cue ? cue.index : 0;
     const source = cue || (cues || []).find((c) => c.index === idx) || {};
@@ -244,7 +318,22 @@ Respond ONLY with JSON:
       subtitle: source.text || '',
       sceneType: str(s && s.sceneType, 'Scene'),
       camera: str(s && s.camera, 'Medium Shot'),
+      // Cinematic controls. Snapped to the known vocabulary because these are
+      // translated into LTX prompt language downstream, and a model inventing
+      // "swooping vertigo pullback" would produce an untranslatable scene.
+      shotType: oneOf(s && s.shotType, SHOT_TYPES, ''),
+      cameraMovement: oneOf(s && s.cameraMovement, CAMERA_MOVES, 'Static'),
       detectedAction: str(s && s.detectedAction),
+      motion: str(s && s.motion),
+      emotion: str(s && s.emotion),
+      // Continuity state. Left blank rather than guessed — applyContinuity()
+      // fills gaps from the previous scene, which is the only source that can
+      // actually keep a place consistent across a batch boundary.
+      environment: str(s && s.environment),
+      timeOfDay: oneOf(s && s.timeOfDay, TIMES_OF_DAY, ''),
+      weather: oneOf(s && s.weather, WEATHERS, ''),
+      lighting: str(s && s.lighting),
+      props: arr(s && s.props).map(String).filter(Boolean).slice(0, 8),
       visualGoal: str(s && s.visualGoal),
       visualFocus: str(s && s.visualFocus),
       characters: arr(s && s.characters).map(String).slice(0, 8),
@@ -278,7 +367,11 @@ Respond ONLY with JSON:
       err.raw = String(rawText || '');
       throw err;
     }
-    return { scenes: scenes.map((s, i) => normalizeScene(s, cues[i], cues, bible)) };
+    // Continuity is applied after normalisation so it operates on the snapped
+    // vocabulary, and within the batch the model actually produced.
+    return {
+      scenes: applyContinuity(scenes.map((s, i) => normalizeScene(s, cues[i], cues, bible)))
+    };
   }
 
   // --- YouTube SEO ------------------------------------------------------
@@ -638,8 +731,160 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
     '/api/script/generate': {
       build: (p) => scriptPrompt(p.options || {}),
       parse: (p, rawText) => ({ script: cleanScript(rawText) })
+    },
+    '/api/video/plan': {
+      build: (p) => videoPlanPrompt(p),
+      parse: (p, rawText) => parseVideoPlan(rawText)
     }
   };
+
+  // --- Director video planning ---------------------------------------------
+
+  const VIDEO_PLAN_SYSTEM = `You are a documentary director planning how a finished storyboard will be SHOT as video. The still frames already exist; your job is to decide how each one moves.
+
+You are planning for LTX-2.3, an image-conditioned video model that renders a few seconds per shot from reference images. That imposes real constraints — respect them or the footage will be unusable:
+- One continuous moment per shot. No cuts, no "then he walks away", no sequences of actions.
+- Small, physically plausible motion. Breath, wind, a slow head turn, hands working, dust in light, fabric shifting. A shot is 2-30 seconds of one continuous take.
+- The camera move must suit the beat, not add variety for its own sake. Most documentary shots are Static or Slow Push In. Reserve Drone and Crane for genuine scale, Handheld for tension or urgency.
+- Motion must not contradict the shot type. A Close Up cannot contain a Drone move.
+
+ALWAYS PREFER THE SIMPLEST VISUAL THAT EXPLAINS THE IDEA. This is an explainer studio, not a footage generator. A drawn visual renders in about a millisecond, looks identical on every run, and stays editable afterwards. A generated shot costs minutes of GPU, comes back different every time, and cannot be corrected without re-rendering. Reach for the camera only when nothing drawn can carry the idea.
+
+Choose in this order, and only move down when the option above genuinely cannot communicate the point:
+  1. stickman   - people doing or feeling something: explaining, deciding, working, reacting, comparing, struggling
+  2. whiteboard - a process, a mechanism, a cause-and-effect chain, steps
+  3. chart      - anything carrying two or more numbers
+  4. map        - anything where place, territory, movement or spread matters
+  5. timeline   - two or more dated events
+  6. diagram    - a labelled structure: an anatomy, a system, parts of a whole
+  7. t2v/broll  - a real filmed moment: atmosphere, landscape, texture, archival feel
+  8. presenter  - the host addressing the viewer directly
+
+A beat about a farmer losing his harvest can be a stickman farmer looking at a wilting plant. That reads instantly, costs nothing, and can be re-cut later. Choose t2v only when the beat genuinely needs photographic reality: a place the viewer must believe in, a texture, an atmosphere no drawing can carry.
+
+You also decide WHAT KIND OF VISUAL each beat should be. Pick the format that actually communicates the point — a video that is 40 identical generated clips is the thing we are trying to avoid:
+- "stickman": simple stick figures acting the idea out. The default for any beat about PEOPLE doing or feeling something. Put the figures in graphic.items as "action:expression" pairs, e.g. ["explain:confident", "think:confused"].
+- "diagram": a labelled structure drawn as boxes and connections.
+- "t2v": a filmed moment. The default for anything concrete and physical — people, places, actions, atmosphere.
+- "presenter": the channel host on camera. Use for the hook, section openings, direct address to the viewer, and the closing. Never more than a few per video.
+- "whiteboard": a step-by-step explanation, a process, a comparison, or a causal chain that benefits from being drawn out.
+- "chart": a number that only means something in context — growth, decline, share, before/after.
+- "map": anywhere geography, routes, borders or spread carry the meaning.
+- "timeline": a sequence of dated events.
+- "broll": supporting texture under narration where no specific action is described.
+Choose "chart", "map", "timeline" and "whiteboard" when the beat is ABOUT information. Choose "t2v" when it is about a moment. Vary the mix — long runs of one type are what makes a video feel machine-made.
+
+When you choose one of those four, you MUST also fill in "graphic" with the actual content to typeset — they are drawn with real fonts, not generated, so the words and numbers have to come from you. A chart needs "label: number" pairs taken from the narration; a timeline needs "date: event"; a map needs place names in the order they are mentioned; a whiteboard needs the steps of the explanation. If the narration does not contain concrete enough material to fill it, that beat is not really about information — choose "t2v" instead.
+
+"hostOverlay" says whether the host is visible during the beat:
+- "full" only with visualType "presenter".
+- "corner", "circle" or "rect" when the host should be present while other visuals carry the screen — the standard explainer look, host small, content dominant.
+- "none" for pure footage moments, and for anything cinematic or emotional where a facecam would break the spell.
+Keep the host visible for a meaningful share of an explainer, and sparing in a documentary.
+
+PLAN FOR RETENTION, not just for correctness. A sequence can be perfectly continuous and still lose the viewer:
+- The first 15 seconds decide the retention curve. Open on the strongest available image or the host making the promise of the video — never on a slow establishing shot, and never on a single long held beat.
+- Never let more than four consecutive beats share a visualType. A run of identical beats is where viewers leave; break it with a chart, a whiteboard, or the host.
+- Vary shot scale. Consecutive shots at the same size make an edit feel assembled rather than cut.
+- Vary beat length. Evenly paced beats feel metronomic; alternate longer moments with short ones.
+- Put a pattern interrupt roughly every 30-40 seconds: a change of visual kind, a return to the host, or a hard change of scale.
+- Give every filmed beat real "motion". A beat with none comes back as a near-still frame, which is the slideshow look we are trying to escape.
+
+Also enforce continuity across the sequence. Consecutive shots in the same place, at the same time of day, must not change weather or light. Flag any beat where the storyboard has drifted.
+
+Respond ONLY with JSON:
+{
+  "strategy": string,          // 2-3 sentences: the overall visual approach and how continuity is being held
+  "warnings": [string],        // continuity problems you spotted, e.g. "scenes 4-6 change from dusk to midday with no narrative reason"
+  "scenes": [
+    {
+      "index": number,           // echo the scene index
+      "visualType": string,      // "t2v" | "presenter" | "whiteboard" | "chart" | "map" | "timeline" | "broll"
+      "graphic": {               // REQUIRED when visualType is whiteboard/chart/map/timeline; omit otherwise
+        "title": string,         // the headline for the card
+        "subtitle": string,      // optional supporting line
+        "items": [string]        // chart: "2019: 42" pairs · timeline: "1914: War begins" · map: place names · whiteboard: steps. Max 6.
+      },
+      "hostOverlay": string,     // "none" | "circle" | "rect" | "corner" | "full" — when the host is on screen
+      "shotType": string,        // "Extreme Wide" | "Wide" | "Medium" | "Close Up" | "Extreme Close Up" | "Over Shoulder" | "POV"
+      "cameraMovement": string,  // "Static" | "Slow Push In" | "Dolly In" | "Dolly Out" | "Pan Left" | "Pan Right" | "Crane Up" | "Crane Down" | "Handheld" | "Drone"
+      "motion": string,          // what physically moves, one continuous moment
+      "emotion": string,         // one or two words
+      "transition": string,      // "cut" | "dissolve" — how this shot joins the NEXT one; default "cut"
+      "note": string             // optional one-line reason, for the user's benefit
+    }
+  ]
+}`;
+
+  function videoPlanPrompt(payload) {
+    const { scenes, bible, characters, modeBrief, host } = payload || {};
+    const cast = (Array.isArray(characters) ? characters : [])
+      .map((c) => `- ${c.name}: ${c.descriptor || c.description || ''}`)
+      .filter(Boolean)
+      .join('\n');
+    const beats = (Array.isArray(scenes) ? scenes : [])
+      .map((s) =>
+        `#${s.index} [${s.timestamp || ''}] (${(s.durationSec || 0).toFixed
+          ? s.durationSec.toFixed(1)
+          : s.durationSec}s)\n` +
+        `  narration: ${s.subtitle || ''}\n` +
+        `  action: ${s.detectedAction || s.sceneSummary || ''}\n` +
+        `  where: ${[s.environment, s.timeOfDay, s.weather, s.lighting].filter(Boolean).join(', ')}\n` +
+        `  who: ${(s.characters || []).join(', ') || '(nobody)'}`
+      )
+      .join('\n');
+
+    const parts = [
+      // Mode first: it governs the visual mix and how present the host is, so
+      // it has to frame everything the model reads afterwards.
+      modeBrief || '',
+      host ? `CHANNEL HOST: ${host}` : 'CHANNEL HOST: none configured — do not plan presenter beats.',
+      bible ? `PROJECT PROFILE:\n${JSON.stringify(bible, null, 2)}` : '',
+      cast ? `CAST (keep these people consistent):\n${cast}` : '',
+      `STORYBOARD BEATS TO PLAN (echo every index):\n${beats}`
+    ].filter(Boolean);
+
+    return { system: VIDEO_PLAN_SYSTEM, user: parts.join('\n\n') };
+  }
+
+  function parseVideoPlan(rawText) {
+    const result = extractJson(rawText);
+    const scenes = Array.isArray(result && result.scenes) ? result.scenes : [];
+    if (!scenes.length) {
+      const err = new Error('Missing "scenes" array in the video plan response.');
+      err.raw = String(rawText || '');
+      throw err;
+    }
+    return {
+      strategy: str(result && result.strategy),
+      warnings: arr(result && result.warnings).map(String).filter(Boolean),
+      scenes: scenes.map((s) => ({
+        index: Number(s && s.index),
+        // Snapped, for the same reason normalizeScene snaps: these strings are
+        // translated into LTX prompt language and an invented term is untranslatable.
+        // visualType in particular is a routing decision — an unrecognised value
+        // would send a beat nowhere, so it falls back to plain footage.
+        visualType: oneOf(s && s.visualType, VISUAL_TYPES, 't2v'),
+        // Content for a typeset beat. Kept only when there is something real to
+        // draw — an empty spec would route a beat to the canvas renderer and
+        // produce a blank card, which is worse than sending it to the camera.
+        graphic: (() => {
+          const g = s && s.graphic;
+          if (!g || typeof g !== 'object') return null;
+          const items = arr(g.items).map(String).filter(Boolean).slice(0, 6);
+          const spec = { title: str(g.title), subtitle: str(g.subtitle), items };
+          return (spec.title || items.length) ? spec : null;
+        })(),
+        hostOverlay: oneOf(s && s.hostOverlay, HOST_OVERLAYS, 'none'),
+        shotType: oneOf(s && s.shotType, SHOT_TYPES, ''),
+        cameraMovement: oneOf(s && s.cameraMovement, CAMERA_MOVES, 'Static'),
+        motion: str(s && s.motion),
+        emotion: str(s && s.emotion),
+        transition: oneOf(s && s.transition, ['cut', 'dissolve'], 'cut'),
+        note: str(s && s.note)
+      })).filter((s) => Number.isFinite(s.index))
+    };
+  }
 
   window.VISUAL_STYLES = VISUAL_STYLES;
   window.BlvckPrompts = {
@@ -657,6 +902,18 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
     repairJson,
     directorChatSystem,
     researchGrounding,
-    VISUAL_STYLES
+    VISUAL_STYLES,
+    // Scene continuity + cinematic vocabulary (shared with ltx-video.js and the
+    // Director, which must snap to exactly these strings).
+    applyContinuity,
+    oneOf,
+    videoPlanPrompt,
+    parseVideoPlan,
+    SHOT_TYPES,
+    CAMERA_MOVES,
+    TIMES_OF_DAY,
+    WEATHERS,
+    VISUAL_TYPES,
+    HOST_OVERLAYS
   };
 })();

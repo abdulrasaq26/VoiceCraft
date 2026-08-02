@@ -26,6 +26,14 @@
     { id: 'subtitles', module: 'subtitles', label: 'Subtitles', ls: ['blvck-tts:subtitles'], cats: ['generated', 'ai'] },
     { id: 'storyboard', module: 'storyboard', label: 'Storyboard & scene images', ls: ['blvck-tts:storyboard'], idb: [['blvck-storyboard', 'images']], cats: ['generated', 'ai'] },
     { id: 'sb-style', module: 'storyboard', label: 'Storyboard style', ls: ['blvck-tts:sb-style'], cats: ['settings'] },
+    { id: 'characters', module: 'storyboard', label: 'Character library', ls: ['blvck-tts:characters'], cats: ['generated', 'ai'] },
+    // The rendered clips live in the storyboard IDB store under clip:<index>,
+    // so they are already cleared by the 'storyboard' entry above. This is the
+    // per-scene render bookkeeping that has to go with them, or a reset project
+    // would think its clips still exist.
+    { id: 'ltx-clips', module: 'editor', label: 'LTX video clip status', ls: ['blvck-tts:ltx-clips'], cats: ['generated', 'ai'] },
+    { id: 'ltx-endpoint', module: 'editor', label: 'LTX endpoint', ls: ['blvck-tts:ltx-endpoint'], cats: ['settings'] },
+    { id: 'channel-mode', module: 'editor', label: 'Channel mode', ls: ['blvck-tts:channel-mode'], cats: ['settings'] },
     { id: 'editor', module: 'editor', label: 'Video timeline', ls: ['blvck-tts:editor'], cats: ['generated'] },
     { id: 'editor-manual', module: 'editor', label: 'Uploaded narration', idb: [['blvck-editor', 'audio']], cats: ['uploaded'] },
     { id: 'seo', module: 'youtube', label: 'YouTube SEO & thumbnails', ls: ['blvck-tts:seo'], idb: [['blvck-thumbnails', 'images']], cats: ['generated', 'ai'] },
@@ -37,7 +45,10 @@
     // Channel Brain is cross-project memory — global:false keeps it out of the
     // whole-project reset and the category smart-clears, but its own section
     // Clear button still works (with confirm + undo).
-    { id: 'brain', module: 'brain', label: 'Channel Brain (cross-project memory)', ls: ['blvck-tts:brain'], cats: [], global: false }
+    { id: 'brain', module: 'brain', label: 'Channel Brain (cross-project memory)', ls: ['blvck-tts:brain'], cats: [], global: false },
+    // Channel-level like Brain: the host is the channel's identity across every
+    // video, so a project reset must not wipe it. Its own Clear button still works.
+    { id: 'host', module: 'brain', label: 'Channel Host (identity + face)', ls: ['blvck-tts:channel-host'], idb: [['blvck-channel', 'host']], cats: [], global: false }
   ];
 
   // Sections that own a Clear button but no distinct storage (their output is

@@ -236,10 +236,736 @@
     }
   }
 
+  // --- data beats ----------------------------------------------------------
+
+  // Accepts either ["2019: 40", "2020: 65"] or [{label, value}]. The string form
+  // is what a language model reliably produces, so it has to be first-class.
+  function parseSeries(items) {
+    return (Array.isArray(items) ? items : [])
+      .map((it) => {
+        if (it && typeof it === 'object') {
+          return { label: String(it.label || ''), value: Number(it.value) };
+        }
+        const s = String(it || '');
+        const m = s.match(/^(.*?)[:–-]\s*([-+]?[\d.,]+)\s*(.*)$/);
+        if (!m) return { label: s, value: NaN };
+        return {
+          label: m[1].trim(),
+          value: Number(String(m[2]).replace(/,/g, '')),
+          suffix: (m[3] || '').trim()
+        };
+      })
+      .filter((d) => d.label || Number.isFinite(d.value));
+  }
+
+  // Shared header for the data cards. A kicker, a tight headline and a rule —
+  // the same furniture every time, which is what makes a set of cards read as
+  // one channel's graphics rather than four unrelated slides.
+  function cardChrome(ctx, t, { kicker, title, subtitle }) {
+    let y = 96;
+
+    if (kicker) {
+      ctx.fillStyle = t.accent;
+      ctx.font = `800 22px ${FONT}`;
+      const label = String(kicker).toUpperCase();
+      // Letter-spaced by hand; canvas has no tracking control.
+      let x = 100;
+      for (const ch of label) {
+        ctx.fillText(ch, x, y);
+        x += ctx.measureText(ch).width + 3.5;
+      }
+      y += 44;
+    }
+
+    if (title) {
+      ctx.fillStyle = t.ink;
+      ctx.font = `800 54px ${FONT}`;
+      const lines = wrap(ctx, title, W - 200).slice(0, 2);
+      lines.forEach((l, i) => ctx.fillText(l, 100, y + i * 60));
+      y += lines.length * 60;
+    }
+
+    if (subtitle) {
+      ctx.fillStyle = t.dim;
+      ctx.font = `500 28px ${FONT}`;
+      ctx.fillText(wrap(ctx, subtitle, W - 200)[0] || '', 100, y + 20);
+      y += 44;
+    }
+
+    // Accent rule under the header, short and left-aligned.
+    ctx.fillStyle = t.accent;
+    ctx.fillRect(100, y + 14, 88, 5);
+
+    return y + 52;
+  }
+
+  function headline(ctx, t, text, y) {
+    if (!text) return y;
+    ctx.fillStyle = t.ink;
+    ctx.font = `800 56px ${FONT}`;
+    const lines = wrap(ctx, text, W - 200).slice(0, 2);
+    lines.forEach((l, i) => ctx.fillText(l, 100, y + i * 64));
+    return y + lines.length * 64;
+  }
+
+  // Bar chart. Deliberately plain: a documentary chart's job is to make one
+  // comparison obvious in two seconds, not to be a dashboard.
+  function drawChart(ctx, t, spec) {
+    const data = parseSeries(spec.items).filter((d) => Number.isFinite(d.value));
+    const top0 = cardChrome(ctx, t, { kicker: 'By the numbers', title: spec.title, subtitle: spec.subtitle });
+    let y = top0;
+    if (!data.length) {
+      // Never draw an apology. A card explaining its own emptiness is worse
+      // than no card: it ships to the viewer as content. Refusing here forces
+      // the caller to route the beat somewhere that can actually show it.
+      throw new Error('chart needs numeric items like "2021: 61"');
+    }
+
+    const top = y + 20;
+    const bottom = H - 130;
+    const plotH = bottom - top;
+    const max = Math.max(...data.map((d) => d.value));
+    const min = Math.min(0, ...data.map((d) => d.value));
+    const span = (max - min) || 1;
+    const n = data.length;
+    const gap = 28;
+    const barW = Math.min(150, (W - 200 - gap * (n - 1)) / n);
+    const totalW = barW * n + gap * (n - 1);
+    const x0 = (W - totalW) / 2;
+
+    // Baseline
+    ctx.strokeStyle = t.rule;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(100, bottom);
+    ctx.lineTo(W - 100, bottom);
+    ctx.stroke();
+
+    // Which bar carries the point?
+    //   1. an explicit spec.highlight (the Director can name it), else
+    //   2. the label the title actually mentions, else
+    //   3. the extreme value — the biggest mover is the story by default.
+    let heroIndex = -1;
+    const hl = String(spec.highlight || '').toLowerCase();
+    if (hl) heroIndex = data.findIndex((d) => d.label.toLowerCase().includes(hl));
+    if (heroIndex < 0 && spec.title) {
+      const title = String(spec.title).toLowerCase();
+      heroIndex = data.findIndex((d) => d.label && title.includes(d.label.toLowerCase()));
+    }
+    if (heroIndex < 0) {
+      // A time series and a comparison have different payoffs. In "2019, 2020,
+      // 2021, 2022" the point is where it ENDED — highlighting the peak tells
+      // the viewer the opposite of a collapse story. In a comparison of unlike
+      // things, the extreme value is the point.
+      const looksTemporal = data.length > 2 &&
+        data.every((d) => /^(1[89]\d{2}|20\d{2}|Q[1-4]|[A-Z][a-z]{2})/.test(d.label.trim()));
+      if (looksTemporal) {
+        heroIndex = data.length - 1;
+      } else {
+        let bestI = 0;
+        let bestV = -Infinity;
+        data.forEach((d, i) => {
+          const v = Math.abs(d.value);
+          if (v > bestV) { bestV = v; bestI = i; }
+        });
+        heroIndex = bestI;
+      }
+    }
+
+    let heroBar = null;
+
+    data.forEach((d, i) => {
+      const h = Math.max(4, ((d.value - min) / span) * (plotH - 40));
+      const x = x0 + i * (barW + gap);
+      const yTop = bottom - h;
+      // Emphasise the bar the BEAT is about, not the one that happens to be
+      // last. Position is a poor proxy for importance: in "rice fell 20%, tea
+      // 18%, coconut 9%" the story is rice, and highlighting coconut because
+      // it sits on the right actively points the viewer at the wrong number.
+      ctx.fillStyle = i === heroIndex ? t.accent : t.rule;
+      roundRect(ctx, x, yTop, barW, h, 8);
+      ctx.fill();
+
+      ctx.fillStyle = t.ink;
+      ctx.font = `800 34px ${FONT}`;
+      const unit = d.suffix || spec.unit || '';
+      const v = String(d.value) + (unit ? (unit.length > 2 ? ' ' + unit : unit) : '');
+      const vw = ctx.measureText(v).width;
+      ctx.fillText(v, x + (barW - vw) / 2, yTop - 16);
+
+      ctx.fillStyle = i === heroIndex ? t.ink : t.dim;
+      ctx.font = `${i === heroIndex ? 700 : 500} 28px ${FONT}`;
+      const lw = ctx.measureText(d.label).width;
+      ctx.fillText(d.label, x + (barW - lw) / 2, bottom + 44);
+
+      if (i === heroIndex) heroBar = { x, y: yTop, w: barW, value: d.value };
+    });
+
+    // Callout on the bar that carries the point. A bare number states a fact;
+    // a callout says why it matters — the change against what came before, or
+    // the caption the Director wrote.
+    if (heroBar) {
+      let note = String(spec.callout || '').trim();
+      if (!note && heroIndex > 0) {
+        const prev = data[heroIndex - 1].value;
+        if (Number.isFinite(prev) && prev !== 0) {
+          const pct = Math.round(((heroBar.value - prev) / Math.abs(prev)) * 100);
+          if (Math.abs(pct) >= 3) {
+            note = `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}% vs ${data[heroIndex - 1].label}`;
+          }
+        }
+      }
+      if (note) {
+        ctx.font = `700 26px ${FONT}`;
+        const nw = ctx.measureText(note).width;
+        // Keep the plate inside the frame when the hero bar sits at an edge.
+        const bx = Math.min(Math.max(heroBar.x + heroBar.w / 2 - (nw + 34) / 2, 40), W - nw - 74);
+        const by = Math.max(heroBar.y - 96, 150);
+        ctx.fillStyle = t.accent;
+        roundRect(ctx, bx, by, nw + 34, 46, 10);
+        ctx.fill();
+        ctx.fillStyle = '#111';
+        ctx.fillText(note, bx + 17, by + 32);
+        // Leader down to the bar.
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(bx + (nw + 34) / 2, by + 46);
+        ctx.lineTo(heroBar.x + heroBar.w / 2, heroBar.y - 42);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Timeline. Items are "1914: War begins" style; the date is the left column.
+  function drawTimeline(ctx, t, spec) {
+    const rows = parseSeries(spec.items).length
+      ? (Array.isArray(spec.items) ? spec.items : [])
+      : [];
+    const items = rows
+      .map((it) => {
+        const s = String(it || '');
+        const m = s.match(/^(.*?)[:–-]\s*(.*)$/);
+        return m ? { when: m[1].trim(), what: m[2].trim() } : { when: '', what: s };
+      })
+      .slice(0, 6);
+
+    const top = cardChrome(ctx, t, { kicker: 'Timeline', title: spec.title, subtitle: spec.subtitle });
+    if (!items.length) return;
+    // Use the whole frame. A timeline that stops halfway down reads as a list
+    // that ran out, not as a span of time.
+    const bottomLimit = H - 70;
+    const step = items.length > 1
+      ? Math.min(120, (bottomLimit - top) / (items.length - 1))
+      : 0;
+    const railX = 300;
+    const lastY = top + step * (items.length - 1);
+
+    // Rail brightens through the middle so it reads as elapsed duration rather
+    // than a dividing border.
+    const grad = ctx.createLinearGradient(0, top - 30, 0, lastY + 40);
+    grad.addColorStop(0, t.rule);
+    grad.addColorStop(0.5, t.accent);
+    grad.addColorStop(1, t.rule);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(railX, top - 30);
+    ctx.lineTo(railX, lastY + 40);
+    ctx.stroke();
+
+    // Repeated dates mean several events inside one period. Cluster them under
+    // a single era marker instead of pretending they are separate steps —
+    // repeating "2021" three times down the rail is noise, not information.
+    items.forEach((d, i) => {
+      const y = top + i * step;
+      const isMilestone = !(i > 0 && items[i - 1].when === d.when);
+
+      ctx.beginPath();
+      ctx.arc(railX, y, isMilestone ? 15 : 9, 0, Math.PI * 2);
+      if (isMilestone) {
+        ctx.fillStyle = t.accent;
+        ctx.fill();
+        // Halo gives milestones more weight than the events beneath them.
+        ctx.beginPath();
+        ctx.arc(railX, y, 27, 0, Math.PI * 2);
+        ctx.strokeStyle = t.accent;
+        ctx.globalAlpha = 0.3;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = t.bg;
+        ctx.fill();
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+
+      if (isMilestone) {
+        ctx.fillStyle = t.accent;
+        ctx.font = `800 40px ${FONT}`;
+        const ww = ctx.measureText(d.when).width;
+        ctx.fillText(d.when, railX - 56 - ww, y + 14);
+      }
+
+      ctx.fillStyle = isMilestone ? t.ink : t.dim;
+      ctx.font = `${isMilestone ? 600 : 500} 34px ${FONT}`;
+      ctx.fillText(wrap(ctx, d.what, W - railX - 150)[0] || '', railX + 56, y + 12);
+    });
+  }
+
+  // Whiteboard: light ground, marker-weight strokes, numbered steps with
+  // connectors. Reads as "someone is explaining this", which is the point.
+  function drawWhiteboard(ctx, t, spec) {
+    ctx.fillStyle = '#f4f2ec';
+    ctx.fillRect(0, 0, W, H);
+
+    const ink = '#1d2026';
+    const marker = t.accent;
+    const faint = '#c9c3b4';
+
+    ctx.fillStyle = ink;
+    ctx.font = `800 56px ${FONT}`;
+    const title = wrap(ctx, String(spec.title || ''), W - 200).slice(0, 1);
+    title.forEach((l) => ctx.fillText(l, 90, 118));
+
+    // Hand-drawn underline: a slight wobble reads as a marker rather than a
+    // vector rule.
+    if (title.length) {
+      ctx.strokeStyle = marker;
+      ctx.lineWidth = 7;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      const uw = ctx.measureText(title[0]).width;
+      for (let x = 0; x <= uw; x += 12) {
+        const y = 140 + Math.sin(x / 26) * 2.5;
+        if (x === 0) ctx.moveTo(90 + x, y);
+        else ctx.lineTo(90 + x, y);
+      }
+      ctx.stroke();
+    }
+
+    const steps = (Array.isArray(spec.items) ? spec.items : []).map(String).filter(Boolean).slice(0, 5);
+    if (!steps.length) return;
+
+    // A causal chain is a FLOW, not a list. Laid out as boxes across the frame
+    // with arrows between them, it shows that each step causes the next --
+    // which a numbered column cannot say. Up to three steps run left to right;
+    // more wrap to a second row, because five boxes across 1280px leaves no
+    // room for readable type.
+    const perRow = steps.length <= 3 ? steps.length : Math.ceil(steps.length / 2);
+    const rows = Math.ceil(steps.length / perRow);
+    const boxW = Math.min(330, (W - 140 - (perRow - 1) * 70) / perRow);
+    const boxH = rows > 1 ? 130 : 170;
+    const gapX = perRow > 1 ? (W - 140 - boxW * perRow) / (perRow - 1) : 0;
+    const topY = rows > 1 ? 215 : 275;
+    const gapY = 90;
+
+    const centre = [];
+
+    steps.forEach((text, i) => {
+      const r = Math.floor(i / perRow);
+      const c = i % perRow;
+      const x = 70 + c * (boxW + gapX);
+      const y = topY + r * (boxH + gapY);
+      centre.push({ x: x + boxW / 2, y: y + boxH / 2, x0: x, y0: y, x1: x + boxW, y1: y + boxH });
+
+      // Card with a marker-weight border and a soft drop, so it reads as
+      // something drawn on the board rather than a UI element.
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,.10)';
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 5;
+      roundRect(ctx, x, y, boxW, boxH, 14);
+      ctx.fillStyle = '#fffdf7';
+      ctx.fill();
+      ctx.restore();
+
+      roundRect(ctx, x, y, boxW, boxH, 14);
+      ctx.strokeStyle = i === steps.length - 1 ? marker : faint;
+      ctx.lineWidth = i === steps.length - 1 ? 5 : 3;
+      ctx.stroke();
+
+      // Step number in the corner, small — the flow carries the order now, so
+      // the number is a reference not the main signal.
+      ctx.fillStyle = marker;
+      ctx.font = `800 24px ${FONT}`;
+      ctx.fillText(String(i + 1), x + 16, y + 32);
+
+      ctx.fillStyle = ink;
+      ctx.font = `600 30px ${FONT}`;
+      const lines = wrap(ctx, text, boxW - 44).slice(0, 3);
+      const startY = y + boxH / 2 - ((lines.length - 1) * 36) / 2 + 10;
+      lines.forEach((l, li) => ctx.fillText(l, x + 22, startY + li * 36));
+    });
+
+    // Arrows between consecutive steps: horizontal within a row, and a hop
+    // down to the start of the next row when it wraps.
+    ctx.strokeStyle = '#8d8577';
+    ctx.fillStyle = '#8d8577';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < centre.length - 1; i++) {
+      const a = centre[i];
+      const b = centre[i + 1];
+      const sameRow = Math.abs(a.y - b.y) < 4;
+      ctx.beginPath();
+      if (sameRow) {
+        ctx.moveTo(a.x1 + 10, a.y);
+        ctx.lineTo(b.x0 - 16, a.y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(b.x0 - 4, a.y);
+        ctx.lineTo(b.x0 - 20, a.y - 9);
+        ctx.lineTo(b.x0 - 20, a.y + 9);
+      } else {
+        // Wrap: down from the last box of the row, back along, into the first
+        // box of the next.
+        const midY = (a.y1 + b.y0) / 2;
+        ctx.moveTo(a.x, a.y1 + 8);
+        ctx.lineTo(a.x, midY);
+        ctx.lineTo(b.x, midY);
+        ctx.lineTo(b.x, b.y0 - 16);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y0 - 4);
+        ctx.lineTo(b.x - 9, b.y0 - 20);
+        ctx.lineTo(b.x + 9, b.y0 - 20);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // Real cartography, drawn from Natural Earth boundaries.
+  //
+  // Highlights the countries named in the beat, frames the view on them, and
+  // draws their neighbours in a muted tone so the region reads in context.
+  // Falls back to the name-list card below when the geodata is unavailable or
+  // no country in the text can be matched with confidence — a wrong map is
+  // worse than an honest list.
+  function drawGeoMap(ctx, t, spec, countries) {
+    const G = window.BlvckGeo;
+    const view = G.padded(G.bounds(countries), 0.35, W / H);
+    const project = G.projector(view, W, H, 40);
+
+    // theme() returns the palette without a name, so read the lightness off the
+    // ground colour rather than trusting a key that is never set.
+    const light = (() => {
+      const m = /^#?([0-9a-f]{6})$/i.exec(String(t.bg || ''));
+      if (!m) return false;
+      const v = parseInt(m[1], 16);
+      return (((v >> 16) & 255) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114) > 140;
+    })();
+
+    // Ocean
+    ctx.fillStyle = light ? '#dfe7f0' : '#0b1622';
+    ctx.fillRect(0, 0, W, H);
+
+    const focus = new Set(countries);
+
+    // Context landmass first, then the subjects on top.
+    ctx.lineJoin = 'round';
+    const others = G.features().filter((f) => !focus.has(f));
+    others.forEach((f) => {
+      G.drawFeature(ctx, f, project);
+      ctx.fillStyle = light ? "#c9d3df" : "#1b2430";
+      ctx.fill();
+      ctx.strokeStyle = light ? "#b3c0cf" : "#243040";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    countries.forEach((f) => {
+      G.drawFeature(ctx, f, project);
+      ctx.fillStyle = t.accent;
+      ctx.fill();
+      ctx.strokeStyle = t.ink;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // A small country at a wide zoom is a few pixels of fill — the highlight
+      // is invisible and the label appears to point at empty sea. Ring it so
+      // it reads at any scale.
+      const bb = G.bounds([f]);
+      const [x0, y0] = project(bb.minX, bb.maxY);
+      const [x1, y1] = project(bb.maxX, bb.minY);
+      const px = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+      if (px < 46) {
+        const cxp = (x0 + x1) / 2;
+        const cyp = (y0 + y1) / 2;
+        ctx.beginPath();
+        ctx.arc(cxp, cyp, 26, 0, Math.PI * 2);
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cxp, cyp, 6, 0, Math.PI * 2);
+        ctx.fillStyle = t.accent;
+        ctx.fill();
+      }
+    });
+
+    // Route: when several places are named in order, the movement between them
+    // IS the story — a trade route, an invasion, a supply chain. Drawn as an
+    // arc rather than a straight line because that is how an audience reads
+    // travel on a map, and it keeps the line clear of the landmasses it joins.
+    if (countries.length > 1) {
+      const pts = countries.map((f) => {
+        const c = G.labelPoint(f);
+        return c ? project(c[0], c[1]) : null;
+      }).filter(Boolean);
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, ay] = pts[i];
+        const [bx, by] = pts[i + 1];
+        // Bow the arc perpendicular to the run, proportional to its length.
+        const mx = (ax + bx) / 2;
+        const my = (ay + by) / 2;
+        const dx = bx - ax;
+        const dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const bow = Math.min(len * 0.22, 140);
+        const cxp = mx - (dy / len) * bow;
+        const cyp = my + (dx / len) * bow;
+
+        ctx.save();
+        ctx.setLineDash([14, 10]);
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = t.hot || t.accent;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.quadraticCurveTo(cxp, cyp, bx, by);
+        ctx.stroke();
+        ctx.restore();
+
+        // Arrowhead, aimed along the curve's final tangent (from the control
+        // point to the end) rather than the straight chord, or it points wrong.
+        const tx = bx - cxp;
+        const ty = by - cyp;
+        const ta = Math.atan2(ty, tx);
+        const head = 20;
+        ctx.save();
+        ctx.translate(bx, by);
+        ctx.rotate(ta);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-head, -head * 0.5);
+        ctx.lineTo(-head, head * 0.5);
+        ctx.closePath();
+        ctx.fillStyle = t.hot || t.accent;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Labels, placed on the largest landmass of each highlighted country.
+    const placed = [];
+    countries.forEach((f) => {
+      const c = G.labelPoint(f);
+      if (!c) return;
+      const [x, y0] = project(c[0], c[1]);
+      let y = y0;
+      if (x < 0 || x > W || y < 0 || y > H) return;
+      const label = (f.p && (f.p.n || f.p.a)) || '';
+      if (!label) return;
+      ctx.font = `800 42px ${FONT}`;
+      const tw = ctx.measureText(label).width;
+      // Push the plate clear of anything already drawn, alternating up/down so
+      // labels do not all march in one direction off the frame.
+      const hits = (yy) => placed.some((r) =>
+        Math.abs(r.x - x) < (r.w + tw) / 2 + 16 && Math.abs(r.y - yy) < 54);
+      for (let n = 1; hits(y) && n < 9; n++) y = y0 + (n % 2 ? 1 : -1) * Math.ceil(n / 2) * 58;
+      placed.push({ x, y, w: tw });
+      // Plate behind the text so a label over a bright country stays readable.
+      ctx.fillStyle = 'rgba(0,0,0,.62)';
+      roundRect(ctx, x - tw / 2 - 14, y - 26, tw + 28, 48, 10);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, x - tw / 2, y + 9);
+    });
+
+    if (spec.title) {
+      ctx.fillStyle = 'rgba(0,0,0,.55)';
+      ctx.fillRect(0, 0, W, 108);
+      ctx.fillStyle = '#fff';
+      ctx.font = `800 52px ${FONT}`;
+      ctx.fillText(wrap(ctx, String(spec.title), W - 160)[0] || '', 80, 70);
+    }
+  }
+
+  /**
+   * A stickman beat, drawn by the skeletal engine.
+   *
+   * Figures arrive as "action:expression" pairs. Both halves are optional and
+   * an unknown name falls back rather than throwing, because a beat should
+   * never fail to render over a typo in a pose name.
+   */
+  function drawStickScene(ctx, t, spec) {
+    const Stick = window.BlvckStick;
+    if (!Stick) {
+      drawTitle(ctx, t, spec);
+      return;
+    }
+
+    const items = (Array.isArray(spec.items) ? spec.items : []).map(String).filter(Boolean);
+    const figures = (items.length ? items : ['explain:neutral']).slice(0, 4).map((raw) => {
+      const [a, e] = raw.split(':').map((x) => (x || '').trim());
+      return {
+        action: Stick.POSES[a] ? a : 'explain',
+        expression: Stick.EXPRESSIONS[e] ? e : 'neutral',
+        // A caption under each figure when the item carried a label rather
+        // than a pose, so a list of roles still reads.
+        label: Stick.POSES[a] ? '' : raw
+      };
+    });
+
+    const groundY = H - 168;
+    ctx.strokeStyle = t.rule;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(70, groundY + 2);
+    ctx.lineTo(W - 70, groundY + 2);
+    ctx.stroke();
+
+    figures.forEach((f, i) => {
+      const x = W * ((i + 1) / (figures.length + 1));
+      Stick.draw(ctx, {
+        x, y: groundY, scale: figures.length > 2 ? 52 : 64,
+        action: f.action, expression: f.expression,
+        colour: i === figures.length - 1 ? t.accent : t.ink
+      });
+      if (f.label) {
+        ctx.fillStyle = t.dim;
+        ctx.font = `500 26px ${FONT}`;
+        const w = ctx.measureText(f.label).width;
+        ctx.fillText(f.label, x - w / 2, groundY + 52);
+      }
+    });
+
+    if (spec.title) {
+      ctx.fillStyle = t.ink;
+      ctx.font = `800 54px ${FONT}`;
+      const line = wrap(ctx, String(spec.title), W - 200)[0] || '';
+      ctx.fillText(line, 90, 112);
+      ctx.strokeStyle = t.accent;
+      ctx.lineWidth = 7;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(90, 136);
+      ctx.lineTo(90 + Math.min(ctx.measureText(line).width, W - 220), 136);
+      ctx.stroke();
+    }
+  }
+
+  // Decide between real cartography and the honest fallback.
+  //
+  // Real geography only when a country can be matched with confidence. A map
+  // that highlights the wrong place, or an empty ocean, is worse than a plain
+  // list of the places named — the viewer trusts a map far more than a list,
+  // so it has to earn that trust.
+  async function renderMap(ctx, t, spec) {
+    const G = window.BlvckGeo;
+    if (G) {
+      try {
+        await G.load();
+        const text = [spec.title, spec.subtitle]
+          .concat(Array.isArray(spec.items) ? spec.items : [])
+          .filter(Boolean)
+          .join(' ');
+        // Prefer whole-text detection; fall back to treating each list item as
+        // a place name on its own.
+        let hits = G.detectCountries(text);
+        if (!hits.length && Array.isArray(spec.items)) {
+          hits = spec.items.map((i) => G.findCountry(i)).filter(Boolean);
+        }
+        if (hits.length) {
+          drawGeoMap(ctx, t, spec, hits);
+          return;
+        }
+      } catch (err) {
+        console.warn('[Graphic] Geodata unavailable, using locator card:', err.message);
+      }
+    }
+    drawMap(ctx, t, spec);
+  }
+
+  // Fallback locator card: places listed with pins, used only when real
+  // geography is not available.
+  function drawMap(ctx, t, spec) {
+    const places = (Array.isArray(spec.items) ? spec.items : []).map(String).filter(Boolean).slice(0, 5);
+
+    // A faint graticule. Not cartography — real maps need real geodata, and an
+    // invented coastline is confidently wrong on screen — but a measured grid
+    // reads as "place" and stops the card looking like a bulleted list.
+    ctx.save();
+    ctx.strokeStyle = t.rule;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.55;
+    for (let x = 100; x < W - 60; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x, 60);
+      ctx.lineTo(x, H - 60);
+      ctx.stroke();
+    }
+    for (let y = 60; y < H - 40; y += 64) {
+      ctx.beginPath();
+      ctx.moveTo(60, y);
+      ctx.lineTo(W - 60, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    const top = cardChrome(ctx, t, {
+      kicker: places.length > 1 ? 'Route' : 'Location',
+      title: spec.title || 'Locations',
+      subtitle: spec.subtitle
+    });
+
+    const railX = 148;
+    const avail = H - top - 70;
+    const step = Math.min(92, avail / Math.max(places.length, 1));
+
+    // Connecting path drawn first, so the markers sit on top of it.
+    if (places.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = t.accent;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 4;
+      ctx.setLineDash([9, 9]);
+      ctx.beginPath();
+      ctx.moveTo(railX, top + 18);
+      ctx.lineTo(railX, top + (places.length - 1) * step + 18);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    places.forEach((p, i) => {
+      const y = top + i * step + 18;
+
+      // Numbered marker: a filled disc with the stop number, which carries
+      // order in a way an identical pin repeated five times cannot.
+      ctx.fillStyle = t.accent;
+      ctx.beginPath();
+      ctx.arc(railX, y, 19, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = t.bg;
+      ctx.font = `800 22px ${FONT}`;
+      const n = String(i + 1);
+      ctx.fillText(n, railX - ctx.measureText(n).width / 2, y + 8);
+
+      ctx.fillStyle = t.ink;
+      ctx.font = `600 38px ${FONT}`;
+      ctx.fillText(wrap(ctx, p, W - railX - 160)[0] || '', railX + 46, y + 13);
+    });
+  }
+
   // --- public ------------------------------------------------------------
 
-  // spec: { kind: 'title'|'checklist'|'stat', title, subtitle, items[], value,
-  //         label, theme: 'dark'|'light' }
+  // spec: { kind: 'title'|'checklist'|'stat'|'chart'|'timeline'|'whiteboard'|'map',
+  //         title, subtitle, items[], value, label, theme: 'dark'|'light' }
   async function render(spec = {}) {
     const canvas = document.createElement('canvas');
     canvas.width = W;
@@ -252,12 +978,41 @@
     ctx.textBaseline = 'alphabetic';
 
     const kind = String(spec.kind || 'title').toLowerCase();
+
+    // A data card with no data is not a card. Fail loudly so the caller can
+    // send the beat to the camera instead of storing a near-empty frame that
+    // will sit in the finished video.
+    // Stickman is deliberately absent: one figure reacting is a valid beat, so
+    // requiring items would reject the commonest use of the default visual.
+    const DATA_KINDS = ['chart', 'graph', 'bar', 'timeline', 'map', 'whiteboard', 'checklist', 'list'];
+    if (DATA_KINDS.indexOf(kind) > -1) {
+      const items = Array.isArray(spec.items) ? spec.items.filter(Boolean) : [];
+      // A map is the exception: it draws from geography, and the title alone
+      // often names the place ("The rice belt of Sri Lanka"). Rejecting those
+      // failed beats that renderMap could have drawn perfectly well.
+      let canDraw = items.length > 0;
+      if (!canDraw && kind === 'map' && window.BlvckGeo && window.BlvckGeo.isLoaded()) {
+        canDraw = window.BlvckGeo.detectCountries(String(spec.title || '')).length > 0;
+      }
+      if (!canDraw) {
+        throw new Error(
+          `a "${kind}" card needs items — the Director must supply the actual content to typeset`
+        );
+      }
+    }
     if (kind === 'checklist' || kind === 'list') drawChecklist(ctx, t, spec);
     else if (kind === 'stat' || kind === 'number') drawStat(ctx, t, spec);
+    else if (kind === 'chart' || kind === 'graph' || kind === 'bar') drawChart(ctx, t, spec);
+    else if (kind === 'timeline') drawTimeline(ctx, t, spec);
+    else if (kind === 'whiteboard') drawWhiteboard(ctx, t, spec);
+    else if (kind === 'map') await renderMap(ctx, t, spec);
+    else if (kind === 'stickman') drawStickScene(ctx, t, spec);
     else drawTitle(ctx, t, spec);
 
-    // A hairline keeps the card from floating when cut against footage.
-    ctx.strokeStyle = t.rule;
+    // A hairline keeps the card from floating when cut against footage. The
+    // whiteboard draws its own light ground, so a dark rule would frame it
+    // wrongly.
+    ctx.strokeStyle = kind === 'whiteboard' ? '#d9d4c8' : t.rule;
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, W - 2, H - 2);
 

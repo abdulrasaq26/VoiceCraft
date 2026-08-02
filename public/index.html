@@ -787,6 +787,96 @@
             </div>
 
             <div id="sb-scenes" class="sb-scenes"></div>
+
+            <div id="host-card" class="ed-manual">
+              <div class="input-header">
+                <label>🎤 Channel Host</label>
+                <div class="input-header-actions">
+                  <button id="host-clear" class="btn ghost small" type="button">Clear host</button>
+                </div>
+              </div>
+              <p class="field-note">
+                The permanent on-screen face of your channel. Stored per <strong>channel</strong>, not
+                per project, so it survives project resets and stays identical across every video.
+                The overlay is composited onto each frame rather than generated — so the face never drifts.
+              </p>
+              <div class="ed-manual-inputs">
+                <label>Host face<input id="host-face-upload" type="file" accept="image/*" /></label>
+                <label>Extra angles<input id="host-refs-upload" type="file" accept="image/*" multiple /></label>
+                <img id="host-preview" alt="Channel host" hidden
+                     style="max-height:96px;border-radius:8px;border:1px solid rgba(255,255,255,.2)" />
+              </div>
+              <span id="host-ref-count" class="field-note"></span>
+              <div class="ed-manual-inputs">
+                <label>Channel name<input id="host-channel-name" type="text" placeholder="Born Back Then" /></label>
+                <label>Host name<input id="host-name" type="text" placeholder="James" /></label>
+                <label>Gender<input id="host-gender" type="text" placeholder="Male" /></label>
+                <label>Age range<select id="host-age-range"></select></label>
+                <label>Clothing<select id="host-clothing-style"></select></label>
+                <label>Personality<select id="host-personality"></select></label>
+                <label>Voice<input id="host-voice" type="text" placeholder="voice id or name" /></label>
+                <label>Speaking style<input id="host-speaking-style" type="text" placeholder="warm, measured, direct" /></label>
+              </div>
+              <div class="ed-manual-inputs">
+                <label>Overlay layout<select id="host-layout"></select></label>
+                <label>Size<select id="host-size"></select></label>
+                <label>Position<select id="host-position"></select></label>
+                <label>Presenter backdrop<select id="host-background"></select></label>
+              </div>
+              <div id="host-status" class="status" hidden></div>
+            </div>
+
+            <div id="ltx-panel" class="ed-manual">
+              <div class="input-header">
+                <label>🎥 LTX 2.3 Video Generation</label>
+                <div class="input-header-actions">
+                  <span id="ltx-online" class="badge">checking…</span>
+                </div>
+              </div>
+              <p class="field-note">
+                Animates each storyboard frame into real footage, one scene at a time. Character
+                portraits are sent as subject references so faces stay the same across scenes.
+                Clips are trimmed to the exact narration length, so the cut stays in sync.
+                <strong>LTX has no text-only mode</strong> — generate the storyboard images first.
+              </p>
+              <label class="field">Endpoint (ngrok URL from AETHER_LTX_Kaggle.ipynb)
+                <input id="ltx-endpoint" type="text" placeholder="https://xxxx.ngrok-free.dev" />
+              </label>
+              <div class="ed-manual-inputs">
+                <label>Resolution
+                  <select id="ltx-res">
+                    <option value="480p" selected>480p (832×480) — ~5 min/clip</option>
+                    <option value="540p">540p (960×544) — ~6.5 min/clip</option>
+                    <option value="720p">720p (1248×704) — ~12.5 min/clip</option>
+                    <option value="1080p">1080p (1920×1088 → cropped) — ~26 min/clip</option>
+                  </select>
+                </label>
+                <label>Aspect
+                  <select id="ltx-aspect">
+                    <option value="16:9 Landscape" selected>16:9 Landscape</option>
+                    <option value="9:16 Portrait">9:16 Portrait (Shorts)</option>
+                    <option value="1:1 Square">1:1 Square</option>
+                  </select>
+                </label>
+                <label>Consistency strength
+                  <input id="ltx-msr" type="number" min="0.5" max="2" step="0.1" value="1" />
+                </label>
+                <label>Channel mode<select id="ltx-mode"></select></label>
+              </div>
+              <p id="ltx-mode-note" class="field-note"></p>
+              <div class="actions">
+                <button id="ltx-selftest" class="btn ghost small" type="button"
+                        title="Diagnostic only — not a step in making a video. Renders one throwaway 2s clip to confirm this backend can generate from text with no reference image. Run it once after starting the notebook; the answer is then cached.">🔧 Check t2v support</button>
+                <button id="ltx-plan" class="btn ghost" type="button">🎬 Plan shots with Director</button>
+                <button id="ltx-generate" class="btn primary" type="button">Generate all scene clips</button>
+                <button id="ltx-collect" class="btn ghost" type="button" hidden
+                        title="Renders continue on the GPU even if you reload or close the tab. This reconnects to them and downloads anything that finished.">📥 Collect finished renders</button>
+                <button id="ltx-cancel" class="btn ghost" type="button" hidden>Stop</button>
+                <span id="ltx-summary" class="field-note"></span>
+              </div>
+              <div id="ltx-status" class="status" hidden></div>
+            </div>
+
           </section>
         </div>
 
@@ -1287,15 +1377,28 @@
   <script src="adapters/image-adapters.js"></script>
   <script src="adapters/stable-diffusion-adapter.js"></script>
   <script src="adapters/video-adapters.js"></script>
+  <script src="adapters/ltx-adapter.js"></script>
   <script src="adapters/kokoro-adapter.js"></script>
   <script src="adapters/fish-adapter.js"></script>
   <script src="speech-director.js"></script>
+  <script src="speech-timeline.js"></script>
+  <script src="sync-engine.js"></script>
+  <script src="playback.js"></script>
+  <script src="sync-overlay.js"></script>
+  <script src="character-engine.js"></script>
+  <script src="stickman.js"></script>
+  <script src="visual-styles.js"></script>
+  <script src="geo-map.js"></script>
   <script src="graphic-renderer.js"></script>
   <script src="voice-styles.js"></script>
   <script src="voice-cloning.js"></script>
   <script src="voice-cloning-ui.js"></script>
   <script src="adapters/direct-adapters.js"></script>
   <script src="provider-dashboard.js"></script>
+  <script src="character-library.js"></script>
+  <script src="channel-modes.js"></script>
+  <script src="channel-host.js"></script>
+  <script src="channel-host-ui.js"></script>
   <script src="asset-consistency.js"></script>
   <script src="historical-accuracy.js"></script>
   <script src="series-memory.js"></script>
@@ -1320,6 +1423,9 @@
   <script src="script.js"></script>
   <script src="images.js"></script>
   <script src="storyboard.js"></script>
+  <script src="ltx-video.js"></script>
+  <script src="retention.js"></script>
+  <script src="ltx-ui.js"></script>
   <script src="editor.js"></script>
   <script src="youtube.js"></script>
   <script src="projects.js"></script>

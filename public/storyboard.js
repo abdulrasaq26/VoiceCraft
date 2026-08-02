@@ -57,9 +57,16 @@
   let assetMode = 'image';
 
   function sceneAssetType(scene) {
+    // What the scene ACTUALLY holds wins over what the project is set to
+    // produce. A typeset beat is a PNG even in a video project, and rendering
+    // it into a <video> gives a black player that never plays — which is
+    // exactly how finished charts and maps appeared to be missing.
+    if (scene && scene.assetType) return scene.assetType === 'video' ? 'video' : 'image';
+    // Nothing stored yet: fall back to what this project intends to make, so
+    // the placeholder says "Queued (video)" rather than guessing wrong.
     if (assetMode === 'video') return 'video';
     if (assetMode === 'image') return 'image';
-    return scene.assetType === 'video' ? 'video' : 'image'; // mixed
+    return 'image'; // mixed, undecided
   }
   function isVideoBlob(blob) {
     return Boolean(blob && blob.type && blob.type.startsWith('video/'));
@@ -386,6 +393,21 @@
       rawCues = parseSubtitles(subs.content);
       if (!rawCues.length) rawCues = cuesFromScript(subs.content); // txt without timecodes
     }
+    // Fall back to the project's own subtitles even when the user never clicked
+    // "Import from project".
+    //
+    // This is not a convenience. Timecodes are the ONLY thing that ties a scene
+    // to a moment in the narration — without them every beat gets a flat
+    // default and the pictures drift against the voice. Making that depend on
+    // remembering a button meant the most common path silently produced an
+    // out-of-sync video.
+    if (!rawCues.some((c) => c.timestamp) && window.BlvckAssets) {
+      const projectSrt = window.BlvckAssets.subtitlesSRT();
+      if (projectSrt) {
+        const timed = parseSubtitles(projectSrt);
+        if (timed.length) rawCues = timed;
+      }
+    }
     const script = files.find((f) => f.kind === 'script');
     if (script) {
       ctx.script = script.content;
@@ -449,6 +471,11 @@
       // 2. Scene prompts in batches (with prior summaries for continuity)
       setAnalyzing(true, 'Writing scene prompts…');
       scenes = [];
+      // A new storyboard reuses scene indices for entirely different content,
+      // so every render record from the old one is now a lie: it reported
+      // "canvas" for beats whose images had already been cleared, which made
+      // unrendered scenes look finished and kept them out of the queue.
+      if (window.BlvckLTX && window.BlvckLTX.reset) window.BlvckLTX.reset();
       for (let i = 0; i < cues.length; i += SCENE_BATCH) {
         const batch = cues.slice(i, i + SCENE_BATCH);
         const prior = scenes.slice(-3).map((s) => `${s.camera}: ${s.sceneSummary}`);
@@ -462,6 +489,17 @@
         (res.scenes || []).forEach((s) => scenes.push({ ...s, status: 'pending', error: null }));
         renderScenes();
       }
+      // Continuity across batch boundaries. parseScenes already carried
+      // environment/time/weather/lighting forward WITHIN each batch, but the
+      // model never sees earlier batches, so the first scene of batch 2 usually
+      // comes back blank. One pass over the finished list closes those seams.
+      if (window.BlvckPrompts && window.BlvckPrompts.applyContinuity) {
+        scenes = window.BlvckPrompts.applyContinuity(scenes);
+        renderScenes();
+      }
+      // Seed the character library from the bible so every recurring person has
+      // a profile to attach a portrait (and later an LTX subject reference) to.
+      if (window.BlvckCast) window.BlvckCast.importFromBible(bible);
       saveProject();
       // Build reference portraits for anyone who actually recurs, before the
       // scene queue runs, so the cast is locked in first.
@@ -474,9 +512,50 @@
       setAnalyzing(false);
       return;
     }
-    setAnalyzing(false);
     exportsEl.hidden = false;
-    // 3. Generate assets — unless the user wants to review/edit prompts first.
+
+    // 3. Plan the shots BEFORE generating anything.
+    //
+    // This used to jump straight into rendering a still for every scene, which
+    // is work decided before anyone knew what the scenes were for. Planning is
+    // one cheap LLM call and it determines what each beat actually needs: a
+    // chart or map is drawn on canvas and needs no image at all, and a filmed
+    // beat is rendered from text and needs no image either. Generating first
+    // meant paying for pictures the video would never use.
+    let planned = null;
+    if (window.BlvckLTX && window.BlvckLTX.planWithDirector) {
+      try {
+        setAnalyzing(true, 'Planning shots — deciding what each beat should be…');
+        planned = await window.BlvckLTX.planWithDirector();
+        renderScenes();
+      } catch (err) {
+        // A failed plan is not fatal; the scenes are still usable by hand.
+        console.warn('[Storyboard] Shot planning failed:', err.message);
+      }
+    }
+    setAnalyzing(false);
+
+    if (planned) {
+      const mix = Object.entries(planned.mix || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, n]) => `${n}× ${k}`)
+        .join(', ');
+      const warn = planned.warnings && planned.warnings.length
+        ? ` ⚠ ${planned.warnings.join('; ')}`
+        : '';
+      const ret = planned.retention && planned.retention.issues && planned.retention.issues.length
+        ? ` 📉 ${planned.retention.issues.slice(0, 2).map((i) => `[${i.where}] ${i.message}`).join(' ')}`
+        : '';
+      showStatus(
+        `${scenes.length} beat(s) planned as ${planned.mode || 'default'} — ${mix}. ` +
+        `Review below, then click “Generate all scene clips”.${warn}${ret}`,
+        'info'
+      );
+      if (generateAllBtn) generateAllBtn.hidden = false;
+      return;
+    }
+
+    // No planner available — fall back to the original still-image behaviour.
     if (modeEl && modeEl.value === 'review') {
       if (generateAllBtn) generateAllBtn.hidden = false;
       showStatus(`${scenes.length} scene prompt(s) ready. Review or edit them, then click “Generate all images”.`, 'info');
@@ -609,8 +688,21 @@
     // models cannot spell, so a checklist or a big number rendered on the GPU
     // comes back as pseudo-lettering; drawn here it is correct every time, on
     // brand, and returns in milliseconds without touching the queue's GPU time.
-    if (window.BlvckGraphic && window.BlvckGraphic.looksLikeGraphic(scene)) {
-      const spec = scene.graphic || { kind: 'title', title: scene.sceneSummary || scene.subtitle || '' };
+    // Two ways a beat qualifies as typeset: the storyboard model gave it a
+    // graphic spec, or the Director planned it as one of the data types
+    // (chart/map/timeline/whiteboard). The second case is why this check can
+    // no longer rely on looksLikeGraphic alone — a beat planned as "chart"
+    // carries no `graphic` from the storyboard pass, so it used to fall
+    // through and be rendered PHOTOGRAPHICALLY, which is precisely the
+    // scrambled-lettering failure the canvas renderer exists to avoid.
+    const plannedCanvas = !!(window.BlvckLTX && window.BlvckLTX.rendersOnCanvas(scene));
+    if (window.BlvckGraphic && (plannedCanvas || window.BlvckGraphic.looksLikeGraphic(scene))) {
+      const spec = Object.assign(
+        // The Director's visualType is the card kind; the storyboard's own
+        // spec (checklist/stat/title) wins when it supplied one.
+        { kind: plannedCanvas ? scene.visualType : 'title' },
+        scene.graphic || { title: scene.sceneSummary || scene.subtitle || '' }
+      );
       // Palette comes from the project's own subject, so a safety video's cards
       // read as safety and a finance video's do not look identical to them.
       return window.BlvckGraphic.render({
@@ -620,7 +712,24 @@
       });
     }
 
+    // Build from the Director's structured decisions when it has planned this
+    // beat, not from scene.prompt — that string was written during the
+    // storyboard pass, BEFORE the Director ran, so shot scale, place, time of
+    // day, weather, light, props and mood were reaching video prompts and
+    // silently missing image prompts. Same intelligence, both paths.
     let finalPrompt = scene.prompt || '';
+    if (scene.visualType && window.BlvckLTX && window.BlvckLTX.stillPromptFor) {
+      const chosenStyle = styleEl && styleEl.value && styleEl.value !== 'auto' ? styleEl.value : '';
+      const planned = window.BlvckLTX.stillPromptFor(scene, bible, chosenStyle);
+      if (planned) finalPrompt = planned;
+    } else if (scene.visualType === 'presenter' && window.BlvckHost && window.BlvckHost.isConfigured()) {
+      // No planner available: keep the host rule at minimum.
+      finalPrompt = [
+        `${window.BlvckHost.descriptor()}, speaking directly to camera`,
+        window.BlvckHost.backgroundText(),
+        scene.detectedAction || scene.sceneSummary || ''
+      ].filter(Boolean).join('. ');
+    }
 
     // Append the master visual style so every scene shares one look.
     const styled = styleText(bible && bible.visualStyle);
@@ -635,7 +744,10 @@
     // exists (Stable Diffusion, SDXL). They must NOT be appended to the
     // positive prompt: writing "avoid sepia, film grain" there describes those
     // things to the sampler and makes them MORE likely, not less.
-    const negative = styleNegative(bible && bible.visualStyle);
+    const styleNeg = window.BlvckLTX && window.BlvckLTX.stillNegativeFor
+      ? window.BlvckLTX.stillNegativeFor(bible, styleEl && styleEl.value !== 'auto' ? styleEl.value : '')
+      : '';
+    const negative = [styleNeg, styleNegative(bible && bible.visualStyle)].filter(Boolean).join(', ');
 
     if (sceneAssetType(scene) === 'video') {
       return window.BlvckAI.generateVideo(finalPrompt, { seconds: 5, size: '1280x720' });
@@ -647,8 +759,14 @@
     return window.BlvckAI.generateImage(finalPrompt, ASPECT, {
       ...(imageUrl ? { imageUrl } : {}),
       seed: sceneSeed(scene),
+      // Tell the backend which style LoRA to apply. The prompt alone cannot
+      // move a checkpoint off what it was fine-tuned for.
+      style: chosenStyle || '',
       negative_prompt: negative || undefined,
-      characters: Array.isArray(scene.characters) ? scene.characters : [],
+      // Character continuity holds a SEQUENCE together. For a single still
+      // generated from text with no init image, it only spends prompt weight
+      // that composition needs more.
+      characters: imageUrl ? (Array.isArray(scene.characters) ? scene.characters : []) : [],
       location: sceneLocation(scene)
     });
   }
@@ -667,7 +785,12 @@
     let quotaHit = false;
     for (const scene of scenes) {
       if (cancelRequested) break;
-      if (scene.status === 'done') continue;
+      // Skip only when this scene already has a STILL. A scene marked 'done'
+      // because the LTX pipeline rendered it a video clip has no image yet, and
+      // the two tracks are deliberately independent: clips live under
+      // clip:<index>, stills under <index>, so generating one never destroys
+      // the other and either can be produced first.
+      if (scene.status === 'done' && scene.assetType !== 'video') continue;
       while (paused && !cancelRequested) await sleep(200);
       if (cancelRequested) break;
 
@@ -982,7 +1105,79 @@
     return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
+  // Full-size preview for a scene's asset. Built on demand and torn down on
+  // close: a paused-but-alive <video> holding a blob URL keeps the decoder and
+  // the blob in memory, and with a dozen scenes that adds up.
+  let previewEl = null;
+
+  function closePreview() {
+    if (!previewEl) return;
+    const v = previewEl.querySelector('video');
+    if (v) {
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
+    }
+    previewEl.remove();
+    previewEl = null;
+    document.removeEventListener('keydown', onPreviewKey);
+  }
+
+  function onPreviewKey(e) {
+    if (e.key === 'Escape') closePreview();
+  }
+
+  function openPreview(scene, url, isVideo) {
+    closePreview();
+    if (!url) return;
+
+    previewEl = document.createElement('div');
+    previewEl.className = 'sb-preview';
+    previewEl.setAttribute('role', 'dialog');
+    previewEl.setAttribute('aria-label', `Scene ${scene.index} preview`);
+    previewEl.style.cssText =
+      'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);' +
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;cursor:zoom-out';
+
+    const media = isVideo ? document.createElement('video') : document.createElement('img');
+    media.src = url;
+    media.style.cssText = 'max-width:min(1280px,94vw);max-height:82vh;border-radius:10px;box-shadow:0 24px 60px rgba(0,0,0,.6);cursor:default';
+    if (isVideo) {
+      media.controls = true;
+      media.autoplay = true;
+      media.loop = true;
+      media.playsInline = true;
+    } else {
+      media.alt = `Scene ${scene.index}`;
+    }
+    // Clicks on the media itself must not close the dialog — scrubbing a video
+    // would dismiss it constantly.
+    media.addEventListener('click', (e) => e.stopPropagation());
+
+    const caption = document.createElement('div');
+    caption.style.cssText = 'color:#e8ecf2;font:500 14px/1.5 system-ui;max-width:min(1280px,94vw);text-align:center';
+    const bits = [
+      `Scene ${scene.index}`,
+      scene.timestamp || '',
+      scene.visualType || '',
+      isVideo ? 'video' : 'image'
+    ].filter(Boolean);
+    caption.textContent = `${bits.join(' · ')}${scene.subtitle ? ` — ${scene.subtitle}` : ''}`;
+
+    const hint = document.createElement('div');
+    hint.style.cssText = 'color:#9aa4b2;font:400 12px system-ui';
+    hint.textContent = 'Click anywhere or press Esc to close';
+
+    previewEl.append(media, caption, hint);
+    previewEl.addEventListener('click', closePreview);
+    document.addEventListener('keydown', onPreviewKey);
+    document.body.appendChild(previewEl);
+  }
+
   function renderScenes() {
+    // A preview left open would point at a blob URL this re-render is about to
+    // revoke.
+    closePreview();
     scenesEl.innerHTML = '';
     scenes.forEach((scene) => {
       const row = document.createElement('div');
@@ -1000,13 +1195,35 @@
           thumb.loop = true;
           thumb.playsInline = true;
           thumb.controls = true;
-          thumb.preload = 'metadata';
+          // 'metadata' loads duration but decodes no picture, so the card shows
+          // a black player until the user presses play — a rendered clip looks
+          // like a failed one. Nudge past the first frame to force a poster.
+          thumb.preload = 'auto';
+          thumb.addEventListener('loadeddata', () => {
+            if (thumb.currentTime === 0) {
+              try {
+                thumb.currentTime = 0.1;
+              } catch {
+                /* some codecs refuse an early seek; the player still works */
+              }
+            }
+          }, { once: true });
         } else {
           thumb = document.createElement('img');
           thumb.className = 'sb-thumb';
           thumb.src = url;
           thumb.alt = `Scene ${scene.index}`;
         }
+        // Open the full-size preview. On a video the controls are inside the
+        // element, so only a click on the frame itself should open the
+        // lightbox — otherwise hitting play would fill the screen instead.
+        thumb.style.cursor = 'zoom-in';
+        thumb.title = 'Click to preview full size';
+        thumb.addEventListener('click', (e) => {
+          if (isVideo && e.target !== thumb) return;
+          if (isVideo) e.preventDefault();
+          openPreview(scene, url, isVideo);
+        });
       } else {
         thumb = document.createElement('div');
         thumb.className = 'sb-thumb-placeholder';
@@ -1110,6 +1327,56 @@
 
   // --- Persistence -------------------------------------------------------
 
+  // The Director writes its plan into localStorage, but this module keeps its
+  // own in-memory copy of `scenes` and writes that back on every save. Without
+  // pulling the plan in here, the next saveProject() would overwrite it — the
+  // plan would appear to work and then silently vanish.
+  //
+  // Only the planned fields are copied; status, prompt and image state stay
+  // whatever this module already believes, since it owns those.
+  window.addEventListener('blvck:scenes-planned', (ev) => {
+    const planned = (ev && ev.detail && ev.detail.scenes) || [];
+    if (!planned.length || !scenes.length) return;
+    const byIndex = new Map(planned.map((s) => [s.index, s]));
+    const FIELDS = ['visualType', 'hostOverlay', 'shotType', 'cameraMovement', 'motion', 'emotion', 'transition'];
+    scenes = scenes.map((s) => {
+      const p = byIndex.get(s.index);
+      if (!p) return s;
+      const out = { ...s };
+      FIELDS.forEach((f) => {
+        if (p[f] !== undefined && p[f] !== '') out[f] = p[f];
+      });
+      return out;
+    });
+    renderScenes();
+  });
+
+  // A beat rendered by the LTX pipeline (a video clip, or a typeset card drawn
+  // on canvas). The scene card is driven by scene.status and the `urls` map,
+  // neither of which that pipeline touches — so without this the beat keeps
+  // displaying whatever error it last failed with, plus a Retry button, while
+  // its finished footage sits in storage unseen.
+  window.addEventListener('blvck:clip-rendered', async (ev) => {
+    const d = (ev && ev.detail) || {};
+    const scene = scenes.find((s) => s.index === d.index);
+    if (!scene) return;
+
+    const isVideo = d.kind === 'video';
+    const blob = await idbGet(isVideo ? `clip:${d.index}` : String(d.index));
+    if (!blob) return;
+
+    if (urls.has(d.index)) URL.revokeObjectURL(urls.get(d.index));
+    urls.set(d.index, URL.createObjectURL(blob));
+
+    scene.status = 'done';
+    scene.error = null;
+    // Drives the <video> vs <img> choice in renderScenes().
+    scene.assetType = isVideo ? 'video' : 'image';
+
+    renderScenes();
+    saveProject();
+  });
+
   function saveProject() {
     try {
       localStorage.setItem(
@@ -1167,6 +1434,30 @@
         refDataUrls.set(c.name, await blobToDataUrl(blob));
       }
     }
+    // Pick up anything the LTX pipeline rendered.
+    //
+    // Those beats are stored outside this module's own image queue — clips
+    // under clip:<index>, typeset cards under <index> — and the event that
+    // announces them only fires at render time. Without this reconciliation, a
+    // clip rendered before a reload would sit in storage while its card kept
+    // showing the failure it had before, which looks exactly like the render
+    // never happened.
+    if (window.BlvckLTX && window.BlvckLTX.allStatus) {
+      const rendered = window.BlvckLTX.allStatus();
+      for (const s of scenes) {
+        const rec = rendered[String(s.index)];
+        if (!rec || (rec.status !== 'done' && rec.status !== 'canvas')) continue;
+        const isVideo = rec.status === 'done';
+        const blob = await idbGet(isVideo ? `clip:${s.index}` : String(s.index));
+        if (!blob) continue;
+        if (urls.has(s.index)) URL.revokeObjectURL(urls.get(s.index));
+        urls.set(s.index, URL.createObjectURL(blob));
+        s.status = 'done';
+        s.error = null;
+        s.assetType = isVideo ? 'video' : 'image';
+      }
+    }
+
     renderBible();
     renderScenes();
     exportsEl.hidden = false;
@@ -1490,6 +1781,14 @@
       assetMode = assetModeEl.value;
       saveProject();
       renderScenes();
+      // The render panel prices and labels itself from this choice, so it has
+      // to hear about the change. Without this it kept offering to generate
+      // "clips" for a stills project, and quoting video minutes for it.
+      try {
+        window.dispatchEvent(new CustomEvent('blvck:ltx-changed'));
+      } catch {
+        /* no-op */
+      }
     });
   }
   if (pauseBtn) {
@@ -1535,4 +1834,33 @@
       /* leave hidden */
     }
   })();
+
+  // Expose what the render queue needs to honour the user's choice.
+  //
+  // "Scene Assets: Still images" lived only inside this module, so the LTX
+  // queue rendered video regardless — the setting was real, respected here,
+  // and invisible to the one place that most needed it. A user who picked
+  // stills was told a run would take an hour of GPU time when it should have
+  // taken seconds.
+  window.BlvckStoryboard = {
+    assetMode: () => assetMode,
+    /** What this specific scene should produce: 'image' or 'video'. */
+    assetTypeFor: (scene) => sceneAssetType(scene || {}),
+    /** Render one scene's still (or canvas card) exactly as the storyboard does. */
+    generateStill: (scene) => generateSceneAsset(scene),
+    /** Persist a rendered asset against a scene, so it appears on the card. */
+    attachAsset: async (scene, blob, kind) => {
+      await idbPut(String(scene.index), blob);
+      const s = scenes.find((x) => x.index === scene.index);
+      if (s) {
+        s.status = 'done';
+        s.error = null;
+        s.assetType = kind || 'image';
+      }
+      if (urls.has(scene.index)) URL.revokeObjectURL(urls.get(scene.index));
+      urls.set(scene.index, URL.createObjectURL(blob));
+      saveProject();
+      renderScenes();
+    }
+  };
 })();

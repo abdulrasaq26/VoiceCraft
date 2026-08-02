@@ -266,8 +266,21 @@
 
     if (typeof window.BlvckPrompts !== 'undefined' && window.BlvckPrompts.parse) {
       try {
-        return window.BlvckPrompts.parse(endpoint, text);
-      } catch (_) {}
+        // parse(endpoint, payload, rawText) — the PAYLOAD matters. Route
+        // parsers need it to rejoin the model's answer to the input: a scene's
+        // timestamp and subtitle come from payload.cues, not from anything the
+        // model says.
+        //
+        // This was called as parse(endpoint, text), so payload received the raw
+        // string and rawText was undefined. Every route parser then threw, the
+        // empty catch swallowed it, and the generic JSON fallback below returned
+        // unnormalised model output — silently, for every endpoint in the app.
+        return window.BlvckPrompts.parse(endpoint, payload, text);
+      } catch (err) {
+        // Still fall back, but never in silence: losing normalisation is a
+        // correctness failure, not a cosmetic one.
+        console.warn(`[AI] Route parser for ${endpoint} failed; using raw JSON instead:`, err && err.message);
+      }
     }
 
     const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
@@ -516,6 +529,9 @@
         cfg_scale: options.cfg_scale,
         sampler: options.sampler,
         seed: options.seed,
+        // The backend swaps a style LoRA on this. Without it a 2D beat renders
+        // photoreal however the prompt is written -- the checkpoint decides.
+        style: options.style || '',
         width: options.width,
         height: options.height
       };
@@ -563,6 +579,7 @@
           sampler: options.sampler,
           seed: options.seed,
           model: (options.model === 'local_sd') ? null : options.model,
+          style: options.style || '',
           width: options.width,
           height: options.height,
         });

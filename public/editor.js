@@ -64,6 +64,10 @@
 
   // Playback state
   let playing = false;
+  // True whenever the timeline is advancing on its own — preview playback OR
+  // the real-time export recording. Video clips play through in that regime and
+  // seek frame-exactly outside it.
+  let realtime = false;
   let rafId = 0;
   let clockStart = 0;
   let offsetMs = 0;
@@ -240,6 +244,26 @@
     });
   }
 
+  // Decode an LTX clip into a seekable, muted video element. Muted + playsInline
+  // matters: the narration is mixed separately, and an unmuted element would
+  // double up any audio LTX emitted.
+  function loadVideo(blob) {
+    return new Promise((resolve, reject) => {
+      const v = document.createElement('video');
+      v.muted = true;
+      v.playsInline = true;
+      v.preload = 'auto';
+      v.src = URL.createObjectURL(blob);
+      const fail = () => reject(new Error('could not decode clip'));
+      v.onerror = fail;
+      // loadeddata alone can fire before duration is known for fragmented mp4.
+      v.onloadeddata = () => {
+        if (v.readyState >= 2) resolve(v);
+        else v.oncanplay = () => resolve(v);
+      };
+    });
+  }
+
   async function loadAudio(forceBatch = false) {
     audio = { buffers: [], offsets: [], totalMs: 0 };
     const ctx = () => (audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)());
@@ -279,6 +303,47 @@
       } catch {}
     }
     audio.totalMs = acc;
+  }
+
+  // Stretch/squeeze the picture track so it ends with the narration.
+  // Returns the drift in ms that was corrected (0 when already in sync, or
+  // when there is no narration to sync against). Clip minimums are applied
+  // first, then any residual is absorbed by the last clip so the total lands
+  // exactly on the audio length rather than merely close to it.
+  function rescaleClipsToAudio() {
+    if (!audio || !audio.totalMs || !clips.length) return 0;
+    const target = audio.totalMs;
+    const current = clips.reduce((a, c) => a + c.durationSec * 1000, 0);
+    if (!current) return 0;
+    // Ignore sub-second differences — not worth reporting or touching.
+    const drift = target - current;
+    if (Math.abs(drift) < 1000) return 0;
+
+    const factor = target / current;
+    for (const c of clips) c.durationSec = Math.max(1, c.durationSec * factor);
+    // The Math.max(1, …) floor can push the total back over target on very
+    // short clips, so settle whatever is left over.
+    let rem = (target - clips.reduce((a, c) => a + c.durationSec * 1000, 0)) / 1000;
+    if (rem > 0.01) {
+      // Growing has no upper bound; the tail clip can take it all.
+      clips[clips.length - 1].durationSec += rem;
+    } else if (rem < -0.01) {
+      // Shrinking: only clips above the 1s floor have time to give back, and
+      // no single clip is guaranteed to hold the whole remainder. Take from
+      // each in proportion to its headroom so nothing crosses the floor.
+      for (let pass = 0; pass < 8 && rem < -0.01; pass++) {
+        const avail = clips.reduce((a, c) => a + Math.max(0, c.durationSec - 1), 0);
+        if (avail <= 0.01) break; // genuinely cannot be shortened any further
+        const take = Math.min(-rem, avail);
+        for (const c of clips) {
+          const head = Math.max(0, c.durationSec - 1);
+          if (head > 0) c.durationSec -= take * (head / avail);
+        }
+        rem += take;
+      }
+    }
+    for (const c of clips) c.durationSec = Math.round(c.durationSec * 1000) / 1000;
+    return drift;
   }
 
   // Parse SRT/VTT into [{ durationSec, text }].
@@ -344,6 +409,11 @@
     }
 
     await loadAudio();
+    await loadHost();
+    // Same guarantee as the storyboard path: if there were fewer cues than
+    // images (the 4s fallback above) the picture track would otherwise end
+    // nowhere near the narration.
+    rescaleClipsToAudio();
     buildManualBtn.disabled = false;
     stage.hidden = false;
     offsetMs = 0;
@@ -370,28 +440,89 @@
       sb = null;
     }
     const scenes = (sb && sb.scenes) || [];
-    const done = scenes.filter((s) => s.status === 'done');
-    if (!done.length) {
-      showStatus('No generated storyboard images found. Generate a storyboard first (its images are the video scenes).');
+    if (!scenes.length) {
+      showStatus('No storyboard scenes yet — generate a storyboard first. Its beats are the video scenes.');
       return;
     }
+    // Deliberately NOT gated on scenes having stills. A text-to-video project
+    // never generates any, and a canvas beat writes its image without the
+    // scene's status ever becoming 'done'. Whether there is anything to show is
+    // decided below, from what actually loaded.
     assembleBtn.disabled = true;
     summaryEl.textContent = 'Assembling…';
 
     clips = [];
-    for (let i = 0; i < done.length; i++) {
-      const s = done[i];
+    // Walk EVERY scene, not only the ones that produced an image. A scene's
+    // timestamp is its slice of the real narration, so skipping a failed scene
+    // used to delete that slice from the video while the audio still played
+    // it — every picture after the gap then ran early against the voice, for
+    // the rest of the video. Instead, hold the neighbouring image across the
+    // gap so picture and audio stay locked to the same clock.
+    let heldSec = 0;
+    for (let i = 0; i < scenes.length; i++) {
+      const s = scenes[i];
+      const secs = Math.max(1, clipDuration(s.timestamp));
+      // Ask storage, don't trust the label: a canvas-rendered chart writes its
+      // image without ever flipping the scene's status to 'done'.
       const blob = await idbGet(SB_DB, SB_STORE, String(s.index));
-      if (!blob) continue;
-      const img = await loadImage(blob);
-      clips.push({
-        sceneIndex: s.index,
-        subtitle: s.subtitle || s.sceneSummary || '',
-        camera: s.camera || '',
-        durationSec: Math.max(1, clipDuration(s.timestamp)),
-        effect: autoEffect(i, s.camera),
-        img
-      });
+      let img = null;
+      if (blob) {
+        try {
+          img = await loadImage(blob);
+        } catch {
+          img = null;
+        }
+      }
+      // Prefer a rendered LTX clip over the still. The still stays attached as
+      // a fallback so a video that fails to decode still shows something rather
+      // than a black hole in the timeline.
+      // A long beat is rendered as several clips under the same scene index —
+      // cheaper on the GPU and better paced. Load every part; each becomes its
+      // own cut, sharing the beat's narration slot between them.
+      const videos = [];
+      for (let part = 0; part < 12; part++) {
+        const key = part === 0 ? `clip:${s.index}` : `clip:${s.index}:${part}`;
+        const b = await idbGet(SB_DB, SB_STORE, key);
+        if (!b) break;
+        try {
+          videos.push(await loadVideo(b));
+        } catch {
+          /* skip an undecodable part rather than lose the whole beat */
+        }
+      }
+      const video = videos[0] || null;
+
+      if (!img && !video) {
+        // Bank the time onto the previous clip, or carry it forward to the
+        // first clip that does have something to show.
+        if (clips.length) clips[clips.length - 1].durationSec += secs;
+        else heldSec += secs;
+        continue;
+      }
+      // Split the beat's screen time between its parts. The parts sum to the
+      // beat, so the narration stays aligned however many cuts it became.
+      const n = Math.max(1, videos.length);
+      const total = secs + heldSec;
+      for (let part = 0; part < n; part++) {
+        const share = part === n - 1
+          ? total - (total / n) * (n - 1)   // last part absorbs rounding
+          : total / n;
+        clips.push({
+          sceneIndex: s.index,
+          // The subtitle belongs to the beat, not the cut; repeating it on
+          // every part would stutter the caption.
+          subtitle: part === 0 ? (s.subtitle || s.sceneSummary || '') : '',
+          camera: s.camera || '',
+          durationSec: share,
+          effect: autoEffect(clips.length, s.camera),
+          // Per-scene presenter layout, set by the Director's plan. Undefined
+          // means "use the channel default".
+          hostLayout: s.hostOverlay || null,
+          img: part === 0 ? img : null,
+          video: videos[part] || null
+        });
+      }
+      heldSec = 0;
     }
     if (!clips.length) {
       showStatus('Storyboard scenes found but their images could not be loaded.');
@@ -399,7 +530,17 @@
       return;
     }
     await loadAudio(true);
+    await loadHost();
     assembleBtn.disabled = false;
+
+    // Final guarantee: the picture track must run exactly as long as the voice
+    // that will actually play. The decoded narration is the only ground truth
+    // here — scene timestamps can be stale (storyboard built against an older
+    // take) or absent entirely (a script pasted without timecodes falls back
+    // to a flat 15s per scene). Either way the video would end well before or
+    // after the voice. Scale the scenes proportionally so they stay in their
+    // intended relative pacing while ending on the same frame as the audio.
+    const drift = rescaleClipsToAudio();
 
     stage.hidden = false;
     offsetMs = 0;
@@ -410,7 +551,15 @@
     summaryEl.textContent = `${clips.length} scenes · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${
       audio.totalMs ? ' · narration loaded' : ' · no narration audio found'
     }`;
-    showStatus('Rough cut assembled. Press play to preview, then export.', 'info');
+    if (drift) {
+      showStatus(
+        `Rough cut assembled. Scene timings were ${drift > 0 ? 'stretched' : 'tightened'} by ` +
+          `${Math.abs(Math.round(drift / 100) / 10)}s to lock the picture to the narration.`,
+        'info'
+      );
+    } else {
+      showStatus('Rough cut assembled. Press play to preview, then export.', 'info');
+    }
   }
 
   // --- Rendering ---------------------------------------------------------
@@ -440,7 +589,13 @@
 
   function drawCover(g, img, cw, ch, scale, txF, tyF) {
     if (!img) return;
-    const ir = img.width / img.height;
+    // Works for both <img> and <video>: a video element's .width/.height are
+    // the (usually unset) HTML attributes, so the intrinsic size has to come
+    // from videoWidth/videoHeight or the aspect ratio comes out NaN.
+    const iw = img.naturalWidth || img.videoWidth || img.width;
+    const ih = img.naturalHeight || img.videoHeight || img.height;
+    if (!iw || !ih) return;
+    const ir = iw / ih;
     const cr = cw / ch;
     let dw;
     let dh;
@@ -454,6 +609,139 @@
     const x = (cw - dw) / 2 + txF * cw;
     const y = (ch - dh) / 2 + tyF * ch;
     g.drawImage(img, x, y, dw, dh);
+  }
+
+  // --- Channel host overlay ------------------------------------------------
+  //
+  // Composited onto the finished frame rather than generated. A corner facecam
+  // is a compositing problem, not a diffusion problem: the host's face is a
+  // fixed asset, so drawing it directly is both free and perfectly consistent —
+  // no model can drift a face it never renders.
+
+  let hostImg = null;
+  let hostCfg = null;
+
+  async function loadHost() {
+    hostImg = null;
+    hostCfg = null;
+    if (!window.BlvckHost || !window.BlvckHost.isConfigured()) return;
+    hostCfg = window.BlvckHost.get();
+    if (hostCfg.layout === 'none') return;
+    const blob = await window.BlvckHost.faceBlob();
+    if (blob) {
+      try {
+        hostImg = await loadImage(blob);
+      } catch {
+        hostImg = null;
+      }
+    }
+  }
+
+  // Cover-fit an image into an arbitrary rect (drawCover targets the whole
+  // canvas; the overlay needs a box).
+  function drawCoverInto(g, img, x, y, w, h) {
+    const iw = img.naturalWidth || img.videoWidth || img.width;
+    const ih = img.naturalHeight || img.videoHeight || img.height;
+    if (!iw || !ih) return;
+    const ir = iw / ih;
+    const r = w / h;
+    let dw;
+    let dh;
+    if (ir > r) {
+      dh = h;
+      dw = dh * ir;
+    } else {
+      dw = w;
+      dh = dw / ir;
+    }
+    g.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  }
+
+  function roundRect(g, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    g.beginPath();
+    g.moveTo(x + rr, y);
+    g.arcTo(x + w, y, x + w, y + h, rr);
+    g.arcTo(x + w, y + h, x, y + h, rr);
+    g.arcTo(x, y + h, x, y, rr);
+    g.arcTo(x, y, x + w, y, rr);
+    g.closePath();
+  }
+
+  function drawHostOverlay(g, cw, ch, layoutOverride) {
+    if (!hostImg || !hostCfg) return;
+    const layout = layoutOverride || hostCfg.layout || 'none';
+    if (layout === 'none') return;
+
+    if (layout === 'full') {
+      drawCoverInto(g, hostImg, 0, 0, cw, ch);
+      return;
+    }
+
+    const sizes = (window.BlvckHost && window.BlvckHost.SIZES) || { medium: 0.22 };
+    const frac = sizes[hostCfg.size] || sizes.medium || 0.22;
+    const h = Math.round(ch * frac);
+    // Circle is 1:1; the facecam boxes are 4:3, which is what a real webcam
+    // crop looks like and reads better than 16:9 at this scale.
+    const w = layout === 'circle' ? h : Math.round(h * (4 / 3));
+    const m = Math.round(ch * 0.035);
+    const pos = hostCfg.position || 'bottom-right';
+    const x = pos.indexOf('right') > -1 ? cw - w - m : m;
+    const y = pos.indexOf('bottom') > -1 ? ch - h - m : m;
+    const ring = Math.max(2, Math.round(h * 0.018));
+
+    g.save();
+    g.shadowColor = 'rgba(0,0,0,0.55)';
+    g.shadowBlur = Math.round(h * 0.14);
+    g.shadowOffsetY = Math.round(h * 0.025);
+
+    if (layout === 'circle') {
+      // Fill behind the clip so the drop shadow has an opaque shape to cast.
+      g.beginPath();
+      g.arc(x + w / 2, y + h / 2, h / 2, 0, Math.PI * 2);
+      g.fillStyle = '#000';
+      g.fill();
+      g.restore();
+
+      g.save();
+      g.beginPath();
+      g.arc(x + w / 2, y + h / 2, h / 2, 0, Math.PI * 2);
+      g.clip();
+      drawCoverInto(g, hostImg, x, y, w, h);
+      g.restore();
+
+      g.save();
+      g.beginPath();
+      g.arc(x + w / 2, y + h / 2, h / 2 - ring / 2, 0, Math.PI * 2);
+      g.strokeStyle = 'rgba(255,255,255,0.92)';
+      g.lineWidth = ring;
+      g.stroke();
+      g.restore();
+      return;
+    }
+
+    // rect + corner. `corner` is the same box with a heavier rounding and no
+    // hard border, so it sits into the frame rather than on top of it.
+    const radius = layout === 'corner' ? Math.round(h * 0.14) : Math.round(h * 0.06);
+    roundRect(g, x, y, w, h, radius);
+    g.fillStyle = '#000';
+    g.fill();
+    g.restore();
+
+    g.save();
+    roundRect(g, x, y, w, h, radius);
+    g.clip();
+    drawCoverInto(g, hostImg, x, y, w, h);
+    g.restore();
+
+    if (layout === 'rect') {
+      g.save();
+      roundRect(g, x + ring / 2, y + ring / 2, w - ring, h - ring, radius);
+      g.strokeStyle = 'rgba(255,255,255,0.9)';
+      g.lineWidth = ring;
+      g.stroke();
+      g.restore();
+    }
   }
 
   function wrapText(g, text, maxW) {
@@ -495,7 +783,48 @@
     }
   }
 
+  // Drive a clip's video element from the timeline position.
+  //
+  // Two very different regimes. When the timeline is running (preview playback
+  // or the real-time export recording) the element must actually PLAY —
+  // seeking once per animation frame would stall the decoder and the export
+  // would record duplicated frames. When the user is scrubbing, the opposite:
+  // pause and seek exactly, so the frame matches the playhead.
+  function driveVideo(v, localMs) {
+    if (!v || !v.duration || Number.isNaN(v.duration)) return;
+    const want = Math.max(0, Math.min(v.duration - 0.001, localMs / 1000));
+    if (realtime) {
+      if (v.paused) {
+        v.currentTime = want;
+        const p = v.play();
+        if (p && p.catch) p.catch(() => {});
+      } else if (Math.abs(v.currentTime - want) > 0.25) {
+        // Only correct genuine drift; small differences are normal at 1x.
+        v.currentTime = want;
+      }
+    } else {
+      if (!v.paused) v.pause();
+      if (Math.abs(v.currentTime - want) > 0.04) v.currentTime = want;
+    }
+  }
+
+  function pauseInactiveVideos(activeClip) {
+    for (const c of clips) {
+      if (c.video && c !== activeClip && !c.video.paused) c.video.pause();
+    }
+  }
+
   function renderClipVisual(g, cw, ch, clip, localMs) {
+    // An LTX clip already contains real camera motion, so the Ken Burns
+    // fallback is not just unnecessary — it fights the footage and reads as a
+    // second, wrong camera move on top of the intended one.
+    if (clip.video) {
+      driveVideo(clip.video, localMs);
+      if (clip.video.readyState >= 2) {
+        drawCover(g, clip.video, cw, ch, 1, 0, 0);
+        return;
+      }
+    }
     const p = Math.max(0, Math.min(1, localMs / (clip.durationSec * 1000)));
     const t = effectTransform(clip.effect, p);
     drawCover(g, clip.img, cw, ch, t.scale, t.tx, t.ty);
@@ -506,6 +835,7 @@
     g.fillRect(0, 0, cw, ch);
     const at = clipAt(ms);
     if (!at) return;
+    pauseInactiveVideos(at.clip);
     renderClipVisual(g, cw, ch, at.clip, at.localMs);
 
     // Default crossfade: dissolve into the next clip during this clip's tail.
@@ -513,13 +843,19 @@
       const idx = clips.indexOf(at.clip);
       const next = clips[idx + 1];
       const remaining = at.clip.durationSec * 1000 - at.localMs;
-      if (next && next.img && remaining < TRANSITION_MS) {
+      if (next && (next.img || next.video) && remaining < TRANSITION_MS) {
         g.save();
         g.globalAlpha = 1 - remaining / TRANSITION_MS;
         renderClipVisual(g, cw, ch, next, TRANSITION_MS - remaining);
         g.restore();
       }
     }
+
+    // Host sits above the footage but below the captions — a facecam that
+    // covers the subtitles is worse than no facecam. A scene may override the
+    // layout (the Director decides when the presenter is on screen), falling
+    // back to the channel default.
+    drawHostOverlay(g, cw, ch, at.clip.hostLayout);
 
     drawSubs(g, cw, ch, at.clip.subtitle);
   }
@@ -591,6 +927,7 @@
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
     playing = true;
+    realtime = true;
     if (playBtn) playBtn.textContent = '⏸ Pause';
     clockStart = performance.now();
     if (offsetMs >= totalMs()) offsetMs = 0;
@@ -612,9 +949,11 @@
 
   function stopPlayback() {
     playing = false;
+    realtime = false;
     playBtn.textContent = '▶ Play';
     cancelAnimationFrame(rafId);
     stopAudio();
+    for (const c of clips) if (c.video && !c.video.paused) c.video.pause();
   }
 
   // --- Timeline UI -------------------------------------------------------
@@ -820,6 +1159,9 @@
       rec.start();
       if (recDest) activeSources = scheduleAudio(0, recDest);
       const start = performance.now();
+      // The recording runs at wall-clock speed, so video clips must play rather
+      // than be seeked frame by frame.
+      realtime = true;
       await new Promise((resolve) => {
         const step = () => {
           const ms = performance.now() - start;
@@ -829,12 +1171,17 @@
         };
         step();
       });
+      realtime = false;
+      for (const c of clips) if (c.video && !c.video.paused) c.video.pause();
       stopAudio();
       rec.stop();
       await finished;
       if (exportVideoBtn) exportVideoBtn.disabled = false;
       showStatus('Video exported (WebM). Saved to your downloads!', 'info');
     } catch (err) {
+      // Must clear here too: leaving realtime set would make the timeline try
+      // to play videos while the user is scrubbing a stopped editor.
+      realtime = false;
       if (exportVideoBtn) exportVideoBtn.disabled = false;
       showStatus(`Export video failed: ${err.message}`);
     }
