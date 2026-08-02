@@ -372,6 +372,8 @@
       }
     }
 
+    let heroBar = null;
+
     data.forEach((d, i) => {
       const h = Math.max(4, ((d.value - min) / span) * (plotH - 40));
       const x = x0 + i * (barW + gap);
@@ -390,11 +392,48 @@
       const vw = ctx.measureText(v).width;
       ctx.fillText(v, x + (barW - vw) / 2, yTop - 16);
 
-      ctx.fillStyle = t.dim;
-      ctx.font = `500 28px ${FONT}`;
+      ctx.fillStyle = i === heroIndex ? t.ink : t.dim;
+      ctx.font = `${i === heroIndex ? 700 : 500} 28px ${FONT}`;
       const lw = ctx.measureText(d.label).width;
       ctx.fillText(d.label, x + (barW - lw) / 2, bottom + 44);
+
+      if (i === heroIndex) heroBar = { x, y: yTop, w: barW, value: d.value };
     });
+
+    // Callout on the bar that carries the point. A bare number states a fact;
+    // a callout says why it matters — the change against what came before, or
+    // the caption the Director wrote.
+    if (heroBar) {
+      let note = String(spec.callout || '').trim();
+      if (!note && heroIndex > 0) {
+        const prev = data[heroIndex - 1].value;
+        if (Number.isFinite(prev) && prev !== 0) {
+          const pct = Math.round(((heroBar.value - prev) / Math.abs(prev)) * 100);
+          if (Math.abs(pct) >= 3) {
+            note = `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}% vs ${data[heroIndex - 1].label}`;
+          }
+        }
+      }
+      if (note) {
+        ctx.font = `700 26px ${FONT}`;
+        const nw = ctx.measureText(note).width;
+        // Keep the plate inside the frame when the hero bar sits at an edge.
+        const bx = Math.min(Math.max(heroBar.x + heroBar.w / 2 - (nw + 34) / 2, 40), W - nw - 74);
+        const by = Math.max(heroBar.y - 96, 150);
+        ctx.fillStyle = t.accent;
+        roundRect(ctx, bx, by, nw + 34, 46, 10);
+        ctx.fill();
+        ctx.fillStyle = '#111';
+        ctx.fillText(note, bx + 17, by + 32);
+        // Leader down to the bar.
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(bx + (nw + 34) / 2, by + 46);
+        ctx.lineTo(heroBar.x + heroBar.w / 2, heroBar.y - 42);
+        ctx.stroke();
+      }
+    }
   }
 
   // Timeline. Items are "1914: War begins" style; the date is the left column.
@@ -412,31 +451,66 @@
 
     const top = cardChrome(ctx, t, { kicker: 'Timeline', title: spec.title, subtitle: spec.subtitle });
     if (!items.length) return;
-    const step = Math.min(110, (H - top - 90) / items.length);
+    // Use the whole frame. A timeline that stops halfway down reads as a list
+    // that ran out, not as a span of time.
+    const bottomLimit = H - 70;
+    const step = items.length > 1
+      ? Math.min(120, (bottomLimit - top) / (items.length - 1))
+      : 0;
     const railX = 300;
+    const lastY = top + step * (items.length - 1);
 
-    ctx.strokeStyle = t.rule;
-    ctx.lineWidth = 4;
+    // Rail brightens through the middle so it reads as elapsed duration rather
+    // than a dividing border.
+    const grad = ctx.createLinearGradient(0, top - 30, 0, lastY + 40);
+    grad.addColorStop(0, t.rule);
+    grad.addColorStop(0.5, t.accent);
+    grad.addColorStop(1, t.rule);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(railX, top - 20);
-    ctx.lineTo(railX, top + step * (items.length - 1) + 30);
+    ctx.moveTo(railX, top - 30);
+    ctx.lineTo(railX, lastY + 40);
     ctx.stroke();
 
+    // Repeated dates mean several events inside one period. Cluster them under
+    // a single era marker instead of pretending they are separate steps —
+    // repeating "2021" three times down the rail is noise, not information.
     items.forEach((d, i) => {
       const y = top + i * step;
-      ctx.fillStyle = t.accent;
+      const isMilestone = !(i > 0 && items[i - 1].when === d.when);
+
       ctx.beginPath();
-      ctx.arc(railX, y, 13, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.arc(railX, y, isMilestone ? 15 : 9, 0, Math.PI * 2);
+      if (isMilestone) {
+        ctx.fillStyle = t.accent;
+        ctx.fill();
+        // Halo gives milestones more weight than the events beneath them.
+        ctx.beginPath();
+        ctx.arc(railX, y, 27, 0, Math.PI * 2);
+        ctx.strokeStyle = t.accent;
+        ctx.globalAlpha = 0.3;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = t.bg;
+        ctx.fill();
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
 
-      ctx.fillStyle = t.accent;
-      ctx.font = `800 38px ${FONT}`;
-      const ww = ctx.measureText(d.when).width;
-      ctx.fillText(d.when, railX - 46 - ww, y + 13);
+      if (isMilestone) {
+        ctx.fillStyle = t.accent;
+        ctx.font = `800 40px ${FONT}`;
+        const ww = ctx.measureText(d.when).width;
+        ctx.fillText(d.when, railX - 56 - ww, y + 14);
+      }
 
-      ctx.fillStyle = t.ink;
-      ctx.font = `500 36px ${FONT}`;
-      ctx.fillText(wrap(ctx, d.what, W - railX - 160)[0] || '', railX + 46, y + 13);
+      ctx.fillStyle = isMilestone ? t.ink : t.dim;
+      ctx.font = `${isMilestone ? 600 : 500} 34px ${FONT}`;
+      ctx.fillText(wrap(ctx, d.what, W - railX - 150)[0] || '', railX + 56, y + 12);
     });
   }
 
@@ -576,6 +650,60 @@
         ctx.fill();
       }
     });
+
+    // Route: when several places are named in order, the movement between them
+    // IS the story — a trade route, an invasion, a supply chain. Drawn as an
+    // arc rather than a straight line because that is how an audience reads
+    // travel on a map, and it keeps the line clear of the landmasses it joins.
+    if (countries.length > 1) {
+      const pts = countries.map((f) => {
+        const c = G.labelPoint(f);
+        return c ? project(c[0], c[1]) : null;
+      }).filter(Boolean);
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, ay] = pts[i];
+        const [bx, by] = pts[i + 1];
+        // Bow the arc perpendicular to the run, proportional to its length.
+        const mx = (ax + bx) / 2;
+        const my = (ay + by) / 2;
+        const dx = bx - ax;
+        const dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const bow = Math.min(len * 0.22, 140);
+        const cxp = mx - (dy / len) * bow;
+        const cyp = my + (dx / len) * bow;
+
+        ctx.save();
+        ctx.setLineDash([14, 10]);
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = t.hot || t.accent;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.quadraticCurveTo(cxp, cyp, bx, by);
+        ctx.stroke();
+        ctx.restore();
+
+        // Arrowhead, aimed along the curve's final tangent (from the control
+        // point to the end) rather than the straight chord, or it points wrong.
+        const tx = bx - cxp;
+        const ty = by - cyp;
+        const ta = Math.atan2(ty, tx);
+        const head = 20;
+        ctx.save();
+        ctx.translate(bx, by);
+        ctx.rotate(ta);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-head, -head * 0.5);
+        ctx.lineTo(-head, head * 0.5);
+        ctx.closePath();
+        ctx.fillStyle = t.hot || t.accent;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
 
     // Labels, placed on the largest landmass of each highlighted country.
     countries.forEach((f) => {
