@@ -1049,7 +1049,79 @@
     return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
+  // Full-size preview for a scene's asset. Built on demand and torn down on
+  // close: a paused-but-alive <video> holding a blob URL keeps the decoder and
+  // the blob in memory, and with a dozen scenes that adds up.
+  let previewEl = null;
+
+  function closePreview() {
+    if (!previewEl) return;
+    const v = previewEl.querySelector('video');
+    if (v) {
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
+    }
+    previewEl.remove();
+    previewEl = null;
+    document.removeEventListener('keydown', onPreviewKey);
+  }
+
+  function onPreviewKey(e) {
+    if (e.key === 'Escape') closePreview();
+  }
+
+  function openPreview(scene, url, isVideo) {
+    closePreview();
+    if (!url) return;
+
+    previewEl = document.createElement('div');
+    previewEl.className = 'sb-preview';
+    previewEl.setAttribute('role', 'dialog');
+    previewEl.setAttribute('aria-label', `Scene ${scene.index} preview`);
+    previewEl.style.cssText =
+      'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);' +
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;cursor:zoom-out';
+
+    const media = isVideo ? document.createElement('video') : document.createElement('img');
+    media.src = url;
+    media.style.cssText = 'max-width:min(1280px,94vw);max-height:82vh;border-radius:10px;box-shadow:0 24px 60px rgba(0,0,0,.6);cursor:default';
+    if (isVideo) {
+      media.controls = true;
+      media.autoplay = true;
+      media.loop = true;
+      media.playsInline = true;
+    } else {
+      media.alt = `Scene ${scene.index}`;
+    }
+    // Clicks on the media itself must not close the dialog — scrubbing a video
+    // would dismiss it constantly.
+    media.addEventListener('click', (e) => e.stopPropagation());
+
+    const caption = document.createElement('div');
+    caption.style.cssText = 'color:#e8ecf2;font:500 14px/1.5 system-ui;max-width:min(1280px,94vw);text-align:center';
+    const bits = [
+      `Scene ${scene.index}`,
+      scene.timestamp || '',
+      scene.visualType || '',
+      isVideo ? 'video' : 'image'
+    ].filter(Boolean);
+    caption.textContent = `${bits.join(' · ')}${scene.subtitle ? ` — ${scene.subtitle}` : ''}`;
+
+    const hint = document.createElement('div');
+    hint.style.cssText = 'color:#9aa4b2;font:400 12px system-ui';
+    hint.textContent = 'Click anywhere or press Esc to close';
+
+    previewEl.append(media, caption, hint);
+    previewEl.addEventListener('click', closePreview);
+    document.addEventListener('keydown', onPreviewKey);
+    document.body.appendChild(previewEl);
+  }
+
   function renderScenes() {
+    // A preview left open would point at a blob URL this re-render is about to
+    // revoke.
+    closePreview();
     scenesEl.innerHTML = '';
     scenes.forEach((scene) => {
       const row = document.createElement('div');
@@ -1074,6 +1146,16 @@
           thumb.src = url;
           thumb.alt = `Scene ${scene.index}`;
         }
+        // Open the full-size preview. On a video the controls are inside the
+        // element, so only a click on the frame itself should open the
+        // lightbox — otherwise hitting play would fill the screen instead.
+        thumb.style.cursor = 'zoom-in';
+        thumb.title = 'Click to preview full size';
+        thumb.addEventListener('click', (e) => {
+          if (isVideo && e.target !== thumb) return;
+          if (isVideo) e.preventDefault();
+          openPreview(scene, url, isVideo);
+        });
       } else {
         thumb = document.createElement('div');
         thumb.className = 'sb-thumb-placeholder';
