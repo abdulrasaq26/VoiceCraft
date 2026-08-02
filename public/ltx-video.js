@@ -390,6 +390,16 @@
       return { ok: true };
     }
 
+    if (vt === 'stickman') {
+      // Almost anything about people can be acted out, so this is deliberately
+      // permissive — the point of the pivot is that stickman is the DEFAULT,
+      // not a special case that has to argue for itself.
+      if (!text.trim()) {
+        return { ok: false, reason: 'nothing for the figures to act out', reroute: 'broll' };
+      }
+      return { ok: true };
+    }
+
     if (vt === 'presenter') {
       // A presenter beat with no host to render is an empty promise.
       if (!(window.BlvckHost && window.BlvckHost.isConfigured())) {
@@ -413,7 +423,7 @@
   // Beats that are TYPESET, not generated. Charts, maps, timelines and
   // whiteboards are made of text and precise shapes — exactly what diffusion
   // models cannot draw. They go to the canvas renderer, never to the GPU.
-  const CANVAS_TYPES = ['whiteboard', 'chart', 'map', 'timeline'];
+  const CANVAS_TYPES = ['stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram'];
 
   function rendersOnCanvas(scene) {
     return CANVAS_TYPES.indexOf(String((scene && scene.visualType) || '')) > -1;

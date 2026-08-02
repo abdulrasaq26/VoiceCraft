@@ -259,7 +259,7 @@ Respond ONLY with JSON:
   // 't2v'/'broll' to the video model, 'presenter' to the host compositor, and
   // the rest to the canvas typesetter, which draws real text correctly instead
   // of asking a diffusion model to hallucinate letters.
-  const VISUAL_TYPES = ['t2v', 'presenter', 'whiteboard', 'chart', 'map', 'timeline', 'broll'];
+  const VISUAL_TYPES = ['stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram', 't2v', 'presenter', 'broll'];
   const HOST_OVERLAYS = ['none', 'circle', 'rect', 'corner', 'full'];
 
   // Snap a model's answer onto the vocabulary. Case-insensitive, and tolerates
@@ -748,7 +748,23 @@ You are planning for LTX-2.3, an image-conditioned video model that renders a fe
 - The camera move must suit the beat, not add variety for its own sake. Most documentary shots are Static or Slow Push In. Reserve Drone and Crane for genuine scale, Handheld for tension or urgency.
 - Motion must not contradict the shot type. A Close Up cannot contain a Drone move.
 
+ALWAYS PREFER THE SIMPLEST VISUAL THAT EXPLAINS THE IDEA. This is an explainer studio, not a footage generator. A drawn visual renders in about a millisecond, looks identical on every run, and stays editable afterwards. A generated shot costs minutes of GPU, comes back different every time, and cannot be corrected without re-rendering. Reach for the camera only when nothing drawn can carry the idea.
+
+Choose in this order, and only move down when the option above genuinely cannot communicate the point:
+  1. stickman   - people doing or feeling something: explaining, deciding, working, reacting, comparing, struggling
+  2. whiteboard - a process, a mechanism, a cause-and-effect chain, steps
+  3. chart      - anything carrying two or more numbers
+  4. map        - anything where place, territory, movement or spread matters
+  5. timeline   - two or more dated events
+  6. diagram    - a labelled structure: an anatomy, a system, parts of a whole
+  7. t2v/broll  - a real filmed moment: atmosphere, landscape, texture, archival feel
+  8. presenter  - the host addressing the viewer directly
+
+A beat about a farmer losing his harvest can be a stickman farmer looking at a wilting plant. That reads instantly, costs nothing, and can be re-cut later. Choose t2v only when the beat genuinely needs photographic reality: a place the viewer must believe in, a texture, an atmosphere no drawing can carry.
+
 You also decide WHAT KIND OF VISUAL each beat should be. Pick the format that actually communicates the point — a video that is 40 identical generated clips is the thing we are trying to avoid:
+- "stickman": simple stick figures acting the idea out. The default for any beat about PEOPLE doing or feeling something. Put the figures in graphic.items as "action:expression" pairs, e.g. ["explain:confident", "think:confused"].
+- "diagram": a labelled structure drawn as boxes and connections.
 - "t2v": a filmed moment. The default for anything concrete and physical — people, places, actions, atmosphere.
 - "presenter": the channel host on camera. Use for the hook, section openings, direct address to the viewer, and the closing. Never more than a few per video.
 - "whiteboard": a step-by-step explanation, a process, a comparison, or a causal chain that benefits from being drawn out.

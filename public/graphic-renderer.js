@@ -796,6 +796,70 @@
     }
   }
 
+  /**
+   * A stickman beat, drawn by the skeletal engine.
+   *
+   * Figures arrive as "action:expression" pairs. Both halves are optional and
+   * an unknown name falls back rather than throwing, because a beat should
+   * never fail to render over a typo in a pose name.
+   */
+  function drawStickScene(ctx, t, spec) {
+    const Stick = window.BlvckStick;
+    if (!Stick) {
+      drawTitle(ctx, t, spec);
+      return;
+    }
+
+    const items = (Array.isArray(spec.items) ? spec.items : []).map(String).filter(Boolean);
+    const figures = (items.length ? items : ['explain:neutral']).slice(0, 4).map((raw) => {
+      const [a, e] = raw.split(':').map((x) => (x || '').trim());
+      return {
+        action: Stick.POSES[a] ? a : 'explain',
+        expression: Stick.EXPRESSIONS[e] ? e : 'neutral',
+        // A caption under each figure when the item carried a label rather
+        // than a pose, so a list of roles still reads.
+        label: Stick.POSES[a] ? '' : raw
+      };
+    });
+
+    const groundY = H - 168;
+    ctx.strokeStyle = t.rule;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(70, groundY + 2);
+    ctx.lineTo(W - 70, groundY + 2);
+    ctx.stroke();
+
+    figures.forEach((f, i) => {
+      const x = W * ((i + 1) / (figures.length + 1));
+      Stick.draw(ctx, {
+        x, y: groundY, scale: figures.length > 2 ? 52 : 64,
+        action: f.action, expression: f.expression,
+        colour: i === figures.length - 1 ? t.accent : t.ink
+      });
+      if (f.label) {
+        ctx.fillStyle = t.dim;
+        ctx.font = `500 26px ${FONT}`;
+        const w = ctx.measureText(f.label).width;
+        ctx.fillText(f.label, x - w / 2, groundY + 52);
+      }
+    });
+
+    if (spec.title) {
+      ctx.fillStyle = t.ink;
+      ctx.font = `800 54px ${FONT}`;
+      const line = wrap(ctx, String(spec.title), W - 200)[0] || '';
+      ctx.fillText(line, 90, 112);
+      ctx.strokeStyle = t.accent;
+      ctx.lineWidth = 7;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(90, 136);
+      ctx.lineTo(90 + Math.min(ctx.measureText(line).width, W - 220), 136);
+      ctx.stroke();
+    }
+  }
+
   // Decide between real cartography and the honest fallback.
   //
   // Real geography only when a country can be matched with confidence. A map
@@ -918,6 +982,8 @@
     // A data card with no data is not a card. Fail loudly so the caller can
     // send the beat to the camera instead of storing a near-empty frame that
     // will sit in the finished video.
+    // Stickman is deliberately absent: one figure reacting is a valid beat, so
+    // requiring items would reject the commonest use of the default visual.
     const DATA_KINDS = ['chart', 'graph', 'bar', 'timeline', 'map', 'whiteboard', 'checklist', 'list'];
     if (DATA_KINDS.indexOf(kind) > -1) {
       const items = Array.isArray(spec.items) ? spec.items.filter(Boolean) : [];
@@ -940,6 +1006,7 @@
     else if (kind === 'timeline') drawTimeline(ctx, t, spec);
     else if (kind === 'whiteboard') drawWhiteboard(ctx, t, spec);
     else if (kind === 'map') await renderMap(ctx, t, spec);
+    else if (kind === 'stickman') drawStickScene(ctx, t, spec);
     else drawTitle(ctx, t, spec);
 
     // A hairline keeps the card from floating when cut against footage. The
