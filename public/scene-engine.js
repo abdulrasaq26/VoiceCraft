@@ -62,11 +62,15 @@
   // Beats that are TYPESET or DRAWN. Charts, maps, timelines, whiteboards and
   // stickmen are made of text and precise shapes — exactly what diffusion
   // models cannot do and a canvas does perfectly, in about a millisecond.
-  const CANVAS_TYPES = ['stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram'];
+  const CANVAS_TYPES = ['stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram', 'presenter'];
 
   // Beats that need a generator. In a procedural-first product these are the
   // exception, not the default.
-  const GENERATED_TYPES = ['t2v', 'broll', 'presenter'];
+  // 'presenter' deliberately absent: a presenter beat is the composited host
+  // overlay, not a generated clip. No GPU, no lip-sync drift, and the face is
+  // byte-identical in every frame of every video — nothing re-renders it, so
+  // nothing can drift.
+  const GENERATED_TYPES = ['t2v', 'broll'];
 
   const rendersOnCanvas = (scene) =>
     CANVAS_TYPES.indexOf(String((scene && scene.visualType) || '')) > -1;
@@ -112,9 +116,9 @@
       }
       return { ok: true };
     }
-    if (vt === 'presenter' && !(window.BlvckHost && window.BlvckHost.isConfigured())) {
-      return { ok: false, reason: 'no channel host configured', reroute: 'stickman' };
-    }
+    // A presenter beat is always renderable: the card draws either way and the
+    // host overlay simply appears when one is configured.
+    if (vt === 'presenter') return { ok: true };
     if (vt === 'whiteboard') {
       const items = (s.graphic && s.graphic.items) || [];
       if (items.length < 2 && text.length < 40) {

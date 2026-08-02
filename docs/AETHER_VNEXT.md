@@ -21,6 +21,25 @@ unrelated jobs, which is why a change to one keeps breaking another.
 | **Character** | skeleton, clips, states, emotion, skins | its own clock | ✅ `character-engine.js` |
 | **Audio** | narration, voices, cloning, alignment | visuals | partial — `fish-adapter.js`, `voice-cloning.js` |
 | **Renderer** | pixels, given a scene + timeline + playback state | creative decisions, timing | partial — `graphic-renderer.js`, `editor.js` |
+| **Visual Intelligence** | which visual LANGUAGE a subject demands | individual beats, timing | ❌ scattered across `prompts.js`, `channel-modes.js`, `retention.js`, `scene-engine.js` |
+
+### Visual Intelligence vs Director
+
+Two different questions, currently answered by the same tangle of code:
+
+| | asks | scope | example |
+|---|---|---|---|
+| **Visual Intelligence** | what visual language does this SUBJECT use? | the whole video | "health → anatomy diagrams, organ highlights, symptom timelines" |
+| **Director** | what should THIS beat be? | one beat | "beat 7 is a chart, host in the corner" |
+
+Strategy before tactics. The Director currently re-derives subject conventions
+per beat from its own prompt, which is why a health video and a finance video
+can drift toward looking alike. Visual Intelligence decides the palette of
+allowed moves once; the Director picks from it.
+
+Today this logic is split across four files — `channel-modes.js` holds the
+mixes, `prompts.js` the vocabulary, `retention.js` the pacing rules,
+`scene-engine.js` the routing. Consolidating it is a later step, not step one.
 
 ### The rule that keeps them separate
 
@@ -224,11 +243,63 @@ component is needed, it goes in the library — no one-off styling.
 
 ---
 
-## Open decisions
+## Decisions (settled)
 
-1. **Storyboard's future** — visual view of scenes, or deleted? It is 1,866
-   lines and its production role is now the Scene Engine's.
-2. **Presenter beats** — route to the composited host overlay (canvas, never
-   drifts, already built) rather than a generator, now LTX is going?
-3. **SDXL's scope** — custom illustration only, or dropped entirely? With
-   procedural-first it may earn its keep only for hero shots.
+### 1. Storyboard — keep, demote to a viewer
+
+Not deleted. Its **production** role moves to the Scene Engine; it keeps its
+**visualisation and editing** role, which is genuinely useful and would be
+expensive to rebuild.
+
+```
+before                          after
+──────                          ─────
+Storyboard creates scenes       Timeline creates scenes
+Storyboard controls rendering   Director annotates scenes
+Storyboard controls timing      Storyboard VISUALISES scenes
+```
+
+Renamed **Scene Board**. It represents the Scene Engine and never produces.
+This is the same "Timeline before scenes" principle applied to the UI.
+
+### 2. Presenter beats — host overlay, always
+
+```
+Presenter beat ─▶ Host overlay ─▶ Canvas compositor
+```
+
+No GPU, no consistency problem, no lip-sync drift, no session to keep alive,
+and the face is byte-identical in every frame of every video. A composited
+host cannot drift because nothing re-renders it.
+
+This is now the DEFAULT, not a fallback. `presenter` leaves the generated set
+and joins the procedural one.
+
+### 3. SDXL — keep, narrow its job
+
+Not removed. Stops being a general renderer.
+
+| | |
+|---|---|
+| **Procedural** | ~95% of visuals — every beat, every card, every scene |
+| **SDXL** | thumbnail hero shots, channel mascot, custom illustration, historical portraits, medical art |
+
+Never: storyboard beats, transitions, routine visuals. If a card can be drawn,
+it is drawn.
+
+---
+
+## Roadmap
+
+1. **Project Brain** — one store, one writer per branch
+2. Subtitles → Timeline
+3. Whiteboard → Timeline
+4. Motion graphics → Timeline
+5. Split `editor.js`
+6. Split `storyboard.js` → Scene Board + producers
+7. Remove LTX
+8. Studio shell
+9. Design system
+10. UI polish
+
+Steps 1–7 change no pixels. Later: consolidate Visual Intelligence.
