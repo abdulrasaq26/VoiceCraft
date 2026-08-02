@@ -297,7 +297,12 @@ is sound and it is solving the wrong layer to be watchable.
 
 The diagnosis is **state change**. Every engine here renders a STATE:
 
-
+| built | needed |
+|---|---|
+| hungry | hungry -> eats -> full |
+| poor | poor -> saves -> wealthy |
+| healthy | healthy -> exposed -> sick |
+| ignorant | ignorant -> learns -> informed |
 
 Viewers are held by transformation, not by depiction. A beat that shows a
 condition is information; a beat that shows a condition CHANGING is a story.
@@ -308,7 +313,7 @@ completely different watch.
 **This is a timeline concept, not a rendering one** — which is why it belongs
 on the infrastructure already built rather than in the compositor. A state
 change has a start, an event and an end, and the Sync Engine already resolves
-exactly that from narration.  maps onto word
+exactly that from narration. A startState / event / endState triple maps onto word
 and sentence boundaries the same way a gesture cue does.
 
 Secondary, same category: **camera grammar**. Every frame so far is a wide
