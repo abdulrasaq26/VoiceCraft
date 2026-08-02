@@ -177,6 +177,7 @@
     cfg_scale = 7.0,
     sampler = 'Euler a',
     seed = -1,
+    style = '',
     model = null,
     width,
     height,
@@ -197,6 +198,9 @@
       sampler_name: sampler,
       seed: seed,
     };
+    // The AETHER backend swaps a style LoRA on this. Harmless to servers that
+    // do not know the field -- A1111 and friends ignore unknown keys.
+    if (style) payload.style = style;
     if (model) payload.model = model;
 
     const bodyStr = JSON.stringify(payload);

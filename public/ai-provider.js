@@ -529,6 +529,9 @@
         cfg_scale: options.cfg_scale,
         sampler: options.sampler,
         seed: options.seed,
+        // The backend swaps a style LoRA on this. Without it a 2D beat renders
+        // photoreal however the prompt is written -- the checkpoint decides.
+        style: options.style || '',
         width: options.width,
         height: options.height
       };
@@ -576,6 +579,7 @@
           sampler: options.sampler,
           seed: options.seed,
           model: (options.model === 'local_sd') ? null : options.model,
+          style: options.style || '',
           width: options.width,
           height: options.height,
         });

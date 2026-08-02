@@ -759,6 +759,9 @@
     return window.BlvckAI.generateImage(finalPrompt, ASPECT, {
       ...(imageUrl ? { imageUrl } : {}),
       seed: sceneSeed(scene),
+      // Tell the backend which style LoRA to apply. The prompt alone cannot
+      // move a checkpoint off what it was fine-tuned for.
+      style: chosenStyle || '',
       negative_prompt: negative || undefined,
       // Character continuity holds a SEQUENCE together. For a single still
       // generated from text with no init image, it only spends prompt weight
