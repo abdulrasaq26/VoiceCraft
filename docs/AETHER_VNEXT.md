@@ -322,18 +322,51 @@ wide on the result is the same assets, far more engaging.
 
 ---
 
+## Character State — the engine that makes the rest work
+
+Above persistent cast, and this ordering is deliberate.
+
+Cast gives a character **identity**: the same figure recurs, and a viewer
+starts recognising them. State gives a character **condition**, and condition
+is what *derives* the rendering:
+
+```js
+{ character: 'john',
+  state: { energy: 0.2, wealth: 0.4, health: 0.9, emotion: 'worried' } }
+```
+
+"John lost his job" becomes `wealth: 0.4 → 0.1`, `emotion: worried → anxious`
+— and from that single change the renderer already knows the posture, the
+expression, the environment and how he moves. Nobody had to describe any of
+it.
+
+That is the difference between a Director narrating every visual detail and a
+Director stating what happened. It also makes cause-and-effect natural: a
+consequence is just a state change propagating, so `revenue falls → CEO reacts
+→ layoffs discussed → cuts announced` is one chain rather than four unrelated
+beats.
+
+Cast without state is the same drawing recurring. State without cast still
+produces change a viewer can feel. So state comes first.
+
+---
+
 ## Roadmap
 
 1. **Project Brain** — one store, one writer per branch
-2. **Persistent cast** — named actors with fixed appearance across a video;
-   without it every scene resets emotionally and nothing accumulates
-3. **Character relationships** — doctor/patient, teacher/student, buyer/seller
-4. **State-change engine** — before → event → after, resolved on the timeline
-5. **Camera grammar** — shot variety carrying attention
-6. **Motion grammar** — handoff, approach, leave, transform, reveal
-7. Subtitles → Timeline · whiteboard → Timeline · motion graphics → Timeline
-8. Split  · split  · remove LTX
-9. Studio shell · design system · UI
+2. **Character State** — numeric condition that derives posture, expression,
+   environment and motion; the single highest-value engine left
+3. **Persistent cast** — named actors carrying that state across a whole video
+4. **Relationships** — doctor/patient, teacher/student, buyer/seller; staging
+   becomes obvious once two characters have a relation rather than positions
+5. **Cause and effect** — state changes propagating between beats, so scenes
+   connect instead of sitting adjacent
+6. **Camera grammar** — establishing / medium / close-up / over-shoulder /
+   detail, from the same assets
+7. **Motion grammar** — handoff, approach, leave, transform, reveal
+8. Subtitles → Timeline · whiteboard → Timeline · motion graphics → Timeline
+9. Split `editor.js` · split `storyboard.js` · remove LTX
+10. Studio shell · design system · UI
 
 The UI waits. The product's distinctiveness is in the storytelling engine,
 not the shell around it — and most AI video tools are narration plus
