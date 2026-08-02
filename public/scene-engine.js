@@ -127,6 +127,94 @@
 
   // --- producers -----------------------------------------------------------
 
+  // --- narration -> timeline ------------------------------------------------
+  //
+  // The missing link. Narration existed as an SRT and audio blobs, but nothing
+  // ever turned it into a Timeline, so the playback controller had none and the
+  // Scene Engine had nothing to produce from — "Voice complete" and "nothing to
+  // assemble" were true at the same time.
+  //
+  // The SRT is the cheapest good source: its timings were MEASURED from the
+  // decoded audio when the narration was generated, so this is the "measured"
+  // tier immediately and with no backend. Forced alignment upgrades it to
+  // "aligned" when a backend is reachable, but is never required.
+
+  function srtToWords(srt) {
+    const out = [];
+    const blocks = String(srt || '').split(/\n\s*\n/);
+    const toSec = (t) => {
+      const m = String(t).trim().match(/(\d+):(\d{2}):(\d{2})[.,](\d{1,3})/);
+      if (!m) return null;
+      return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) / 1000;
+    };
+    blocks.forEach((b) => {
+      const lines = b.split(/\n/).map((x) => x.trim()).filter(Boolean);
+      const tc = lines.find((l) => l.includes('-->'));
+      if (!tc) return;
+      const [a, z] = tc.split('-->');
+      const start = toSec(a);
+      const end = toSec(z);
+      if (start == null || end == null) return;
+      const text = lines.filter((l) => l !== tc && !/^\d+$/.test(l)).join(' ').trim();
+      if (!text) return;
+      // Spread the cue's words across its own measured span. The cue
+      // boundaries are real; the division inside one is proportional.
+      const words = text.split(/\s+/).filter(Boolean);
+      const span = Math.max(0.001, end - start) / words.length;
+      words.forEach((w, i) => out.push({
+        text: w,
+        start: Math.round((start + i * span) * 1000) / 1000,
+        end: Math.round((start + (i + 1) * span) * 1000) / 1000
+      }));
+    });
+    return out;
+  }
+
+  /** Build a Timeline from whatever narration the project already holds. */
+  function timelineFromProject() {
+    if (!window.BlvckSync) return null;
+    let srt = '';
+    try {
+      const raw = JSON.parse(localStorage.getItem('blvck-tts:subtitles') || 'null');
+      srt = (raw && raw.srt) || '';
+    } catch {
+      srt = '';
+    }
+    if (srt) {
+      const words = srtToWords(srt);
+      if (words.length) {
+        return window.BlvckSync.normalize(
+          { words, duration: words[words.length - 1].end }, 'measured'
+        );
+      }
+    }
+    // No subtitles: fall back to the script with no durations at all, which
+    // is explicitly the "estimated" tier and says so.
+    let script = '';
+    try {
+      script = (window.BlvckAssets && window.BlvckAssets.script()) || '';
+    } catch {
+      script = '';
+    }
+    if (!script.trim()) return null;
+    const base = window.BlvckTimeline ? window.BlvckTimeline.build(script, 0) : null;
+    return base ? window.BlvckSync.normalize(base, 'estimated') : null;
+  }
+
+  /** Make sure the playback controller has a timeline bound. */
+  function ensureTimeline() {
+    const P = window.BlvckPlayback;
+    if (!P) return null;
+    const existing = P.timeline();
+    if (existing && existing.words && existing.words.length) return existing;
+    const tl = timelineFromProject();
+    if (tl && tl.words.length) {
+      P.setTimeline(tl, []);
+      return tl;
+    }
+    return null;
+  }
+
   /** Producer A — whatever the storyboard has already built. */
   function fromStoryboard() {
     try {
@@ -205,7 +293,7 @@
       const sb = fromStoryboard();
       if (sb.length) return { scenes: sb, producer: 'storyboard' };
     }
-    const tl = fromTimeline(opts.timeline);
+    const tl = fromTimeline(opts.timeline || (window.BlvckPlayback && window.BlvckPlayback.timeline()) || timelineFromProject());
     if (tl.length) return { scenes: tl, producer: 'timeline' };
     return { scenes: [], producer: 'none' };
   }
@@ -245,9 +333,11 @@
     if (found.scenes.length) return found;
 
     // Nothing stored — try to build from narration.
-    const tl = opts.timeline || (window.BlvckPlayback && window.BlvckPlayback.timeline());
+    // Bind a timeline from the project's own narration if none is loaded —
+    // otherwise "Voice complete" and "nothing to assemble" are both true.
+    const tl = opts.timeline || ensureTimeline();
     if (!tl || !tl.sentences || !tl.sentences.length) {
-      return { scenes: [], producer: 'none', reason: 'no storyboard and no narration timeline' };
+      return { scenes: [], producer: 'none', reason: 'no storyboard, and no narration to build scenes from' };
     }
     const scenes = fromTimeline(tl, opts);
     if (!scenes.length) return { scenes: [], producer: 'none', reason: 'timeline produced no sentences' };
@@ -257,6 +347,9 @@
 
   window.BlvckScenes = {
     makeScene,
+    timelineFromProject,
+    ensureTimeline,
+    srtToWords,
     fromStoryboard,
     fromTimeline,
     fromPlan,
