@@ -292,18 +292,33 @@
   //
   // Registered here rather than hard-coded into the engine, so it is one
   // implementation of an interface and not the interface itself.
+  function fishEndpoint() {
+    // The endpoint lives in storage, not on the adapter. FishAdapter exposes
+    // probeFish/listVoices/textToSpeech and no endpoint(), so calling
+    // FishAdapter.endpoint() threw into probe()'s catch and returned false
+    // every single time — forced alignment was unreachable by construction.
+    try {
+      const raw = localStorage.getItem("blvck:keys_fishaudio") || "";
+      const v = raw.trim().startsWith("\"") ? JSON.parse(raw) : raw;
+      return String(v || "").replace(/\/+$/, "");
+    } catch {
+      return "";
+    }
+  }
+
   register({
     name: 'aether-forced-alignment',
     priority: 10,
     provides: 'aligned',
     async probe() {
-      if (!window.FishAdapter || !window.FishAdapter.endpoint || !window.FishAdapter.endpoint()) return false;
+      const ep = fishEndpoint();
+      if (!ep) return false;
       try {
-        const r = await fetch('/api/proxy/fish/aether/status', {
-          headers: { 'x-fish-endpoint': window.FishAdapter.endpoint() }
-        });
+        const r = await fetch('/api/proxy/fish/aether/status', { headers: { 'x-fish-endpoint': ep } });
         if (!r.ok) return false;
         const j = await r.json();
+        // Older servers have no /v1/align at all. Only claim the capability
+        // when the backend itself says it has it.
         return j.alignment === true;
       } catch {
         return false;
@@ -312,14 +327,12 @@
     async align({ audio_b64, text }) {
       const r = await fetch('/api/proxy/fish/v1/align', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-fish-endpoint': window.FishAdapter ? window.FishAdapter.endpoint() : ''
-        },
+        headers: { 'Content-Type': 'application/json', 'x-fish-endpoint': fishEndpoint() },
         body: JSON.stringify({ audio_b64, text })
       });
-      if (!r.ok) throw new Error(`align failed (HTTP ${r.status})`);
-      return r.json();
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) throw new Error(j.error || ("align failed (HTTP " + r.status + ")"));
+      return j;
     }
   });
 
