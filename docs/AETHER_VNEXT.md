@@ -289,17 +289,51 @@ it is drawn.
 
 ---
 
+## The gap that matters most
+
+Honest assessment after building the engines: this would still produce
+*intelligent stickman slideshows*, not story-driven video. The infrastructure
+is sound and it is solving the wrong layer to be watchable.
+
+The diagnosis is **state change**. Every engine here renders a STATE:
+
+
+
+Viewers are held by transformation, not by depiction. A beat that shows a
+condition is information; a beat that shows a condition CHANGING is a story.
+Two friends beside a car is a state. Friend points at price → both react →
+idea → keys handed over → they drive away is the same information and a
+completely different watch.
+
+**This is a timeline concept, not a rendering one** — which is why it belongs
+on the infrastructure already built rather than in the compositor. A state
+change has a start, an event and an end, and the Sync Engine already resolves
+exactly that from narration.  maps onto word
+and sentence boundaries the same way a gesture cue does.
+
+Secondary, same category: **camera grammar**. Every frame so far is a wide
+shot. Establishing → medium → close-up on reaction → detail on the prop →
+wide on the result is the same assets, far more engaging.
+
+---
+
 ## Roadmap
 
 1. **Project Brain** — one store, one writer per branch
-2. Subtitles → Timeline
-3. Whiteboard → Timeline
-4. Motion graphics → Timeline
-5. Split `editor.js`
-6. Split `storyboard.js` → Scene Board + producers
-7. Remove LTX
-8. Studio shell
-9. Design system
-10. UI polish
+2. **Persistent cast** — named actors with fixed appearance across a video;
+   without it every scene resets emotionally and nothing accumulates
+3. **Character relationships** — doctor/patient, teacher/student, buyer/seller
+4. **State-change engine** — before → event → after, resolved on the timeline
+5. **Camera grammar** — shot variety carrying attention
+6. **Motion grammar** — handoff, approach, leave, transform, reveal
+7. Subtitles → Timeline · whiteboard → Timeline · motion graphics → Timeline
+8. Split  · split  · remove LTX
+9. Studio shell · design system · UI
 
-Steps 1–7 change no pixels. Later: consolidate Visual Intelligence.
+The UI waits. The product's distinctiveness is in the storytelling engine,
+not the shell around it — and most AI video tools are narration plus
+unconnected clips, with no cast, continuity or memory at all.
+
+Prop interaction folds into the cast system rather than following it: an actor
+who READS a book is one concept, while an actor plus a book plus a reading
+flag is three that will drift apart.
