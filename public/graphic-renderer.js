@@ -258,6 +258,47 @@
       .filter((d) => d.label || Number.isFinite(d.value));
   }
 
+  // Shared header for the data cards. A kicker, a tight headline and a rule —
+  // the same furniture every time, which is what makes a set of cards read as
+  // one channel's graphics rather than four unrelated slides.
+  function cardChrome(ctx, t, { kicker, title, subtitle }) {
+    let y = 96;
+
+    if (kicker) {
+      ctx.fillStyle = t.accent;
+      ctx.font = `800 22px ${FONT}`;
+      const label = String(kicker).toUpperCase();
+      // Letter-spaced by hand; canvas has no tracking control.
+      let x = 100;
+      for (const ch of label) {
+        ctx.fillText(ch, x, y);
+        x += ctx.measureText(ch).width + 3.5;
+      }
+      y += 44;
+    }
+
+    if (title) {
+      ctx.fillStyle = t.ink;
+      ctx.font = `800 54px ${FONT}`;
+      const lines = wrap(ctx, title, W - 200).slice(0, 2);
+      lines.forEach((l, i) => ctx.fillText(l, 100, y + i * 60));
+      y += lines.length * 60;
+    }
+
+    if (subtitle) {
+      ctx.fillStyle = t.dim;
+      ctx.font = `500 28px ${FONT}`;
+      ctx.fillText(wrap(ctx, subtitle, W - 200)[0] || '', 100, y + 20);
+      y += 44;
+    }
+
+    // Accent rule under the header, short and left-aligned.
+    ctx.fillStyle = t.accent;
+    ctx.fillRect(100, y + 14, 88, 5);
+
+    return y + 52;
+  }
+
   function headline(ctx, t, text, y) {
     if (!text) return y;
     ctx.fillStyle = t.ink;
@@ -271,16 +312,17 @@
   // comparison obvious in two seconds, not to be a dashboard.
   function drawChart(ctx, t, spec) {
     const data = parseSeries(spec.items).filter((d) => Number.isFinite(d.value));
-    let y = headline(ctx, t, spec.title, 120);
+    const top0 = cardChrome(ctx, t, { kicker: 'By the numbers', title: spec.title, subtitle: spec.subtitle });
+    let y = top0;
     if (!data.length) {
-      ctx.fillStyle = t.dim;
-      ctx.font = `500 34px ${FONT}`;
-      ctx.fillText('No numeric data supplied for this chart.', 100, y + 70);
-      return;
+      // Never draw an apology. A card explaining its own emptiness is worse
+      // than no card: it ships to the viewer as content. Refusing here forces
+      // the caller to route the beat somewhere that can actually show it.
+      throw new Error('chart needs numeric items like "2021: 61"');
     }
 
-    const top = y + 60;
-    const bottom = H - 150;
+    const top = y + 20;
+    const bottom = H - 130;
     const plotH = bottom - top;
     const max = Math.max(...data.map((d) => d.value));
     const min = Math.min(0, ...data.map((d) => d.value));
@@ -335,10 +377,8 @@
       })
       .slice(0, 6);
 
-    headline(ctx, t, spec.title, 110);
+    const top = cardChrome(ctx, t, { kicker: 'Timeline', title: spec.title, subtitle: spec.subtitle });
     if (!items.length) return;
-
-    const top = 250;
     const step = Math.min(110, (H - top - 90) / items.length);
     const railX = 300;
 
@@ -442,37 +482,70 @@
   // presents the places and their order legibly and leaves the geography to
   // footage or a proper basemap layer.
   function drawMap(ctx, t, spec) {
-    headline(ctx, t, spec.title || 'Locations', 120);
     const places = (Array.isArray(spec.items) ? spec.items : []).map(String).filter(Boolean).slice(0, 5);
-    const top = 260;
-    const step = Math.min(96, (H - top - 90) / Math.max(places.length, 1));
+
+    // A faint graticule. Not cartography — real maps need real geodata, and an
+    // invented coastline is confidently wrong on screen — but a measured grid
+    // reads as "place" and stops the card looking like a bulleted list.
+    ctx.save();
+    ctx.strokeStyle = t.rule;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.55;
+    for (let x = 100; x < W - 60; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x, 60);
+      ctx.lineTo(x, H - 60);
+      ctx.stroke();
+    }
+    for (let y = 60; y < H - 40; y += 64) {
+      ctx.beginPath();
+      ctx.moveTo(60, y);
+      ctx.lineTo(W - 60, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    const top = cardChrome(ctx, t, {
+      kicker: places.length > 1 ? 'Route' : 'Location',
+      title: spec.title || 'Locations',
+      subtitle: spec.subtitle
+    });
+
+    const railX = 148;
+    const avail = H - top - 70;
+    const step = Math.min(92, avail / Math.max(places.length, 1));
+
+    // Connecting path drawn first, so the markers sit on top of it.
+    if (places.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = t.accent;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 4;
+      ctx.setLineDash([9, 9]);
+      ctx.beginPath();
+      ctx.moveTo(railX, top + 18);
+      ctx.lineTo(railX, top + (places.length - 1) * step + 18);
+      ctx.stroke();
+      ctx.restore();
+    }
 
     places.forEach((p, i) => {
-      const y = top + i * step;
-      // Pin
+      const y = top + i * step + 18;
+
+      // Numbered marker: a filled disc with the stop number, which carries
+      // order in a way an identical pin repeated five times cannot.
       ctx.fillStyle = t.accent;
       ctx.beginPath();
-      ctx.arc(140, y - 8, 16, Math.PI, 0);
-      ctx.lineTo(140, y + 22);
-      ctx.closePath();
+      ctx.arc(railX, y, 19, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = t.bg;
+      ctx.font = `800 22px ${FONT}`;
+      const n = String(i + 1);
+      ctx.fillText(n, railX - ctx.measureText(n).width / 2, y + 8);
 
       ctx.fillStyle = t.ink;
-      ctx.font = `600 40px ${FONT}`;
-      ctx.fillText(wrap(ctx, p, W - 320)[0] || '', 200, y + 14);
-
-      if (i < places.length - 1) {
-        // t.rule is only a couple of steps off the background — fine for a
-        // solid rail, but a dashed line at that contrast disappears entirely.
-        ctx.strokeStyle = t.dim;
-        ctx.lineWidth = 4;
-        ctx.setLineDash([10, 10]);
-        ctx.beginPath();
-        ctx.moveTo(140, y + 28);
-        ctx.lineTo(140, y + step - 26);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
+      ctx.font = `600 38px ${FONT}`;
+      ctx.fillText(wrap(ctx, p, W - railX - 160)[0] || '', railX + 46, y + 13);
     });
   }
 
@@ -492,6 +565,19 @@
     ctx.textBaseline = 'alphabetic';
 
     const kind = String(spec.kind || 'title').toLowerCase();
+
+    // A data card with no data is not a card. Fail loudly so the caller can
+    // send the beat to the camera instead of storing a near-empty frame that
+    // will sit in the finished video.
+    const DATA_KINDS = ['chart', 'graph', 'bar', 'timeline', 'map', 'whiteboard', 'checklist', 'list'];
+    if (DATA_KINDS.indexOf(kind) > -1) {
+      const items = Array.isArray(spec.items) ? spec.items.filter(Boolean) : [];
+      if (!items.length) {
+        throw new Error(
+          `a "${kind}" card needs items — the Director must supply the actual content to typeset`
+        );
+      }
+    }
     if (kind === 'checklist' || kind === 'list') drawChecklist(ctx, t, spec);
     else if (kind === 'stat' || kind === 'number') drawStat(ctx, t, spec);
     else if (kind === 'chart' || kind === 'graph' || kind === 'bar') drawChart(ctx, t, spec);

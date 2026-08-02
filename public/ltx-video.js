@@ -381,15 +381,18 @@
       if (refs.mode === 'CANVAS') {
         if (!window.BlvckGraphic) throw new Error('graphic renderer unavailable');
         const g = scene.graphic || {};
+        // The title is the POINT of the card, not a description of a picture.
+        // Using sceneSummary put "The farmer examines a thin, underfilled rice
+        // head" above a chart about production falling twenty percent.
         const blob = await window.BlvckGraphic.render({
           kind: scene.visualType,
-          title: g.title || scene.sceneSummary || scene.subtitle || '',
+          title: g.title || scene.subtitle || '',
           subtitle: g.subtitle || '',
           items: g.items || [],
           value: g.value || '',
           label: g.label || '',
           palette: window.BlvckGraphic.paletteFor(
-            [scene.sceneSummary, scene.subtitle, g.title].filter(Boolean).join(' ')
+            [scene.subtitle, g.title, scene.environment].filter(Boolean).join(' ')
           )
         });
         await idbPut(String(scene.index), blob);
