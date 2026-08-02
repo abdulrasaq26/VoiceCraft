@@ -77,7 +77,10 @@
     'motion-graphics': { label: 'Motion Graphics', render: 'Motion-graphics keyframe style, bold flat shapes, gradients, dynamic layout, sleek modern brand look', negative: 'photoreal, sketchy, historical' },
     whiteboard: { label: 'Whiteboard Explainer', render: 'Whiteboard-style line illustration, hand-drawn marker look, simple black strokes on white, clear diagrammatic figures', negative: 'color-heavy, photoreal, painterly' },
     'tech-ui': { label: 'Tech / UI Style', render: 'Modern tech illustration, sleek UI-inspired shapes, cool gradients, glassy surfaces, clean product-design aesthetic', negative: 'historical, painterly, photoreal grit' },
-    lifestyle: { label: 'Contemporary Lifestyle', render: 'Clean contemporary lifestyle photography, bright natural light, relatable modern settings, aspirational but authentic', negative: 'historical, cartoon, dark, staged studio' }
+    lifestyle: { label: 'Contemporary Lifestyle', render: 'Clean contemporary lifestyle photography, bright natural light, relatable modern settings, aspirational but authentic', negative: 'historical, cartoon, dark, staged studio' },
+    // The negatives carry this one. Left to itself a model "improves" a stick
+    // figure into a rendered character, so the absent detail has to be stated.
+    stickman: { label: 'Stickman', render: 'Minimalist stick figure drawing on plain white, simple black stick figures with circle heads and straight limb lines, hand-drawn marker linework, dot-and-line expressions, generous white space, educational sketch', negative: 'detailed character, muscles, clothing detail, facial features, shading, gradients, colour background, realistic proportions, 3d, photoreal, anatomy' }
   };
 
   function styleBrief(id) {

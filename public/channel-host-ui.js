@@ -114,11 +114,18 @@
 
     const clear = $('host-clear');
     if (clear) {
-      clear.addEventListener('click', () => {
-        if (!confirm('Clear the channel host identity? Reference images stay in storage.')) return;
-        window.BlvckHost.clear();
+      clear.addEventListener('click', async () => {
+        if (!confirm('Clear the channel host completely? This removes the face, the reference images and the profile.')) return;
+        await window.BlvckHost.clear();
+        // Reset the preview explicitly: revoking the object URL and hiding
+        // the element is what makes this work without a page refresh.
+        if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = ''; }
+        const img = $('host-preview');
+        if (img) { img.removeAttribute('src'); img.hidden = true; }
+        const face = $('host-face-upload'); if (face) face.value = '';
+        const refs = $('host-refs-upload'); if (refs) refs.value = '';
         load();
-        status('Channel host cleared.', 'info');
+        status('Channel host cleared — no host selected.', 'info');
       });
     }
   }

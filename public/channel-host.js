@@ -245,17 +245,44 @@
     return BACKGROUNDS[h.background] || BACKGROUNDS.studio;
   }
 
-  function clear() {
+  /**
+   * Remove the host completely.
+   *
+   * The profile lived in localStorage but the face and reference images lived
+   * in IndexedDB, and only the profile was being cleared. So "Clear host" left
+   * the pictures behind: the panel still showed a face, a later save could
+   * resurrect the reference count, and anything reading the images still found
+   * them. Clearing one store and not the other is why it appeared not to work.
+   */
+  async function clear() {
     try {
       localStorage.removeItem(LS_KEY);
     } catch {
       /* no-op */
     }
+    // Delete the stored pixels too — face, extra angles, and any stale keys
+    // from a previous host with a higher reference count.
+    try {
+      const db = await idbOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        const os = tx.objectStore(STORE);
+        os.clear();
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+      db.close();
+    } catch {
+      /* the profile is gone either way */
+    }
     try {
       window.dispatchEvent(new CustomEvent('blvck:host-changed'));
+      // The render panel prices and labels presenter beats from host state.
+      window.dispatchEvent(new CustomEvent('blvck:ltx-changed'));
     } catch {
       /* no-op */
     }
+    return true;
   }
 
   window.BlvckHost = {

@@ -719,7 +719,8 @@
     // silently missing image prompts. Same intelligence, both paths.
     let finalPrompt = scene.prompt || '';
     if (scene.visualType && window.BlvckLTX && window.BlvckLTX.stillPromptFor) {
-      const planned = window.BlvckLTX.stillPromptFor(scene, bible);
+      const chosenStyle = styleEl && styleEl.value && styleEl.value !== 'auto' ? styleEl.value : '';
+      const planned = window.BlvckLTX.stillPromptFor(scene, bible, chosenStyle);
       if (planned) finalPrompt = planned;
     } else if (scene.visualType === 'presenter' && window.BlvckHost && window.BlvckHost.isConfigured()) {
       // No planner available: keep the host rule at minimum.
@@ -743,7 +744,10 @@
     // exists (Stable Diffusion, SDXL). They must NOT be appended to the
     // positive prompt: writing "avoid sepia, film grain" there describes those
     // things to the sampler and makes them MORE likely, not less.
-    const negative = styleNegative(bible && bible.visualStyle);
+    const styleNeg = window.BlvckLTX && window.BlvckLTX.stillNegativeFor
+      ? window.BlvckLTX.stillNegativeFor(bible, styleEl && styleEl.value !== 'auto' ? styleEl.value : '')
+      : '';
+    const negative = [styleNeg, styleNegative(bible && bible.visualStyle)].filter(Boolean).join(', ');
 
     if (sceneAssetType(scene) === 'video') {
       return window.BlvckAI.generateVideo(finalPrompt, { seconds: 5, size: '1280x720' });
@@ -756,7 +760,10 @@
       ...(imageUrl ? { imageUrl } : {}),
       seed: sceneSeed(scene),
       negative_prompt: negative || undefined,
-      characters: Array.isArray(scene.characters) ? scene.characters : [],
+      // Character continuity holds a SEQUENCE together. For a single still
+      // generated from text with no init image, it only spends prompt weight
+      // that composition needs more.
+      characters: imageUrl ? (Array.isArray(scene.characters) ? scene.characters : []) : [],
       location: sceneLocation(scene)
     });
   }

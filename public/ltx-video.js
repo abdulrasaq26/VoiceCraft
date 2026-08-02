@@ -242,48 +242,76 @@
    * Every cinematic decision the Director made was therefore reaching video
    * and silently missing images.
    */
-  function stillPromptFor(scene, bibleObj) {
+  function stillPromptFor(scene, bibleObj, styleName) {
     const s = scene || {};
+    const S = window.BlvckStyles;
+    const style = styleName || (bibleObj && bibleObj.visualStyle && (bibleObj.visualStyle.name || bibleObj.visualStyle.style)) || '';
     const bits = [];
 
-    if (String(s.visualType || '') === 'presenter' && window.BlvckHost && window.BlvckHost.isConfigured()) {
-      const host = window.BlvckHost.descriptor();
-      return [
-        SHOT_TEXT[s.shotType] || 'medium shot',
-        host ? `${host}, speaking directly to camera` : 'a presenter speaking directly to camera',
-        window.BlvckHost.backgroundText(),
-        String(s.detectedAction || s.sceneSummary || '').trim(),
-        s.emotion ? `mood: ${String(s.emotion).trim()}` : '',
-        styleText(bibleObj && bibleObj.visualStyle)
-      ].filter(Boolean).join('. ');
+    // MEDIUM FIRST. The earliest terms in a prompt carry the most weight, which
+    // is exactly why a trailing "Style: 2D Animation" was ignored — every other
+    // term was photographic and outvoted it.
+    const lead = S ? S.lead(style) : '';
+    if (lead) bits.push(lead);
+
+    // A still is a single frame. It gets no host overlay, no facecam, no
+    // presenter reservation and no continuity block: those exist to hold a
+    // SEQUENCE together, and spending prompt weight on them here only costs
+    // composition. A presenter beat still describes a person to camera, since
+    // that is what the beat is about, but not as an overlay.
+    if (String(s.visualType || '') === 'presenter') {
+      bits.push('a presenter speaking directly to camera, centred, upper body in frame');
+      const said = String(s.detectedAction || s.sceneSummary || '').trim();
+      if (said) bits.push(said);
+    } else {
+      const shot = S ? S.shotText(s.shotType, style) : '';
+      if (shot) bits.push(shot);
+
+      const action = String(s.detectedAction || s.sceneSummary || s.subtitle || '').trim();
+      if (action) bits.push(action);
+
+      const world = [s.environment, s.timeOfDay, s.weather]
+        .map((x) => String(x || '').trim())
+        .filter(Boolean)
+        .join(', ');
+      if (world) bits.push(world);
+
+      const props = Array.isArray(s.props) ? s.props.filter(Boolean).join(', ') : '';
+      if (props) bits.push(props);
     }
 
-    const shot = SHOT_TEXT[s.shotType] || '';
-    if (shot) bits.push(shot);
+    // The medium's own rendering vocabulary, and its own way of describing
+    // light. A flat-shaded cartoon has no "shallow depth of field", so the
+    // scene's photographic lighting note is dropped for drawn styles.
+    const render = S ? S.renderLanguage(style) : '';
+    if (render) bits.push(render);
 
-    const action = String(s.detectedAction || s.sceneSummary || s.subtitle || '').trim();
-    if (action) bits.push(action);
-
-    if (window.BlvckCast) {
-      const cast = window.BlvckCast.promptBlockFor(s.characters || []);
-      if (cast) bits.push(cast);
+    const styleLight = S ? S.lightLanguage(style) : '';
+    if (styleLight) bits.push(styleLight);
+    else if (!S || !S.isDrawn(style)) {
+      const lit = String(s.lighting || '').trim();
+      if (lit) bits.push(lit);
     }
-
-    const world = [s.environment, s.timeOfDay, s.weather, s.lighting]
-      .map((x) => String(x || '').trim())
-      .filter(Boolean)
-      .join(', ');
-    if (world) bits.push(world);
-
-    const props = Array.isArray(s.props) ? s.props.filter(Boolean).join(', ') : '';
-    if (props) bits.push(props);
 
     if (s.emotion) bits.push(`mood: ${String(s.emotion).trim()}`);
 
-    const style = styleText(bibleObj && bibleObj.visualStyle);
-    if (style) bits.push(style);
+    // Any extra description the project carries, last — it refines, it does not
+    // define. Skipped entirely when a style strategy already set the medium,
+    // or a "photoreal, natural lighting" project note would drag a cartoon
+    // back towards a photograph.
+    if (!lead) {
+      const extra = styleText(bibleObj && bibleObj.visualStyle);
+      if (extra) bits.push(extra);
+    }
 
     return bits.filter(Boolean).join('. ');
+  }
+
+  /** The negative prompt for a still, driven by the chosen medium. */
+  function stillNegativeFor(bibleObj, styleName) {
+    const S = window.BlvckStyles;
+    const style = styleName || (bibleObj && bibleObj.visualStyle && (bibleObj.visualStyle.name || bibleObj.visualStyle.style)) || '';
+    return S ? S.negative(style) : '';
   }
 
   // --- reference assembly --------------------------------------------------
@@ -1150,6 +1178,7 @@
     allStatus,
     doneCount,
     stillPromptFor,
+    stillNegativeFor,
     splitPlan,
     partKey,
     validateVisualType,

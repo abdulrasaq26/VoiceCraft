@@ -921,7 +921,14 @@
     const DATA_KINDS = ['chart', 'graph', 'bar', 'timeline', 'map', 'whiteboard', 'checklist', 'list'];
     if (DATA_KINDS.indexOf(kind) > -1) {
       const items = Array.isArray(spec.items) ? spec.items.filter(Boolean) : [];
-      if (!items.length) {
+      // A map is the exception: it draws from geography, and the title alone
+      // often names the place ("The rice belt of Sri Lanka"). Rejecting those
+      // failed beats that renderMap could have drawn perfectly well.
+      let canDraw = items.length > 0;
+      if (!canDraw && kind === 'map' && window.BlvckGeo && window.BlvckGeo.isLoaded()) {
+        canDraw = window.BlvckGeo.detectCountries(String(spec.title || '')).length > 0;
+      }
+      if (!canDraw) {
         throw new Error(
           `a "${kind}" card needs items — the Director must supply the actual content to typeset`
         );
