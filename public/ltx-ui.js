@@ -150,14 +150,24 @@
     el.generate.disabled = true;
     el.plan.disabled = true;
     if (el.cancel) el.cancel.hidden = false;
+    const failures = [];
 
     try {
       const res = await window.BlvckLTX.generateAll(Object.assign(opts(), {
         onProgress: (p) => {
-          if (p.phase === 'start') {
-            status(`Rendering scene ${p.index} (${p.i + 1} of ${p.total})… this takes minutes per clip.`, 'info');
-          } else if (p.phase === 'error') {
-            status(`Scene ${p.index} failed: ${p.error}`);
+          // Failures used to be written to the same line and then immediately
+          // overwritten by the next scene's "Rendering…", so a run could lose
+          // half its beats without ever showing why. Carry a tally instead.
+          if (p.phase === 'error') failures.push(`#${p.index}: ${p.error}`);
+          if (p.phase === 'start' || p.phase === 'error') {
+            const tail = failures.length
+              ? ` · ⚠ ${failures.length} failed so far (${failures[failures.length - 1]})`
+              : '';
+            const scene = p.phase === 'start' ? p.index : p.index;
+            status(
+              `Rendering scene ${scene} (${p.i + 1} of ${p.total})… minutes per clip.${tail}`,
+              failures.length ? '' : 'info'
+            );
           }
           refreshSummary();
         }

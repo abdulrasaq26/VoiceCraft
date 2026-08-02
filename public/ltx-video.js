@@ -345,8 +345,12 @@
     return readState();
   }
 
+  // A finished beat is a finished beat: a typeset card is as complete as a
+  // rendered clip. Counting only 'done' reported "0/6 rendered" while two
+  // canvas beats sat there successfully drawn.
   function doneCount() {
-    return Object.values(readState()).filter((r) => r && r.status === 'done').length;
+    return Object.values(readState())
+      .filter((r) => r && (r.status === 'done' || r.status === 'canvas')).length;
   }
 
   async function clipBlob(index) {
@@ -491,8 +495,18 @@
       writeState(st);
       return st[key];
     } catch (err) {
-      st[key] = { status: 'error', error: err.message, at: Date.now() };
-      writeState(st);
+      // A lost connection is not a lost render. Keep the scene marked
+      // 'rendering' with its job id so collectPending() can pick the result up
+      // once the tunnel recovers — marking it 'error' here is what caused the
+      // same beat to be queued three times.
+      const cur = readState();
+      const prev = cur[key] || {};
+      if (err && err.recoverable && prev.jobId) {
+        cur[key] = Object.assign({}, prev, { status: 'rendering', lastError: err.message, at: Date.now() });
+      } else {
+        cur[key] = { status: 'error', error: err.message, at: Date.now() };
+      }
+      writeState(cur);
       throw err;
     }
   }

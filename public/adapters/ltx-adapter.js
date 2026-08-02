@@ -207,14 +207,42 @@
   async function pollJob(jobId, opts = {}) {
     const intervalMs = opts.pollMs || 5000;
     const maxMs = opts.maxWaitMs || 60 * 60 * 1000; // an hour is generous even for 30s at 1080p
+    // A poll is a status question, not the work. The GPU keeps rendering
+    // whatever the tunnel does, so a dropped request must not destroy a job
+    // that is running perfectly well.
+    //
+    // This is not hypothetical: three scenes were marked failed by a single
+    // "backend unavailable" blip while their renders continued on the backend,
+    // and re-running then queued duplicates of work already in progress.
+    const maxConsecutiveErrors = opts.maxPollErrors || 12; // ~1 minute of blips
     const t0 = Date.now();
+    let consecutiveErrors = 0;
 
     for (;;) {
       if (opts.signal && opts.signal.aborted) throw new Error('Render cancelled.');
       await new Promise((r) => setTimeout(r, intervalMs));
 
-      const res = await fetch(`${PROXY}/jobs/${jobId}`, { headers: headers() });
-      const job = await readJson(res, 'checking render progress');
+      let job;
+      try {
+        const res = await fetch(`${PROXY}/jobs/${jobId}`, { headers: headers() });
+        job = await readJson(res, 'checking render progress');
+        consecutiveErrors = 0;
+      } catch (err) {
+        consecutiveErrors++;
+        if (typeof opts.onProgress === 'function') {
+          opts.onProgress({ status: 'unreachable', attempt: consecutiveErrors, error: err.message });
+        }
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          const e = new Error(
+            `Lost contact with the backend for ${Math.round(consecutiveErrors * intervalMs / 1000)}s ` +
+            `(${err.message}). The render may still be running — use “Collect finished renders” later.`
+          );
+          e.jobId = jobId;
+          e.recoverable = true;
+          throw e;
+        }
+        continue;
+      }
 
       if (typeof opts.onProgress === 'function') {
         opts.onProgress({ status: job.status, elapsedSec: job.elapsed_sec || 0, job });
