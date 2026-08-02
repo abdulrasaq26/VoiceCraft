@@ -98,6 +98,14 @@
         .sort((a, b) => b[1] - a[1])
         .map(([k, n]) => `${n}× ${k}`)
         .join(', ');
+      // Cards the Director proposed that the beat could not support. Silently
+      // rerouting these leaves the user wondering why they asked for a map and
+      // got footage.
+      const rej = r.rejected && r.rejected.length
+        ? ' ↻ ' + r.rejected
+          .map((x) => `scene ${x.index}: ${x.proposed} → ${x.replacedWith} (${x.reason})`)
+          .join('; ')
+        : '';
       const drift = r.mixDrift && r.mixDrift.length
         ? ` ⚠ Off-mode: ${r.mixDrift.join('; ')}.`
         : '';
@@ -111,7 +119,7 @@
         : ' ✓ No retention problems found.';
       status(
         `Planned ${r.applied} scene(s) as ${r.mode || 'default'} — ${mix || 'no mix reported'}; ` +
-        `host on screen in ${r.hostShots}. ${r.strategy || ''}${warn}${drift}${ret}`,
+        `host on screen in ${r.hostShots}. ${r.strategy || ''}${warn}${rej}${drift}${ret}`,
         'info'
       );
     } catch (err) {

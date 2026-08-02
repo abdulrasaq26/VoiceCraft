@@ -522,11 +522,12 @@
 
     const ink = '#1d2026';
     const marker = t.accent;
+    const faint = '#c9c3b4';
 
     ctx.fillStyle = ink;
-    ctx.font = `800 58px ${FONT}`;
+    ctx.font = `800 56px ${FONT}`;
     const title = wrap(ctx, String(spec.title || ''), W - 200).slice(0, 1);
-    title.forEach((l) => ctx.fillText(l, 100, 130));
+    title.forEach((l) => ctx.fillText(l, 90, 118));
 
     // Hand-drawn underline: a slight wobble reads as a marker rather than a
     // vector rule.
@@ -537,49 +538,103 @@
       ctx.beginPath();
       const uw = ctx.measureText(title[0]).width;
       for (let x = 0; x <= uw; x += 12) {
-        const y = 152 + Math.sin(x / 26) * 2.5;
-        if (x === 0) ctx.moveTo(100 + x, y);
-        else ctx.lineTo(100 + x, y);
+        const y = 140 + Math.sin(x / 26) * 2.5;
+        if (x === 0) ctx.moveTo(90 + x, y);
+        else ctx.lineTo(90 + x, y);
       }
       ctx.stroke();
     }
 
     const steps = (Array.isArray(spec.items) ? spec.items : []).map(String).filter(Boolean).slice(0, 5);
-    const top = 240;
-    const step = Math.min(105, (H - top - 90) / Math.max(steps.length, 1));
+    if (!steps.length) return;
 
-    steps.forEach((s, i) => {
-      const y = top + i * step;
-      ctx.strokeStyle = marker;
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.arc(150, y, 30, 0, Math.PI * 2);
+    // A causal chain is a FLOW, not a list. Laid out as boxes across the frame
+    // with arrows between them, it shows that each step causes the next --
+    // which a numbered column cannot say. Up to three steps run left to right;
+    // more wrap to a second row, because five boxes across 1280px leaves no
+    // room for readable type.
+    const perRow = steps.length <= 3 ? steps.length : Math.ceil(steps.length / 2);
+    const rows = Math.ceil(steps.length / perRow);
+    const boxW = Math.min(330, (W - 140 - (perRow - 1) * 70) / perRow);
+    const boxH = rows > 1 ? 130 : 170;
+    const gapX = perRow > 1 ? (W - 140 - boxW * perRow) / (perRow - 1) : 0;
+    const topY = rows > 1 ? 215 : 275;
+    const gapY = 90;
+
+    const centre = [];
+
+    steps.forEach((text, i) => {
+      const r = Math.floor(i / perRow);
+      const c = i % perRow;
+      const x = 70 + c * (boxW + gapX);
+      const y = topY + r * (boxH + gapY);
+      centre.push({ x: x + boxW / 2, y: y + boxH / 2, x0: x, y0: y, x1: x + boxW, y1: y + boxH });
+
+      // Card with a marker-weight border and a soft drop, so it reads as
+      // something drawn on the board rather than a UI element.
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,.10)';
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 5;
+      roundRect(ctx, x, y, boxW, boxH, 14);
+      ctx.fillStyle = '#fffdf7';
+      ctx.fill();
+      ctx.restore();
+
+      roundRect(ctx, x, y, boxW, boxH, 14);
+      ctx.strokeStyle = i === steps.length - 1 ? marker : faint;
+      ctx.lineWidth = i === steps.length - 1 ? 5 : 3;
       ctx.stroke();
 
+      // Step number in the corner, small — the flow carries the order now, so
+      // the number is a reference not the main signal.
       ctx.fillStyle = marker;
-      ctx.font = `800 34px ${FONT}`;
-      const num = String(i + 1);
-      ctx.fillText(num, 150 - ctx.measureText(num).width / 2, y + 12);
+      ctx.font = `800 24px ${FONT}`;
+      ctx.fillText(String(i + 1), x + 16, y + 32);
 
       ctx.fillStyle = ink;
-      ctx.font = `600 38px ${FONT}`;
-      ctx.fillText(wrap(ctx, s, W - 380)[0] || '', 216, y + 13);
-
-      // Connector arrow down to the next step.
-      if (i < steps.length - 1) {
-        ctx.strokeStyle = '#b9b4a8';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(150, y + 34);
-        ctx.lineTo(150, y + step - 34);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(142, y + step - 44);
-        ctx.lineTo(150, y + step - 32);
-        ctx.lineTo(158, y + step - 44);
-        ctx.stroke();
-      }
+      ctx.font = `600 30px ${FONT}`;
+      const lines = wrap(ctx, text, boxW - 44).slice(0, 3);
+      const startY = y + boxH / 2 - ((lines.length - 1) * 36) / 2 + 10;
+      lines.forEach((l, li) => ctx.fillText(l, x + 22, startY + li * 36));
     });
+
+    // Arrows between consecutive steps: horizontal within a row, and a hop
+    // down to the start of the next row when it wraps.
+    ctx.strokeStyle = '#8d8577';
+    ctx.fillStyle = '#8d8577';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < centre.length - 1; i++) {
+      const a = centre[i];
+      const b = centre[i + 1];
+      const sameRow = Math.abs(a.y - b.y) < 4;
+      ctx.beginPath();
+      if (sameRow) {
+        ctx.moveTo(a.x1 + 10, a.y);
+        ctx.lineTo(b.x0 - 16, a.y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(b.x0 - 4, a.y);
+        ctx.lineTo(b.x0 - 20, a.y - 9);
+        ctx.lineTo(b.x0 - 20, a.y + 9);
+      } else {
+        // Wrap: down from the last box of the row, back along, into the first
+        // box of the next.
+        const midY = (a.y1 + b.y0) / 2;
+        ctx.moveTo(a.x, a.y1 + 8);
+        ctx.lineTo(a.x, midY);
+        ctx.lineTo(b.x, midY);
+        ctx.lineTo(b.x, b.y0 - 16);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y0 - 4);
+        ctx.lineTo(b.x - 9, b.y0 - 20);
+        ctx.lineTo(b.x + 9, b.y0 - 20);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   // Real cartography, drawn from Natural Earth boundaries.
