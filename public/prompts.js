@@ -817,7 +817,7 @@ Respond ONLY with JSON:
 }`;
 
   function videoPlanPrompt(payload) {
-    const { scenes, bible, characters, modeBrief, host } = payload || {};
+    const { scenes, bible, characters, modeBrief, strategyBrief, host } = payload || {};
     const cast = (Array.isArray(characters) ? characters : [])
       .map((c) => `- ${c.name}: ${c.descriptor || c.description || ''}`)
       .filter(Boolean)
@@ -835,8 +835,9 @@ Respond ONLY with JSON:
       .join('\n');
 
     const parts = [
-      // Mode first: it governs the visual mix and how present the host is, so
-      // it has to frame everything the model reads afterwards.
+      // Strategy first, then mode. Visual Intelligence sets the family the
+      // subject demands; the mode sets the channel's house style within it.
+      strategyBrief || '',
       modeBrief || '',
       host ? `CHANNEL HOST: ${host}` : 'CHANNEL HOST: none configured — do not plan presenter beats.',
       bible ? `PROJECT PROFILE:\n${JSON.stringify(bible, null, 2)}` : '',

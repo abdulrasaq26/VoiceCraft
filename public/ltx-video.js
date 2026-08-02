@@ -1049,6 +1049,15 @@
       })),
       bible: bible(),
       characters: cast,
+      // Visual Intelligence decides the visual FAMILY once, from the subject.
+      // Without it the Director re-derives conventions on every beat, which is
+      // how a health video and a finance video drift toward looking alike.
+      strategyBrief: window.BlvckVisualIQ
+        ? window.BlvckVisualIQ.briefFor(window.BlvckVisualIQ.strategise({
+            title: (bible() && bible().title) || '',
+            script: scenes().map((x) => x.subtitle || x.sceneSummary || '').join(' ')
+          }))
+        : '',
       modeBrief: window.BlvckModes ? window.BlvckModes.briefFor(mode) : '',
       host: hostConfigured ? window.BlvckHost.descriptor() : ''
     }, { task: 'storyboard' });
@@ -1062,6 +1071,9 @@
     // applies — it reported "canvas" for a beat with nothing drawn and no image
     // in storage. Drop the record for any scene whose type changed, so the
     // queue rebuilds it rather than trusting a stale result.
+    const strategy = window.BlvckVisualIQ
+      ? window.BlvckVisualIQ.strategise({ script: scenes().map((x) => x.subtitle || x.sceneSummary || '').join(' ') })
+      : null;
     const prevState = readState();
     let invalidated = 0;
     // Cards the Director proposed that the beat could not support.
@@ -1102,7 +1114,14 @@
             // Does the beat actually contain what this card needs? A map with
             // no place named, or a timeline with one date, renders as an empty
             // frame with a title — which reads as a bug, not a design choice.
-            const check = validateVisualType(Object.assign({}, s, { visualType: vt, graphic: spec }));
+            // Strategy first: a beat outside the subject's visual family is
+          // swapped rather than dropped — a wrong card still communicates,
+          // a missing beat does not.
+          if (window.BlvckVisualIQ && strategy) {
+            const c = window.BlvckVisualIQ.constrain({ visualType: vt }, strategy);
+            if (c.changed) { rejected.push({ index: s.index, proposed: c.from, reason: c.reason, replacedWith: c.visualType }); vt = c.visualType; }
+          }
+          const check = validateVisualType(Object.assign({}, s, { visualType: vt, graphic: spec }));
             if (!check.ok) {
               rejected.push({ index: s.index, proposed: vt, reason: check.reason, replacedWith: check.reroute });
               vt = check.reroute;
@@ -1166,6 +1185,7 @@
       mix,
       hostShots,
       mode: mode ? mode.label : '',
+      strategy: strategy ? { niche: strategy.niche, confidence: strategy.confidence, allowed: strategy.allowedVisuals } : null,
       mixDrift: drift,
       rejected,
       retention

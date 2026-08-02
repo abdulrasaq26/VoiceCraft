@@ -87,7 +87,19 @@
     }
   }
 
-  const duration = () => (timeline && timeline.duration) || (audioEl && audioEl.duration) || 0;
+  let durationOverride = 0;
+
+  /** Set the clock length explicitly.
+   *
+   * The editor's length comes from its clips, not from narration, and a
+   * preview with no timeline bound would otherwise report duration 0 — so
+   * the end-of-media check never fires and playback runs past the footage. */
+  function setDuration(sec) {
+    durationOverride = Math.max(0, Number(sec) || 0);
+    emit('durationChanged', { duration: durationOverride });
+  }
+
+  const duration = () => (timeline && timeline.duration) || (audioEl && audioEl.duration) || durationOverride || 0;
   const time = () => position;
   const isPlaying = () => playing;
   const getRate = () => rate;
@@ -271,7 +283,7 @@
 
   window.BlvckPlayback = {
     on, off, emit,
-    setTimeline, bindAudio,
+    setTimeline, bindAudio, setDuration,
     play, pause, seek, seekSentence, seekPhrase, setRate, reset,
     time, duration, isPlaying, rate: getRate,
     state, sentenceProgress,

@@ -431,6 +431,40 @@
     upSubs.value = '';
   }
 
+  /**
+   * Draw a card for a beat that has no asset.
+   *
+   * Uses whatever the Director already decided — a chart beat draws a chart,
+   * a stickman beat draws figures — and falls back to a title card carrying
+   * the narration. Rendered in about a millisecond, so a full rough cut is
+   * available immediately instead of after an hour of GPU time.
+   */
+  async function fallbackCard(scene) {
+    if (!window.BlvckGraphic) return null;
+    const text = scene.subtitle || scene.sceneSummary || '';
+    if (!text.trim()) return null;
+    const vt = String(scene.visualType || '');
+    const canvasKind = window.BlvckScenes && window.BlvckScenes.rendersOnCanvas({ visualType: vt });
+    try {
+      const blob = await window.BlvckGraphic.render({
+        // Honour the plan when there is one; otherwise a title card, which
+        // reads as a deliberate beat rather than a missing asset.
+        kind: canvasKind ? vt : 'title',
+        title: (scene.graphic && scene.graphic.title) || text,
+        subtitle: (scene.graphic && scene.graphic.subtitle) || '',
+        items: (scene.graphic && scene.graphic.items) || [],
+        palette: window.BlvckGraphic.paletteFor(text)
+      });
+      if (!blob) return null;
+      // Keep it, so a re-assemble does not redraw and the scene card shows it.
+      await idbPut(SB_DB, SB_STORE, String(scene.index), blob);
+      return await loadImage(blob);
+    } catch (err) {
+      console.warn('[Editor] fallback card failed for scene', scene.index, err.message);
+      return null;
+    }
+  }
+
   async function assemble() {
     clearStatus();
     let sb;
@@ -439,9 +473,21 @@
     } catch {
       sb = null;
     }
-    const scenes = (sb && sb.scenes) || [];
+    // Scenes come from the Scene Engine, not from the storyboard specifically.
+    // Assembly never needed a storyboard: it needs index, timestamp, subtitle
+    // and an asset. The old guard defended the only DOOR to the scenes array,
+    // not a real requirement — so a procedural project with narration but no
+    // storyboard was blocked for no reason.
+    let scenes = (sb && sb.scenes) || [];
+    if (!scenes.length && window.BlvckScenes) {
+      const made = await window.BlvckScenes.ensureScenes();
+      scenes = made.scenes;
+      if (made.created) {
+        showStatus(`Built ${scenes.length} scene(s) from the narration timeline — no storyboard needed.`, 'info');
+      }
+    }
     if (!scenes.length) {
-      showStatus('No storyboard scenes yet — generate a storyboard first. Its beats are the video scenes.');
+      showStatus('Nothing to assemble yet. Generate narration (or a storyboard) first — scenes are built from either.');
       return;
     }
     // Deliberately NOT gated on scenes having stills. A text-to-video project
@@ -493,11 +539,20 @@
       const video = videos[0] || null;
 
       if (!img && !video) {
-        // Bank the time onto the previous clip, or carry it forward to the
-        // first clip that does have something to show.
-        if (clips.length) clips[clips.length - 1].durationSec += secs;
-        else heldSec += secs;
-        continue;
+        // Draw one rather than skipping the beat.
+        //
+        // A scene that has narration is ALWAYS renderable — text is a
+        // legitimate explainer visual, and in a procedural-first product
+        // there is no reason for assembly to fail waiting on a generator.
+        // The old behaviour banked the time onto the previous clip, so a
+        // project whose images had not been generated produced either
+        // nothing or one enormous held frame.
+        img = await fallbackCard(s);
+        if (!img) {
+          if (clips.length) clips[clips.length - 1].durationSec += secs;
+          else heldSec += secs;
+          continue;
+        }
       }
       // Split the beat's screen time between its parts. The parts sum to the
       // beat, so the narration stays aligned however many cuts it became.
@@ -525,7 +580,7 @@
       heldSec = 0;
     }
     if (!clips.length) {
-      showStatus('Storyboard scenes found but their images could not be loaded.');
+      showStatus('Scenes were found but nothing could be drawn for them. Plan shots with the Director, then generate — every procedural beat renders in milliseconds.');
       assembleBtn.disabled = false;
       return;
     }
@@ -911,15 +966,38 @@
     activeSources = [];
   }
 
-  function tick() {
-    const ms = offsetMs + (performance.now() - clockStart);
-    if (ms >= totalMs()) {
+  // The editor no longer runs a clock. It subscribes to the one in
+  // playback.js and draws whatever is true at the reported position.
+  //
+  // It used to accumulate performance.now() deltas in its own rAF loop, which
+  // is a SECOND clock over the same audio: the two drift, seeking in one does
+  // not move the other, and the preview cannot stay in step with the
+  // narration timeline that everything else now reads.
+  let syncBound = false;
+
+  function bindSync() {
+    if (syncBound || !window.BlvckPlayback) return;
+    syncBound = true;
+    const P = window.BlvckPlayback;
+
+    P.on('frame', ({ time }) => {
+      // Only draw when this stage is the thing being played.
+      if (!playing) return;
+      const ms = time * 1000;
+      offsetMs = ms;
+      drawFrame(Math.min(ms, totalMs()));
+    });
+
+    P.on('ended', () => {
+      if (!playing) return;
       drawFrame(totalMs());
       stop();
-      return;
-    }
-    drawFrame(ms);
-    rafId = requestAnimationFrame(tick);
+    });
+
+    P.on('seek', ({ time }) => {
+      offsetMs = time * 1000;
+      if (!playing) drawFrame(offsetMs);
+    });
   }
 
   async function play() {
@@ -929,20 +1007,37 @@
     playing = true;
     realtime = true;
     if (playBtn) playBtn.textContent = '⏸ Pause';
-    clockStart = performance.now();
     if (offsetMs >= totalMs()) offsetMs = 0;
     activeSources = scheduleAudio(offsetMs, audioCtx ? audioCtx.destination : null);
-    rafId = requestAnimationFrame(tick);
+
+    // Hand the clock over. The editor still owns its Web Audio scheduling —
+    // that is playback, not timing — but the POSITION now comes from the one
+    // controller, so the preview, the character engine and every scheduled
+    // event advance together.
+    bindSync();
+    if (window.BlvckPlayback) {
+      window.BlvckPlayback.setDuration(totalMs() / 1000);
+      window.BlvckPlayback.seek(offsetMs / 1000);
+      window.BlvckPlayback.play();
+    }
   }
 
   function pause() {
     if (!playing) return;
-    offsetMs += performance.now() - clockStart;
+    // Position comes from the controller; the editor no longer derives it.
+    if (window.BlvckPlayback) {
+      window.BlvckPlayback.pause();
+      offsetMs = window.BlvckPlayback.time() * 1000;
+    }
     stopPlayback();
   }
 
   function stop() {
     offsetMs = 0;
+    if (window.BlvckPlayback) {
+      window.BlvckPlayback.pause();
+      window.BlvckPlayback.seek(0);
+    }
     stopPlayback();
     drawFrame(0);
   }
@@ -951,7 +1046,7 @@
     playing = false;
     realtime = false;
     playBtn.textContent = '▶ Play';
-    cancelAnimationFrame(rafId);
+    if (window.BlvckPlayback && window.BlvckPlayback.isPlaying()) window.BlvckPlayback.pause();
     stopAudio();
     for (const c of clips) if (c.video && !c.video.paused) c.video.pause();
   }
@@ -1302,6 +1397,7 @@
     seek.addEventListener('input', () => {
       pause();
       offsetMs = (Number(seek.value) / 1000) * totalMs();
+      if (window.BlvckPlayback) window.BlvckPlayback.seek(offsetMs / 1000);
       drawFrame(offsetMs);
     });
   }
