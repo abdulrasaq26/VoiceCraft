@@ -322,18 +322,166 @@ wide on the result is the same assets, far more engaging.
 
 ---
 
+## Story State — the engine that makes the rest work
+
+Above persistent cast, and this ordering is deliberate.
+
+### It is story data, not character data
+
+The critical placement decision: **state lives beside the Timeline, not inside
+the Character Engine.** Put it in the character and every other subsystem has
+to ask the character for truth, which makes an actor the authority on the
+weather, the room and the camera.
+
+```
+Narration ─▶ Timeline ─▶ STATE TIMELINE ─▶ character · camera · environment
+                                            motion · pacing · Director
+```
+
+So this:
+
+```
+0.0s   John healthy
+4.2s   John gets sick
+8.1s   John receives treatment
+12.0s  John recovers
+```
+
+is not character data. It is **story** data, and everything downstream
+consumes it. One transition changes the figure, the room, the shot, the pace
+and the motion — because each derives from the same fact rather than being
+told separately.
+
+### Entities, not characters
+
+Not everything that changes is a person, and the architecture is identical
+either way:
+
+| domain | entity | arc |
+|---|---|---|
+| health | patient | healthy → prediabetic → diabetic → managed |
+| finance | company | healthy → declining → crisis → recovery |
+| history | empire | rising → peak → decline → collapse |
+| science | cell | normal → mutated → cancerous |
+
+So the core object is a **StoryEntity** — Doctor Sarah, Apple Inc, the Roman
+Empire, a red blood cell — each owning `identity · state · relationships ·
+history`.
+
+Scenes then stop rendering nouns and start rendering:
+
+> **Entity A changed, because of Event B, which affected Entity C.**
+
+That sentence is the difference between a scene list and a narrative.
+
+### It makes the Director smaller
+
+The Director currently decides visuals, staging, actions and emphasis. With
+state infrastructure underneath, its job collapses to three questions:
+
+- What changed?
+- Why does it matter?
+- What should the audience notice?
+
+Everything else is derivation. A Director that answers three questions scales;
+one that specifies every visual detail does not.
+
+**"State change" also stops being a milestone.** Once state exists, a change
+is just two samples of it, and cause-and-effect is a change propagating
+between entities.
+
+```js
+{ entity: 'john', kind: 'person',
+  state: { energy: 0.2, wealth: 0.4, health: 0.9, emotion: 'worried' } }
+```
+
+"John lost his job" becomes `wealth: 0.4 → 0.1`, `emotion: worried → anxious`
+— and from that single change the renderer already knows the posture, the
+expression, the environment and how he moves. Nobody had to describe any of
+it.
+
+That is the difference between a Director narrating every visual detail and a
+Director stating what happened. It also makes cause-and-effect natural: a
+consequence is just a state change propagating, so `revenue falls → CEO reacts
+→ layoffs discussed → cuts announced` is one chain rather than four unrelated
+beats.
+
+Cast without state is the same drawing recurring. State without cast still
+produces change a viewer can feel. So state comes first.
+
+---
+
 ## Roadmap
 
 1. **Project Brain** — one store, one writer per branch
-2. **Persistent cast** — named actors with fixed appearance across a video;
-   without it every scene resets emotionally and nothing accumulates
-3. **Character relationships** — doctor/patient, teacher/student, buyer/seller
-4. **State-change engine** — before → event → after, resolved on the timeline
-5. **Camera grammar** — shot variety carrying attention
+2. **Story State Engine** — a state timeline of StoryEntities, beside the
+   narration timeline; the single highest-value engine left
+3. **Persistent cast** — named entities carrying that state across a video
+4. **Relationship Engine** — doctor/patient, employer/employee, competitor;
+   staging becomes obvious once two entities have a relation, not positions
+5. **Camera grammar** — establishing / medium / close-up / over-shoulder /
+   detail, from the same assets
 6. **Motion grammar** — handoff, approach, leave, transform, reveal
-7. Subtitles → Timeline · whiteboard → Timeline · motion graphics → Timeline
-8. Split  · split  · remove LTX
-9. Studio shell · design system · UI
+7. **Attention Engine** — see below
+8. Subtitles → Timeline · whiteboard → Timeline · motion graphics → Timeline
+9. Split `editor.js` · split `storyboard.js` · remove LTX
+10. Studio shell · design system · UI
+
+*Cause-and-effect and state-change are absent deliberately: both are what the
+Story State Engine already does, not separate builds.*
+
+---
+
+## Attention Engine
+
+A separate question from everything above, and easy to conflate with the
+Director:
+
+| | asks |
+|---|---|
+| **Director** | what should be on screen? |
+| **Attention** | what should the viewer *notice* right now? |
+
+A technically correct explainer answers the first. A watchable one answers
+both. It maps moments to devices:
+
+| moment | device |
+|---|---|
+| important | camera pushes in |
+| surprising | hold — a pause draws more attention than motion |
+| new concept | reveal, one element at a time |
+| complex concept | break it down on the whiteboard |
+| returning idea | callback to the earlier framing |
+| dense data | slow the pace; give it room |
+
+This is **not** retention hacks. Hooks and pattern interrupts decorate a
+video; attention management decides where the eye goes, which is a property
+of the edit itself.
+
+Like state, it belongs **on the timeline** — every device above is temporal,
+and the moments it responds to are already resolvable from narration and the
+state timeline. An important moment is a large state change. A surprising one
+is a change the preceding beats did not set up. Both are computable rather
+than authored, once state exists.
+
+Which is why it sits after the engines above rather than beside them: it has
+nothing to reason about until state, relationships and camera grammar exist.
+
+---
+
+## The one idea
+
+> **The system represents change, not scenes.**
+
+Everything above follows from that sentence. Entities hold state, state
+changes over time, and the renderer visualises those changes. Scenes are an
+*output*, not the model.
+
+Guard it against feature creep. More styles, props, environments, templates
+and export formats all feel productive and none of them touch this. The leap
+from a smart stickman slideshow to an engaging storytelling engine is in
+state, relationships, camera, motion and attention — not in the count of
+things that can be drawn.
 
 The UI waits. The product's distinctiveness is in the storytelling engine,
 not the shell around it — and most AI video tools are narration plus
