@@ -179,7 +179,9 @@
     // figure standing in an empty box reads as unfinished.
     const envName = scene.environment || 'none';
     if (window.BlvckEnv && envName !== 'none') {
-      window.BlvckEnv.draw(ctx, envName, t, opts.skin || 'stickman');
+      // The room is handed the mood: the same kitchen is a different place
+      // before and after the thing that happened in it.
+      window.BlvckEnv.draw(ctx, envName, t, opts.skin || 'stickman', mood);
     }
     // Ground line only when there is no room to stand in.
     if (L && envName === 'none') {
