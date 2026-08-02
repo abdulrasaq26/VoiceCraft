@@ -676,8 +676,21 @@
     // models cannot spell, so a checklist or a big number rendered on the GPU
     // comes back as pseudo-lettering; drawn here it is correct every time, on
     // brand, and returns in milliseconds without touching the queue's GPU time.
-    if (window.BlvckGraphic && window.BlvckGraphic.looksLikeGraphic(scene)) {
-      const spec = scene.graphic || { kind: 'title', title: scene.sceneSummary || scene.subtitle || '' };
+    // Two ways a beat qualifies as typeset: the storyboard model gave it a
+    // graphic spec, or the Director planned it as one of the data types
+    // (chart/map/timeline/whiteboard). The second case is why this check can
+    // no longer rely on looksLikeGraphic alone — a beat planned as "chart"
+    // carries no `graphic` from the storyboard pass, so it used to fall
+    // through and be rendered PHOTOGRAPHICALLY, which is precisely the
+    // scrambled-lettering failure the canvas renderer exists to avoid.
+    const plannedCanvas = !!(window.BlvckLTX && window.BlvckLTX.rendersOnCanvas(scene));
+    if (window.BlvckGraphic && (plannedCanvas || window.BlvckGraphic.looksLikeGraphic(scene))) {
+      const spec = Object.assign(
+        // The Director's visualType is the card kind; the storyboard's own
+        // spec (checklist/stat/title) wins when it supplied one.
+        { kind: plannedCanvas ? scene.visualType : 'title' },
+        scene.graphic || { title: scene.sceneSummary || scene.subtitle || '' }
+      );
       // Palette comes from the project's own subject, so a safety video's cards
       // read as safety and a finance video's do not look identical to them.
       return window.BlvckGraphic.render({
@@ -688,6 +701,19 @@
     }
 
     let finalPrompt = scene.prompt || '';
+
+    // A presenter beat is the host in their set, not a scene from the story —
+    // same rule the video path follows, so a still and a clip of the same beat
+    // depict the same person in the same place.
+    if (scene.visualType === 'presenter' && window.BlvckHost && window.BlvckHost.isConfigured()) {
+      const host = window.BlvckHost.descriptor();
+      const back = window.BlvckHost.backgroundText();
+      finalPrompt = [
+        `${host}, speaking directly to camera`,
+        back,
+        scene.detectedAction || scene.sceneSummary || ''
+      ].filter(Boolean).join('. ');
+    }
 
     // Append the master visual style so every scene shares one look.
     const styled = styleText(bible && bible.visualStyle);
@@ -734,7 +760,12 @@
     let quotaHit = false;
     for (const scene of scenes) {
       if (cancelRequested) break;
-      if (scene.status === 'done') continue;
+      // Skip only when this scene already has a STILL. A scene marked 'done'
+      // because the LTX pipeline rendered it a video clip has no image yet, and
+      // the two tracks are deliberately independent: clips live under
+      // clip:<index>, stills under <index>, so generating one never destroys
+      // the other and either can be produced first.
+      if (scene.status === 'done' && scene.assetType !== 'video') continue;
       while (paused && !cancelRequested) await sleep(200);
       if (cancelRequested) break;
 

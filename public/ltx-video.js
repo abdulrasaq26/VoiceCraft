@@ -823,8 +823,17 @@
           // beat with nothing to render it from just fails later.
           let overlay = p.hostOverlay || 'none';
           if (!hostConfigured || (mode && mode.host.share <= 0)) overlay = 'none';
+
+          // A typeset beat with nothing to typeset would render a blank card.
+          // Send it to the camera instead — a plain shot beats an empty graphic.
+          let vt = p.visualType || s.visualType || 't2v';
+          const spec = p.graphic || s.graphic || null;
+          const needsSpec = CANVAS_TYPES.indexOf(vt) > -1;
+          if (needsSpec && !(spec && (spec.title || (spec.items || []).length))) vt = 't2v';
+
           return Object.assign({}, s, {
-            visualType: p.visualType || s.visualType || 't2v',
+            visualType: vt,
+            graphic: spec,
             hostOverlay: overlay,
             shotType: p.shotType || s.shotType,
             cameraMovement: p.cameraMovement || s.cameraMovement,

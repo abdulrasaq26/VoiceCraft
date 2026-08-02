@@ -755,6 +755,8 @@ You also decide WHAT KIND OF VISUAL each beat should be. Pick the format that ac
 - "broll": supporting texture under narration where no specific action is described.
 Choose "chart", "map", "timeline" and "whiteboard" when the beat is ABOUT information. Choose "t2v" when it is about a moment. Vary the mix — long runs of one type are what makes a video feel machine-made.
 
+When you choose one of those four, you MUST also fill in "graphic" with the actual content to typeset — they are drawn with real fonts, not generated, so the words and numbers have to come from you. A chart needs "label: number" pairs taken from the narration; a timeline needs "date: event"; a map needs place names in the order they are mentioned; a whiteboard needs the steps of the explanation. If the narration does not contain concrete enough material to fill it, that beat is not really about information — choose "t2v" instead.
+
 "hostOverlay" says whether the host is visible during the beat:
 - "full" only with visualType "presenter".
 - "corner", "circle" or "rect" when the host should be present while other visuals carry the screen — the standard explainer look, host small, content dominant.
@@ -779,6 +781,11 @@ Respond ONLY with JSON:
     {
       "index": number,           // echo the scene index
       "visualType": string,      // "t2v" | "presenter" | "whiteboard" | "chart" | "map" | "timeline" | "broll"
+      "graphic": {               // REQUIRED when visualType is whiteboard/chart/map/timeline; omit otherwise
+        "title": string,         // the headline for the card
+        "subtitle": string,      // optional supporting line
+        "items": [string]        // chart: "2019: 42" pairs · timeline: "1914: War begins" · map: place names · whiteboard: steps. Max 6.
+      },
       "hostOverlay": string,     // "none" | "circle" | "rect" | "corner" | "full" — when the host is on screen
       "shotType": string,        // "Extreme Wide" | "Wide" | "Medium" | "Close Up" | "Extreme Close Up" | "Over Shoulder" | "POV"
       "cameraMovement": string,  // "Static" | "Slow Push In" | "Dolly In" | "Dolly Out" | "Pan Left" | "Pan Right" | "Crane Up" | "Crane Down" | "Handheld" | "Drone"
@@ -839,6 +846,16 @@ Respond ONLY with JSON:
         // visualType in particular is a routing decision — an unrecognised value
         // would send a beat nowhere, so it falls back to plain footage.
         visualType: oneOf(s && s.visualType, VISUAL_TYPES, 't2v'),
+        // Content for a typeset beat. Kept only when there is something real to
+        // draw — an empty spec would route a beat to the canvas renderer and
+        // produce a blank card, which is worse than sending it to the camera.
+        graphic: (() => {
+          const g = s && s.graphic;
+          if (!g || typeof g !== 'object') return null;
+          const items = arr(g.items).map(String).filter(Boolean).slice(0, 6);
+          const spec = { title: str(g.title), subtitle: str(g.subtitle), items };
+          return (spec.title || items.length) ? spec : null;
+        })(),
         hostOverlay: oneOf(s && s.hostOverlay, HOST_OVERLAYS, 'none'),
         shotType: oneOf(s && s.shotType, SHOT_TYPES, ''),
         cameraMovement: oneOf(s && s.cameraMovement, CAMERA_MOVES, 'Static'),
