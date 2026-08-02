@@ -153,20 +153,35 @@
     // ERR_NGROK_3004 — ngrok cuts any single request at ~300 seconds, and every
     // useful render here takes longer than that. A blocking request would throw
     // away work the GPU had already done.
+    const started = await enqueue(body, o);
+    // Hand the id back before waiting, so the caller can persist it. A job id
+    // that only exists in the memory of a running loop is lost on reload, and
+    // with it the handle to work the GPU is still doing.
+    if (typeof o.onEnqueued === 'function') o.onEnqueued(started.job);
+
+    const job = await pollJob(started.job, o);
+    if (!job.video_url) throw new Error('Finished job contained no video_url.');
+    const blob = await fetchClip(job.video_url);
+    return { blob, meta: job };
+  }
+
+  /** Start a render and return { job } immediately, without waiting. */
+  async function enqueue(body, o = {}) {
     const res = await fetch(`${PROXY}/generate`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(body),
       signal: o.signal
     });
-
     const started = await readJson(res, 'starting the render');
     if (!started.job) throw new Error('LTX did not return a job id.');
+    return started;
+  }
 
-    const job = await pollJob(started.job, o);
-    if (!job.video_url) throw new Error('Finished job contained no video_url.');
-    const blob = await fetchClip(job.video_url);
-    return { blob, meta: job };
+  /** One-shot status check — does not wait. Used when reconnecting to a job. */
+  async function jobStatus(jobId) {
+    const res = await fetch(`${PROXY}/jobs/${jobId}`, { headers: headers() });
+    return readJson(res, 'checking a render');
   }
 
   async function readJson(res, what) {
@@ -228,6 +243,8 @@
     checkOnline,
     selfTestTextToVideo,
     generateScene,
+    enqueue,
+    jobStatus,
     pollJob,
     fetchClip,
     pickDuration,

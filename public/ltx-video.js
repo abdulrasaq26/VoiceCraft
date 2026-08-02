@@ -444,7 +444,20 @@
         msrScale: opts.msrScale,
         outputHeight: opts.outputHeight,
         // Renders run for minutes; surface the wait rather than freezing the UI.
-        onProgress: opts.onSceneProgress
+        onProgress: opts.onSceneProgress,
+        // Write the job id down the instant it exists. The GPU keeps working
+        // whatever the browser does, so as long as we still hold the id the
+        // result can be collected after a reload, a crash, or a closed tab.
+        onEnqueued: (jobId) => {
+          const cur = readState();
+          cur[key] = Object.assign({}, cur[key], {
+            status: 'rendering',
+            jobId,
+            visualType: scene.visualType,
+            startedAt: Date.now()
+          });
+          writeState(cur);
+        }
       });
 
       await idbPut(clipKey(scene.index), blob);
@@ -505,10 +518,29 @@
     // planWithDirector is what fixes that. Requiring status 'done' here was a
     // leftover from when every scene had to be animated from an image.
     const all = scenes().filter((s) => s.visualType || s.status === 'done');
+    // Collect anything already finished on the GPU before deciding what is
+    // left, so a scene whose render completed while the browser was away is
+    // not queued a second time.
+    if (!opts.regenerate && pendingCount()) {
+      try {
+        await collectPending();
+      } catch {
+        /* best effort — a failed collect must not block the run */
+      }
+    }
+
     const st = readState();
     const todo = opts.regenerate
       ? all
-      : all.filter((s) => !(st[String(s.index)] && st[String(s.index)].status === 'done'));
+      : all.filter((s) => {
+        const rec = st[String(s.index)];
+        if (!rec) return true;
+        // Done and canvas beats are finished. 'rendering' means the GPU is
+        // ALREADY working on this scene: re-queueing it burns another full
+        // render for a duplicate result. Three identical jobs were observed
+        // in flight for one beat before this check existed.
+        return rec.status !== 'done' && rec.status !== 'canvas' && rec.status !== 'rendering';
+      });
 
     const result = { total: todo.length, done: 0, failed: 0, skipped: all.length - todo.length, errors: [] };
     const bib = bible();
@@ -626,6 +658,85 @@
 
   function reset() {
     writeState({});
+  }
+
+  /**
+   * Reconnect to renders this browser started but never collected.
+   *
+   * The GPU does not care what the browser is doing: once /generate returns a
+   * job id, the work continues and the finished mp4 sits on the backend
+   * regardless of reloads, crashes or closed tabs. The only thing that gets
+   * lost is the id — so it is written to storage the moment it exists, and
+   * this walks those ids back.
+   *
+   * Safe to run at any time: it only touches scenes recorded as 'rendering',
+   * and only downloads jobs the backend reports as done.
+   */
+  async function collectPending(opts = {}) {
+    const st = readState();
+    const pending = Object.entries(st)
+      .filter(([, r]) => r && r.status === 'rendering' && r.jobId);
+
+    const out = { checked: pending.length, collected: 0, stillRunning: 0, failed: 0, lost: 0 };
+    if (!pending.length) return out;
+
+    for (const [key, rec] of pending) {
+      let job;
+      try {
+        job = await window.LTXAdapter.jobStatus(rec.jobId);
+      } catch (err) {
+        // The backend may have restarted and forgotten the job entirely.
+        out.lost++;
+        st[key] = { status: 'error', error: `lost track of render (${err.message})`, at: Date.now() };
+        continue;
+      }
+
+      if (job.status === 'running' || job.status === 'queued') {
+        out.stillRunning++;
+        continue;
+      }
+      if (job.status === 'error') {
+        out.failed++;
+        st[key] = { status: 'error', error: job.error || 'render failed', at: Date.now() };
+        continue;
+      }
+      if (job.status === 'done' && job.video_url) {
+        try {
+          const blob = await window.LTXAdapter.fetchClip(job.video_url);
+          await idbPut(clipKey(Number(key)), blob);
+          st[key] = {
+            status: 'done',
+            mode: job.mode,
+            seed: job.seed,
+            generatedSec: job.generated_sec,
+            finalSec: job.final_sec,
+            bytes: blob.size,
+            recovered: true,
+            at: Date.now()
+          };
+          out.collected++;
+          try {
+            window.dispatchEvent(new CustomEvent('blvck:clip-rendered', {
+              detail: { index: Number(key), kind: 'video' }
+            }));
+          } catch {
+            /* no-op */
+          }
+        } catch (err) {
+          out.failed++;
+          st[key] = { status: 'error', error: `could not download finished clip: ${err.message}`, at: Date.now() };
+        }
+      }
+      if (typeof opts.onProgress === 'function') opts.onProgress(out);
+    }
+
+    writeState(st);
+    return out;
+  }
+
+  /** How many renders are recorded as in-flight (for UI hints). */
+  function pendingCount() {
+    return Object.values(readState()).filter((r) => r && r.status === 'rendering' && r.jobId).length;
   }
 
   /**
@@ -776,6 +887,8 @@
     doneCount,
     rendersOnCanvas,
     isTextDriven,
+    collectPending,
+    pendingCount,
     CANVAS_TYPES,
     cancel,
     isRunning,

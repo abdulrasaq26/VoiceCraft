@@ -229,9 +229,61 @@
     }
   }
 
+  // Reconnect to renders started before a reload. The GPU keeps working
+  // whatever the browser does, so the only real failure mode is losing the job
+  // id — and those are persisted now.
+  async function onCollect(silent) {
+    if (!window.BlvckLTX || !window.BlvckLTX.collectPending) return;
+    const btn = $('ltx-collect');
+    const pending = window.BlvckLTX.pendingCount();
+    if (!pending) {
+      if (btn) btn.hidden = true;
+      if (!silent) status('No renders are waiting to be collected.', 'info');
+      return;
+    }
+    if (btn) {
+      btn.hidden = false;
+      btn.disabled = true;
+    }
+    if (!silent) status(`Reconnecting to ${pending} render(s)…`, 'info');
+    try {
+      const r = await window.BlvckLTX.collectPending();
+      const bits = [];
+      if (r.collected) bits.push(`${r.collected} collected`);
+      if (r.stillRunning) bits.push(`${r.stillRunning} still rendering on the GPU`);
+      if (r.failed) bits.push(`${r.failed} failed`);
+      if (r.lost) bits.push(`${r.lost} lost (backend restarted)`);
+      status(
+        bits.length
+          ? `${bits.join(' · ')}.${r.stillRunning ? ' Click Collect again in a few minutes.' : ''}`
+          : 'Nothing to collect.',
+        'info'
+      );
+    } catch (err) {
+      status(`Could not collect renders: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.hidden = window.BlvckLTX.pendingCount() === 0;
+      }
+      refreshSummary();
+    }
+  }
+
   function init() {
     el.panel = $('ltx-panel');
     if (!el.panel) return;
+
+    const collectBtn = $('ltx-collect');
+    if (collectBtn) {
+      collectBtn.addEventListener('click', () => onCollect(false));
+      // Anything left in flight from a previous session gets swept up on load,
+      // so a reload mid-render costs nothing but the wait.
+      if (window.BlvckLTX && window.BlvckLTX.pendingCount && window.BlvckLTX.pendingCount()) {
+        collectBtn.hidden = false;
+        onCollect(true);
+      }
+    }
 
     const modeSel = $('ltx-mode');
     if (modeSel && window.BlvckModes) {
