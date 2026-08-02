@@ -187,8 +187,11 @@
         ? ` ${long.length} scene(s) exceed LTX's 30s limit and will freeze on their last frame: ${long.join(', ')}. Consider splitting those narration beats.`
         : '';
 
+      // Name the stage, not just the button: assembly lives in the Video
+      // workspace, so "click Auto-assemble" is unfollowable from here.
       status(
-        `${bits.join(' · ')}. Now click “Auto-assemble from project” to cut them against the narration.${longNote}`,
+        `${bits.join(' · ')}. Next: open the Video stage and click “Auto-assemble from project” ` +
+        `to cut these against the narration.${longNote}`,
         res.failed || long.length ? '' : 'info'
       );
     } catch (err) {

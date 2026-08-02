@@ -811,6 +811,25 @@
     // Merge onto the stored scenes by index.
     const byIndex = new Map((plan.scenes || []).map((p) => [p.index, p]));
     let applied = 0;
+
+    // Re-planning can change what a beat IS. A scene that was a chart and is
+    // now a filmed shot has a render record describing an asset that no longer
+    // applies — it reported "canvas" for a beat with nothing drawn and no image
+    // in storage. Drop the record for any scene whose type changed, so the
+    // queue rebuilds it rather than trusting a stale result.
+    const prevState = readState();
+    let invalidated = 0;
+    for (const s of scenes()) {
+      const p = byIndex.get(s.index);
+      if (!p) continue;
+      const was = s.visualType || '';
+      const now = p.visualType || '';
+      if (was && now && was !== now && prevState[String(s.index)]) {
+        delete prevState[String(s.index)];
+        invalidated++;
+      }
+    }
+    if (invalidated) writeState(prevState);
     try {
       const sb = JSON.parse(localStorage.getItem(SB_LS) || 'null');
       if (sb && Array.isArray(sb.scenes)) {

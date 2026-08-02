@@ -57,9 +57,16 @@
   let assetMode = 'image';
 
   function sceneAssetType(scene) {
+    // What the scene ACTUALLY holds wins over what the project is set to
+    // produce. A typeset beat is a PNG even in a video project, and rendering
+    // it into a <video> gives a black player that never plays — which is
+    // exactly how finished charts and maps appeared to be missing.
+    if (scene && scene.assetType) return scene.assetType === 'video' ? 'video' : 'image';
+    // Nothing stored yet: fall back to what this project intends to make, so
+    // the placeholder says "Queued (video)" rather than guessing wrong.
     if (assetMode === 'video') return 'video';
     if (assetMode === 'image') return 'image';
-    return scene.assetType === 'video' ? 'video' : 'image'; // mixed
+    return 'image'; // mixed, undecided
   }
   function isVideoBlob(blob) {
     return Boolean(blob && blob.type && blob.type.startsWith('video/'));
@@ -464,6 +471,11 @@
       // 2. Scene prompts in batches (with prior summaries for continuity)
       setAnalyzing(true, 'Writing scene prompts…');
       scenes = [];
+      // A new storyboard reuses scene indices for entirely different content,
+      // so every render record from the old one is now a lie: it reported
+      // "canvas" for beats whose images had already been cleared, which made
+      // unrendered scenes look finished and kept them out of the queue.
+      if (window.BlvckLTX && window.BlvckLTX.reset) window.BlvckLTX.reset();
       for (let i = 0; i < cues.length; i += SCENE_BATCH) {
         const batch = cues.slice(i, i + SCENE_BATCH);
         const prior = scenes.slice(-3).map((s) => `${s.camera}: ${s.sceneSummary}`);
@@ -1170,7 +1182,19 @@
           thumb.loop = true;
           thumb.playsInline = true;
           thumb.controls = true;
-          thumb.preload = 'metadata';
+          // 'metadata' loads duration but decodes no picture, so the card shows
+          // a black player until the user presses play — a rendered clip looks
+          // like a failed one. Nudge past the first frame to force a poster.
+          thumb.preload = 'auto';
+          thumb.addEventListener('loadeddata', () => {
+            if (thumb.currentTime === 0) {
+              try {
+                thumb.currentTime = 0.1;
+              } catch {
+                /* some codecs refuse an early seek; the player still works */
+              }
+            }
+          }, { once: true });
         } else {
           thumb = document.createElement('img');
           thumb.className = 'sb-thumb';
