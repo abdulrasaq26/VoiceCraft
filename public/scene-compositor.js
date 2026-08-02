@@ -150,8 +150,25 @@
       : { bg: '#0f1116', ink: '#f5f7fa', dim: '#9aa4b2', accent: '#f5b301', hot: '#ffe066' };
     const t = { bg: palette.bg, ink: '#f5f7fa', dim: '#5b6472', accent: palette.accent, hot: palette.hot };
 
+    // ONE state change, every layer responds. Framing, light and vignette come
+    // from the same fact as the pose, so a worsening beat is a tighter, darker
+    // frame AND a bent figure rather than only a different arm angle.
+    //
+    // Derived FIRST because the very next thing drawn depends on it.
+    const stateEnt = scene.entity || (scene.entities && scene.entities[0]) || null;
+    const mood = (stateEnt && window.BlvckStoryState)
+      ? window.BlvckStoryState.moodFor(stateEnt, scene.time || 0)
+      : { brightness: 1, framing: 1, vignette: 0, unsteady: 0, wellbeing: 0.6, intensity: 0 };
+
     ctx.fillStyle = t.bg;
     ctx.fillRect(0, 0, W, H);
+    if (mood.brightness < 0.99) {
+      ctx.save();
+      ctx.globalAlpha = 1 - mood.brightness;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
 
     const role = (scene.actors && scene.actors.role) || 'presenter';
     const roleDef = (L && L.ROLES[role]) || { infoWeight: 0.7 };
@@ -228,7 +245,7 @@
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: spot.x * W,
           y: spot.y * H,
-          scale: spot.scale * H * 0.16,
+          scale: spot.scale * H * 0.16 * mood.framing,
           skin: opts.skin || 'stickman',
           colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
           flip: spot.flip
@@ -263,7 +280,13 @@
       });
     }
 
-    if (opts.trace) opts.trace.stateReasons = stateReasons;
+    if (mood.vignette > 0.02) {
+      const g2 = ctx.createRadialGradient(W/2, H*0.52, H*0.28, W/2, H*0.52, H*0.85);
+      g2.addColorStop(0, 'rgba(0,0,0,0)');
+      g2.addColorStop(1, 'rgba(0,0,0,' + Math.min(0.72, mood.vignette).toFixed(3) + ')');
+      ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
+    }
+    if (opts.trace) { opts.trace.stateReasons = stateReasons; opts.trace.mood = mood; }
     return opts.canvas ? canvas : new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
   }
 

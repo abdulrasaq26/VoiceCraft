@@ -220,6 +220,53 @@
     return ent;
   }
 
+  /**
+   * The whole scene's response to state — not just the pose.
+   *
+   * A state change should produce a visual EXPERIENCE, not a gesture. Rising
+   * stress is a tighter frame, a darker room and a heavier vignette as well as
+   * a bent figure; recovery is the room opening back up. Driving only the pose
+   * is why five frames of a real arc looked like the same picture with
+   * different arm angles.
+   *
+   * Returns multipliers the compositor applies, so every layer answers to the
+   * same fact instead of being directed separately.
+   */
+  function moodFor(ent, t) {
+    const s = stateAt(ent, t);
+    const c = changeAt(ent, t);
+
+    // Wellbeing: the average of everything, with inverted attributes flipped.
+    let sum = 0;
+    let n = 0;
+    NUMERIC.forEach((a) => {
+      if (s[a] == null) return;
+      sum += polarity(a) > 0 ? s[a] : 1 - s[a];
+      n++;
+    });
+    const wellbeing = n ? sum / n : 0.6;
+
+    // Intensity: how much is happening right now. A big change earns a big
+    // visual response; a steady state does not.
+    let intensity = 0;
+    if (c && NUMERIC.indexOf(c.attribute) > -1) {
+      intensity = Math.min(1, Math.abs(Number(c.to) - Number(c.from == null ? s[c.attribute] : c.from)) * 1.6);
+    }
+
+    return {
+      wellbeing: Math.round(wellbeing * 100) / 100,
+      intensity: Math.round(intensity * 100) / 100,
+      // Low wellbeing darkens the room; the world reflects the condition.
+      brightness: Math.round((0.55 + wellbeing * 0.45) * 100) / 100,
+      // High intensity closes in — the frame tightens on a moment that matters.
+      framing: Math.round((1 + intensity * 0.55) * 100) / 100,
+      // A vignette presses in as things worsen.
+      vignette: Math.round(Math.max(0, (0.62 - wellbeing) + intensity * 0.35) * 100) / 100,
+      // Stress adds unsteadiness; calm removes it.
+      unsteady: Math.round(Math.max(0, (s.stress == null ? 0.2 : s.stress) - 0.4) * 100) / 100
+    };
+  }
+
   window.BlvckStoryState = {
     entity,
     change,
@@ -228,6 +275,9 @@
     stateAt,
     changeAt,
     actorFor,
+    moodFor,
+    polarity,
+    INVERTED,
     parse,
     NUMERIC,
     CATEGORICAL,
