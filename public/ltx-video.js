@@ -548,6 +548,25 @@
         return st[key];
       }
 
+      // Honour the project's asset choice. A storyboard set to "Still images"
+      // must not spend five minutes of GPU per beat rendering video the user
+      // never asked for — and never saw, because the still queue is where its
+      // output was expected. Canvas beats are handled above and are identical
+      // either way.
+      if (window.BlvckStoryboard && window.BlvckStoryboard.assetTypeFor(scene) === 'image') {
+        const stillBlob = await window.BlvckStoryboard.generateStill(scene);
+        if (!stillBlob) throw new Error('still generation returned nothing');
+        await window.BlvckStoryboard.attachAsset(scene, stillBlob, 'image');
+        st[key] = {
+          status: 'still',
+          visualType: scene.visualType,
+          bytes: stillBlob.size,
+          at: Date.now()
+        };
+        writeState(st);
+        return st[key];
+      }
+
       // Reference modes need pixels; T2V by definition does not.
       if (refs.mode !== 'T2V' && !refs.images.length) {
         throw new Error(
@@ -718,7 +737,7 @@
         // ALREADY working on this scene: re-queueing it burns another full
         // render for a duplicate result. Three identical jobs were observed
         // in flight for one beat before this check existed.
-        return rec.status !== 'done' && rec.status !== 'canvas' && rec.status !== 'rendering';
+        return rec.status !== 'done' && rec.status !== 'canvas' && rec.status !== 'still' && rec.status !== 'rendering';
       });
 
     const result = { total: todo.length, done: 0, failed: 0, skipped: all.length - todo.length, errors: [] };
@@ -825,6 +844,8 @@
       if (rendersOnCanvas(s)) return a;
       const target = Math.min(sceneDuration(s), 30);
       const rendered = window.LTXAdapter ? window.LTXAdapter.pickDuration(target) : Math.ceil(target);
+      // A still is one SDXL pass -- seconds, not the 300s video floor.
+      if (window.BlvckStoryboard && window.BlvckStoryboard.assetTypeFor(s) === 'image') return a + 18;
       return a + splitPlan(rendered).reduce((sum, part) => sum + clipCostSec(part, res), 0);
     }, 0);
     return Math.round(gpuSec / 60);

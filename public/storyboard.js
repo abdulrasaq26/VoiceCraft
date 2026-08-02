@@ -1771,6 +1771,14 @@
       assetMode = assetModeEl.value;
       saveProject();
       renderScenes();
+      // The render panel prices and labels itself from this choice, so it has
+      // to hear about the change. Without this it kept offering to generate
+      // "clips" for a stills project, and quoting video minutes for it.
+      try {
+        window.dispatchEvent(new CustomEvent('blvck:ltx-changed'));
+      } catch {
+        /* no-op */
+      }
     });
   }
   if (pauseBtn) {
@@ -1816,4 +1824,33 @@
       /* leave hidden */
     }
   })();
+
+  // Expose what the render queue needs to honour the user's choice.
+  //
+  // "Scene Assets: Still images" lived only inside this module, so the LTX
+  // queue rendered video regardless — the setting was real, respected here,
+  // and invisible to the one place that most needed it. A user who picked
+  // stills was told a run would take an hour of GPU time when it should have
+  // taken seconds.
+  window.BlvckStoryboard = {
+    assetMode: () => assetMode,
+    /** What this specific scene should produce: 'image' or 'video'. */
+    assetTypeFor: (scene) => sceneAssetType(scene || {}),
+    /** Render one scene's still (or canvas card) exactly as the storyboard does. */
+    generateStill: (scene) => generateSceneAsset(scene),
+    /** Persist a rendered asset against a scene, so it appears on the card. */
+    attachAsset: async (scene, blob, kind) => {
+      await idbPut(String(scene.index), blob);
+      const s = scenes.find((x) => x.index === scene.index);
+      if (s) {
+        s.status = 'done';
+        s.error = null;
+        s.assetType = kind || 'image';
+      }
+      if (urls.has(scene.index)) URL.revokeObjectURL(urls.get(scene.index));
+      urls.set(scene.index, URL.createObjectURL(blob));
+      saveProject();
+      renderScenes();
+    }
+  };
 })();

@@ -17,7 +17,9 @@
     armed = false;
     const b = $('ltx-generate');
     if (b) {
-      b.textContent = 'Generate all scene clips';
+      const m = window.BlvckStoryboard ? window.BlvckStoryboard.assetMode() : 'video';
+      b.textContent = m === 'image' ? 'Generate all scene images'
+        : m === 'mixed' ? 'Generate all scene assets' : 'Generate all scene clips';
       b.classList.remove('danger');
     }
   }
@@ -69,8 +71,19 @@
     }
     const done = window.BlvckLTX.doneCount();
     const cost = est.minutes >= 90 ? `${est.hours} hours` : `${est.minutes} min`;
+    // Say what this run will actually produce. A stills project quoted in
+    // video minutes is why an 18-second job looked like an hour.
+    const mode = window.BlvckStoryboard ? window.BlvckStoryboard.assetMode() : 'video';
+    const kind = mode === 'image' ? 'still(s)' : mode === 'mixed' ? 'asset(s)' : 'clip(s)';
+
+    // Label follows the mode too, so the button never offers to generate
+    // 'clips' for a stills project.
+    if (el.generate && !armed) {
+      el.generate.textContent = mode === 'image' ? 'Generate all scene images'
+        : mode === 'mixed' ? 'Generate all scene assets' : 'Generate all scene clips';
+    }
     el.summary.textContent =
-      `${done}/${est.total} rendered · ${est.gpuBeats} beat(s) need the GPU` +
+      `${done}/${est.total} rendered · ${est.gpuBeats} ${kind} to generate` +
       `${est.canvasBeats ? `, ${est.canvasBeats} drawn instantly` : ''}` +
       ` · about ${cost} at ${est.resolution}`;
   }
