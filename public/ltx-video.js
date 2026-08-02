@@ -214,9 +214,70 @@
       .join(', ');
     if (world) bits.push(world);
 
+    const propList = Array.isArray(s.props) ? s.props.filter(Boolean).join(', ') : '';
+    if (propList) bits.push(propList);
+
     if (s.emotion) bits.push(`mood: ${String(s.emotion).trim()}`);
 
     const style = styleText(bible && bible.visualStyle);
+    if (style) bits.push(style);
+
+    return bits.filter(Boolean).join('. ');
+  }
+
+  /**
+   * The same beat, described for a STILL image generator.
+   *
+   * Identical intelligence, different output language. The Director's
+   * decisions — shot scale, cast, place, time of day, weather, light, mood,
+   * house style — are exactly as relevant to a photograph as to a clip; only
+   * the motion sentence and the camera MOVE are dropped, because a still has
+   * neither.
+   *
+   * This exists because the still path was building from scene.prompt, which
+   * normalizeScene wrote during the storyboard pass — before the Director ran.
+   * Every cinematic decision the Director made was therefore reaching video
+   * and silently missing images.
+   */
+  function stillPromptFor(scene, bibleObj) {
+    const s = scene || {};
+    const bits = [];
+
+    if (String(s.visualType || '') === 'presenter' && window.BlvckHost && window.BlvckHost.isConfigured()) {
+      const host = window.BlvckHost.descriptor();
+      return [
+        SHOT_TEXT[s.shotType] || 'medium shot',
+        host ? `${host}, speaking directly to camera` : 'a presenter speaking directly to camera',
+        window.BlvckHost.backgroundText(),
+        String(s.detectedAction || s.sceneSummary || '').trim(),
+        s.emotion ? `mood: ${String(s.emotion).trim()}` : '',
+        styleText(bibleObj && bibleObj.visualStyle)
+      ].filter(Boolean).join('. ');
+    }
+
+    const shot = SHOT_TEXT[s.shotType] || '';
+    if (shot) bits.push(shot);
+
+    const action = String(s.detectedAction || s.sceneSummary || s.subtitle || '').trim();
+    if (action) bits.push(action);
+
+    if (window.BlvckCast) {
+      const cast = window.BlvckCast.promptBlockFor(s.characters || []);
+      if (cast) bits.push(cast);
+    }
+
+    const world = [s.environment, s.timeOfDay, s.weather, s.lighting]
+      .map((x) => String(x || '').trim())
+      .filter(Boolean)
+      .join(', ');
+    if (world) bits.push(world);
+
+    const props = Array.isArray(s.props) ? s.props.filter(Boolean).join(', ') : '';
+    if (props) bits.push(props);
+
+    if (s.emotion) bits.push(`mood: ${String(s.emotion).trim()}`);
+
+    const style = styleText(bibleObj && bibleObj.visualStyle);
     if (style) bits.push(style);
 
     return bits.filter(Boolean).join('. ');
@@ -247,6 +308,77 @@
    * With only a still and no cast, KI is unavailable (it needs 2+ images), so
    * the still goes in as a lone subject under I.
    */
+  /**
+   * Reject a visual type the beat cannot actually support.
+   *
+   * The Director will happily label a beat "map" when the narration contains
+   * no place, or "timeline" when there is no sequence of dates. Those cards
+   * render as an empty frame with a title on it, which is worse than plain
+   * footage — it looks like a bug to the viewer and wastes the beat.
+   *
+   * Returns { ok } or { ok:false, reason, reroute }. Deliberately conservative:
+   * it only rejects on clear evidence of absence, because a false rejection
+   * throws away a good card.
+   */
+  function validateVisualType(scene) {
+    const s = scene || {};
+    const vt = String(s.visualType || '');
+    const text = [s.sceneSummary, s.subtitle, s.detectedAction, s.visualGoal,
+      s.graphic && s.graphic.title, s.graphic && (s.graphic.items || []).join(' ')]
+      .filter(Boolean).join(' ');
+
+    if (vt === 'map') {
+      // Real geography or nothing. BlvckGeo refuses ambiguous names, so this
+      // is the same standard the renderer itself applies.
+      const geoReady = window.BlvckGeo && window.BlvckGeo.isLoaded();
+      const hits = geoReady ? window.BlvckGeo.detectCountries(text) : [];
+      if (geoReady && !hits.length) {
+        return { ok: false, reason: 'no country or region named in this beat', reroute: 'broll' };
+      }
+      return { ok: true };
+    }
+
+    if (vt === 'timeline') {
+      // A timeline needs at least two dated points to be a timeline.
+      const years = text.match(/\b(1[0-9]{3}|20[0-9]{2})\b/g) || [];
+      const items = (s.graphic && Array.isArray(s.graphic.items) ? s.graphic.items : []);
+      if (new Set(years).size < 2 && items.length < 2) {
+        return { ok: false, reason: 'fewer than two dated events', reroute: 'broll' };
+      }
+      return { ok: true };
+    }
+
+    if (vt === 'chart') {
+      // A chart needs numbers. Words about size are not numbers.
+      const nums = text.match(/\b\d[\d,.]*\s*(%|percent|million|billion|thousand)?\b/gi) || [];
+      const items = (s.graphic && Array.isArray(s.graphic.items) ? s.graphic.items : []);
+      const itemNums = items.filter((i) => /\d/.test(String(i))).length;
+      if (nums.length < 2 && itemNums < 2) {
+        return { ok: false, reason: 'fewer than two numeric values', reroute: 'broll' };
+      }
+      return { ok: true };
+    }
+
+    if (vt === 'presenter') {
+      // A presenter beat with no host to render is an empty promise.
+      if (!(window.BlvckHost && window.BlvckHost.isConfigured())) {
+        return { ok: false, reason: 'no channel host configured', reroute: 't2v' };
+      }
+      return { ok: true };
+    }
+
+    if (vt === 'whiteboard') {
+      // Needs something to draw out: steps, or an explanation worth diagramming.
+      const items = (s.graphic && Array.isArray(s.graphic.items) ? s.graphic.items : []);
+      if (items.length < 2 && text.length < 40) {
+        return { ok: false, reason: 'nothing stepwise to draw', reroute: 'broll' };
+      }
+      return { ok: true };
+    }
+
+    return { ok: true };
+  }
+
   // Beats that are TYPESET, not generated. Charts, maps, timelines and
   // whiteboards are made of text and precise shapes — exactly what diffusion
   // models cannot draw. They go to the canvas renderer, never to the GPU.
@@ -822,6 +954,8 @@
     // queue rebuilds it rather than trusting a stale result.
     const prevState = readState();
     let invalidated = 0;
+    // Cards the Director proposed that the beat could not support.
+    const rejected = [];
     for (const s of scenes()) {
       const p = byIndex.get(s.index);
       if (!p) continue;
@@ -851,7 +985,19 @@
           let vt = p.visualType || s.visualType || 't2v';
           const spec = p.graphic || s.graphic || null;
           const needsSpec = CANVAS_TYPES.indexOf(vt) > -1;
-          if (needsSpec && !(spec && (spec.title || (spec.items || []).length))) vt = 't2v';
+          if (needsSpec && !(spec && (spec.title || (spec.items || []).length))) {
+            rejected.push({ index: s.index, proposed: vt, reason: 'no content to typeset', replacedWith: 't2v' });
+            vt = 't2v';
+          } else {
+            // Does the beat actually contain what this card needs? A map with
+            // no place named, or a timeline with one date, renders as an empty
+            // frame with a title — which reads as a bug, not a design choice.
+            const check = validateVisualType(Object.assign({}, s, { visualType: vt, graphic: spec }));
+            if (!check.ok) {
+              rejected.push({ index: s.index, proposed: vt, reason: check.reason, replacedWith: check.reroute });
+              vt = check.reroute;
+            }
+          }
 
           return Object.assign({}, s, {
             visualType: vt,
@@ -911,6 +1057,7 @@
       hostShots,
       mode: mode ? mode.label : '',
       mixDrift: drift,
+      rejected,
       retention
     };
   }
@@ -930,6 +1077,8 @@
     status,
     allStatus,
     doneCount,
+    stillPromptFor,
+    validateVisualType,
     rendersOnCanvas,
     isTextDriven,
     collectPending,

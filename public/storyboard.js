@@ -712,17 +712,20 @@
       });
     }
 
+    // Build from the Director's structured decisions when it has planned this
+    // beat, not from scene.prompt — that string was written during the
+    // storyboard pass, BEFORE the Director ran, so shot scale, place, time of
+    // day, weather, light, props and mood were reaching video prompts and
+    // silently missing image prompts. Same intelligence, both paths.
     let finalPrompt = scene.prompt || '';
-
-    // A presenter beat is the host in their set, not a scene from the story —
-    // same rule the video path follows, so a still and a clip of the same beat
-    // depict the same person in the same place.
-    if (scene.visualType === 'presenter' && window.BlvckHost && window.BlvckHost.isConfigured()) {
-      const host = window.BlvckHost.descriptor();
-      const back = window.BlvckHost.backgroundText();
+    if (scene.visualType && window.BlvckLTX && window.BlvckLTX.stillPromptFor) {
+      const planned = window.BlvckLTX.stillPromptFor(scene, bible);
+      if (planned) finalPrompt = planned;
+    } else if (scene.visualType === 'presenter' && window.BlvckHost && window.BlvckHost.isConfigured()) {
+      // No planner available: keep the host rule at minimum.
       finalPrompt = [
-        `${host}, speaking directly to camera`,
-        back,
+        `${window.BlvckHost.descriptor()}, speaking directly to camera`,
+        window.BlvckHost.backgroundText(),
         scene.detectedAction || scene.sceneSummary || ''
       ].filter(Boolean).join('. ');
     }
