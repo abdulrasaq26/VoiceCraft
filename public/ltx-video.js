@@ -24,6 +24,9 @@
   const STATE_LS = 'blvck-tts:ltx-clips';
 
   const clipKey = (index) => `clip:${index}`;
+  // Parts of a split beat. Part 0 keeps the plain key so anything written
+  // before splitting existed still loads.
+  const partKey = (index, part) => (part ? `clip:${index}:${part}` : `clip:${index}`);
 
   // --- storage -------------------------------------------------------------
 
@@ -570,12 +573,30 @@
           ? window.BlvckCast.seedFor(scene.characters[0])
           : -1);
 
-      const { blob, meta } = await window.LTXAdapter.generateScene({
+      // Render a long beat as SEVERAL clips rather than one.
+      //
+      // Cost is a 300s floor that already covers 5s, plus ~90s for every second
+      // beyond it. So a 14s beat is 1110s as one clip but 900s as three ~5s
+      // clips -- cheaper, and better paced, because the retention check wants
+      // shot variety and a 14s single take is exactly the held shot it flags.
+      //
+      // Parts are stored under the same scene index, so nothing is renumbered
+      // and every existing key, timeline slot and IndexedDB entry stays valid.
+      const parts = splitPlan(targetSec);
+      const blobs = [];
+      let meta = null;
+
+      for (let pi = 0; pi < parts.length; pi++) {
+        if (cancelled) throw new Error('Render cancelled.');
+        const partSec = parts[pi];
+        const res = await window.LTXAdapter.generateScene({
         prompt,
         images: refs.images,
         mode: refs.mode,
-        seed,
-        targetSec,
+        // Each part needs its own seed or the three clips are identical takes.
+        // Derived from the scene seed so a re-render reproduces them exactly.
+        seed: seed < 0 ? seed : seed + pi * 1013,
+        targetSec: partSec,
         resolution: opts.resolution || '720p',
         aspect: opts.aspect || '16:9 Landscape',
         guideScale: opts.guideScale,
@@ -599,7 +620,14 @@
         }
       });
 
-      await idbPut(clipKey(scene.index), blob);
+        blobs.push(res.blob);
+        meta = res.meta;
+      }
+
+      for (let pi = 0; pi < blobs.length; pi++) {
+        await idbPut(partKey(scene.index, pi), blobs[pi]);
+      }
+      const blob = blobs[0];
       // Tell the storyboard a clip exists, so the scene card stops showing
       // whatever failure it was left with and starts showing the footage.
       // Without this a rendered beat still displays the old SDXL error and a
@@ -613,6 +641,8 @@
       }
       st[key] = {
         status: 'done',
+        parts: blobs.length,
+        partSecs: parts,
         mode: refs.mode,
         seed: meta.seed,
         usedStill: refs.usedStill,
@@ -754,6 +784,27 @@
   // (758/301 = 2.52 at 5s).
   const RES_SCALE = { '480p': 1, '540p': 1.31, '720p': 2.52, '1080p': 5.23 };
 
+  /**
+   * How to cut a beat into renderable clips.
+   *
+   * Anything at or under the floor's coverage renders as one clip — splitting
+   * it would pay the 300s floor twice for no gain. Longer beats are divided
+   * into the fewest parts that keeps each at or under that coverage, and the
+   * time is spread evenly so no part is a stub.
+   */
+  function splitPlan(sec) {
+    const total = Math.max(1, Number(sec) || 0);
+    if (total <= FLOOR_COVERS_SEC) return [total];
+    const n = Math.ceil(total / FLOOR_COVERS_SEC);
+    const each = Math.round((total / n) * 1000) / 1000;
+    const out = new Array(n).fill(each);
+    // Give any rounding remainder to the last part so the parts sum exactly to
+    // the beat, or the picture track drifts against the narration again.
+    const drift = Math.round((total - each * n) * 1000) / 1000;
+    out[n - 1] = Math.round((out[n - 1] + drift) * 1000) / 1000;
+    return out;
+  }
+
   /** GPU seconds for one clip of `sec` seconds at `resolution`. */
   function clipCostSec(sec, resolution) {
     const scale = RES_SCALE[resolution] || RES_SCALE['480p'];
@@ -774,7 +825,7 @@
       if (rendersOnCanvas(s)) return a;
       const target = Math.min(sceneDuration(s), 30);
       const rendered = window.LTXAdapter ? window.LTXAdapter.pickDuration(target) : Math.ceil(target);
-      return a + clipCostSec(rendered, res);
+      return a + splitPlan(rendered).reduce((sum, part) => sum + clipCostSec(part, res), 0);
     }, 0);
     return Math.round(gpuSec / 60);
   }
@@ -1078,6 +1129,8 @@
     allStatus,
     doneCount,
     stillPromptFor,
+    splitPlan,
+    partKey,
     validateVisualType,
     rendersOnCanvas,
     isTextDriven,

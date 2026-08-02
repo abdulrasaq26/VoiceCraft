@@ -476,15 +476,21 @@
       // Prefer a rendered LTX clip over the still. The still stays attached as
       // a fallback so a video that fails to decode still shows something rather
       // than a black hole in the timeline.
-      let video = null;
-      const clipBlob = await idbGet(SB_DB, SB_STORE, `clip:${s.index}`);
-      if (clipBlob) {
+      // A long beat is rendered as several clips under the same scene index —
+      // cheaper on the GPU and better paced. Load every part; each becomes its
+      // own cut, sharing the beat's narration slot between them.
+      const videos = [];
+      for (let part = 0; part < 12; part++) {
+        const key = part === 0 ? `clip:${s.index}` : `clip:${s.index}:${part}`;
+        const b = await idbGet(SB_DB, SB_STORE, key);
+        if (!b) break;
         try {
-          video = await loadVideo(clipBlob);
+          videos.push(await loadVideo(b));
         } catch {
-          video = null;
+          /* skip an undecodable part rather than lose the whole beat */
         }
       }
+      const video = videos[0] || null;
 
       if (!img && !video) {
         // Bank the time onto the previous clip, or carry it forward to the
@@ -493,18 +499,29 @@
         else heldSec += secs;
         continue;
       }
-      clips.push({
-        sceneIndex: s.index,
-        subtitle: s.subtitle || s.sceneSummary || '',
-        camera: s.camera || '',
-        durationSec: secs + heldSec,
-        effect: autoEffect(clips.length, s.camera),
-        // Per-scene presenter layout, set by the Director's plan. Undefined
-        // means "use the channel default".
-        hostLayout: s.hostOverlay || null,
-        img,
-        video
-      });
+      // Split the beat's screen time between its parts. The parts sum to the
+      // beat, so the narration stays aligned however many cuts it became.
+      const n = Math.max(1, videos.length);
+      const total = secs + heldSec;
+      for (let part = 0; part < n; part++) {
+        const share = part === n - 1
+          ? total - (total / n) * (n - 1)   // last part absorbs rounding
+          : total / n;
+        clips.push({
+          sceneIndex: s.index,
+          // The subtitle belongs to the beat, not the cut; repeating it on
+          // every part would stutter the caption.
+          subtitle: part === 0 ? (s.subtitle || s.sceneSummary || '') : '',
+          camera: s.camera || '',
+          durationSec: share,
+          effect: autoEffect(clips.length, s.camera),
+          // Per-scene presenter layout, set by the Director's plan. Undefined
+          // means "use the channel default".
+          hostLayout: s.hostOverlay || null,
+          img: part === 0 ? img : null,
+          video: videos[part] || null
+        });
+      }
       heldSec = 0;
     }
     if (!clips.length) {

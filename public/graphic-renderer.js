@@ -388,7 +388,8 @@
 
       ctx.fillStyle = t.ink;
       ctx.font = `800 34px ${FONT}`;
-      const v = String(d.value) + (d.suffix ? d.suffix : '');
+      const unit = d.suffix || spec.unit || '';
+      const v = String(d.value) + (unit ? (unit.length > 2 ? ' ' + unit : unit) : '');
       const vw = ctx.measureText(v).width;
       ctx.fillText(v, x + (barW - vw) / 2, yTop - 16);
 
@@ -761,15 +762,23 @@
     }
 
     // Labels, placed on the largest landmass of each highlighted country.
+    const placed = [];
     countries.forEach((f) => {
       const c = G.labelPoint(f);
       if (!c) return;
-      const [x, y] = project(c[0], c[1]);
+      const [x, y0] = project(c[0], c[1]);
+      let y = y0;
       if (x < 0 || x > W || y < 0 || y > H) return;
       const label = (f.p && (f.p.n || f.p.a)) || '';
       if (!label) return;
       ctx.font = `800 42px ${FONT}`;
       const tw = ctx.measureText(label).width;
+      // Push the plate clear of anything already drawn, alternating up/down so
+      // labels do not all march in one direction off the frame.
+      const hits = (yy) => placed.some((r) =>
+        Math.abs(r.x - x) < (r.w + tw) / 2 + 16 && Math.abs(r.y - yy) < 54);
+      for (let n = 1; hits(y) && n < 9; n++) y = y0 + (n % 2 ? 1 : -1) * Math.ceil(n / 2) * 58;
+      placed.push({ x, y, w: tw });
       // Plate behind the text so a label over a bright country stays readable.
       ctx.fillStyle = 'rgba(0,0,0,.62)';
       roundRect(ctx, x - tw / 2 - 14, y - 26, tw + 28, 48, 10);
