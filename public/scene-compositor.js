@@ -143,111 +143,180 @@
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext('2d');
+    const L = window.BlvckStageLayers;
 
-    const info = scene.information || null;
-    const kind = (info && info.kind) || 'none';
-    const staging = pick(scene.staging, scene.index || 0);
     const palette = window.BlvckGraphic
-      ? window.BlvckGraphic.paletteFor(scene.subject || (info && info.title) || '')
-      : null;
+      ? window.BlvckGraphic.paletteFor(scene.subject || '')
+      : { bg: '#0f1116', ink: '#f5f7fa', dim: '#9aa4b2', accent: '#f5b301', hot: '#ffe066' };
+    const t = { bg: palette.bg, ink: '#f5f7fa', dim: '#5b6472', accent: palette.accent, hot: palette.hot };
 
-    // Ground.
-    ctx.fillStyle = (palette && palette.bg) || '#0f1116';
+    ctx.fillStyle = t.bg;
     ctx.fillRect(0, 0, W, H);
 
-    // 1. Information first — the actor is staged AGAINST it, so it has to
-    //    exist before we know where the actor should look.
-    let infoRect = null;
-    if (staging.info && kind !== 'none') {
-      infoRect = await drawInformation(ctx, info, staging.info, palette);
+    const role = (scene.actors && scene.actors.role) || 'presenter';
+    const roleDef = (L && L.ROLES[role]) || { infoWeight: 0.7 };
+
+    // ---- 3. Environment -------------------------------------------------
+    // Drawn first and faintly. It says WHERE without competing with the
+    // figures, which are the thing carrying the story.
+    const envName = scene.environment || 'none';
+    if (L && L.ENVIRONMENTS[envName]) {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      L.ENVIRONMENTS[envName](ctx, t);
+      ctx.restore();
+    }
+    // Ground line, so figures stand on something.
+    if (L) {
+      ctx.strokeStyle = t.dim;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(40, L.GROUND * H + 2);
+      ctx.lineTo(W - 40, L.GROUND * H + 2);
+      ctx.stroke();
     }
 
-    // 2. Actor. Always present — that is the entire point of the reframe.
-    const actorSpec = scene.actor || {};
-    const action = actorSpec.action || ACTION_FOR[kind] || 'explain';
-    let hand = null;
+    // ---- 5. Information (only when the beat needs it) -------------------
+    // Last in priority, and sized by the ROLE: a presenter beat gives it most
+    // of the frame, a story beat gives it none at all.
+    let infoRect = null;
+    const info = scene.information;
+    if (info && info.kind && info.kind !== 'none' && roleDef.infoWeight > 0.15) {
+      const wide = roleDef.infoWeight > 0.5;
+      const rect = wide
+        ? { x: 0.28, y: 0.09, w: 0.68, h: 0.66 }
+        : { x: 0.60, y: 0.08, w: 0.36, h: 0.34 };   // a reference, not the subject
+      infoRect = await drawInformation(ctx, info, rect, palette);
+    }
+
+    // ---- 2. Actors ------------------------------------------------------
+    const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
+    const specs = (scene.actors && scene.actors.cast) || [];
+    const hands = [];
 
     if (window.BlvckChar) {
-      const a = new window.BlvckChar.Actor({
-        state: window.BlvckChar.CLIPS[action] ? action : 'explain',
-        emotion: actorSpec.emotion || 'confident'
-      });
-      // Hold the clip at its end so a still frame shows the completed gesture.
-      a.time = (window.BlvckChar.CLIPS[a.state] || { dur: 1 }).dur;
-      a.followTimeline = false;
+      spots.forEach((spot, i) => {
+        const cast = specs[i] || specs[0] || {};
+        const action = cast.action || (infoRect && role === 'presenter' ? 'point' : 'explain');
+        const a = new window.BlvckChar.Actor({
+          state: window.BlvckChar.CLIPS[action] ? action : 'explain',
+          emotion: cast.emotion || 'confident'
+        });
+        a.time = (window.BlvckChar.CLIPS[a.state] || { dur: 1 }).dur;
+        a.followTimeline = false;
 
-      const unit = staging.actor.scale * H * 0.16;
-      const bones = window.BlvckChar.drawActor(ctx, a, {
-        x: staging.actor.x * W,
-        y: staging.actor.y * H,
-        scale: unit,
-        skin: opts.skin || 'stickman',
-        colour: (palette && palette.accent) || '#f5b301',
-        // Face the information, whichever side it is on.
-        flip: infoRect ? (staging.actor.x * W > infoRect.x + infoRect.w / 2) : false
+        ctx.save();
+        // Depth in a crowd: further rows recede rather than repeat.
+        if (spot.depth) ctx.globalAlpha = 1 - spot.depth * 0.28;
+        const bones = window.BlvckChar.drawActor(ctx, a, {
+          x: spot.x * W,
+          y: spot.y * H,
+          scale: spot.scale * H * 0.16,
+          skin: opts.skin || 'stickman',
+          colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
+          flip: spot.flip
+        });
+        ctx.restore();
+        if (bones && bones.forearmR) hands.push({ x: bones.forearmR.x1, y: bones.forearmR.y1, spot, cast });
       });
-      if (bones && bones.forearmR) hand = { x: bones.forearmR.x1, y: bones.forearmR.y1 };
     }
 
-    // 3. Annotation — connect the actor to what it is talking about.
-    if (infoRect && hand && (action === 'point' || action === 'explain')) {
-      drawPointer(ctx, hand, infoRect, (palette && palette.hot) || '#ffe066');
+    // ---- 4. Props, in the actors' hands ---------------------------------
+    const propName = scene.prop || null;
+    if (L && propName && L.PROPS[propName] && hands.length) {
+      const h = hands[0];
+      L.PROPS[propName](ctx, t, h.x, h.y, h.spot.scale * H * 0.14);
     }
 
-    // 4. A role label, when the actor is playing someone specific.
-    if (actorSpec.role) {
-      ctx.fillStyle = (palette && palette.dim) || '#9aa4b2';
-      ctx.font = '600 24px "Segoe UI", Arial, sans-serif';
-      const t = String(actorSpec.role);
-      const w = ctx.measureText(t).width;
-      ctx.fillText(t, staging.actor.x * W - w / 2, staging.actor.y * H + 44);
+    // ---- Annotation: connect a presenter to what it references ----------
+    if (infoRect && hands.length && role === 'presenter') {
+      drawPointer(ctx, hands[0], infoRect, t.hot || t.accent);
+    }
+
+    // ---- Labels: who is who, when it matters ----------------------------
+    const labels = (scene.actors && scene.actors.labels) || [];
+    if (labels.length) {
+      ctx.fillStyle = t.dim;
+      ctx.font = '600 26px "Segoe UI", Arial, sans-serif';
+      spots.slice(0, labels.length).forEach((spot, i) => {
+        const txt = String(labels[i] || '');
+        if (!txt) return;
+        const w = ctx.measureText(txt).width;
+        ctx.fillText(txt, spot.x * W - w / 2, spot.y * H + 46);
+      });
     }
 
     return opts.canvas ? canvas : new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
   }
 
   /**
-   * Turn a planned scene into compositor input.
+   * Decide the whole scene from the beat, in composition-priority order.
    *
-   * The Director's visualType stops meaning "instead of an actor" and starts
-   * meaning "the information the actor is presenting" — which is the whole
-   * reframe expressed in one mapping.
+   * 1 what is happening · 2 who · 3 where · 4 with what · 5 does it need support
+   *
+   * The old version asked "what card is this?" first and bolted a figure on.
+   * That produced a chart with a small person beside it when the beat was
+   * actually about a person.
    */
   function fromScene(scene, strategy) {
     const s = scene || {};
+    const text = [s.sceneSummary, s.subtitle, s.detectedAction].filter(Boolean).join(' ');
+    const L = window.BlvckStageLayers;
     const vt = String(s.visualType || '');
     const isInfo = ['chart', 'map', 'timeline', 'diagram', 'whiteboard'].indexOf(vt) > -1;
 
-    // Role comes from the subject: a health video has a doctor, finance an
-    // analyst. The actor is constant; who they are playing is not.
-    const ROLE = {
+    // 1 + 2. What is happening, and who is in it.
+    const role = s.actorRole || inferRole(text, isInfo);
+    const niche = (strategy && strategy.niche) || 'general';
+    const ROLE_NAME = {
       health: 'Doctor', finance: 'Analyst', history: 'Narrator',
       science: 'Researcher', howto: 'Instructor', story: 'Narrator'
     };
-    const niche = (strategy && strategy.niche) || 'general';
 
     return {
       index: s.index || 0,
-      subject: s.sceneSummary || s.subtitle || '',
-      staging: isInfo ? (s.staging || null) : 'solo',
+      subject: text,
+      // 3. Where.
+      environment: s.environment || (L ? L.inferEnvironment(text) : 'none'),
+      // 4. With what.
+      prop: s.prop || (L ? L.inferProp(text) : null),
+      actors: {
+        role,
+        count: s.actorCount || null,
+        cast: s.cast || [{ emotion: s.emotion || 'confident', action: s.actorAction || null }],
+        labels: s.actorLabels || (role === 'presenter' && ROLE_NAME[niche] ? [ROLE_NAME[niche]] : [])
+      },
+      // 5. Support, only if the beat has any.
       information: isInfo
-        ? { kind: vt, title: (s.graphic && s.graphic.title) || s.sceneSummary || '',
+        ? { kind: vt,
+            title: (s.graphic && s.graphic.title) || s.sceneSummary || '',
             items: (s.graphic && s.graphic.items) || [],
             subtitle: (s.graphic && s.graphic.subtitle) || '' }
-        : null,
-      actor: {
-        role: ROLE[niche] || '',
-        action: s.actorAction || ACTION_FOR[isInfo ? vt : 'none'],
-        emotion: s.emotion && window.BlvckChar && window.BlvckChar.EMOTIONS[s.emotion]
-          ? s.emotion
-          : 'confident'
-      }
+        : null
     };
+  }
+
+  /**
+   * Which storytelling mode does this beat want?
+   *
+   * Read from the language of the beat itself. "One did X, another did Y" is a
+   * comparison; "the doctor told the patient" is social; a population figure is
+   * a crowd. Presenter is the fallback, not the default.
+   */
+  function inferRole(text, hasInfo) {
+    const t = String(text || '');
+    if (/\b(millions?|thousands?|population|everyone|people|crowd|society|spread|demand)\b/i.test(t)) return 'crowd';
+    if (/\b(told|asked|sold|gave|met|argued|negotiat|interview|between them|each other)\b/i.test(t)) return 'social';
+    if (/\b(one .*(another|other)|versus|compared|whereas|while .* others?|two (people|investors|patients|groups))\b/i.test(t)) return 'compare';
+    if (/\b(walks?|runs?|eats?|sleeps?|works?|wakes?|begins?|struggl|tries|decides?|loses?|starts?)\b/i.test(t)) return 'demonstrate';
+    if (/\b(he |she |they |his |her |john|maria|the man|the woman|the farmer|the patient)\b/i.test(t)) return 'story';
+    return hasInfo ? 'presenter' : 'demonstrate';
   }
 
   window.BlvckStage = {
     compose,
     fromScene,
+    inferRole,
     STAGINGS,
     ACTION_FOR,
     stagings: () => Object.keys(STAGINGS)
