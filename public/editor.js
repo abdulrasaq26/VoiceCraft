@@ -911,15 +911,38 @@
     activeSources = [];
   }
 
-  function tick() {
-    const ms = offsetMs + (performance.now() - clockStart);
-    if (ms >= totalMs()) {
+  // The editor no longer runs a clock. It subscribes to the one in
+  // playback.js and draws whatever is true at the reported position.
+  //
+  // It used to accumulate performance.now() deltas in its own rAF loop, which
+  // is a SECOND clock over the same audio: the two drift, seeking in one does
+  // not move the other, and the preview cannot stay in step with the
+  // narration timeline that everything else now reads.
+  let syncBound = false;
+
+  function bindSync() {
+    if (syncBound || !window.BlvckPlayback) return;
+    syncBound = true;
+    const P = window.BlvckPlayback;
+
+    P.on('frame', ({ time }) => {
+      // Only draw when this stage is the thing being played.
+      if (!playing) return;
+      const ms = time * 1000;
+      offsetMs = ms;
+      drawFrame(Math.min(ms, totalMs()));
+    });
+
+    P.on('ended', () => {
+      if (!playing) return;
       drawFrame(totalMs());
       stop();
-      return;
-    }
-    drawFrame(ms);
-    rafId = requestAnimationFrame(tick);
+    });
+
+    P.on('seek', ({ time }) => {
+      offsetMs = time * 1000;
+      if (!playing) drawFrame(offsetMs);
+    });
   }
 
   async function play() {
@@ -929,20 +952,37 @@
     playing = true;
     realtime = true;
     if (playBtn) playBtn.textContent = '⏸ Pause';
-    clockStart = performance.now();
     if (offsetMs >= totalMs()) offsetMs = 0;
     activeSources = scheduleAudio(offsetMs, audioCtx ? audioCtx.destination : null);
-    rafId = requestAnimationFrame(tick);
+
+    // Hand the clock over. The editor still owns its Web Audio scheduling —
+    // that is playback, not timing — but the POSITION now comes from the one
+    // controller, so the preview, the character engine and every scheduled
+    // event advance together.
+    bindSync();
+    if (window.BlvckPlayback) {
+      window.BlvckPlayback.setDuration(totalMs() / 1000);
+      window.BlvckPlayback.seek(offsetMs / 1000);
+      window.BlvckPlayback.play();
+    }
   }
 
   function pause() {
     if (!playing) return;
-    offsetMs += performance.now() - clockStart;
+    // Position comes from the controller; the editor no longer derives it.
+    if (window.BlvckPlayback) {
+      window.BlvckPlayback.pause();
+      offsetMs = window.BlvckPlayback.time() * 1000;
+    }
     stopPlayback();
   }
 
   function stop() {
     offsetMs = 0;
+    if (window.BlvckPlayback) {
+      window.BlvckPlayback.pause();
+      window.BlvckPlayback.seek(0);
+    }
     stopPlayback();
     drawFrame(0);
   }
@@ -951,7 +991,7 @@
     playing = false;
     realtime = false;
     playBtn.textContent = '▶ Play';
-    cancelAnimationFrame(rafId);
+    if (window.BlvckPlayback && window.BlvckPlayback.isPlaying()) window.BlvckPlayback.pause();
     stopAudio();
     for (const c of clips) if (c.video && !c.video.paused) c.video.pause();
   }
@@ -1302,6 +1342,7 @@
     seek.addEventListener('input', () => {
       pause();
       offsetMs = (Number(seek.value) / 1000) * totalMs();
+      if (window.BlvckPlayback) window.BlvckPlayback.seek(offsetMs / 1000);
       drawFrame(offsetMs);
     });
   }
