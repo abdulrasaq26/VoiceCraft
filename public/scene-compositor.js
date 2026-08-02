@@ -242,10 +242,20 @@
         ctx.save();
         // Depth in a crowd: further rows recede rather than repeat.
         if (spot.depth) ctx.globalAlpha = 1 - spot.depth * 0.28;
+
+        // Position carries state. A confident figure steps forward and toward
+        // centre; a failing one drifts back, sideways and down. Standing in
+        // the same spot every frame is what made the arc read as static.
+        const advance = mood.advance == null ? 0.6 : mood.advance;
+        const posX = spot.x + (mood.drift || 0) * 0.06;
+        const posY = spot.y + (mood.sink || 0) * 0.10;
+        // Advancing also grows the figure — moving toward camera IS scale.
+        const advScale = 0.82 + advance * 0.32;
+
         const bones = window.BlvckChar.drawActor(ctx, a, {
-          x: spot.x * W,
-          y: spot.y * H,
-          scale: spot.scale * H * 0.16 * mood.framing,
+          x: posX * W,
+          y: posY * H,
+          scale: spot.scale * H * 0.16 * mood.framing * advScale,
           skin: opts.skin || 'stickman',
           colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
           flip: spot.flip

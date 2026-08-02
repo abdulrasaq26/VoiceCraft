@@ -136,30 +136,67 @@
         { t: 1,   p: { armR: -52, forearmR: -118, neck: -7, torso: 2, head: 4 } }
       ]
     },
+    // SILHOUETTE RULE for everything below.
+    //
+    // Turn the figure into a solid black shape: you must still know what is
+    // happening. Arm angle alone fails that test — five clips differing only
+    // in forearm rotation are the same shape. So each clip commits to a whole
+    // BODY: stance width, torso lean, head height, vertical lift.
+    //
+    //   collapsed   narrow stance · torso folded · head down · low
+    //   open        wide stance   · torso tall   · head up   · arms out
+    //
+    // Those two read at 128x72. Arm positions are detail on top.
     facepalm: {
-      // The read comes from the hand reaching the FACE and the head dropping to
-      // meet it. Getting those two to coincide is what the flat pose missed.
+      // Defeat is a COMPRESSED shape: knees together, torso folded, head
+      // buried. The hand reaching the face is the last 10% of the read, not
+      // the whole of it.
       dur: 0.8,
       keys: [
         { t: 0,   p: {} },
-        { t: 0.5, p: { armR: -70, forearmR: -80, neck: 4 } },
-        { t: 1,   p: { armR: -44, forearmR: -128, neck: 14, torso: 4, head: 6 } }
+        { t: 0.5, p: { armR: -70, forearmR: -80, neck: 8, legL: -3, legR: 3 } },
+        { t: 1,   p: { armR: -40, forearmR: -132, neck: 22, torso: 10, head: 10,
+                       legL: -4, legR: 4, kneeL: 10, kneeR: -10, armL: 6 }, lift: -0.14 }
       ]
     },
     shrug: {
+      // Shoulders up and elbows OUT — the width is what says "who knows".
       dur: 0.8,
       keys: [
         { t: 0,   p: {} },
-        { t: 0.6, p: { armL: 74, forearmL: 84, armR: -74, forearmR: -84, neck: 3 } },
-        { t: 1,   p: { armL: 68, forearmL: 90, armR: -68, forearmR: -90, neck: 2 } }
+        { t: 0.6, p: { armL: 84, forearmL: 92, armR: -84, forearmR: -92, neck: 6, torso: 0 } },
+        { t: 1,   p: { armL: 78, forearmL: 98, armR: -78, forearmR: -98, neck: 5,
+                       legL: 12, legR: -12 } }
       ]
     },
     celebrate: {
+      // Fully vertical arms and a wide base: the most OPEN shape in the set,
+      // and the exact opposite silhouette to facepalm.
       loop: true, dur: 1.2,
       keys: [
-        { t: 0,   p: { armL: 150, forearmL: 20, armR: -150, forearmR: -20 } },
-        { t: 0.5, p: { armL: 166, forearmL: 8, armR: -166, forearmR: -8, root: 0 }, lift: 0.22 },
-        { t: 1,   p: { armL: 150, forearmL: 20, armR: -150, forearmR: -20 } }
+        { t: 0,   p: { armL: 158, forearmL: 14, armR: -158, forearmR: -14,
+                       legL: 20, legR: -20, neck: -6 } },
+        { t: 0.5, p: { armL: 174, forearmL: 4, armR: -174, forearmR: -4,
+                       legL: 24, legR: -24, neck: -9, torso: -3 }, lift: 0.3 },
+        { t: 1,   p: { armL: 158, forearmL: 14, armR: -158, forearmR: -14,
+                       legL: 20, legR: -20, neck: -6 } }
+      ]
+    },
+    // Two clips that exist purely as silhouettes, for state to reach for.
+    defeated: {
+      dur: 0.9,
+      keys: [
+        { t: 0,   p: {} },
+        { t: 1,   p: { torso: 14, neck: 26, head: 8, armL: 4, armR: -4,
+                       legL: -4, legR: 4, kneeL: 14, kneeR: -14 }, lift: -0.2 }
+      ]
+    },
+    open: {
+      dur: 0.9,
+      keys: [
+        { t: 0,   p: {} },
+        { t: 1,   p: { armL: 86, forearmL: 22, armR: -86, forearmR: -22,
+                       legL: 22, legR: -22, neck: -8, torso: -4 } }
       ]
     },
     clap: {

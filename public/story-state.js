@@ -160,10 +160,10 @@
     const confidence = s.confidence == null ? 0.6 : s.confidence;
 
     if (health < 0.35) return { clip: 'sit', emotion: 'sad', reason: 'poor health' };
-    if (energy < 0.3) return { clip: 'idle', emotion: 'bored', reason: 'low energy' };
-    if (stress > 0.65) return { clip: 'think', emotion: 'nervous', reason: 'high stress' };
-    if (confidence > 0.75) return { clip: 'explain', emotion: 'confident', reason: 'high confidence' };
-    if (health > 0.8 && energy > 0.7) return { clip: 'idle', emotion: 'happy', reason: 'healthy and rested' };
+    if (energy < 0.3) return { clip: 'defeated', emotion: 'bored', reason: 'low energy' };
+    if (stress > 0.65) return { clip: 'defeated', emotion: 'nervous', reason: 'high stress' };
+    if (confidence > 0.75) return { clip: 'open', emotion: 'confident', reason: 'high confidence' };
+    if (health > 0.8 && energy > 0.7) return { clip: 'open', emotion: 'happy', reason: 'healthy and rested' };
     return { clip: 'idle', emotion: 'neutral', reason: 'baseline' };
   }
 
@@ -263,7 +263,19 @@
       // A vignette presses in as things worsen.
       vignette: Math.round(Math.max(0, (0.62 - wellbeing) + intensity * 0.35) * 100) / 100,
       // Stress adds unsteadiness; calm removes it.
-      unsteady: Math.round(Math.max(0, (s.stress == null ? 0.2 : s.stress) - 0.4) * 100) / 100
+      unsteady: Math.round(Math.max(0, (s.stress == null ? 0.2 : s.stress) - 0.4) * 100) / 100,
+
+      // WHERE the figure stands is information. Confidence walks it forward
+      // and toward centre; stress and poor health push it back and to the
+      // edge. A figure rooted to one spot in every frame is the single
+      // clearest sign that nothing is happening.
+      //
+      // advance: 0 = far and small, 1 = near and large
+      // drift:   -1 = pushed left/away, +1 = stepped right/toward
+      advance: Math.round(Math.max(0, Math.min(1, wellbeing * 0.9 + intensity * 0.2)) * 100) / 100,
+      drift: Math.round(((wellbeing - 0.55) * 1.4) * 100) / 100,
+      // Low wellbeing also lowers the figure: sinking is legible at any size.
+      sink: Math.round(Math.max(0, (0.55 - wellbeing) * 0.5) * 100) / 100
     };
   }
 
