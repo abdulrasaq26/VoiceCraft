@@ -475,12 +475,115 @@
     });
   }
 
-  // Locator card, NOT cartography.
+  // Real cartography, drawn from Natural Earth boundaries.
   //
-  // Real maps need real geodata; drawing an invented coastline would be worse
-  // than drawing none, because a wrong map is confidently wrong on screen. This
-  // presents the places and their order legibly and leaves the geography to
-  // footage or a proper basemap layer.
+  // Highlights the countries named in the beat, frames the view on them, and
+  // draws their neighbours in a muted tone so the region reads in context.
+  // Falls back to the name-list card below when the geodata is unavailable or
+  // no country in the text can be matched with confidence — a wrong map is
+  // worse than an honest list.
+  function drawGeoMap(ctx, t, spec, countries) {
+    const G = window.BlvckGeo;
+    const view = G.padded(G.bounds(countries), 0.55);
+    const project = G.projector(view, W, H, 90);
+
+    // theme() returns the palette without a name, so read the lightness off the
+    // ground colour rather than trusting a key that is never set.
+    const light = (() => {
+      const m = /^#?([0-9a-f]{6})$/i.exec(String(t.bg || ''));
+      if (!m) return false;
+      const v = parseInt(m[1], 16);
+      return (((v >> 16) & 255) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114) > 140;
+    })();
+
+    // Ocean
+    ctx.fillStyle = light ? '#dfe7f0' : '#0b1622';
+    ctx.fillRect(0, 0, W, H);
+
+    const focus = new Set(countries);
+
+    // Context landmass first, then the subjects on top.
+    ctx.lineJoin = 'round';
+    const others = G.features().filter((f) => !focus.has(f));
+    others.forEach((f) => {
+      G.drawFeature(ctx, f, project);
+      ctx.fillStyle = light ? "#c9d3df" : "#1b2430";
+      ctx.fill();
+      ctx.strokeStyle = light ? "#b3c0cf" : "#243040";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    countries.forEach((f) => {
+      G.drawFeature(ctx, f, project);
+      ctx.fillStyle = t.accent;
+      ctx.fill();
+      ctx.strokeStyle = t.ink;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    });
+
+    // Labels, placed on the largest landmass of each highlighted country.
+    countries.forEach((f) => {
+      const c = G.labelPoint(f);
+      if (!c) return;
+      const [x, y] = project(c[0], c[1]);
+      if (x < 0 || x > W || y < 0 || y > H) return;
+      const label = (f.p && (f.p.n || f.p.a)) || '';
+      if (!label) return;
+      ctx.font = `800 34px ${FONT}`;
+      const tw = ctx.measureText(label).width;
+      // Plate behind the text so a label over a bright country stays readable.
+      ctx.fillStyle = 'rgba(0,0,0,.62)';
+      roundRect(ctx, x - tw / 2 - 14, y - 26, tw + 28, 48, 10);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, x - tw / 2, y + 9);
+    });
+
+    if (spec.title) {
+      ctx.fillStyle = 'rgba(0,0,0,.55)';
+      ctx.fillRect(0, 0, W, 108);
+      ctx.fillStyle = '#fff';
+      ctx.font = `800 52px ${FONT}`;
+      ctx.fillText(wrap(ctx, String(spec.title), W - 160)[0] || '', 80, 70);
+    }
+  }
+
+  // Decide between real cartography and the honest fallback.
+  //
+  // Real geography only when a country can be matched with confidence. A map
+  // that highlights the wrong place, or an empty ocean, is worse than a plain
+  // list of the places named — the viewer trusts a map far more than a list,
+  // so it has to earn that trust.
+  async function renderMap(ctx, t, spec) {
+    const G = window.BlvckGeo;
+    if (G) {
+      try {
+        await G.load();
+        const text = [spec.title, spec.subtitle]
+          .concat(Array.isArray(spec.items) ? spec.items : [])
+          .filter(Boolean)
+          .join(' ');
+        // Prefer whole-text detection; fall back to treating each list item as
+        // a place name on its own.
+        let hits = G.detectCountries(text);
+        if (!hits.length && Array.isArray(spec.items)) {
+          hits = spec.items.map((i) => G.findCountry(i)).filter(Boolean);
+        }
+        if (hits.length) {
+          drawGeoMap(ctx, t, spec, hits);
+          return;
+        }
+      } catch (err) {
+        console.warn('[Graphic] Geodata unavailable, using locator card:', err.message);
+      }
+    }
+    drawMap(ctx, t, spec);
+  }
+
+  // Fallback locator card: places listed with pins, used only when real
+  // geography is not available.
   function drawMap(ctx, t, spec) {
     const places = (Array.isArray(spec.items) ? spec.items : []).map(String).filter(Boolean).slice(0, 5);
 
@@ -583,7 +686,7 @@
     else if (kind === 'chart' || kind === 'graph' || kind === 'bar') drawChart(ctx, t, spec);
     else if (kind === 'timeline') drawTimeline(ctx, t, spec);
     else if (kind === 'whiteboard') drawWhiteboard(ctx, t, spec);
-    else if (kind === 'map') drawMap(ctx, t, spec);
+    else if (kind === 'map') await renderMap(ctx, t, spec);
     else drawTitle(ctx, t, spec);
 
     // A hairline keeps the card from floating when cut against footage. The
