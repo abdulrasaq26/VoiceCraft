@@ -157,17 +157,15 @@
     const roleDef = (L && L.ROLES[role]) || { infoWeight: 0.7 };
 
     // ---- 3. Environment -------------------------------------------------
-    // Drawn first and faintly. It says WHERE without competing with the
-    // figures, which are the thing carrying the story.
+    // A drawn PLACE, not a wireframe. The environment is part of the
+    // storytelling language: it says where before a word is spoken, and a
+    // figure standing in an empty box reads as unfinished.
     const envName = scene.environment || 'none';
-    if (L && L.ENVIRONMENTS[envName]) {
-      ctx.save();
-      ctx.globalAlpha = 0.5;
-      L.ENVIRONMENTS[envName](ctx, t);
-      ctx.restore();
+    if (window.BlvckEnv && envName !== 'none') {
+      window.BlvckEnv.draw(ctx, envName, t, opts.skin || 'stickman');
     }
-    // Ground line, so figures stand on something.
-    if (L) {
+    // Ground line only when there is no room to stand in.
+    if (L && envName === 'none') {
       ctx.strokeStyle = t.dim;
       ctx.lineWidth = 3;
       ctx.beginPath();
