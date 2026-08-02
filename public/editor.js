@@ -439,9 +439,21 @@
     } catch {
       sb = null;
     }
-    const scenes = (sb && sb.scenes) || [];
+    // Scenes come from the Scene Engine, not from the storyboard specifically.
+    // Assembly never needed a storyboard: it needs index, timestamp, subtitle
+    // and an asset. The old guard defended the only DOOR to the scenes array,
+    // not a real requirement — so a procedural project with narration but no
+    // storyboard was blocked for no reason.
+    let scenes = (sb && sb.scenes) || [];
+    if (!scenes.length && window.BlvckScenes) {
+      const made = await window.BlvckScenes.ensureScenes();
+      scenes = made.scenes;
+      if (made.created) {
+        showStatus(`Built ${scenes.length} scene(s) from the narration timeline — no storyboard needed.`, 'info');
+      }
+    }
     if (!scenes.length) {
-      showStatus('No storyboard scenes yet — generate a storyboard first. Its beats are the video scenes.');
+      showStatus('Nothing to assemble yet. Generate narration (or a storyboard) first — scenes are built from either.');
       return;
     }
     // Deliberately NOT gated on scenes having stills. A text-to-video project
