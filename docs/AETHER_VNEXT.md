@@ -422,12 +422,66 @@ produces change a viewer can feel. So state comes first.
 5. **Camera grammar** — establishing / medium / close-up / over-shoulder /
    detail, from the same assets
 6. **Motion grammar** — handoff, approach, leave, transform, reveal
-7. Subtitles → Timeline · whiteboard → Timeline · motion graphics → Timeline
-8. Split `editor.js` · split `storyboard.js` · remove LTX
-9. Studio shell · design system · UI
+7. **Attention Engine** — see below
+8. Subtitles → Timeline · whiteboard → Timeline · motion graphics → Timeline
+9. Split `editor.js` · split `storyboard.js` · remove LTX
+10. Studio shell · design system · UI
 
 *Cause-and-effect and state-change are absent deliberately: both are what the
 Story State Engine already does, not separate builds.*
+
+---
+
+## Attention Engine
+
+A separate question from everything above, and easy to conflate with the
+Director:
+
+| | asks |
+|---|---|
+| **Director** | what should be on screen? |
+| **Attention** | what should the viewer *notice* right now? |
+
+A technically correct explainer answers the first. A watchable one answers
+both. It maps moments to devices:
+
+| moment | device |
+|---|---|
+| important | camera pushes in |
+| surprising | hold — a pause draws more attention than motion |
+| new concept | reveal, one element at a time |
+| complex concept | break it down on the whiteboard |
+| returning idea | callback to the earlier framing |
+| dense data | slow the pace; give it room |
+
+This is **not** retention hacks. Hooks and pattern interrupts decorate a
+video; attention management decides where the eye goes, which is a property
+of the edit itself.
+
+Like state, it belongs **on the timeline** — every device above is temporal,
+and the moments it responds to are already resolvable from narration and the
+state timeline. An important moment is a large state change. A surprising one
+is a change the preceding beats did not set up. Both are computable rather
+than authored, once state exists.
+
+Which is why it sits after the engines above rather than beside them: it has
+nothing to reason about until state, relationships and camera grammar exist.
+
+---
+
+## The one idea
+
+> **The system represents change, not scenes.**
+
+Everything above follows from that sentence. Entities hold state, state
+changes over time, and the renderer visualises those changes. Scenes are an
+*output*, not the model.
+
+Guard it against feature creep. More styles, props, environments, templates
+and export formats all feel productive and none of them touch this. The leap
+from a smart stickman slideshow to an engaging storytelling engine is in
+state, relationships, camera, motion and attention — not in the count of
+things that can be drawn.
 
 The UI waits. The product's distinctiveness is in the storytelling engine,
 not the shell around it — and most AI video tools are narration plus
