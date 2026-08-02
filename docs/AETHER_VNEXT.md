@@ -322,16 +322,76 @@ wide on the result is the same assets, far more engaging.
 
 ---
 
-## Character State — the engine that makes the rest work
+## Story State — the engine that makes the rest work
 
 Above persistent cast, and this ordering is deliberate.
 
-Cast gives a character **identity**: the same figure recurs, and a viewer
-starts recognising them. State gives a character **condition**, and condition
-is what *derives* the rendering:
+### It is story data, not character data
+
+The critical placement decision: **state lives beside the Timeline, not inside
+the Character Engine.** Put it in the character and every other subsystem has
+to ask the character for truth, which makes an actor the authority on the
+weather, the room and the camera.
+
+```
+Narration ─▶ Timeline ─▶ STATE TIMELINE ─▶ character · camera · environment
+                                            motion · pacing · Director
+```
+
+So this:
+
+```
+0.0s   John healthy
+4.2s   John gets sick
+8.1s   John receives treatment
+12.0s  John recovers
+```
+
+is not character data. It is **story** data, and everything downstream
+consumes it. One transition changes the figure, the room, the shot, the pace
+and the motion — because each derives from the same fact rather than being
+told separately.
+
+### Entities, not characters
+
+Not everything that changes is a person, and the architecture is identical
+either way:
+
+| domain | entity | arc |
+|---|---|---|
+| health | patient | healthy → prediabetic → diabetic → managed |
+| finance | company | healthy → declining → crisis → recovery |
+| history | empire | rising → peak → decline → collapse |
+| science | cell | normal → mutated → cancerous |
+
+So the core object is a **StoryEntity** — Doctor Sarah, Apple Inc, the Roman
+Empire, a red blood cell — each owning `identity · state · relationships ·
+history`.
+
+Scenes then stop rendering nouns and start rendering:
+
+> **Entity A changed, because of Event B, which affected Entity C.**
+
+That sentence is the difference between a scene list and a narrative.
+
+### It makes the Director smaller
+
+The Director currently decides visuals, staging, actions and emphasis. With
+state infrastructure underneath, its job collapses to three questions:
+
+- What changed?
+- Why does it matter?
+- What should the audience notice?
+
+Everything else is derivation. A Director that answers three questions scales;
+one that specifies every visual detail does not.
+
+**"State change" also stops being a milestone.** Once state exists, a change
+is just two samples of it, and cause-and-effect is a change propagating
+between entities.
 
 ```js
-{ character: 'john',
+{ entity: 'john', kind: 'person',
   state: { energy: 0.2, wealth: 0.4, health: 0.9, emotion: 'worried' } }
 ```
 
@@ -354,19 +414,20 @@ produces change a viewer can feel. So state comes first.
 ## Roadmap
 
 1. **Project Brain** — one store, one writer per branch
-2. **Character State** — numeric condition that derives posture, expression,
-   environment and motion; the single highest-value engine left
-3. **Persistent cast** — named actors carrying that state across a whole video
-4. **Relationships** — doctor/patient, teacher/student, buyer/seller; staging
-   becomes obvious once two characters have a relation rather than positions
-5. **Cause and effect** — state changes propagating between beats, so scenes
-   connect instead of sitting adjacent
-6. **Camera grammar** — establishing / medium / close-up / over-shoulder /
+2. **Story State Engine** — a state timeline of StoryEntities, beside the
+   narration timeline; the single highest-value engine left
+3. **Persistent cast** — named entities carrying that state across a video
+4. **Relationship Engine** — doctor/patient, employer/employee, competitor;
+   staging becomes obvious once two entities have a relation, not positions
+5. **Camera grammar** — establishing / medium / close-up / over-shoulder /
    detail, from the same assets
-7. **Motion grammar** — handoff, approach, leave, transform, reveal
-8. Subtitles → Timeline · whiteboard → Timeline · motion graphics → Timeline
-9. Split `editor.js` · split `storyboard.js` · remove LTX
-10. Studio shell · design system · UI
+6. **Motion grammar** — handoff, approach, leave, transform, reveal
+7. Subtitles → Timeline · whiteboard → Timeline · motion graphics → Timeline
+8. Split `editor.js` · split `storyboard.js` · remove LTX
+9. Studio shell · design system · UI
+
+*Cause-and-effect and state-change are absent deliberately: both are what the
+Story State Engine already does, not separate builds.*
 
 The UI waits. The product's distinctiveness is in the storytelling engine,
 not the shell around it — and most AI video tools are narration plus
