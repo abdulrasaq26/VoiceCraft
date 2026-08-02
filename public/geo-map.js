@@ -143,14 +143,59 @@
     ];
   }
 
-  function padded(b, factor) {
-    const dx = (b.maxX - b.minX) * factor || 4;
-    const dy = (b.maxY - b.minY) * factor || 4;
+  /**
+   * Pad the view AND match it to the canvas aspect, so the frame is filled.
+   *
+   * Padding alone is not enough: a tall narrow country like Sri Lanka fits to
+   * the canvas height and leaves most of the width as empty ocean, which reads
+   * as a mistake rather than a composition. Growing the short axis to the
+   * target aspect turns that dead space into geographic context — the
+   * neighbours that tell the viewer where they are.
+   *
+   * A minimum span stops a single small country filling the frame at a zoom
+   * where nothing around it is recognisable.
+   */
+  function padded(b, factor, aspect, minSpanDeg) {
+    const MIN = minSpanDeg == null ? 14 : minSpanDeg;
+    let minX = b.minX;
+    let maxX = b.maxX;
+    let minY = b.minY;
+    let maxY = b.maxY;
+
+    const dx = (maxX - minX) * factor;
+    const dy = (maxY - minY) * factor;
+    minX -= dx; maxX += dx; minY -= dy; maxY += dy;
+
+    // Enforce a floor on the smaller dimension so context is always visible.
+    const growTo = (lo, hi, want) => {
+      const span = hi - lo;
+      if (span >= want) return [lo, hi];
+      const mid = (lo + hi) / 2;
+      return [mid - want / 2, mid + want / 2];
+    };
+    [minX, maxX] = growTo(minX, maxX, MIN);
+    [minY, maxY] = growTo(minY, maxY, MIN * 0.6);
+
+    // Match the canvas aspect. Longitude degrees are narrower away from the
+    // equator, so compare in projected units, not raw degrees.
+    if (aspect) {
+      const midLat = ((minY + maxY) / 2) * Math.PI / 180;
+      const kx = Math.max(0.15, Math.cos(midLat));
+      const spanX = (maxX - minX) * kx;
+      const spanY = maxY - minY;
+      if (spanX / spanY < aspect) {
+        const want = (spanY * aspect) / kx;
+        [minX, maxX] = growTo(minX, maxX, want);
+      } else {
+        [minY, maxY] = growTo(minY, maxY, spanX / aspect);
+      }
+    }
+
     return {
-      minX: Math.max(-180, b.minX - dx),
-      maxX: Math.min(180, b.maxX + dx),
-      minY: Math.max(-85, b.minY - dy),
-      maxY: Math.min(85, b.maxY + dy)
+      minX: Math.max(-180, minX),
+      maxX: Math.min(180, maxX),
+      minY: Math.max(-85, minY),
+      maxY: Math.min(85, maxY)
     };
   }
 

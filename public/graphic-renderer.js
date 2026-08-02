@@ -341,13 +341,46 @@
     ctx.lineTo(W - 100, bottom);
     ctx.stroke();
 
+    // Which bar carries the point?
+    //   1. an explicit spec.highlight (the Director can name it), else
+    //   2. the label the title actually mentions, else
+    //   3. the extreme value — the biggest mover is the story by default.
+    let heroIndex = -1;
+    const hl = String(spec.highlight || '').toLowerCase();
+    if (hl) heroIndex = data.findIndex((d) => d.label.toLowerCase().includes(hl));
+    if (heroIndex < 0 && spec.title) {
+      const title = String(spec.title).toLowerCase();
+      heroIndex = data.findIndex((d) => d.label && title.includes(d.label.toLowerCase()));
+    }
+    if (heroIndex < 0) {
+      // A time series and a comparison have different payoffs. In "2019, 2020,
+      // 2021, 2022" the point is where it ENDED — highlighting the peak tells
+      // the viewer the opposite of a collapse story. In a comparison of unlike
+      // things, the extreme value is the point.
+      const looksTemporal = data.length > 2 &&
+        data.every((d) => /^(1[89]\d{2}|20\d{2}|Q[1-4]|[A-Z][a-z]{2})/.test(d.label.trim()));
+      if (looksTemporal) {
+        heroIndex = data.length - 1;
+      } else {
+        let bestI = 0;
+        let bestV = -Infinity;
+        data.forEach((d, i) => {
+          const v = Math.abs(d.value);
+          if (v > bestV) { bestV = v; bestI = i; }
+        });
+        heroIndex = bestI;
+      }
+    }
+
     data.forEach((d, i) => {
       const h = Math.max(4, ((d.value - min) / span) * (plotH - 40));
       const x = x0 + i * (barW + gap);
       const yTop = bottom - h;
-      // The last bar is the payoff in most comparisons; give it the accent and
-      // mute the rest so the eye lands in the right place.
-      ctx.fillStyle = i === n - 1 ? t.accent : t.rule;
+      // Emphasise the bar the BEAT is about, not the one that happens to be
+      // last. Position is a poor proxy for importance: in "rice fell 20%, tea
+      // 18%, coconut 9%" the story is rice, and highlighting coconut because
+      // it sits on the right actively points the viewer at the wrong number.
+      ctx.fillStyle = i === heroIndex ? t.accent : t.rule;
       roundRect(ctx, x, yTop, barW, h, 8);
       ctx.fill();
 
@@ -484,8 +517,8 @@
   // worse than an honest list.
   function drawGeoMap(ctx, t, spec, countries) {
     const G = window.BlvckGeo;
-    const view = G.padded(G.bounds(countries), 0.55);
-    const project = G.projector(view, W, H, 90);
+    const view = G.padded(G.bounds(countries), 0.35, W / H);
+    const project = G.projector(view, W, H, 40);
 
     // theme() returns the palette without a name, so read the lightness off the
     // ground colour rather than trusting a key that is never set.
@@ -521,6 +554,27 @@
       ctx.strokeStyle = t.ink;
       ctx.lineWidth = 2.5;
       ctx.stroke();
+
+      // A small country at a wide zoom is a few pixels of fill — the highlight
+      // is invisible and the label appears to point at empty sea. Ring it so
+      // it reads at any scale.
+      const bb = G.bounds([f]);
+      const [x0, y0] = project(bb.minX, bb.maxY);
+      const [x1, y1] = project(bb.maxX, bb.minY);
+      const px = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+      if (px < 46) {
+        const cxp = (x0 + x1) / 2;
+        const cyp = (y0 + y1) / 2;
+        ctx.beginPath();
+        ctx.arc(cxp, cyp, 26, 0, Math.PI * 2);
+        ctx.strokeStyle = t.accent;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cxp, cyp, 6, 0, Math.PI * 2);
+        ctx.fillStyle = t.accent;
+        ctx.fill();
+      }
     });
 
     // Labels, placed on the largest landmass of each highlighted country.
@@ -531,7 +585,7 @@
       if (x < 0 || x > W || y < 0 || y > H) return;
       const label = (f.p && (f.p.n || f.p.a)) || '';
       if (!label) return;
-      ctx.font = `800 34px ${FONT}`;
+      ctx.font = `800 42px ${FONT}`;
       const tw = ctx.measureText(label).width;
       // Plate behind the text so a label over a bright country stays readable.
       ctx.fillStyle = 'rgba(0,0,0,.62)';
