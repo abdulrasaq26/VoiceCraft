@@ -144,6 +144,7 @@
     canvas.height = H;
     const ctx = canvas.getContext('2d');
     const L = window.BlvckStageLayers;
+    const M = window.BlvckMetaphor;
 
     const palette = window.BlvckGraphic
       ? window.BlvckGraphic.paletteFor(scene.subject || '')
@@ -156,9 +157,14 @@
     //
     // Derived FIRST because the very next thing drawn depends on it.
     const stateEnt = scene.entity || (scene.entities && scene.entities[0]) || null;
-    const mood = (stateEnt && window.BlvckStoryState)
-      ? window.BlvckStoryState.moodFor(stateEnt, scene.time || 0)
-      : { brightness: 1, framing: 1, vignette: 0, unsteady: 0, wellbeing: 0.6, intensity: 0 };
+    // opts.mood lets a caller drive the frame directly, without inventing an
+    // entity to carry the state. That is the only way to exercise the stage at
+    // a chosen point in an arc, and a stage you cannot put into a known state
+    // is a stage you cannot check.
+    const mood = opts.mood
+      || ((stateEnt && window.BlvckStoryState)
+        ? window.BlvckStoryState.moodFor(stateEnt, scene.time || 0)
+        : { brightness: 1, framing: 1, vignette: 0, unsteady: 0, wellbeing: 0.6, intensity: 0 });
 
     ctx.fillStyle = t.bg;
     ctx.fillRect(0, 0, W, H);
@@ -206,6 +212,20 @@
       infoRect = await drawInformation(ctx, info, rect, palette);
     }
 
+    // ---- 1b. Metaphor ---------------------------------------------------
+    // The picture for a thing that has no picture. Scripts are mostly about
+    // progress, setback, obstacles, choices and deadlines, none of which can
+    // be photographed — so without this they arrive as words and leave as
+    // words. Staged behind the actors, because the actor's position ON it is
+    // what carries the meaning.
+    const metaName = scene.metaphor
+      || (scene.metaphor === null ? null : (M ? M.infer(scene.subject || '') : null));
+    let metaAnchor = null;
+    if (M && metaName) {
+      metaAnchor = M.draw(ctx, metaName, t, mood.wellbeing, { x: 0.5, y: L ? L.GROUND : 0.84 });
+      if (opts.trace) opts.trace.metaphor = { name: metaName, means: M.means(metaName), anchor: metaAnchor };
+    }
+
     // ---- 2. Actors ------------------------------------------------------
     const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
     const specs = (scene.actors && scene.actors.cast) || [];
@@ -249,10 +269,20 @@
         // centre; a failing one drifts back, sideways and down. Standing in
         // the same spot every frame is what made the arc read as static.
         const advance = mood.advance == null ? 0.6 : mood.advance;
-        const posX = spot.x + (mood.drift || 0) * 0.06;
-        const posY = spot.y + (mood.sink || 0) * 0.10;
+        let posX = spot.x + (mood.drift || 0) * 0.06;
+        let posY = spot.y + (mood.sink || 0) * 0.10;
         // Advancing also grows the figure — moving toward camera IS scale.
-        const advScale = 0.82 + advance * 0.32;
+        let advScale = 0.82 + advance * 0.32;
+
+        // A metaphor outranks mood drift for the FIRST actor: standing on the
+        // fourth step of six is the whole statement, and a mood offset that
+        // slid the figure off the staircase would destroy it. Everyone else
+        // keeps their placement.
+        if (metaAnchor && i === 0) {
+          posX = metaAnchor.x;
+          posY = metaAnchor.y;
+          advScale *= metaAnchor.scale == null ? 1 : metaAnchor.scale;
+        }
 
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: posX * W,
@@ -346,6 +376,10 @@
       environment: s.environment || (L ? L.inferEnvironment(text) : 'none'),
       // 4. With what.
       prop: s.prop || (L ? L.inferProp(text) : null),
+      // 4b. And what it MEANS, when the line is about something abstract.
+      metaphor: s.metaphor !== undefined
+        ? s.metaphor
+        : (window.BlvckMetaphor ? window.BlvckMetaphor.infer(text) : null),
       actors: {
         role,
         count: s.actorCount || null,
