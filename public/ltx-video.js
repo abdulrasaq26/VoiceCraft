@@ -389,6 +389,13 @@
           )
         });
         await idbPut(String(scene.index), blob);
+        try {
+          window.dispatchEvent(new CustomEvent('blvck:clip-rendered', {
+            detail: { index: scene.index, kind: 'image' }
+          }));
+        } catch {
+          /* no-op */
+        }
         st[key] = {
           status: 'canvas',
           visualType: scene.visualType,
@@ -441,6 +448,17 @@
       });
 
       await idbPut(clipKey(scene.index), blob);
+      // Tell the storyboard a clip exists, so the scene card stops showing
+      // whatever failure it was left with and starts showing the footage.
+      // Without this a rendered beat still displays the old SDXL error and a
+      // Retry button, which reads as "nothing happened".
+      try {
+        window.dispatchEvent(new CustomEvent('blvck:clip-rendered', {
+          detail: { index: scene.index, kind: 'video' }
+        }));
+      } catch {
+        /* no-op */
+      }
       st[key] = {
         status: 'done',
         mode: refs.mode,

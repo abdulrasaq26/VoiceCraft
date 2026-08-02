@@ -1201,6 +1201,32 @@
     renderScenes();
   });
 
+  // A beat rendered by the LTX pipeline (a video clip, or a typeset card drawn
+  // on canvas). The scene card is driven by scene.status and the `urls` map,
+  // neither of which that pipeline touches — so without this the beat keeps
+  // displaying whatever error it last failed with, plus a Retry button, while
+  // its finished footage sits in storage unseen.
+  window.addEventListener('blvck:clip-rendered', async (ev) => {
+    const d = (ev && ev.detail) || {};
+    const scene = scenes.find((s) => s.index === d.index);
+    if (!scene) return;
+
+    const isVideo = d.kind === 'video';
+    const blob = await idbGet(isVideo ? `clip:${d.index}` : String(d.index));
+    if (!blob) return;
+
+    if (urls.has(d.index)) URL.revokeObjectURL(urls.get(d.index));
+    urls.set(d.index, URL.createObjectURL(blob));
+
+    scene.status = 'done';
+    scene.error = null;
+    // Drives the <video> vs <img> choice in renderScenes().
+    scene.assetType = isVideo ? 'video' : 'image';
+
+    renderScenes();
+    saveProject();
+  });
+
   function saveProject() {
     try {
       localStorage.setItem(
@@ -1258,6 +1284,30 @@
         refDataUrls.set(c.name, await blobToDataUrl(blob));
       }
     }
+    // Pick up anything the LTX pipeline rendered.
+    //
+    // Those beats are stored outside this module's own image queue — clips
+    // under clip:<index>, typeset cards under <index> — and the event that
+    // announces them only fires at render time. Without this reconciliation, a
+    // clip rendered before a reload would sit in storage while its card kept
+    // showing the failure it had before, which looks exactly like the render
+    // never happened.
+    if (window.BlvckLTX && window.BlvckLTX.allStatus) {
+      const rendered = window.BlvckLTX.allStatus();
+      for (const s of scenes) {
+        const rec = rendered[String(s.index)];
+        if (!rec || (rec.status !== 'done' && rec.status !== 'canvas')) continue;
+        const isVideo = rec.status === 'done';
+        const blob = await idbGet(isVideo ? `clip:${s.index}` : String(s.index));
+        if (!blob) continue;
+        if (urls.has(s.index)) URL.revokeObjectURL(urls.get(s.index));
+        urls.set(s.index, URL.createObjectURL(blob));
+        s.status = 'done';
+        s.error = null;
+        s.assetType = isVideo ? 'video' : 'image';
+      }
+    }
+
     renderBible();
     renderScenes();
     exportsEl.hidden = false;
