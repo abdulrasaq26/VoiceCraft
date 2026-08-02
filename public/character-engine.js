@@ -306,9 +306,15 @@
       const phase = (time * 0.37 + (opts.seed || 0)) % 1;
       if (phase > 0.965) e.lid = Math.max(e.lid, 1);
     }
-    if (opts.speaking) {
-      const v = Object.values(VISEMES);
-      e.open = Math.max(e.open, v[Math.floor(time * 7 + (opts.seed || 0)) % v.length]);
+    // Mouth comes from the narration timeline, never from elapsed time.
+    // Cycling visemes on a clock is how a mouth ends up moving while the
+    // narrator is silent; the controller knows which word is being spoken.
+    if (window.BlvckPlayback && window.BlvckPlayback.timeline()) {
+      e.open = Math.max(e.open, window.BlvckPlayback.state().mouth);
+    } else if (opts.speaking) {
+      // No timeline bound (a preview, a test card): hold a neutral open
+      // mouth rather than fake speech that cannot be in sync with anything.
+      e.open = Math.max(e.open, VISEMES.open * 0.5);
     }
     return e;
   }
@@ -335,7 +341,13 @@
     this.fade = fadeSec == null ? 0.28 : fadeSec;
   };
   Actor.prototype.update = function (dt) {
-    this.time += dt;
+    // When a timeline is playing, the controller is the clock: an actor
+    // accumulating its own dt drifts against the audio and cannot be seeked.
+    if (this.followTimeline !== false && window.BlvckPlayback && window.BlvckPlayback.timeline()) {
+      this.time = window.BlvckPlayback.time();
+    } else {
+      this.time += dt;
+    }
     if (this.blend < 1) this.blend = Math.min(1, this.blend + dt / (this.fade || 0.28));
   };
   Actor.prototype.pose = function () {
