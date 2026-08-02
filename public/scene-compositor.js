@@ -257,6 +257,19 @@
    * actually about a person.
    */
   function fromScene(scene, strategy) {
+    // Story Actions expands a beat into a whole scene — who, where, what
+    // objects, what is happening — and treats information as an optional
+    // prop rather than the scene type. Prefer it when present.
+    if (window.BlvckStoryActions) {
+      const st = window.BlvckStoryActions.expand(scene || {});
+      const ROLE_NAME = { health:'Doctor', finance:'Analyst', history:'Narrator',
+        science:'Researcher', howto:'Instructor', story:'Narrator' };
+      const niche = (strategy && strategy.niche) || 'general';
+      if (!st.actors.labels.length && st.actors.role === 'presenter' && ROLE_NAME[niche]) {
+        st.actors.labels = [ROLE_NAME[niche]];
+      }
+      return st;
+    }
     const s = scene || {};
     const text = [s.sceneSummary, s.subtitle, s.detectedAction].filter(Boolean).join(' ');
     const L = window.BlvckStageLayers;
