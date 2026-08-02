@@ -191,10 +191,29 @@
     const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
     const specs = (scene.actors && scene.actors.cast) || [];
     const hands = [];
+    // Why each actor is posed as it is, for tracing a wrong frame back to
+    // the state that produced it.
+    const stateReasons = [];
 
     if (window.BlvckChar) {
       spots.forEach((spot, i) => {
-        const cast = specs[i] || specs[0] || {};
+        let cast = specs[i] || specs[0] || {};
+
+        // STATE DRIVES THE VISUAL. When this scene carries an entity, ask the
+        // Story State Engine what is true at this moment rather than using a
+        // pose someone wrote down. This is the join that makes the pipeline
+        // whole: narration → state timeline → compositor → what you see.
+        const ent = (scene.entities && scene.entities[i]) || scene.entity || null;
+        if (ent && window.BlvckStoryState) {
+          const derived = window.BlvckStoryState.actorFor(ent, scene.time || 0);
+          if (derived) {
+            cast = { action: derived.clip, emotion: derived.emotion };
+            // Keep the reason on the frame record so a wrong pose can be traced
+            // back to the state that caused it, not guessed at.
+            stateReasons.push({ entity: ent.name, at: scene.time || 0, ...derived });
+          }
+        }
+
         const action = cast.action || (infoRect && role === 'presenter' ? 'point' : 'explain');
         const a = new window.BlvckChar.Actor({
           state: window.BlvckChar.CLIPS[action] ? action : 'explain',
@@ -244,6 +263,7 @@
       });
     }
 
+    if (opts.trace) opts.trace.stateReasons = stateReasons;
     return opts.canvas ? canvas : new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
   }
 
