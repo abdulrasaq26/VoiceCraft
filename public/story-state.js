@@ -257,11 +257,91 @@
     };
   }
 
+  /**
+   * Apply state changes the DIRECTOR named, rather than ones a regex inferred.
+   *
+   * This is the path the keyword parser below was always scaffolding for. Its
+   * own comment said so; the measurement said when. Across a 48-beat corpus
+   * spanning eight genres the regex recognised 31% of CONDITION beats and 25%
+   * of STANCE beats — dimensions the engine fully supports. The renderer had
+   * become more expressive than the parser could feed it.
+   *
+   * `changes` is already validated by the prompt route: unknown attributes and
+   * out-of-range sentence indices are dropped there, so anything arriving here
+   * is a known attribute pointing at a real sentence. Deltas are still applied
+   * relative to the CURRENT value and clamped, because the model reports what
+   * changed and only this engine knows what was true beforehand.
+   */
+  function applyDirectorChanges(ent, timeline, changes) {
+    if (!ent || !timeline || !timeline.sentences || !Array.isArray(changes)) return ent;
+    const lastWord = timeline.words && timeline.words.length
+      ? timeline.words[timeline.words.length - 1].end : 0;
+    const limit = Number(timeline.duration) || lastWord || 0;
+
+    // Sentence order, so `from` samples see the changes that precede them.
+    changes.slice().sort((a, b) => a.sentence - b.sentence).forEach((c) => {
+      const s = timeline.sentences[c.sentence];
+      if (!s) return;
+      const at = s.start;
+      const from = sample(ent, c.attribute, Math.max(0, at - 0.01));
+      const to = clamp01(Number(from) + c.delta);
+      if (Math.abs(to - from) < 0.01) return;
+      addChange(ent, {
+        attribute: c.attribute,
+        from,
+        to,
+        startTime: at,
+        // Same rule the keyword path learned: bigger changes take longer, but
+        // never past the beat, or the largest events render half-landed.
+        endTime: Math.max(at + 0.2,
+          Math.min(at + 0.5 + Math.abs(c.delta) * 1.6, s.end || Infinity, limit || Infinity)),
+        cause: c.cause || '',
+        event: 'director',
+        magnitude: Math.abs(c.delta) >= 0.7 ? 'life'
+          : Math.abs(c.delta) >= 0.45 ? 'major'
+          : Math.abs(c.delta) >= 0.22 ? 'moderate' : 'minor'
+      });
+    });
+    return ent;
+  }
+
+  /**
+   * Read state for a whole timeline, preferring the Director and falling back
+   * to keywords.
+   *
+   * The fallback is not politeness: the app runs without an AI key, and a
+   * pipeline that silently produces a motionless figure offline would be worse
+   * than one that produces a rough one.
+   */
+  async function readState(ent, timeline, opts) {
+    const o = opts || {};
+    if (o.useDirector !== false && window.BlvckAI && window.BlvckAI.generateJSON) {
+      try {
+        const res = await window.BlvckAI.generateJSON('/api/story-state', {
+          subject: ent.name,
+          sentences: timeline.sentences.map((s) => s.text)
+        }, o.aiOptions || {});
+        if (res && Array.isArray(res.changes) && res.changes.length) {
+          applyDirectorChanges(ent, timeline, res.changes);
+          ent.stateSource = 'director';
+          return ent;
+        }
+        // An empty result is not an error, but it is not usable either: fall
+        // through rather than return a subject nothing ever happens to.
+      } catch (err) {
+        console.warn('[story-state] Director state failed, using keywords:', err && err.message);
+      }
+    }
+    parse(ent, timeline);
+    ent.stateSource = 'keywords';
+    return ent;
+  }
+
   // --- reading state out of narration -------------------------------------
   //
-  // v1 is keyword-driven. The Director will eventually supply these
-  // explicitly, but nothing can be proven until state exists at all, and a
-  // parser lets the engine be exercised against a real script today.
+  // The keyword parser. Now the FALLBACK path, kept for offline runs and as a
+  // reference implementation of what the Director is asked to produce. See
+  // readState() above for the preferred route.
   // --- events ---------------------------------------------------------------
   //
   // How hard the world hits. Losing a phone and being diagnosed with cancer
@@ -597,6 +677,8 @@
     polarity,
     INVERTED,
     parse,
+    readState,
+    applyDirectorChanges,
     NUMERIC,
     CONDITION,
     STANCE,
