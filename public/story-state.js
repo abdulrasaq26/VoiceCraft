@@ -355,7 +355,14 @@
     // nothing at all, so the state was identical to the beat before it and the
     // figure rendered unchanged while the narration moved on. A dilemma is one
     // of the most common things a script does; it deserves a body.
-    [/\b(had to choose|must choose|choice|decision|decide|dilemma|torn between|two paths|crossroads|either way)\b/i,
+    // Bare 'choice' and 'decision' used to be in here and were far too broad:
+    // "He was furious at the decision" came back tagged `dilemma` and rendered
+    // anger as being torn. The decision was someone else's. A dilemma needs
+    // the CHOOSING to belong to the subject, so the triggers are now verbal or
+    // possessive. Anger is not represented at all, and going silent is the
+    // correct failure — a state we cannot describe should produce no change,
+    // not the wrong one.
+    [/\b(had to choose|must choose|had to decide|must decide|decide between|choose between|dilemma|torn between|two paths|crossroads|(?:his|her|their) (?:choice|decision)|difficult choice|no easy choice)\b/i,
       { event: 'dilemma', magnitude: 'moderate',
         impact: { uncertainty: 0.85, resolve: -0.5, stress: 0.25 } }],
     [/\b(determined|resolved to|committed|made up (?:his|her|their) mind|set out to|vowed)\b/i,
