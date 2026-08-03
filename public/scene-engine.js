@@ -402,9 +402,22 @@
     const L = window.BlvckStageLayers;
     let staged = 0;
 
+    // ONE palette for the whole run, chosen from the whole narration.
+    //
+    // The compositor picked a palette per beat from that beat's own text, so a
+    // sequence changed colour whenever the subject changed: one green frame
+    // and three blue among ambers in the last battery. A viewer reads that as
+    // a broken video before they read anything the staging is saying, and no
+    // amount of good composition survives it.
+    const G = window.BlvckGraphic;
+    const wholeText = (o.subject ? o.subject + ' ' : '')
+      + tl.sentences.map((s) => s.text).join(' ');
+    const palette = G && G.paletteFor ? G.paletteFor(wholeText) : null;
+
     list.forEach((scene) => {
       const text = scene.sceneSummary || scene.subtitle || scene.subject || '';
       scene.entity = scene.entity || ent;
+      if (palette && !scene.palette) scene.palette = palette;
       // Where in the arc this beat sits. The END of the sentence, because a
       // change is anchored to the word that causes it and must have landed by
       // the time the beat is over.

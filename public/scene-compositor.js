@@ -149,7 +149,18 @@
     const palette = window.BlvckGraphic
       ? window.BlvckGraphic.paletteFor(scene.subject || '')
       : { bg: '#0f1116', ink: '#f5f7fa', dim: '#9aa4b2', accent: '#f5b301', hot: '#ffe066' };
-    const t = { bg: palette.bg, ink: '#f5f7fa', dim: '#5b6472', accent: palette.accent, hot: palette.hot };
+    // COLOUR IS A PROPERTY OF THE SEQUENCE, NOT THE BEAT.
+    //
+    // paletteFor() keyed on each scene's own text, so a run of shots changed
+    // colour every time the narration changed subject: one green frame and
+    // three blue among ambers in the last battery. Nothing else in the frame
+    // survives that — a viewer reads it as a broken video before they read
+    // anything the staging is saying.
+    //
+    // A palette stamped by the producer wins, and opts.palette overrides both
+    // so a caller can force one.
+    const pal = opts.palette || scene.palette || palette;
+    const t = { bg: pal.bg, ink: '#f5f7fa', dim: '#5b6472', accent: pal.accent, hot: pal.hot };
 
     // ONE state change, every layer responds. Framing, light and vignette come
     // from the same fact as the pose, so a worsening beat is a tighter, darker
@@ -335,7 +346,7 @@
       const rect = wide
         ? { x: 0.28, y: 0.09, w: 0.68, h: 0.66 }
         : { x: 0.60, y: 0.08, w: 0.36, h: 0.34 };   // a reference, not the subject
-      infoRect = await drawInformation(ctx, info, rect, palette);
+      infoRect = await drawInformation(ctx, info, rect, pal);
     }
 
     // ---- 1c. Support ----------------------------------------------------
