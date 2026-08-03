@@ -290,7 +290,7 @@
     [/\b(risk|gap|shortfall|missing|dangerous|exposed|fall short|chasm|divide)\b/i, 'gap'],
     [/\b(connect|bridge|link|solution|solve|fix|bring together|close the gap|reach)\b/i, 'bridge'],
     [/\b(decline|fell|fall|drop|lost|losing|worse|collapse|down(?:turn|ward)|shrink|decreas)\b/i, 'fall'],
-    [/\b(progress|climb|grow|growth|improve|better|rise|rising|advance|step by step|build up|increas)\b/i, 'climb']
+    [/\b(progress|climb|grow|growth|improve|better|rise|rising|advance|step by step|build up|increas|recover|rebuil|bounce(?:d)? back|turn(?:ed)? (?:it )?around)\w*/i, 'climb']
   ];
 
   /** The metaphor a line of script is reaching for, or null if it is concrete. */
