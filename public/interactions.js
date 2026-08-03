@@ -36,15 +36,29 @@
 
   const GROUND = 0.84;
 
+  // CHANNELS. The first pass had four -- spacing, vertical offset, scale,
+  // facing -- plus a pose bias, and it was not enough: `confront` still read
+  // as "conversation with emotion" because two upright figures at a distance
+  // is a conversation whatever their expressions say. Two more channels,
+  // chosen because each is independently visible:
+  //
+  //   lean    signed degrees, positive = toward the other. The whole body
+  //           rotates about its own feet. This is what makes an argument an
+  //           argument: both bodies committed forward into the space between.
+  //   reach   0..1, how far the near arm extends toward the other. An offered
+  //           hand is the difference between kneeling and merely being lower.
+  //
   // bias values are added to the pose-space axes, -1..1 before clamping.
   const INTERACTIONS = {
     // Two equals, apart, both pressing in. Height equal is the point: neither
     // yields. Off-centre so the frame has a heavier side.
+    // Both committed FORWARD into the space between them, and closer than is
+    // comfortable. Equal height so neither yields.
     confront: {
       means: 'argument, confrontation, standing your ground',
-      a: { x: 0.30, y: 0, scale: 1.06, flip: false,
-           bias: { openness: 0.18, compression: -0.08, asymmetry: 0.35 } },
-      b: { x: 0.62, y: 0, scale: 1.00, flip: true,
+      a: { x: 0.34, y: 0, scale: 1.08, flip: false, lean: 13, reach: 0.55,
+           bias: { openness: 0.18, compression: -0.10, asymmetry: 0.35 } },
+      b: { x: 0.60, y: 0, scale: 1.00, flip: true, lean: 10, reach: 0.35,
            bias: { openness: 0.14, compression: -0.05, asymmetry: -0.30 } }
     },
 
@@ -60,21 +74,24 @@
 
     // One low and reaching, one high and still. The height difference IS the
     // proposal; nothing else in the frame has to say it.
+    // The weakest pattern of the first eight, because being LOWER is not the
+    // gesture — offering is. Now: down hard, folded, tilted up toward her,
+    // one arm fully extended. She draws back and away.
     propose: {
       means: 'proposal, plea, asking',
-      a: { x: 0.38, y: 0.12, scale: 1.02, flip: false,
-           bias: { compression: 0.5, openness: 0.35, stability: -0.2 } },
-      b: { x: 0.58, y: -0.01, scale: 1.06, flip: true,
-           bias: { compression: -0.05, openness: 0.1, confidence: 0.15 } }
+      a: { x: 0.36, y: 0.17, scale: 1.02, flip: false, lean: 16, reach: 1.0,
+           bias: { compression: 0.62, openness: 0.30, stability: -0.45, confidence: -0.1 } },
+      b: { x: 0.58, y: -0.02, scale: 1.08, flip: true, lean: -9, reach: 0.15,
+           bias: { compression: -0.10, openness: 0.20, confidence: 0.2 } }
     },
 
     // Almost no gap, both leaning in, near-equal. The only pattern where the
     // figures overlap.
     embrace: {
       means: 'reunion, homecoming, comfort',
-      a: { x: 0.42, y: 0, scale: 1.04, flip: false,
+      a: { x: 0.42, y: 0, scale: 1.04, flip: false, lean: 9, reach: 0.9,
            bias: { openness: 0.4, compression: -0.1, confidence: 0.2 } },
-      b: { x: 0.55, y: 0, scale: 1.00, flip: true,
+      b: { x: 0.55, y: 0, scale: 1.00, flip: true, lean: 8, reach: 0.85,
            bias: { openness: 0.38, compression: -0.08, confidence: 0.18 } }
     },
 
@@ -146,8 +163,10 @@
     if (!it) return null;
     const s = baseScale == null ? 0.42 : baseScale;
     return [
-      { x: it.a.x, y: GROUND + it.a.y, scale: s * it.a.scale, flip: it.a.flip, bias: it.a.bias },
-      { x: it.b.x, y: GROUND + it.b.y, scale: s * it.b.scale, flip: it.b.flip, bias: it.b.bias }
+      { x: it.a.x, y: GROUND + it.a.y, scale: s * it.a.scale, flip: it.a.flip,
+        bias: it.a.bias, lean: it.a.lean || 0, reach: it.a.reach || 0 },
+      { x: it.b.x, y: GROUND + it.b.y, scale: s * it.b.scale, flip: it.b.flip,
+        bias: it.b.bias, lean: it.b.lean || 0, reach: it.b.reach || 0 }
     ];
   }
 

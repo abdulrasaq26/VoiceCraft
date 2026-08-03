@@ -411,6 +411,12 @@
           if (support && support.sit && CH_.CLIPS.sit) {
             pose = CH_.mix(pose, CH_.sample('sit', 1), 0.9);
           }
+          // REACH — the near arm extends toward the other figure. An offered
+          // hand is what separates kneeling from merely being lower down.
+          if (spot.reach) {
+            pose.armR = -(38 + spot.reach * 58);
+            pose.forearmR = -(spot.reach * 26);
+          }
           pose.emotion = posture.emotion;
           a = pose;
           stateReasons.push({ entity: ent.name, at: scene.time || 0, ...posture });
@@ -436,6 +442,17 @@
         // Sitting puts the body ON the seat.
         if (support && support.sit && i === 0) posY = support.seatY;
         if (i === 0) leadFrame = { x: posX, y: posY, unit };
+
+        // LEAN — the whole body rotates about its own feet, toward or away
+        // from the other figure. Two upright figures at a distance read as a
+        // conversation no matter what their faces do; commitment into the
+        // space between them is what makes an argument an argument.
+        if (spot.lean) {
+          const dir = spot.flip ? -1 : 1;
+          ctx.translate(posX * W, posY * H);
+          ctx.rotate((spot.lean * dir * Math.PI) / 180);
+          ctx.translate(-posX * W, -posY * H);
+        }
 
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: posX * W,
