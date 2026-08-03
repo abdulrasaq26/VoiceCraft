@@ -349,11 +349,19 @@
           to,
           startTime: at,
           // Bigger events take longer to land. A life-changing moment that
-          // resolved in the same 0.8s as a minor one would read as trivial —
-          // but never past the end of the narration, or it never lands at all.
-          endTime: limit
-            ? Math.min(at + 0.5 + scale * 1.6, Math.max(at + 0.2, limit))
-            : at + 0.5 + scale * 1.6,
+          // resolved in the same 0.8s as a minor one would read as trivial.
+          //
+          // But it must finish inside its own BEAT. A scene samples one frame
+          // per sentence, so a change still in flight when the sentence ends
+          // renders at partial intensity — and because the duration scales
+          // with magnitude, this hit the largest events hardest. Measured: a
+          // diagnosis settled at 5.3s in a sentence ending at 4.8s and
+          // rendered 0.36 instead of its true 0.14, i.e. the top of the scale
+          // was quietly capped by the very rule meant to make it feel big.
+          endTime: Math.max(
+            at + 0.2,
+            Math.min(at + 0.5 + scale * 1.6, s.end || Infinity, limit || Infinity)
+          ),
           cause: m[0],
           event: spec.event,
           magnitude: spec.magnitude
@@ -392,18 +400,31 @@
     // So the floor gets equal billing with the average: one attribute in
     // crisis is enough to make the whole frame read as crisis, which is what a
     // viewer already believes.
-    let sum = 0;
+    // A HARMONIC mean, which is the fix for a saturation the flat-min blend
+    // had. Measured through the whole chain:
+    //
+    //   lost job (major)   state swing 0.34
+    //   cancer   (life)    state swing 0.25   <- smaller than a lesser event
+    //
+    // Baseline's worst attribute is wealth at 0.5, so ANY event that drives
+    // some attribute below 0.5 moved the floor to roughly the same place.
+    // Beyond that point bigger events stopped reading as bigger, and the top
+    // two tiers were indistinguishable.
+    //
+    // A harmonic mean keeps the property that matters -- it is dominated by
+    // the smallest value, so one attribute in crisis still drags the whole
+    // frame down -- but it never stops responding. A second attribute going
+    // bad lowers it again, which is exactly what separates a diagnosis (health
+    // gone, stress high, confidence gone) from a job loss (money gone).
+    let recip = 0;
     let n = 0;
-    let worst = 1;
     NUMERIC.forEach((a) => {
       if (s[a] == null) return;
       const v = polarity(a) > 0 ? s[a] : 1 - s[a];
-      sum += v;
-      if (v < worst) worst = v;
+      recip += 1 / Math.max(0.02, v);   // floored so a zeroed attribute cannot divide by zero
       n++;
     });
-    const mean = n ? sum / n : 0.6;
-    const wellbeing = n ? mean * 0.5 + worst * 0.5 : 0.6;
+    const wellbeing = n ? n / recip : 0.6;
 
     // Intensity: how much is happening right now. A big change earns a big
     // visual response; a steady state does not.
