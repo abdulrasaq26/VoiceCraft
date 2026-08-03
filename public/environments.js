@@ -27,12 +27,70 @@
   const HORIZON = 0.58;   // where the wall meets the floor
   const GROUND = 0.84;    // where actors' feet land
 
+  // --- colour ---------------------------------------------------------------
+
+  function toRGB(hex) {
+    const h = String(hex).replace('#', '');
+    const n = h.length === 3
+      ? h.split('').map((c) => parseInt(c + c, 16))
+      : [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    return n.some(isNaN) ? [0, 0, 0] : n;
+  }
+
+  const clamp255 = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  const toHex = (rgb) =>
+    '#' + rgb.map((v) => clamp255(v).toString(16).padStart(2, '0')).join('');
+
+  /**
+   * Push a colour warm or cold and drain or restore its saturation.
+   *
+   * This is the mechanism the room's state runs through. `warmth` above zero
+   * lifts red and drops blue (afternoon light, recovery); below zero does the
+   * reverse (a cold, clinical, failing room). `life` below 1 pulls every
+   * channel toward its own grey, which is what a place looks like when the
+   * story has gone wrong — not darker, drained.
+   */
+  function temper(hex, warmth, life) {
+    const [r, g, b] = toRGB(hex);
+    const grey = r * 0.299 + g * 0.587 + b * 0.114;
+    const k = life == null ? 1 : life;
+    let out = [grey + (r - grey) * k, grey + (g - grey) * k, grey + (b - grey) * k];
+    const w = warmth || 0;
+    out = [out[0] + w * 26, out[1] + w * 6, out[2] - w * 22];
+    return toHex(out);
+  }
+
   // --- palettes per visual style ------------------------------------------
   //
   // The same geometry, three different materials. A whiteboard room is marker
   // on white; a flat-2D room is filled shapes; a stickman room is clean line
   // art with light washes so it never competes with the figure.
-  function skinFor(style, t) {
+  //
+  // `mood` is optional. When it is supplied the palette is no longer fixed:
+  // the same room, drawn at two points in the story, comes back as two
+  // different places. See temper() above.
+  function skinFor(style, t, mood) {
+    const s = basePalette(style, t);
+    if (!mood) return s;
+
+    // wellbeing 0.55 is the neutral room. Above it the place warms and its
+    // colour returns; below it the place cools and drains.
+    const well = mood.wellbeing == null ? 0.55 : mood.wellbeing;
+    const warmth = Math.max(-1, Math.min(1, (well - 0.55) * 1.9));
+    const life = Math.max(0.35, Math.min(1.1, 0.62 + well * 0.7));
+
+    ['wall', 'floor', 'solid', 'soft', 'line'].forEach((k) => {
+      if (s[k]) s[k] = temper(s[k], warmth * 0.9, life);
+    });
+    // The accent is the room's light. It holds its hue but loses its strength.
+    s.accent = temper(s.accent, warmth, Math.max(0.45, life));
+    s.light = Math.max(0.12, Math.min(1, 0.25 + well * 1.1));
+    s.warmth = warmth;
+    s.life = life;
+    return s;
+  }
+
+  function basePalette(style, t) {
     const accent = (t && t.accent) || '#f5b301';
     switch (style) {
       case 'whiteboard':
@@ -112,9 +170,14 @@
   const window_ = (g, s, x, y, w, h) => {
     solid(g, s, x, y, w, h, 0.012, s.soft);
     g.save();
-    g.globalAlpha = 0.5;
+    // The pane is how bright the world outside is, and every room has one.
+    // This is the single lever that makes a good day and a bad day look
+    // different without redrawing any furniture.
+    g.globalAlpha = 0.18 + (s.light == null ? 0.5 : s.light) * 0.62;
     rect(g, s, x + 0.008, y + 0.012, w - 0.016, h - 0.024, s.accent, false);
     g.restore();
+    // Remembered so draw() can throw light from it across the floor.
+    s._window = { x: x + w / 2, y: y + h, w, h };
     if (s.lineW) {
       g.strokeStyle = s.line; g.lineWidth = s.lineW * 0.7;
       g.beginPath(); g.moveTo(px(x + w / 2), py(y)); g.lineTo(px(x + w / 2), py(y + h)); g.stroke();
@@ -303,13 +366,74 @@
     }
   };
 
-  /** Draw an environment in the project's visual style. */
-  function draw(ctx, name, theme, style) {
+  /**
+   * Light and shadow thrown across a finished room.
+   *
+   * Everything above draws the same geometry every time. This is where the
+   * room stops being a backdrop and starts reporting the story: light falls
+   * from wherever the window is and reaches further on a good day, and
+   * darkness pools out of the corners and up off the floor on a bad one.
+   */
+  function atmosphere(g, s, mood) {
+    const light = s.light == null ? 0.6 : s.light;
+    const well = mood.wellbeing == null ? 0.55 : mood.wellbeing;
+    const win = s._window;
+
+    // The shaft. Reaches most of the way across a bright room and barely
+    // clears the sill in a dark one.
+    if (win && light > 0.2) {
+      const reach = 0.10 + light * 0.52;
+      const spread = win.w * (1.4 + light * 2.2);
+      const grad = g.createLinearGradient(0, py(win.y), 0, py(win.y + reach));
+      grad.addColorStop(0, s.accent);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.save();
+      g.globalAlpha = 0.06 + light * 0.20;
+      g.globalCompositeOperation = 'lighter';
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(px(win.x - win.w / 2), py(win.y));
+      g.lineTo(px(win.x + win.w / 2), py(win.y));
+      g.lineTo(px(win.x + spread / 2), py(win.y + reach));
+      g.lineTo(px(win.x - spread / 2), py(win.y + reach));
+      g.closePath();
+      g.fill();
+      g.restore();
+    }
+
+    // The pooling. Below neutral, dark collects in the corners and creeps up
+    // from the floor — the room closing in rather than merely being dimmer.
+    const gloom = Math.max(0, 0.58 - well);
+    if (gloom > 0.02) {
+      g.save();
+      const rise = g.createLinearGradient(0, H, 0, py(HORIZON - 0.05));
+      rise.addColorStop(0, 'rgba(0,0,0,' + Math.min(0.72, gloom * 1.5).toFixed(3) + ')');
+      rise.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = rise;
+      g.fillRect(0, py(HORIZON - 0.05), W, H - py(HORIZON - 0.05));
+
+      const corner = g.createRadialGradient(W / 2, H * 0.52, H * 0.26, W / 2, H * 0.52, H * 0.95);
+      corner.addColorStop(0, 'rgba(0,0,0,0)');
+      corner.addColorStop(1, 'rgba(0,0,0,' + Math.min(0.78, gloom * 1.7).toFixed(3) + ')');
+      g.fillStyle = corner;
+      g.fillRect(0, 0, W, H);
+      g.restore();
+    }
+  }
+
+  /**
+   * Draw an environment in the project's visual style.
+   *
+   * `mood` is optional — without it the room is drawn in its neutral palette,
+   * which is what a scene with no story state behind it should look like.
+   */
+  function draw(ctx, name, theme, style, mood) {
     const fn = ENVIRONMENTS[name];
     if (!fn) return false;
-    const s = skinFor(style || 'stickman', theme || {});
+    const s = skinFor(style || 'stickman', theme || {}, mood);
     ctx.save();
     fn(ctx, s);
+    if (mood) atmosphere(ctx, s, mood);
     ctx.restore();
     return true;
   }

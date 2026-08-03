@@ -469,6 +469,47 @@ nothing to reason about until state, relationships and camera grammar exist.
 
 ---
 
+## The acceptance test
+
+> **Hide the captions. Mute the narration. Can you tell what happened?**
+
+Apply it to every commit that touches rendering. It is falsifiable, which no
+other standard in this document is — "does it look professional" is a
+judgement call, this is a yes or no.
+
+Current honest answer: **sometimes.** Of five frames from a real arc, a viewer
+could reliably identify the stress beat and would struggle with the other
+four. That is threshold one crossed and threshold two open:
+
+| threshold | question | status |
+|---|---|---|
+| 1 | can state affect the scene? | ✅ pose, framing, light and vignette all respond |
+| 2 | can a viewer read the state without narration? | ❌ not yet |
+
+Four things stand between them, in rough order of impact:
+
+**Silhouette.** Clips differ mainly by arm angle. Rendered as solid black
+shapes, most are the same shape. Compression and stance carry meaning; a
+raised forearm does not.
+
+**Position as storytelling.** The figure stands in the same spot in every
+frame. Confidence should walk it forward, stress should back it away, failing
+health should sit it down. Where someone stands is information.
+
+**The world reacting.** The room currently dims. It should also change: harsher
+light and desaturation as health drops, more open space as confidence rises.
+The environment is a participant, not a backdrop.
+
+**Visual metaphor.** Sometimes state should animate *reality* rather than the
+actor — walls closing in for stress, a widening spotlight for confidence, an
+office shrinking as a company fails. This is what makes a channel memorable
+rather than merely legible.
+
+None of these is a new engine. All four are the existing state timeline
+driving more of the frame, harder.
+
+---
+
 ## The one idea
 
 > **The system represents change, not scenes.**

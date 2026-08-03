@@ -144,14 +144,37 @@
     canvas.height = H;
     const ctx = canvas.getContext('2d');
     const L = window.BlvckStageLayers;
+    const M = window.BlvckMetaphor;
 
     const palette = window.BlvckGraphic
       ? window.BlvckGraphic.paletteFor(scene.subject || '')
       : { bg: '#0f1116', ink: '#f5f7fa', dim: '#9aa4b2', accent: '#f5b301', hot: '#ffe066' };
     const t = { bg: palette.bg, ink: '#f5f7fa', dim: '#5b6472', accent: palette.accent, hot: palette.hot };
 
+    // ONE state change, every layer responds. Framing, light and vignette come
+    // from the same fact as the pose, so a worsening beat is a tighter, darker
+    // frame AND a bent figure rather than only a different arm angle.
+    //
+    // Derived FIRST because the very next thing drawn depends on it.
+    const stateEnt = scene.entity || (scene.entities && scene.entities[0]) || null;
+    // opts.mood lets a caller drive the frame directly, without inventing an
+    // entity to carry the state. That is the only way to exercise the stage at
+    // a chosen point in an arc, and a stage you cannot put into a known state
+    // is a stage you cannot check.
+    const mood = opts.mood
+      || ((stateEnt && window.BlvckStoryState)
+        ? window.BlvckStoryState.moodFor(stateEnt, scene.time || 0)
+        : { brightness: 1, framing: 1, vignette: 0, unsteady: 0, wellbeing: 0.6, intensity: 0 });
+
     ctx.fillStyle = t.bg;
     ctx.fillRect(0, 0, W, H);
+    if (mood.brightness < 0.99) {
+      ctx.save();
+      ctx.globalAlpha = 1 - mood.brightness;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
 
     const role = (scene.actors && scene.actors.role) || 'presenter';
     const roleDef = (L && L.ROLES[role]) || { infoWeight: 0.7 };
@@ -162,7 +185,9 @@
     // figure standing in an empty box reads as unfinished.
     const envName = scene.environment || 'none';
     if (window.BlvckEnv && envName !== 'none') {
-      window.BlvckEnv.draw(ctx, envName, t, opts.skin || 'stickman');
+      // The room is handed the mood: the same kitchen is a different place
+      // before and after the thing that happened in it.
+      window.BlvckEnv.draw(ctx, envName, t, opts.skin || 'stickman', mood);
     }
     // Ground line only when there is no room to stand in.
     if (L && envName === 'none') {
@@ -187,14 +212,47 @@
       infoRect = await drawInformation(ctx, info, rect, palette);
     }
 
+    // ---- 1b. Metaphor ---------------------------------------------------
+    // The picture for a thing that has no picture. Scripts are mostly about
+    // progress, setback, obstacles, choices and deadlines, none of which can
+    // be photographed — so without this they arrive as words and leave as
+    // words. Staged behind the actors, because the actor's position ON it is
+    // what carries the meaning.
+    const metaName = scene.metaphor
+      || (scene.metaphor === null ? null : (M ? M.infer(scene.subject || '') : null));
+    let metaAnchor = null;
+    if (M && metaName) {
+      metaAnchor = M.draw(ctx, metaName, t, mood.wellbeing, { x: 0.5, y: L ? L.GROUND : 0.84 });
+      if (opts.trace) opts.trace.metaphor = { name: metaName, means: M.means(metaName), anchor: metaAnchor };
+    }
+
     // ---- 2. Actors ------------------------------------------------------
     const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
     const specs = (scene.actors && scene.actors.cast) || [];
     const hands = [];
+    // Why each actor is posed as it is, for tracing a wrong frame back to
+    // the state that produced it.
+    const stateReasons = [];
 
     if (window.BlvckChar) {
       spots.forEach((spot, i) => {
-        const cast = specs[i] || specs[0] || {};
+        let cast = specs[i] || specs[0] || {};
+
+        // STATE DRIVES THE VISUAL. When this scene carries an entity, ask the
+        // Story State Engine what is true at this moment rather than using a
+        // pose someone wrote down. This is the join that makes the pipeline
+        // whole: narration → state timeline → compositor → what you see.
+        const ent = (scene.entities && scene.entities[i]) || scene.entity || null;
+        if (ent && window.BlvckStoryState) {
+          const derived = window.BlvckStoryState.actorFor(ent, scene.time || 0);
+          if (derived) {
+            cast = { action: derived.clip, emotion: derived.emotion };
+            // Keep the reason on the frame record so a wrong pose can be traced
+            // back to the state that caused it, not guessed at.
+            stateReasons.push({ entity: ent.name, at: scene.time || 0, ...derived });
+          }
+        }
+
         const action = cast.action || (infoRect && role === 'presenter' ? 'point' : 'explain');
         const a = new window.BlvckChar.Actor({
           state: window.BlvckChar.CLIPS[action] ? action : 'explain',
@@ -206,10 +264,30 @@
         ctx.save();
         // Depth in a crowd: further rows recede rather than repeat.
         if (spot.depth) ctx.globalAlpha = 1 - spot.depth * 0.28;
+
+        // Position carries state. A confident figure steps forward and toward
+        // centre; a failing one drifts back, sideways and down. Standing in
+        // the same spot every frame is what made the arc read as static.
+        const advance = mood.advance == null ? 0.6 : mood.advance;
+        let posX = spot.x + (mood.drift || 0) * 0.06;
+        let posY = spot.y + (mood.sink || 0) * 0.10;
+        // Advancing also grows the figure — moving toward camera IS scale.
+        let advScale = 0.82 + advance * 0.32;
+
+        // A metaphor outranks mood drift for the FIRST actor: standing on the
+        // fourth step of six is the whole statement, and a mood offset that
+        // slid the figure off the staircase would destroy it. Everyone else
+        // keeps their placement.
+        if (metaAnchor && i === 0) {
+          posX = metaAnchor.x;
+          posY = metaAnchor.y;
+          advScale *= metaAnchor.scale == null ? 1 : metaAnchor.scale;
+        }
+
         const bones = window.BlvckChar.drawActor(ctx, a, {
-          x: spot.x * W,
-          y: spot.y * H,
-          scale: spot.scale * H * 0.16,
+          x: posX * W,
+          y: posY * H,
+          scale: spot.scale * H * 0.16 * mood.framing * advScale,
           skin: opts.skin || 'stickman',
           colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
           flip: spot.flip
@@ -244,6 +322,13 @@
       });
     }
 
+    if (mood.vignette > 0.02) {
+      const g2 = ctx.createRadialGradient(W/2, H*0.52, H*0.28, W/2, H*0.52, H*0.85);
+      g2.addColorStop(0, 'rgba(0,0,0,0)');
+      g2.addColorStop(1, 'rgba(0,0,0,' + Math.min(0.72, mood.vignette).toFixed(3) + ')');
+      ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
+    }
+    if (opts.trace) { opts.trace.stateReasons = stateReasons; opts.trace.mood = mood; }
     return opts.canvas ? canvas : new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
   }
 
@@ -291,6 +376,10 @@
       environment: s.environment || (L ? L.inferEnvironment(text) : 'none'),
       // 4. With what.
       prop: s.prop || (L ? L.inferProp(text) : null),
+      // 4b. And what it MEANS, when the line is about something abstract.
+      metaphor: s.metaphor !== undefined
+        ? s.metaphor
+        : (window.BlvckMetaphor ? window.BlvckMetaphor.infer(text) : null),
       actors: {
         role,
         count: s.actorCount || null,
