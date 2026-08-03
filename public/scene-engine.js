@@ -333,20 +333,137 @@
    * simply cannot occur: if there is a timeline, there is a video.
    */
   async function ensureScenes(opts = {}) {
+    const tl = opts.timeline || ensureTimeline();
     const found = currentScenes(opts);
-    if (found.scenes.length) return found;
+    if (found.scenes.length) {
+      // Stored scenes get state too. They are held as plain JSON, so an entity
+      // never survives a reload — without this, every scene loaded from a
+      // saved project would render stateless no matter what produced it.
+      const st = await attachState(found.scenes, tl, opts);
+      return Object.assign({}, found, { state: st.source, staged: st.staged });
+    }
 
     // Nothing stored — try to build from narration.
     // Bind a timeline from the project's own narration if none is loaded —
     // otherwise "Voice complete" and "nothing to assemble" are both true.
-    const tl = opts.timeline || ensureTimeline();
     if (!tl || !tl.sentences || !tl.sentences.length) {
       return { scenes: [], producer: 'none', reason: 'no storyboard, and no narration to build scenes from' };
     }
     const scenes = fromTimeline(tl, opts);
     if (!scenes.length) return { scenes: [], producer: 'none', reason: 'timeline produced no sentences' };
     save(scenes, { producer: 'timeline' });
-    return { scenes, producer: 'timeline', created: true };
+    const st = await attachState(scenes, tl, opts);
+    return { scenes, producer: 'timeline', created: true,
+             state: st.source, staged: st.staged, changes: st.changes };
+  }
+
+  /**
+   * Attach story state and staging to a run of scenes.
+   *
+   * THIS IS THE WIRE THAT WAS MISSING. Scene production never created a
+   * StoryEntity, so `scene.entity` was always null — which meant postureFor()
+   * returned null, the compositor fell back to an authored clip, and the
+   * ENTIRE state-to-visual chain sat dormant in the live pipeline: pose space,
+   * mood-driven light and colour, position, metaphor progress, silhouette.
+   * All of it worked, and none of it was reachable from the app. Every render
+   * a user actually produced was the standing-figure-in-an-empty-room frame
+   * from the first battery.
+   *
+   * Two things are attached here.
+   *
+   *   state     one entity for the narration, read ONCE — Director first,
+   *             keyword parser as the offline fallback — then each scene is
+   *             given the moment in that arc it belongs to.
+   *   staging   the interaction its text implies, whatever support and anchors
+   *             that interaction needs, and any object it names.
+   *
+   * A scene that already carries a value keeps it: a human or an earlier stage
+   * outranks inference.
+   */
+  async function attachState(scenes, timeline, opts) {
+    const o = opts || {};
+    const list = Array.isArray(scenes) ? scenes : [];
+    const tl = timeline || ensureTimeline();
+    const S = window.BlvckStoryState;
+    if (!list.length || !tl || !tl.sentences || !S) {
+      return { scenes: list, source: 'none', staged: 0 };
+    }
+
+    // One subject for the whole narration. Multi-entity casting is a later
+    // problem; today every beat follows the same protagonist.
+    const ent = S.entity({ name: o.subject || 'Subject' });
+    if (o.useDirector !== false && S.readState) {
+      await S.readState(ent, tl, o);
+    } else {
+      S.parse(ent, tl);
+    }
+
+    const IX = window.BlvckInteract;
+    const L = window.BlvckStageLayers;
+    let staged = 0;
+
+    list.forEach((scene) => {
+      const text = scene.sceneSummary || scene.subtitle || scene.subject || '';
+      scene.entity = scene.entity || ent;
+      // Where in the arc this beat sits. The END of the sentence, because a
+      // change is anchored to the word that causes it and must have landed by
+      // the time the beat is over.
+      if (scene.time == null) {
+        const at = parseTimestamp(scene.timestamp);
+        scene.time = at == null ? 0 : at;
+      }
+      if (!scene.subject) scene.subject = text;
+
+      const ix = scene.interaction !== undefined ? scene.interaction
+        : (IX ? IX.infer(text) : null);
+      if (ix) {
+        scene.interaction = ix;
+        const pat = IX.INTERACTIONS[ix];
+        if (pat) {
+          if (scene.anchors == null && pat.requires && pat.requires.length) {
+            scene.anchors = pat.requires.slice();
+          }
+          // Two actors are implied by an interaction; without this the pattern
+          // is inferred and then never used, because staging only applies when
+          // there are two spots to stage.
+          if (!scene.actors) scene.actors = {};
+          if (scene.actors.count == null) scene.actors.count = 2;
+          if (!scene.actors.role) scene.actors.role = 'social';
+          staged++;
+        }
+      }
+      // A named prop becomes a held object, which is the relation the old
+      // PROPS table could not express.
+      if (scene.objects == null && L && L.inferProp) {
+        const p = L.inferProp(text);
+        const KINDS = { laptop: 'laptop', phone: 'phone', document: 'paper',
+                        book: 'book', cup: 'cup' };
+        if (p && KINDS[p]) scene.objects = [{ kind: KINDS[p], rel: 'held' }];
+      }
+    });
+
+    return { scenes: list, source: ent.stateSource || 'keywords',
+             staged, changes: ent.changes.length };
+  }
+
+  /**
+   * The moment a beat has landed, in seconds.
+   *
+   * Handles both "0:04 – 0:09" and "00:00:04 - 00:00:09". The first version
+   * only understood M:SS, and stamp() emits HH:MM:SS — so every scene parsed
+   * to null, took time 0, and the whole run rendered at the same instant of
+   * the arc. Entity attached, state parsed, six changes recorded, and every
+   * frame identical: correct in the data, invisible in the pixels, for the
+   * fourth time in this project.
+   */
+  function parseTimestamp(ts) {
+    const parts = String(ts || '').split(/\s*[–\-—]\s*/);
+    const last = parts[parts.length - 1];
+    if (!last) return null;
+    const nums = last.trim().split(':').map(Number);
+    if (!nums.length || nums.some((n) => !Number.isFinite(n))) return null;
+    // ss | mm:ss | hh:mm:ss
+    return nums.reduce((acc, n) => acc * 60 + n, 0);
   }
 
   /**
@@ -400,6 +517,7 @@
   window.BlvckScenes = {
     makeScene,
     planScenes,
+    attachState,
     timelineFromProject,
     ensureTimeline,
     srtToWords,
