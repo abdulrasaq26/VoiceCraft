@@ -20,13 +20,30 @@
 
   // Attributes the renderer knows how to express. Numeric ones interpolate;
   // categorical ones step at the change.
-  const NUMERIC = ['health', 'energy', 'wealth', 'confidence', 'stress', 'size'];
+  const NUMERIC = ['health', 'energy', 'wealth', 'confidence', 'stress', 'size',
+                   'uncertainty', 'resolve', 'obligation'];
+
+  // CONDITION vs STANCE — which attributes mean "things are going well", and
+  // which only describe how a person is holding themselves.
+  //
+  // This split exists because "He had to choose between two paths" changed no
+  // state at all, so the body did not move. The obvious fix is to make a
+  // dilemma an attribute, and the obvious fix is a trap: if uncertainty fed
+  // wellbeing, then facing a choice would dim the lights, cool the room and
+  // sink the figure exactly as though something bad had happened. A dilemma is
+  // not a misfortune. Being torn is not the same as being unwell.
+  //
+  // So condition drives wellbeing and therefore the whole environment; stance
+  // drives posture only. A character can be resolute and destitute, or safe
+  // and paralysed, and those look different.
+  const CONDITION = ['health', 'energy', 'wealth', 'confidence', 'stress'];
+  const STANCE = ['uncertainty', 'resolve', 'obligation'];
 
   // Attributes where MORE is worse. Without this, "stress rose sharply" was
   // rendered as a celebration — the delta was large and positive, and nothing
   // told the engine that rising stress is bad news. Polarity is a property of
   // the attribute, not of the change.
-  const INVERTED = ['stress'];
+  const INVERTED = ['stress', 'uncertainty', 'obligation'];
   const polarity = (attribute) => (INVERTED.indexOf(attribute) > -1 ? -1 : 1);
   const CATEGORICAL = ['emotion', 'status', 'location'];
 
@@ -41,7 +58,10 @@
       // 'person' renders as an actor; anything else renders through its
       // information card. The state model is identical either way.
       type: String(s.type || 'person'),
-      baseline: Object.assign({ health: 0.8, energy: 0.7, wealth: 0.5, confidence: 0.6, stress: 0.2 }, s.baseline || {}),
+      baseline: Object.assign({
+        health: 0.8, energy: 0.7, wealth: 0.5, confidence: 0.6, stress: 0.2,
+        uncertainty: 0.2, resolve: 0.5, obligation: 0.2
+      }, s.baseline || {}),
       changes: []   // StateChange[]
     };
   }
@@ -57,7 +77,11 @@
       // A change with no end is instantaneous; most are, since narration says
       // "he lost his job" at a moment rather than across a span.
       endTime: Number(s.endTime != null ? s.endTime : s.startTime) || 0,
-      cause: String(s.cause || '')
+      cause: String(s.cause || ''),
+      // What happened and how big it was, kept on the change so a frame can be
+      // traced back to the event that caused it.
+      event: s.event || null,
+      magnitude: s.magnitude || null
     };
   }
 
@@ -167,27 +191,289 @@
     return { clip: 'idle', emotion: 'neutral', reason: 'baseline' };
   }
 
+  /**
+   * State -> a POINT IN POSE SPACE, plus any gesture the moment calls for.
+   *
+   * This supersedes actorFor's clip lookup for standing posture. actorFor
+   * answered "which of ten poses is this?", which threw away everything except
+   * which side of a threshold the state landed on — stress 0.66 and stress
+   * 0.98 returned the identical figure. Posture is now continuous, the way the
+   * room's brightness and warmth already were.
+   *
+   * Clips are not gone. They are GESTURES: a facepalm is something you do at a
+   * moment, not a way you stand, so it rides on top of the posture at a weight
+   * set by how big the change is. That keeps "the reaction IS the beat" while
+   * letting the standing body follow the state continuously.
+   */
+  function postureFor(ent, t) {
+    const P = window.BlvckPose;
+    if (!P || !ent) return null;
+    const s = stateAt(ent, t);
+    // Only a change that has ALREADY BEGUN earns a reaction. changeAt's window
+    // reaches 0.4s forward so a beat can anticipate what is coming, which is
+    // right for the standing state and wrong for a gesture: it put a facepalm
+    // at weight 0.62 on "John improved step by step", borrowing the reaction
+    // to a job loss that had not happened yet.
+    const pending = changeAt(ent, t);
+    const c = pending && t >= pending.startTime ? pending : null;
+    const axes = P.axesFromState(s);
+
+    let gesture = null;
+    let gestureWeight = 0;
+    let reason = 'standing state';
+    if (c && NUMERIC.indexOf(c.attribute) > -1) {
+      const raw = Number(c.to) - Number(c.from == null ? s[c.attribute] : c.from);
+      const delta = raw * polarity(c.attribute);
+      if (delta <= -0.28) {
+        gesture = 'facepalm';
+        gestureWeight = Math.min(0.8, Math.abs(delta) * 1.4);
+        reason = `${c.attribute} ${raw < 0 ? 'fell' : 'rose'} sharply — worse`;
+      } else if (delta >= 0.28) {
+        gesture = 'celebrate';
+        gestureWeight = Math.min(0.8, delta * 1.4);
+        reason = `${c.attribute} ${raw < 0 ? 'fell' : 'rose'} sharply — better`;
+      }
+    }
+
+    const stress = s.stress == null ? 0.2 : s.stress;
+    const health = s.health == null ? 0.8 : s.health;
+    const conf = s.confidence == null ? 0.6 : s.confidence;
+    let emotion = 'neutral';
+    if (gesture === 'celebrate') emotion = 'excited';
+    else if (gesture === 'facepalm') emotion = health < 0.4 ? 'sad' : 'crying';
+    else if (stress > 0.6) emotion = 'nervous';
+    else if (health < 0.35) emotion = 'sad';
+    else if (conf > 0.75) emotion = 'confident';
+    else if (health > 0.8 && conf > 0.6) emotion = 'happy';
+
+    return {
+      axes,
+      pose: P.poseFrom(axes),
+      gesture,
+      gestureWeight: Math.round(gestureWeight * 100) / 100,
+      emotion,
+      nearest: P.describe(axes).nearest,
+      reason
+    };
+  }
+
+  /**
+   * Apply state changes the DIRECTOR named, rather than ones a regex inferred.
+   *
+   * This is the path the keyword parser below was always scaffolding for. Its
+   * own comment said so; the measurement said when. Across a 48-beat corpus
+   * spanning eight genres the regex recognised 31% of CONDITION beats and 25%
+   * of STANCE beats — dimensions the engine fully supports. The renderer had
+   * become more expressive than the parser could feed it.
+   *
+   * `changes` is already validated by the prompt route: unknown attributes and
+   * out-of-range sentence indices are dropped there, so anything arriving here
+   * is a known attribute pointing at a real sentence. Deltas are still applied
+   * relative to the CURRENT value and clamped, because the model reports what
+   * changed and only this engine knows what was true beforehand.
+   */
+  function applyDirectorChanges(ent, timeline, changes) {
+    if (!ent || !timeline || !timeline.sentences || !Array.isArray(changes)) return ent;
+    const lastWord = timeline.words && timeline.words.length
+      ? timeline.words[timeline.words.length - 1].end : 0;
+    const limit = Number(timeline.duration) || lastWord || 0;
+
+    // Sentence order, so `from` samples see the changes that precede them.
+    changes.slice().sort((a, b) => a.sentence - b.sentence).forEach((c) => {
+      const s = timeline.sentences[c.sentence];
+      if (!s) return;
+      const at = s.start;
+      const from = sample(ent, c.attribute, Math.max(0, at - 0.01));
+      const to = clamp01(Number(from) + c.delta);
+      if (Math.abs(to - from) < 0.01) return;
+      addChange(ent, {
+        attribute: c.attribute,
+        from,
+        to,
+        startTime: at,
+        // Same rule the keyword path learned: bigger changes take longer, but
+        // never past the beat, or the largest events render half-landed.
+        endTime: Math.max(at + 0.2,
+          Math.min(at + 0.5 + Math.abs(c.delta) * 1.6, s.end || Infinity, limit || Infinity)),
+        cause: c.cause || '',
+        event: 'director',
+        magnitude: Math.abs(c.delta) >= 0.7 ? 'life'
+          : Math.abs(c.delta) >= 0.45 ? 'major'
+          : Math.abs(c.delta) >= 0.22 ? 'moderate' : 'minor'
+      });
+    });
+    return ent;
+  }
+
+  /**
+   * Read state for a whole timeline, preferring the Director and falling back
+   * to keywords.
+   *
+   * The fallback is not politeness: the app runs without an AI key, and a
+   * pipeline that silently produces a motionless figure offline would be worse
+   * than one that produces a rough one.
+   */
+  async function readState(ent, timeline, opts) {
+    const o = opts || {};
+    if (o.useDirector !== false && window.BlvckAI && window.BlvckAI.generateJSON) {
+      try {
+        const res = await window.BlvckAI.generateJSON('/api/story-state', {
+          subject: ent.name,
+          sentences: timeline.sentences.map((s) => s.text)
+        }, o.aiOptions || {});
+        if (res && Array.isArray(res.changes) && res.changes.length) {
+          applyDirectorChanges(ent, timeline, res.changes);
+          ent.stateSource = 'director';
+          return ent;
+        }
+        // An empty result is not an error, but it is not usable either: fall
+        // through rather than return a subject nothing ever happens to.
+      } catch (err) {
+        console.warn('[story-state] Director state failed, using keywords:', err && err.message);
+      }
+    }
+    parse(ent, timeline);
+    ent.stateSource = 'keywords';
+    return ent;
+  }
+
   // --- reading state out of narration -------------------------------------
   //
-  // v1 is keyword-driven. The Director will eventually supply these
-  // explicitly, but nothing can be proven until state exists at all, and a
-  // parser lets the engine be exercised against a real script today.
-  const CUES = [
-    [/\b(died|dies|fatal|collapsed|bankrupt|ruined)\b/i, { attribute: 'health', to: 0.05 }],
-    [/\b(sick|ill|disease|infected|diagnos|symptom)\w*/i, { attribute: 'health', to: 0.3 }],
-    [/\b(recover|healed|cured|better now|improved)\w*/i, { attribute: 'health', to: 0.85 }],
-    [/\b(treatment|medicat|therapy|prescrib)\w*/i, { attribute: 'health', to: 0.55 }],
-    [/\b(exhaust|tired|fatigue|drained|worn out)\w*/i, { attribute: 'energy', to: 0.2 }],
-    [/\b(energis|energiz|rested|refreshed|revital)\w*/i, { attribute: 'energy', to: 0.9 }],
-    [/\b(lost (his|her|their) job|laid off|fired|unemploy|redundan)\w*/i, { attribute: 'wealth', to: 0.15 }],
-    [/\b(bankrupt|debt|broke|poverty|cannot afford)\w*/i, { attribute: 'wealth', to: 0.1 }],
-    [/\b(profit|revenue rose|earned|raised|funded|wealthy|rich)\w*/i, { attribute: 'wealth', to: 0.85 }],
-    [/\b(fell|declin|dropped|collapse|slump|crash)\w*/i, { attribute: 'wealth', to: 0.25 }],
-    [/\b(worried|anxious|afraid|panic|fear)\w*/i, { attribute: 'stress', to: 0.8 }],
-    [/\b(calm|relieved|reassur|settled)\w*/i, { attribute: 'stress', to: 0.15 }],
-    [/\b(confident|certain|decided|determined)\w*/i, { attribute: 'confidence', to: 0.85 }],
-    [/\b(unsure|doubt|hesitat|confused)\w*/i, { attribute: 'confidence', to: 0.25 }]
+  // The keyword parser. Now the FALLBACK path, kept for offline runs and as a
+  // reference implementation of what the Director is asked to produce. See
+  // readState() above for the preferred route.
+  // --- events ---------------------------------------------------------------
+  //
+  // How hard the world hits. Losing a phone and being diagnosed with cancer
+  // are not the same size, and the first version of this table treated them
+  // the same way: every cue drove one attribute to one fixed number.
+  //
+  // Two things were wrong with that, and the second was worse.
+  //
+  //   no tiers      every event was the same magnitude, so the stage had no
+  //                 reason to ever behave dramatically
+  //   one attribute an event touched exactly one attribute, and wellbeing is
+  //                 the average of five. So a catastrophe moved the average by
+  //                 a fifth of itself. Measured: losing a job dropped wealth
+  //                 0.50 -> 0.15 and moved wellbeing 0.68 -> 0.61. Every
+  //                 downstream system -- silhouette, position, environment,
+  //                 metaphor -- can express a full 0..1 range, and was being
+  //                 handed six hundredths of it.
+  //
+  // Real events are not single-attribute. Losing a job costs money AND
+  // confidence AND calm, and it is the combination that a viewer reads as
+  // "this is bad". So an event now declares a magnitude and a spread of
+  // consequences, and the impact is a signed share of that magnitude.
+  const MAGNITUDE = {
+    minor: 0.15,        // an annoyance. Registers, does not reshape the frame.
+    moderate: 0.32,     // a real setback or a real win.
+    major: 0.52,        // the event the video is about.
+    life: 0.78          // there is a before and an after.
+  };
+
+  // Words that resize the event they attach to. "Slightly worried" and
+  // "completely devastated" are the same cue at different volumes.
+  const AMPLIFIERS = [
+    [/\b(slightly|a bit|somewhat|mildly|a little|minor)\b/i, 0.55],
+    [/\b(very|really|deeply|badly|seriously|heavily)\b/i, 1.35],
+    [/\b(completely|totally|utterly|devastat|catastroph|destroyed|shattered|overnight)\w*/i, 1.7]
   ];
+
+  const EVENTS = [
+    // Order matters: specific before general, so "lost his job" never falls
+    // through to a bare "lost".
+    [/\b(died|dies|death|fatal|terminal)\b/i,
+      { event: 'death', magnitude: 'life', impact: { health: -1, energy: -1, stress: 0.4 } }],
+    [/\b(cancer|tumou?r|diagnos\w*|stroke|heart attack)\b/i,
+      { event: 'diagnosis', magnitude: 'life', impact: { health: -0.95, stress: 0.9, confidence: -0.5 } }],
+    // 'bankrupt' used to sit in the death cue, so going bankrupt set health to
+    // 0.05 and the engine rendered a solvency problem as a dying man.
+    [/\b(bankrupt|ruined|foreclos|repossess|lost everything)\w*/i,
+      { event: 'ruin', magnitude: 'life', impact: { wealth: -1, confidence: -0.85, stress: 0.9 } }],
+    [/\b(divorce|separat\w*|broke up|left (him|her|them))\b/i,
+      { event: 'separation', magnitude: 'major', impact: { stress: 0.9, confidence: -0.8, health: -0.3 } }],
+    [/\b(lost (his|her|their) job|laid off|fired|unemploy|redundan)\w*/i,
+      { event: 'job-loss', magnitude: 'major', impact: { wealth: -0.85, confidence: -0.7, stress: 0.8 } }],
+    [/\b(promot\w*|won|awarded|succeeded|breakthrough|landed the)\b/i,
+      { event: 'win', lifts: true, magnitude: 'major', impact: { confidence: 0.9, wealth: 0.5, stress: -0.5 } }],
+    [/\b(recover\w*|healed|cured|better now|remission)\b/i,
+      { event: 'recovery', lifts: true, magnitude: 'major', impact: { health: 0.95, stress: -0.8, confidence: 0.6, energy: 0.5 } }],
+    [/\b(debt|poverty|cannot afford|couldn'?t afford|broke)\b/i,
+      { event: 'hardship', magnitude: 'major', impact: { wealth: -0.8, stress: 0.7, confidence: -0.4 } }],
+    [/\b(sick|ill|disease|infect\w*|symptom)\w*/i,
+      { event: 'illness', magnitude: 'moderate', impact: { health: -0.8, energy: -0.6, stress: 0.5 } }],
+    [/\b(profit|revenue rose|earned|raised|funded|wealthy|rich)\w*/i,
+      { event: 'gain', lifts: true, magnitude: 'moderate', impact: { wealth: 0.85, confidence: 0.5, stress: -0.3 } }],
+    [/\b(fell|declin\w*|dropped|collapse|slump|crash)\w*/i,
+      { event: 'decline', magnitude: 'moderate', impact: { wealth: -0.8, confidence: -0.5, stress: 0.5 } }],
+    [/\b(treatment|medicat\w*|therapy|prescrib\w*)\b/i,
+      { event: 'care', lifts: true, magnitude: 'moderate', impact: { health: 0.5, stress: -0.4 } }],
+    [/\b(exhaust\w*|tired|fatigue|drained|worn out|burn(?:t|ed) out)\b/i,
+      { event: 'depletion', magnitude: 'moderate', impact: { energy: -0.9, stress: 0.4, health: -0.2 } }],
+    [/\b(energis\w*|energiz\w*|rested|refreshed|revital\w*)\b/i,
+      { event: 'restored', lifts: true, magnitude: 'moderate', impact: { energy: 0.9, stress: -0.3 } }],
+    [/\b(worried|anxious|afraid|panic|fear\w*|overwhelm\w*|pressure|stress\w*)\b/i,
+      { event: 'strain', magnitude: 'moderate', impact: { stress: 0.85, confidence: -0.4, energy: -0.3 } }],
+    [/\b(calm|relieved|reassur\w*|settled|at peace)\b/i,
+      { event: 'relief', lifts: true, magnitude: 'moderate', impact: { stress: -0.85, confidence: 0.4 } }],
+    // Narrowed: 'determined' and 'resolved' now belong to the determination
+    // stance event below, and 'certain' to clarity. They matched here first,
+    // which made both new events unreachable for their most common trigger
+    // words — "He was determined to rebuild" came back tagged `resolve` and
+    // moved confidence instead of resolve. One word, one owner.
+    [/\b(confident|self-assured|assured|sure of (?:himself|herself|themselves))\b/i,
+      { event: 'resolve', magnitude: 'moderate', impact: { confidence: 0.85, stress: -0.3 } }],
+    [/\b(unsure|doubt\w*|hesitat\w*|confused)\b/i,
+      { event: 'doubt', magnitude: 'moderate', impact: { confidence: -0.8, stress: 0.4 } }],
+    [/\b(improv\w*|progress\w*|grew|growth|better)\b/i,
+      { event: 'progress', lifts: true, magnitude: 'moderate', impact: { confidence: 0.6, wealth: 0.4, stress: -0.3 } }],
+
+    // --- stance events ----------------------------------------------------
+    //
+    // These change how a person stands without claiming their circumstances
+    // got better or worse. "He had to choose between two paths" used to match
+    // nothing at all, so the state was identical to the beat before it and the
+    // figure rendered unchanged while the narration moved on. A dilemma is one
+    // of the most common things a script does; it deserves a body.
+    // Bare 'choice' and 'decision' used to be in here and were far too broad:
+    // "He was furious at the decision" came back tagged `dilemma` and rendered
+    // anger as being torn. The decision was someone else's. A dilemma needs
+    // the CHOOSING to belong to the subject, so the triggers are now verbal or
+    // possessive. Anger is not represented at all, and going silent is the
+    // correct failure — a state we cannot describe should produce no change,
+    // not the wrong one.
+    [/\b(had to choose|must choose|had to decide|must decide|decide between|choose between|dilemma|torn between|two paths|crossroads|(?:his|her|their) (?:choice|decision)|difficult choice|no easy choice)\b/i,
+      { event: 'dilemma', magnitude: 'moderate',
+        impact: { uncertainty: 0.85, resolve: -0.5, stress: 0.25 } }],
+    [/\b(determined|resolved to|committed|made up (?:his|her|their) mind|set out to|vowed)\b/i,
+      { event: 'determination', magnitude: 'moderate',
+        impact: { resolve: 0.9, uncertainty: -0.7, confidence: 0.4 } }],
+    [/\b(had to|obliged|responsib\w*|duty|expected (?:him|her|them)|no choice but|forced to)\b/i,
+      { event: 'obligation', magnitude: 'moderate',
+        impact: { obligation: 0.8, resolve: 0.2, stress: 0.3 } }],
+    [/\b(regret\w*|wished (?:he|she|they)|looked back|should have|if only)\b/i,
+      { event: 'regret', magnitude: 'moderate',
+        impact: { uncertainty: 0.5, confidence: -0.4, resolve: -0.3 } }],
+    [/\b(finally knew|no longer doubted|clear (?:to|about)|certain(?:ty)?|understood at last)\b/i,
+      { event: 'clarity', lifts: true, magnitude: 'moderate',
+        impact: { uncertainty: -0.9, resolve: 0.6, confidence: 0.5 } }],
+    // Deliberately last and deliberately small: the control case. If a minor
+    // annoyance moved the stage as much as a diagnosis, the tiers would mean
+    // nothing.
+    [/\b(lost (his|her|their) (phone|keys|wallet|umbrella)|missed the (bus|train)|late for)\b/i,
+      { event: 'annoyance', magnitude: 'minor', impact: { stress: 0.6, confidence: -0.2 } }]
+  ];
+
+  /** The multiplier a sentence's wording applies to an event's size. */
+  function amplifierFor(text) {
+    let k = 1;
+    AMPLIFIERS.forEach(([re, mult]) => { if (re.test(text)) k *= mult; });
+    return k;
+  }
+
+  // Kept under the old name so existing callers and the diagnostics panel do
+  // not break; the shape is richer than it was.
+  const CUES = EVENTS;
 
   /**
    * Build a state timeline for one entity from an aligned narration timeline.
@@ -198,22 +484,88 @@
    */
   function parse(ent, timeline) {
     if (!ent || !timeline || !timeline.sentences) return ent;
+    // Nothing may still be arriving when the narration stops. Scaling a
+    // change's duration by its magnitude is right in the middle of a video and
+    // wrong at the end of one: it put the endTime of "Finally John recovered"
+    // at 12.9s in an 11.9s timeline, so the recovery was 23% complete on the
+    // last frame and the story closed on its most defeated pose.
+    const lastWord = timeline.words && timeline.words.length
+      ? timeline.words[timeline.words.length - 1].end : 0;
+    const limit = Number(timeline.duration) || lastWord || 0;
     timeline.sentences.forEach((s) => {
-      CUES.forEach(([re, spec]) => {
+      // One event per sentence: the first and biggest match wins. Letting
+      // every cue in a sentence fire was how a script accidentally hit four
+      // attributes and looked dramatic, while a script naming one real
+      // catastrophe looked flat.
+      let matched = null;
+      for (const [re, spec] of EVENTS) {
         const m = re.exec(s.text);
-        if (!m) return;
-        // Anchor to the matched phrase, not the sentence start, so the visual
-        // change lands on the word a viewer hears.
-        const words = timeline.words.filter((w) => w.start >= s.start && w.end <= s.end);
-        const hit = words.find((w) => new RegExp(re.source, 'i').test(w.text)) || words[0];
-        const at = hit ? hit.start : s.start;
+        if (m) { matched = { re, spec, m }; break; }
+      }
+      if (!matched) return;
+      const { re, spec, m } = matched;
+
+      // Anchor to the matched phrase, not the sentence start, so the visual
+      // change lands on the word a viewer hears.
+      const words = timeline.words.filter((w) => w.start >= s.start && w.end <= s.end);
+      const hit = words.find((w) => new RegExp(re.source, 'i').test(w.text)) || words[0];
+      const at = hit ? hit.start : s.start;
+
+      const scale = (MAGNITUDE[spec.magnitude] || MAGNITUDE.moderate) * amplifierFor(s.text);
+
+      // Restorative events lift the floor.
+      //
+      // Because wellbeing is now half-driven by the worst attribute, an
+      // attribute nobody ever repairs pins the whole arc down for the rest of
+      // the video. Measured: "Finally John recovered" rendered as `defeated`
+      // at the lowest wellbeing of the story, because recovery touches health
+      // and not the wealth his job loss had destroyed.
+      //
+      // Rather than special-case it, positive events also lift whatever is
+      // currently worst. That is what recovery means to a viewer — the thing
+      // that was worst is the thing that got better.
+      const impact = Object.assign({}, spec.impact);
+      if (spec.lifts) {
+        let worstAttr = null;
+        let worstVal = 1;
+        NUMERIC.forEach((a) => {
+          const raw = sample(ent, a, Math.max(0, at - 0.01));
+          if (raw == null) return;
+          const v = polarity(a) > 0 ? raw : 1 - raw;
+          if (v < worstVal) { worstVal = v; worstAttr = a; }
+        });
+        if (worstAttr && impact[worstAttr] == null) {
+          impact[worstAttr] = 0.7 * polarity(worstAttr);
+        }
+      }
+
+      // Every consequence of the event, not just its headline attribute.
+      Object.keys(impact).forEach((attr) => {
+        const from = sample(ent, attr, Math.max(0, at - 0.01));
+        const to = clamp01(Number(from) + impact[attr] * scale);
+        if (Math.abs(to - from) < 0.01) return;   // nothing to animate
         addChange(ent, {
-          attribute: spec.attribute,
-          from: sample(ent, spec.attribute, Math.max(0, at - 0.01)),
-          to: spec.to,
+          attribute: attr,
+          from,
+          to,
           startTime: at,
-          endTime: at + 0.8,          // brief ease, so it reads as a change
-          cause: m[0]
+          // Bigger events take longer to land. A life-changing moment that
+          // resolved in the same 0.8s as a minor one would read as trivial.
+          //
+          // But it must finish inside its own BEAT. A scene samples one frame
+          // per sentence, so a change still in flight when the sentence ends
+          // renders at partial intensity — and because the duration scales
+          // with magnitude, this hit the largest events hardest. Measured: a
+          // diagnosis settled at 5.3s in a sentence ending at 4.8s and
+          // rendered 0.36 instead of its true 0.14, i.e. the top of the scale
+          // was quietly capped by the very rule meant to make it feel big.
+          endTime: Math.max(
+            at + 0.2,
+            Math.min(at + 0.5 + scale * 1.6, s.end || Infinity, limit || Infinity)
+          ),
+          cause: m[0],
+          event: spec.event,
+          magnitude: spec.magnitude
         });
       });
     });
@@ -236,15 +588,48 @@
     const s = stateAt(ent, t);
     const c = changeAt(ent, t);
 
-    // Wellbeing: the average of everything, with inverted attributes flipped.
-    let sum = 0;
+    // Wellbeing, with inverted attributes flipped.
+    //
+    // This was a flat average, and the average was the amplitude bug. Five
+    // attributes meant any single event was divided by five before it reached
+    // the stage, so a man who had just lost his job still scored 0.61 because
+    // his health was fine. Every expressive system downstream was being handed
+    // a sliver of its range.
+    //
+    // It is also wrong about people. How someone is doing is dominated by the
+    // worst thing happening to them, not by the mean of their circumstances.
+    // So the floor gets equal billing with the average: one attribute in
+    // crisis is enough to make the whole frame read as crisis, which is what a
+    // viewer already believes.
+    // A HARMONIC mean, which is the fix for a saturation the flat-min blend
+    // had. Measured through the whole chain:
+    //
+    //   lost job (major)   state swing 0.34
+    //   cancer   (life)    state swing 0.25   <- smaller than a lesser event
+    //
+    // Baseline's worst attribute is wealth at 0.5, so ANY event that drives
+    // some attribute below 0.5 moved the floor to roughly the same place.
+    // Beyond that point bigger events stopped reading as bigger, and the top
+    // two tiers were indistinguishable.
+    //
+    // A harmonic mean keeps the property that matters -- it is dominated by
+    // the smallest value, so one attribute in crisis still drags the whole
+    // frame down -- but it never stops responding. A second attribute going
+    // bad lowers it again, which is exactly what separates a diagnosis (health
+    // gone, stress high, confidence gone) from a job loss (money gone).
+    let recip = 0;
     let n = 0;
-    NUMERIC.forEach((a) => {
+    // CONDITION only. Stance attributes describe how someone is standing, not
+    // how they are doing, and feeding them in here would make every dilemma
+    // look like a disaster — and would silently recalibrate the four tiers
+    // that were just measured monotonic.
+    CONDITION.forEach((a) => {
       if (s[a] == null) return;
-      sum += polarity(a) > 0 ? s[a] : 1 - s[a];
+      const v = polarity(a) > 0 ? s[a] : 1 - s[a];
+      recip += 1 / Math.max(0.02, v);   // floored so a zeroed attribute cannot divide by zero
       n++;
     });
-    const wellbeing = n ? sum / n : 0.6;
+    const wellbeing = n ? n / recip : 0.6;
 
     // Intensity: how much is happening right now. A big change earns a big
     // visual response; a steady state does not.
@@ -287,12 +672,20 @@
     stateAt,
     changeAt,
     actorFor,
+    postureFor,
     moodFor,
     polarity,
     INVERTED,
     parse,
+    readState,
+    applyDirectorChanges,
     NUMERIC,
+    CONDITION,
+    STANCE,
     CATEGORICAL,
-    CUES
+    CUES,
+    EVENTS,
+    MAGNITUDE,
+    amplifierFor
   };
 })();

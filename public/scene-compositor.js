@@ -179,11 +179,118 @@
     const role = (scene.actors && scene.actors.role) || 'presenter';
     const roleDef = (L && L.ROLES[role]) || { infoWeight: 0.7 };
 
+    const envName = scene.environment || 'none';
+
+    // ---- 1b. Metaphor ---------------------------------------------------
+    // The picture for a thing that has no picture. Scripts are mostly about
+    // progress, setback, obstacles, choices and deadlines, none of which can
+    // be photographed — so without this they arrive as words and leave as
+    // words. Staged behind the actors, because the actor's position ON it is
+    // what carries the meaning.
+    const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
+
+    // Where an actor ends up, resolved ONCE.
+    //
+    // Position depends on mood, then on a metaphor anchor, then on a clamp
+    // that keeps the body in frame. Anything that needs to know where the
+    // figure is must ask after all three have been applied — a weight drawn
+    // from the pre-clamp spot ended up framing his head like a sign instead of
+    // pressing on his shoulders. Two bugs in this scene came from two
+    // different places each computing their own answer.
+    function placeFor(spot, isLead) {
+      const advance = mood.advance == null ? 0.6 : mood.advance;
+      let x = spot.x + (mood.drift || 0) * 0.06;
+      let y = spot.y + (mood.sink || 0) * 0.10;
+      let advScale = 0.82 + advance * 0.32;
+
+      // A metaphor outranks mood drift for the lead actor: standing on the
+      // fourth step of six is the whole statement, and a mood offset that slid
+      // the figure off the staircase would destroy it.
+      if (isLead && metaAnchor) {
+        x = metaAnchor.x;
+        y = metaAnchor.y;
+        advScale *= metaAnchor.scale == null ? 1 : metaAnchor.scale;
+      }
+
+      // GROUND is where feet land on the floor PLANE, but an actor hangs below
+      // its origin by about 3.4x the unit scale. Any beat placed at ground
+      // level ran its legs off the bottom: measured botY 0.999 on two of five
+      // beats, while beats a metaphor had lifted higher were fine.
+      const unit = spot.scale * H * 0.16 * mood.framing * advScale;
+      const maxY = 0.97 - (unit * 3.4) / H;
+      if (y > maxY) y = maxY;
+      return { x, y, unit };
+    }
+
+    const OBJ = window.BlvckObjects;
+    const supportName = scene.support || 'ground';
+
+    // SYMBOL ARBITRATION. A metaphor is a STATED abstraction; an object is a
+    // thing PRESENT in the scene. When both express the same idea the frame
+    // says it twice and means it less — a clock on the desk beside an
+    // hourglass metaphor put two time symbols in one image. The present thing
+    // wins, because it belongs to the world rather than commenting on it.
+    const CLAIMS = { drain: ['clock'], weight: ['book'], barrier: [], fork: [] };
+    let metaName = scene.metaphor
+      || (scene.metaphor === null ? null : (M ? M.infer(scene.subject || '') : null));
+    if (metaName && CLAIMS[metaName] && scene.objects) {
+      const present = scene.objects.map((o) => o && o.kind);
+      if (CLAIMS[metaName].some((k) => present.indexOf(k) > -1)) {
+        if (opts.trace) opts.trace.metaphorSuppressed = metaName;
+        metaName = null;
+      }
+    }
+
+    // Resolved ONCE, before anything is drawn, so the seat and the figure
+    // cannot disagree about where the figure is. Drawing the chair from a
+    // placement computed before the metaphor anchor existed is why the chair
+    // sat beside the body instead of under it.
+    let metaAnchor = M && metaName ? M.anchorFor(metaName, mood.wellbeing) : null;
+    const lead = placeFor(spots[0] || { x: 0.5, y: 0.84, scale: 0.42 }, true);
+
+    // ---- 1d. Subject and camera -----------------------------------------
+    //
+    // A camera cannot frame until something says what the subject IS. Framing
+    // the reference beat as a true medium shot transformed legibility and
+    // still failed, because the crop centred on the ACTOR and the desk fell
+    // outside it: "a stressed man on a chair" instead of "a student at a
+    // desk". So the subject is named first, its bounds are computed
+    // ANALYTICALLY, and the camera is set before a single thing is drawn.
+    const SUBJ = window.BlvckSubject;
+    // Objects are PLANNED here rather than drawn, because their positions are
+    // part of the subject's bounds.
+    const objPlan = (OBJ && scene.objects && scene.objects.length)
+      ? OBJ.plan({ objects: scene.objects },
+          { x: lead.x, y: lead.y, unit: lead.unit,
+            surfaceY: (L ? L.GROUND : 0.84) - 0.10 })
+      : [];
+
+    let cam = null;
+    if (SUBJ) {
+      const kind = SUBJ.infer(scene);
+      const bounds = SUBJ.boundsOf(kind, {
+        actor: { x: lead.x, y: lead.y, unit: lead.unit },
+        actors: spots.map((s, i) => {
+          const pl = placeFor(s, i === 0);
+          return { x: pl.x, y: pl.y, unit: pl.unit };
+        }),
+        objects: objPlan,
+        metaphor: metaName || null,
+        surface: envName === 'none' ? null : { x0: 0.50, x1: 0.94, y: 0.62 }
+      });
+      cam = SUBJ.cameraFor(bounds, scene.shot || (kind === 'place' ? 'wide' : 'medium'));
+      if (opts.trace) opts.trace.subject = { kind, bounds, camera: cam };
+    }
+
+    // Everything from here to the matching restore is IN SHOT: room,
+    // furniture, figure and litter scale and crop together.
+    ctx.save();
+    if (cam) SUBJ.apply(ctx, cam);
+
     // ---- 3. Environment -------------------------------------------------
     // A drawn PLACE, not a wireframe. The environment is part of the
     // storytelling language: it says where before a word is spoken, and a
     // figure standing in an empty box reads as unfinished.
-    const envName = scene.environment || 'none';
     if (window.BlvckEnv && envName !== 'none') {
       // The room is handed the mood: the same kitchen is a different place
       // before and after the thing that happened in it.
@@ -212,24 +319,27 @@
       infoRect = await drawInformation(ctx, info, rect, palette);
     }
 
-    // ---- 1b. Metaphor ---------------------------------------------------
-    // The picture for a thing that has no picture. Scripts are mostly about
-    // progress, setback, obstacles, choices and deadlines, none of which can
-    // be photographed — so without this they arrive as words and leave as
-    // words. Staged behind the actors, because the actor's position ON it is
-    // what carries the meaning.
-    const metaName = scene.metaphor
-      || (scene.metaphor === null ? null : (M ? M.infer(scene.subject || '') : null));
-    let metaAnchor = null;
+    // ---- 1c. Support ----------------------------------------------------
+    // What the body rests on. Drawn before the actor so the seat is behind
+    // them, and it MOVES the figure: sitting lowers the origin and folds the
+    // legs, which is precisely what the pose space cannot express because
+    // every axis there describes the body above its own feet.
+    let support = null;
+    if (OBJ && supportName !== 'ground') {
+      support = OBJ.drawSupport(ctx, t, supportName, lead.x, lead.unit);
+    }
+
     if (M && metaName) {
-      metaAnchor = M.draw(ctx, metaName, t, mood.wellbeing, { x: 0.5, y: L ? L.GROUND : 0.84 });
+      M.draw(ctx, metaName, t, mood.wellbeing, lead);
       if (opts.trace) opts.trace.metaphor = { name: metaName, means: M.means(metaName), anchor: metaAnchor };
     }
 
     // ---- 2. Actors ------------------------------------------------------
-    const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
     const specs = (scene.actors && scene.actors.cast) || [];
     const hands = [];
+    // Where the lead actually ended up, so objects attach to the figure
+    // instead of to the stage's default spot.
+    let leadFrame = null;
     // Why each actor is posed as it is, for tracing a wrong frame back to
     // the state that produced it.
     const stateReasons = [];
@@ -243,23 +353,49 @@
         // pose someone wrote down. This is the join that makes the pipeline
         // whole: narration → state timeline → compositor → what you see.
         const ent = (scene.entities && scene.entities[i]) || scene.entity || null;
-        if (ent && window.BlvckStoryState) {
-          const derived = window.BlvckStoryState.actorFor(ent, scene.time || 0);
-          if (derived) {
-            cast = { action: derived.clip, emotion: derived.emotion };
-            // Keep the reason on the frame record so a wrong pose can be traced
-            // back to the state that caused it, not guessed at.
-            stateReasons.push({ entity: ent.name, at: scene.time || 0, ...derived });
-          }
-        }
+        const CH_ = window.BlvckChar;
+        let a = null;
 
-        const action = cast.action || (infoRect && role === 'presenter' ? 'point' : 'explain');
-        const a = new window.BlvckChar.Actor({
-          state: window.BlvckChar.CLIPS[action] ? action : 'explain',
-          emotion: cast.emotion || 'confident'
-        });
-        a.time = (window.BlvckChar.CLIPS[a.state] || { dur: 1 }).dur;
-        a.followTimeline = false;
+        // CONTINUOUS POSTURE. Ask the pose space where this state stands,
+        // rather than which of ten clips it classifies as. The room's
+        // brightness and warmth have always responded to fractional changes;
+        // the figure used to quantise them away at a threshold.
+        const posture = ent && window.BlvckStoryState && window.BlvckStoryState.postureFor
+          ? window.BlvckStoryState.postureFor(ent, scene.time || 0)
+          : null;
+
+        if (posture) {
+          let pose = posture.pose;
+          // A gesture is something you DO at a moment, layered over how you
+          // stand, at a weight set by how big the change is.
+          // sample() takes a clip NAME, not a clip object — it does
+          // `CLIPS[clipName] || CLIPS.idle`, so passing the object silently
+          // resolved to idle and mixed in nothing. Both call sites below had
+          // that bug: the seated figure never sat, and the gesture layer had
+          // been a no-op since the pose space landed, with traces cheerfully
+          // reporting `gesture: facepalm` while the renderer drew idle.
+          if (posture.gesture && CH_.CLIPS[posture.gesture] && posture.gestureWeight > 0) {
+            pose = CH_.mix(pose, CH_.sample(posture.gesture, 1), posture.gestureWeight);
+          }
+          // Sitting is a SUPPORT state, not a posture, so it is mixed in here
+          // rather than expressed as axes. The authored `sit` clip is exactly
+          // the shape the pose space provably could not reach.
+          if (support && support.sit && CH_.CLIPS.sit) {
+            pose = CH_.mix(pose, CH_.sample('sit', 1), 0.9);
+          }
+          pose.emotion = posture.emotion;
+          a = pose;
+          stateReasons.push({ entity: ent.name, at: scene.time || 0, ...posture });
+        } else {
+          // No entity: fall back to the authored clip named by the scene.
+          const action = cast.action || (infoRect && role === 'presenter' ? 'point' : 'explain');
+          a = new CH_.Actor({
+            state: CH_.CLIPS[action] ? action : 'explain',
+            emotion: cast.emotion || 'confident'
+          });
+          a.time = (CH_.CLIPS[a.state] || { dur: 1 }).dur;
+          a.followTimeline = false;
+        }
 
         ctx.save();
         // Depth in a crowd: further rows recede rather than repeat.
@@ -268,26 +404,15 @@
         // Position carries state. A confident figure steps forward and toward
         // centre; a failing one drifts back, sideways and down. Standing in
         // the same spot every frame is what made the arc read as static.
-        const advance = mood.advance == null ? 0.6 : mood.advance;
-        let posX = spot.x + (mood.drift || 0) * 0.06;
-        let posY = spot.y + (mood.sink || 0) * 0.10;
-        // Advancing also grows the figure — moving toward camera IS scale.
-        let advScale = 0.82 + advance * 0.32;
-
-        // A metaphor outranks mood drift for the FIRST actor: standing on the
-        // fourth step of six is the whole statement, and a mood offset that
-        // slid the figure off the staircase would destroy it. Everyone else
-        // keeps their placement.
-        if (metaAnchor && i === 0) {
-          posX = metaAnchor.x;
-          posY = metaAnchor.y;
-          advScale *= metaAnchor.scale == null ? 1 : metaAnchor.scale;
-        }
+        let { x: posX, y: posY, unit } = placeFor(spot, i === 0);
+        // Sitting puts the body ON the seat.
+        if (support && support.sit && i === 0) posY = support.seatY;
+        if (i === 0) leadFrame = { x: posX, y: posY, unit };
 
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: posX * W,
           y: posY * H,
-          scale: spot.scale * H * 0.16 * mood.framing * advScale,
+          scale: unit,
           skin: opts.skin || 'stickman',
           colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
           flip: spot.flip
@@ -295,6 +420,24 @@
         ctx.restore();
         if (bones && bones.forearmR) hands.push({ x: bones.forearmR.x1, y: bones.forearmR.y1, spot, cast });
       });
+    }
+
+    // ---- 4b. Objects, placed by RELATION ---------------------------------
+    // Held, on a surface, on the floor, or in a thought. Drawn after the actor
+    // so a held object reads as in front of the body, and after props so both
+    // vocabularies can coexist while the old PROPS table is retired.
+    if (OBJ && objPlan.length) {
+      // Re-planned only when a solved hand is available, so a held object
+      // touches it. Otherwise the plan the camera framed on is what gets
+      // drawn — the bounds and the pixels must not disagree.
+      const finalPlan = hands.length
+        ? OBJ.plan({ objects: scene.objects },
+            Object.assign({ surfaceY: (L ? L.GROUND : 0.84) - 0.10 },
+              leadFrame || { x: lead.x, y: lead.y, unit: lead.unit },
+              { hand: { x: hands[0].x, y: hands[0].y } }))
+        : objPlan;
+      OBJ.drawPlan(ctx, t, finalPlan, lead.unit);
+      if (opts.trace) opts.trace.objects = finalPlan;
     }
 
     // ---- 4. Props, in the actors' hands ---------------------------------
@@ -321,6 +464,10 @@
         ctx.fillText(txt, spot.x * W - w / 2, spot.y * H + 46);
       });
     }
+
+    // Out of shot. The vignette is a lens effect, not a thing in the room, so
+    // it must not scale with the camera.
+    ctx.restore();
 
     if (mood.vignette > 0.02) {
       const g2 = ctx.createRadialGradient(W/2, H*0.52, H*0.28, W/2, H*0.52, H*0.85);

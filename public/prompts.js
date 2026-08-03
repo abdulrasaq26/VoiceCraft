@@ -707,7 +707,122 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
     return parts.join('\n\n');
   }
 
+  // --- story state ---------------------------------------------------------
+  //
+  // Replaces keyword inference with the Director naming state changes directly.
+  //
+  // The regex parser was always scaffolding — its own comment said the Director
+  // would eventually supply these. Measured across a 48-beat corpus spanning
+  // eight genres, it recognised 31% of CONDITION beats and 25% of STANCE beats:
+  // dimensions the engine fully supports. "The company went under", "The city
+  // fell", "She failed the exam" are all representable and all invisible,
+  // because the parser matches phrases rather than meaning. Adding more regex
+  // families had also begun to collide — 'determined' was captured by an
+  // earlier rule, and bare 'decision' turned anger into a dilemma.
+  const STATE_ATTRIBUTES = {
+    // condition — these move wellbeing, and therefore the whole environment
+    health: 'physical wellbeing, safety, survival',
+    energy: 'stamina, rest, exhaustion',
+    wealth: 'money, resources, job, material security',
+    confidence: 'self-belief, standing, credibility',
+    stress: 'INVERTED: pressure, fear, anxiety. Higher is worse.',
+    // stance — these move posture only, never the environment
+    uncertainty: 'INVERTED: not knowing what to do. Higher is more torn.',
+    resolve: 'determination, commitment to act',
+    obligation: 'INVERTED: duty, being bound. Higher is more burdened.'
+  };
+
+  function storyStatePrompt(payload) {
+    const sentences = (payload.sentences || []).map((s, i) => `${i}: ${s}`).join('\n');
+    const attrs = Object.keys(STATE_ATTRIBUTES)
+      .map((k) => `  ${k} — ${STATE_ATTRIBUTES[k]}`).join('\n');
+    return {
+      system: [
+        'You read narration and report how a subject CHANGES, as data.',
+        'You never describe visuals, poses, camera or lighting: another system derives those.',
+        '',
+        'Attributes, each 0..1:',
+        attrs,
+        '',
+        'Rules:',
+        '- delta is the SIGNED change, -1..1. Report the change, not the new value.',
+        '- Attributes marked INVERTED go UP when things get worse.',
+        '- One event may change several attributes. Losing a job costs wealth AND',
+        '  confidence AND calm. Report every consequence you are confident of.',
+        '- Size the change honestly: losing a phone is about 0.1, losing a job',
+        '  about 0.5, a terminal diagnosis about 0.8.',
+        '- A dilemma or an obligation is NOT a deterioration. Move uncertainty,',
+        '  resolve or obligation and leave health/wealth/confidence/stress alone.',
+        '- If a sentence changes nothing about the subject, omit it entirely.',
+        '  Silence is correct and expected for scene-setting lines.',
+        '',
+        'Return ONLY: {"changes":[{"sentence":<int>,"attribute":"<name>","delta":<number>,"cause":"<short quote>"}]}'
+      ].join('\n'),
+      user: `Subject: ${payload.subject || 'the main subject'}\n\nNarration:\n${sentences}`
+    };
+  }
+
+  // Every state change the schema refused, kept for inspection.
+  //
+  // Dropping to silence is right for the RUNTIME and wasteful as evidence. A
+  // rejected attribute is the Director telling us it perceived something the
+  // schema has no place for, which is exactly how a missing dimension
+  // announces itself before anyone has formally discovered it. If `hope`,
+  // `reputation` or `belonging` keep getting emitted and refused, that is data
+  // about the model of story, not noise.
+  const stateRejections = [];
+  const REJECTION_CAP = 500;
+
+  function reject(reason, entry) {
+    stateRejections.push({ reason, at: Date.now(), entry });
+    if (stateRejections.length > REJECTION_CAP) stateRejections.shift();
+  }
+
+  function normalizeStateChanges(payload, raw) {
+    const data = extractJson(raw) || {};
+    const list = Array.isArray(data.changes) ? data.changes : [];
+    const n = (payload.sentences || []).length;
+    const out = [];
+    list.forEach((c) => {
+      if (!c) { reject('malformed', c); return; }
+      const attribute = String(c.attribute || '').trim().toLowerCase();
+      // An unknown attribute is DROPPED, never coerced onto the nearest thing
+      // we do have. A model inventing "hope" must produce nothing: silence is
+      // recoverable and observable, wrong state is neither.
+      if (!STATE_ATTRIBUTES[attribute]) { reject('unknown-attribute', c); return; }
+      const sentence = Number(c.sentence);
+      if (!Number.isInteger(sentence) || sentence < 0 || sentence >= n) {
+        reject('bad-sentence-index', c); return;
+      }
+      let delta = Number(c.delta);
+      if (!Number.isFinite(delta)) { reject('non-numeric-delta', c); return; }
+      if (delta === 0) { reject('zero-delta', c); return; }
+      if (Math.abs(delta) > 1) reject('delta-clamped', c);   // kept, but recorded
+      delta = Math.max(-1, Math.min(1, delta));
+      out.push({ sentence, attribute, delta, cause: String(c.cause || '').slice(0, 80) });
+    });
+    return { changes: out };
+  }
+
+  /** What the schema has been refusing, newest last. */
+  function stateRejectionReport() {
+    const byAttr = {};
+    const byReason = {};
+    stateRejections.forEach((r) => {
+      byReason[r.reason] = (byReason[r.reason] || 0) + 1;
+      const a = r.entry && r.entry.attribute
+        ? String(r.entry.attribute).toLowerCase() : '(none)';
+      if (r.reason === 'unknown-attribute') byAttr[a] = (byAttr[a] || 0) + 1;
+    });
+    return { total: stateRejections.length, byReason, unknownAttributes: byAttr,
+             recent: stateRejections.slice(-25) };
+  }
+
   const ROUTES = {
+    '/api/story-state': {
+      build: (p) => storyStatePrompt(p || {}),
+      parse: (p, rawText) => normalizeStateChanges(p || {}, rawText)
+    },
     '/api/research': {
       build: (p) => researchPrompt(p.topic || '', p.options || {}),
       parse: (p, rawText) => ({ research: normalizeResearch(extractJson(rawText)) })
@@ -889,6 +1004,9 @@ Respond ONLY with JSON:
 
   window.VISUAL_STYLES = VISUAL_STYLES;
   window.BlvckPrompts = {
+    stateRejections,
+    stateRejectionReport,
+    STATE_ATTRIBUTES,
     build(endpoint, payload) {
       const route = ROUTES[endpoint];
       if (!route) throw new Error(`Unknown prompt endpoint: ${endpoint}`);

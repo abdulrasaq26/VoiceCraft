@@ -191,7 +191,13 @@
         // Resting ON the figure, not hovering over it. A weight that is not
         // touching anyone is a floating rectangle, and the whole meaning of
         // this one is contact.
-        const y = ((spot && spot.y) || GROUND) - 0.42;
+        //
+        // Measured against the actor's own unit scale rather than a fixed
+        // fraction of the frame: the figure's head sits about 4.9 units above
+        // its origin, and the figure is not always the same size. A constant
+        // offset put this around his face on one beat and adrift on another.
+        const unit = spot && spot.unit ? spot.unit / H : 0.084;
+        const y = ((spot && spot.y) || GROUND) - unit * 4.9;
         fill(g, [[x - w / 2, y - h], [x + w / 2, y - h], [x + w / 2, y], [x - w / 2, y]],
           dim(t), 0.55);
         line(g, [[x - w / 2, y - h], [x + w / 2, y - h], [x + w / 2, y], [x - w / 2, y],
@@ -290,7 +296,7 @@
     [/\b(risk|gap|shortfall|missing|dangerous|exposed|fall short|chasm|divide)\b/i, 'gap'],
     [/\b(connect|bridge|link|solution|solve|fix|bring together|close the gap|reach)\b/i, 'bridge'],
     [/\b(decline|fell|fall|drop|lost|losing|worse|collapse|down(?:turn|ward)|shrink|decreas)\b/i, 'fall'],
-    [/\b(progress|climb|grow|growth|improve|better|rise|rising|advance|step by step|build up|increas)\b/i, 'climb']
+    [/\b(progress|climb|grow|growth|improve|better|rise|rising|advance|step by step|build up|increas|recover|rebuil|bounce(?:d)? back|turn(?:ed)? (?:it )?around)\w*/i, 'climb']
   ];
 
   /** The metaphor a line of script is reaching for, or null if it is concrete. */
