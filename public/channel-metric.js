@@ -211,7 +211,15 @@
     const v = vectorFor(it);
     const u = uniqueness(set, name);
 
-    const used = ALL_INTRINSIC.filter((k) => Math.abs(v[k]) >= THRESHOLDS[k]);
+    // `facing` is CATEGORICAL, not a magnitude. Zero means "both face the same
+    // way", which is a deliberate setting — it is exactly what makes instruct
+    // teaching rather than confrontation. Treating zero as absence made the
+    // audit recommend "use facing channel" to a pattern already using it, and
+    // understated intrinsic completeness for every same-orientation pattern.
+    // Magnitude channels are different: zero lean really is no lean.
+    const CATEGORICAL = ['facing'];
+    const used = ALL_INTRINSIC.filter((k) =>
+      CATEGORICAL.indexOf(k) > -1 || Math.abs(v[k]) >= THRESHOLDS[k]);
     const unused = ALL_INTRINSIC.filter((k) => used.indexOf(k) === -1);
     const required = it.requires || [];
     const metWorld = required.filter((r) => WORLD_PROVIDES.indexOf(r) > -1);
@@ -233,12 +241,75 @@
     if (reasons.support) order.push('support');
     if (reasons.interaction) order.push('interaction');
 
+    // CANDIDATES, NOT A FILTERED LIST.
+    //
+    // An earlier version suppressed intrinsic recommendations when a pattern
+    // was already distinct, and I described that approvingly as "declining to
+    // generate busywork". That was wrong. There are at least three reasons not
+    // to act — low confidence, low leverage, already good enough — and all
+    // three are product judgements. A measurement that silently drops an
+    // option has made the decision on the reader's behalf and hidden that it
+    // did. Everything is listed; confidence and leverage are reported; the
+    // choice stays with whoever is reading.
     const work = [];
-    needsWorld.forEach((r) => work.push('add ' + r + ' anchor (arrangement)'));
-    needsSupport.forEach((s) => work.push('add ' + s + ' to support vocabulary'));
-    // Only recommend intrinsic work when the pattern is actually close to
-    // something else; unused channels on a distinctive pattern are fine.
-    if (u.min <= 3) unused.slice(0, 3).forEach((k) => work.push('use ' + k + ' channel'));
+    needsWorld.forEach((r) => work.push({
+      action: 'add ' + r + ' anchor',
+      owner: 'arrangement',
+      // Three independent origins: the render visibly failed, the audit routes
+      // here, and the interaction metric found it among the weakest pairs.
+      evidence: ['renderer', 'audit', 'channel-metric'],
+      leverage: 'high',
+      blocking: true
+    }));
+    needsSupport.forEach((s) => work.push({
+      action: 'add ' + s + ' to support vocabulary',
+      owner: 'support',
+      evidence: ['renderer', 'audit', 'support-ontology'],
+      leverage: 'high',
+      blocking: true
+    }));
+    unused.forEach((k) => work.push({
+      action: 'use ' + k + ' channel',
+      owner: 'interaction',
+      // One origin only: this metric said so. Weaker than the above and the
+      // report should not let that difference disappear.
+      evidence: ['channel-metric'],
+      leverage: u.min <= 3 ? 'medium' : 'low',
+      blocking: false
+    }));
+    work.forEach((w) => { w.signals = w.evidence.length; });
+    // Blocking first, then by how many independent signals support it.
+    work.sort((a, b) => (b.blocking - a.blocking) || (b.signals - a.signals));
+
+    // How much this audit believes itself.
+    //
+    // Every instrument in this project has at some point reported success
+    // while the rendered frame disagreed. The defence is not a better metric,
+    // it is a metric that states its own grounds — so this block is part of
+    // the result, not a footnote beside it.
+    const agreement = agreementCheck(set);
+    const grounds = {
+      evidence: {
+        visualBattery: true,      // 25-scene render exists
+        routing: true,            // weaknesses resolve to a named subsystem
+        uniqueness: true          // nearest-neighbour distance computed
+      },
+      calibration: {
+        thresholdsMeasured: false,
+        weightsMeasured: false
+      },
+      agreement: {
+        countVsWeighted: agreement.agree
+      },
+      // The external referee. Perception is the only authority that cannot be
+      // argued with, and no blind classification has been run, so this stays
+      // null rather than being quietly omitted.
+      external: null
+    };
+    let overall = 'high';
+    if (!grounds.agreement.countVsWeighted) overall = 'medium';
+    if (!grounds.calibration.thresholdsMeasured) overall = 'low';
+    if (!grounds.external) overall = 'low';
 
     return {
       pattern: name,
@@ -250,9 +321,22 @@
       owner: order[0] || 'none',
       secondary: order[1] || null,
       reasons,
-      calibrated: false,
-      work: work.length ? work : ['none — pattern is distinct and complete']
+      confidence: Object.assign({ overall }, grounds),
+      work: work.length ? work : []
     };
+  }
+
+  /** Do the unweighted and weighted rankings agree on ordering? */
+  function agreementCheck(set) {
+    const names = Object.keys(set);
+    const scored = names.map((n) => {
+      const u = uniqueness(set, n);
+      return { n, count: u.min, weight: u.score };
+    });
+    const byCount = [...scored].sort((a, b) => a.count - b.count).map((s) => s.n);
+    const byWeight = [...scored].sort((a, b) => a.weight - b.weight).map((s) => s.n);
+    const first = byCount.findIndex((p, i) => p !== byWeight[i]);
+    return { agree: first === -1, divergesAt: first === -1 ? null : first };
   }
 
   window.BlvckMetric = {
