@@ -220,14 +220,52 @@
     // what carries the meaning.
     const metaName = scene.metaphor
       || (scene.metaphor === null ? null : (M ? M.infer(scene.subject || '') : null));
+    const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
+
+    // Where an actor ends up, resolved ONCE.
+    //
+    // Position depends on mood, then on a metaphor anchor, then on a clamp
+    // that keeps the body in frame. Anything that needs to know where the
+    // figure is must ask after all three have been applied — a weight drawn
+    // from the pre-clamp spot ended up framing his head like a sign instead of
+    // pressing on his shoulders. Two bugs in this scene came from two
+    // different places each computing their own answer.
+    function placeFor(spot, isLead) {
+      const advance = mood.advance == null ? 0.6 : mood.advance;
+      let x = spot.x + (mood.drift || 0) * 0.06;
+      let y = spot.y + (mood.sink || 0) * 0.10;
+      let advScale = 0.82 + advance * 0.32;
+
+      // A metaphor outranks mood drift for the lead actor: standing on the
+      // fourth step of six is the whole statement, and a mood offset that slid
+      // the figure off the staircase would destroy it.
+      if (isLead && metaAnchor) {
+        x = metaAnchor.x;
+        y = metaAnchor.y;
+        advScale *= metaAnchor.scale == null ? 1 : metaAnchor.scale;
+      }
+
+      // GROUND is where feet land on the floor PLANE, but an actor hangs below
+      // its origin by about 3.4x the unit scale. Any beat placed at ground
+      // level ran its legs off the bottom: measured botY 0.999 on two of five
+      // beats, while beats a metaphor had lifted higher were fine.
+      const unit = spot.scale * H * 0.16 * mood.framing * advScale;
+      const maxY = 0.97 - (unit * 3.4) / H;
+      if (y > maxY) y = maxY;
+      return { x, y, unit };
+    }
+
     let metaAnchor = null;
     if (M && metaName) {
-      metaAnchor = M.draw(ctx, metaName, t, mood.wellbeing, { x: 0.5, y: L ? L.GROUND : 0.84 });
+      metaAnchor = M.anchorFor(metaName, mood.wellbeing);
+      // Drawn from the LEAD ACTOR'S resolved position, so figure-attached
+      // metaphors land on the figure.
+      const lead = placeFor(spots[0] || { x: 0.5, y: 0.84, scale: 0.42 }, true);
+      M.draw(ctx, metaName, t, mood.wellbeing, lead);
       if (opts.trace) opts.trace.metaphor = { name: metaName, means: M.means(metaName), anchor: metaAnchor };
     }
 
     // ---- 2. Actors ------------------------------------------------------
-    const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
     const specs = (scene.actors && scene.actors.cast) || [];
     const hands = [];
     // Why each actor is posed as it is, for tracing a wrong frame back to
@@ -268,26 +306,12 @@
         // Position carries state. A confident figure steps forward and toward
         // centre; a failing one drifts back, sideways and down. Standing in
         // the same spot every frame is what made the arc read as static.
-        const advance = mood.advance == null ? 0.6 : mood.advance;
-        let posX = spot.x + (mood.drift || 0) * 0.06;
-        let posY = spot.y + (mood.sink || 0) * 0.10;
-        // Advancing also grows the figure — moving toward camera IS scale.
-        let advScale = 0.82 + advance * 0.32;
-
-        // A metaphor outranks mood drift for the FIRST actor: standing on the
-        // fourth step of six is the whole statement, and a mood offset that
-        // slid the figure off the staircase would destroy it. Everyone else
-        // keeps their placement.
-        if (metaAnchor && i === 0) {
-          posX = metaAnchor.x;
-          posY = metaAnchor.y;
-          advScale *= metaAnchor.scale == null ? 1 : metaAnchor.scale;
-        }
+        const { x: posX, y: posY, unit } = placeFor(spot, i === 0);
 
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: posX * W,
           y: posY * H,
-          scale: spot.scale * H * 0.16 * mood.framing * advScale,
+          scale: unit,
           skin: opts.skin || 'stickman',
           colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
           flip: spot.flip
