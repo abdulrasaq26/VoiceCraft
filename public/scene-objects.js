@@ -167,6 +167,91 @@
     floor: { seatY: GROUND + 0.01, sit: true, back: false }
   };
 
+  // --- arrangement anchors -------------------------------------------------
+  //
+  // Furniture positioned FROM the actors, which is what makes it arrangement
+  // rather than scenery. The office environment already draws a desk, and it
+  // never helped: it sits at a fixed place in the room while the figures stand
+  // wherever staging put them, so the two never form a workstation.
+  //
+  // The channel metric found this from a direction that knew nothing about
+  // furniture. `across_desk` sat two channels from three different patterns
+  // and could not be fixed from inside interaction, because its meaning lives
+  // in an object no system could place. An anchor is that object, placed
+  // relative to the people using it.
+
+  const ANCHORS = {
+    // A surface BETWEEN two figures, spanning the gap they leave.
+    desk(g, t, spots, unit) {
+      if (!spots || spots.length < 2) return null;
+      const a = Math.min(spots[0].x, spots[1].x);
+      const b = Math.max(spots[0].x, spots[1].x);
+      const mid = (a + b) / 2;
+      const half = Math.max(unit * 1.9, ((b - a) / 2 + 0.045) * W);
+      const top = py(GROUND) - unit * 2.3;
+      g.save();
+      g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
+      g.globalAlpha = 0.55;
+      g.fillRect(px(mid) - half, top, half * 2, unit * 0.32);
+      g.restore();
+      stroke(g, t, Math.max(3, unit * 0.10));
+      g.strokeRect(px(mid) - half, top, half * 2, unit * 0.32);
+      // A near leg only: a full box would fence the figures off.
+      g.beginPath();
+      g.moveTo(px(mid) - half * 0.85, top + unit * 0.32);
+      g.lineTo(px(mid) - half * 0.85, py(GROUND) + unit * 0.5);
+      g.moveTo(px(mid) + half * 0.85, top + unit * 0.32);
+      g.lineTo(px(mid) + half * 0.85, py(GROUND) + unit * 0.5);
+      g.stroke();
+      return { mid, top: top / H };
+    },
+
+    // A stand in front of the speaker, chest high, narrow.
+    podium(g, t, spots, unit) {
+      if (!spots || !spots.length) return null;
+      const x = spots[0].x + 0.03;
+      const top = py(GROUND) - unit * 2.6;
+      const half = unit * 0.85;
+      g.save();
+      g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
+      g.globalAlpha = 0.6;
+      g.fillRect(px(x) - half, top, half * 2, unit * 2.6);
+      g.restore();
+      stroke(g, t, Math.max(3, unit * 0.10));
+      g.strokeRect(px(x) - half, top, half * 2, unit * 2.6);
+      g.beginPath();
+      g.moveTo(px(x) - half * 1.25, top);
+      g.lineTo(px(x) + half * 1.25, top);
+      g.stroke();
+      return { x, top: top / H };
+    },
+
+    // A bed with someone beside it — the vigil shape.
+    bedside(g, t, spots, unit) {
+      if (!spots || !spots.length) return null;
+      const x = (spots[spots.length - 1].x) + 0.10;
+      const top = py(GROUND) - unit * 0.9;
+      const half = unit * 2.6;
+      g.save();
+      g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
+      g.globalAlpha = 0.5;
+      g.fillRect(px(x) - half, top, half * 2, unit * 0.55);
+      g.restore();
+      stroke(g, t, Math.max(3, unit * 0.10));
+      g.strokeRect(px(x) - half, top, half * 2, unit * 0.55);
+      // Raised head end, which is what says bed rather than table.
+      g.strokeRect(px(x) - half, top - unit * 0.9, unit * 0.3, unit * 0.9);
+      return { x, top: top / H };
+    }
+  };
+
+  /** Place an arrangement anchor relative to the actors using it. */
+  function drawAnchor(g, theme, name, spots, unit) {
+    const fn = ANCHORS[name];
+    if (!fn) return null;
+    return fn(g, theme || {}, spots, unit || 42);
+  }
+
   /**
    * Draw the thing being sat on.
    *
@@ -367,7 +452,7 @@
   }
 
   window.BlvckObjects = {
-    OBJECTS, SUPPORT, place, plan, drawPlan, drawSupport, GROUND,
+    OBJECTS, SUPPORT, ANCHORS, place, plan, drawPlan, drawSupport, drawAnchor, GROUND,
     kinds: () => Object.keys(OBJECTS),
     supports: () => Object.keys(SUPPORT)
   };

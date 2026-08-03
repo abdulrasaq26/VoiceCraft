@@ -89,7 +89,7 @@
     propose: {
       requires: [], support: ['kneel'],
       means: 'proposal, plea, asking',
-      a: { x: 0.36, y: 0.17, scale: 1.02, flip: false, lean: 16, reach: 1.0, reachY: 0.20,
+      a: { x: 0.36, y: 0.17, scale: 1.02, flip: false, lean: 16, reach: 1.0, reachY: 0.20, support: 'kneel',
            bias: { compression: 0.62, openness: 0.30, stability: -0.45, confidence: -0.1 } },
       b: { x: 0.58, y: -0.02, scale: 1.08, flip: true, lean: -9, reach: 0.15, reachY: 0.10,
            bias: { compression: -0.10, openness: 0.20, confidence: 0.2 } }
@@ -131,9 +131,9 @@
     across_desk: {
       requires: ['desk'], support: ['chair'],
       means: 'interview, negotiation, questioning',
-      a: { x: 0.32, y: 0, scale: 0.92, flip: false,
+      a: { x: 0.32, y: 0, scale: 0.92, flip: false, support: 'chair',
            bias: { confidence: 0.2, compression: -0.05 } },
-      b: { x: 0.66, y: 0, scale: 1.08, flip: true,
+      b: { x: 0.66, y: 0, scale: 1.08, flip: true, support: 'chair',
            bias: { compression: 0.25, openness: -0.25, confidence: -0.25 } }
     },
 
@@ -179,9 +179,9 @@
     const s = baseScale == null ? 0.42 : baseScale;
     return [
       { x: it.a.x, y: GROUND + it.a.y, scale: s * it.a.scale, flip: it.a.flip,
-        bias: it.a.bias, lean: it.a.lean || 0, reach: it.a.reach || 0, reachY: it.a.reachY || 0 },
+        bias: it.a.bias, lean: it.a.lean || 0, reach: it.a.reach || 0, reachY: it.a.reachY || 0, support: it.a.support || null },
       { x: it.b.x, y: GROUND + it.b.y, scale: s * it.b.scale, flip: it.b.flip,
-        bias: it.b.bias, lean: it.b.lean || 0, reach: it.b.reach || 0, reachY: it.b.reachY || 0 }
+        bias: it.b.bias, lean: it.b.lean || 0, reach: it.b.reach || 0, reachY: it.b.reachY || 0, support: it.b.support || null }
     ];
   }
 

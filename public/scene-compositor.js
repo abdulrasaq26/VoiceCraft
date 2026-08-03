@@ -348,6 +348,23 @@
       support = OBJ.drawSupport(ctx, t, supportName, lead.x, lead.unit);
     }
 
+    // ---- 1e. Arrangement anchors ----------------------------------------
+    // Furniture placed FROM the actors, which is what separates arrangement
+    // from scenery. The office already drew a desk and it never helped: fixed
+    // in the room while the figures stood wherever staging put them, so the
+    // two never formed a workstation. An interaction that declares it needs a
+    // desk now gets one, between the people using it.
+    const anchors = (scene.anchors
+      || (ixName && IX && IX.INTERACTIONS[ixName] && IX.INTERACTIONS[ixName].requires)
+      || []);
+    if (OBJ && OBJ.drawAnchor && anchors.length) {
+      const placed = spots.map((s, i) => placeFor(s, i === 0));
+      anchors.forEach((a) => {
+        const at = OBJ.drawAnchor(ctx, t, a, placed, lead.unit);
+        if (opts.trace && at) (opts.trace.anchors = opts.trace.anchors || []).push({ name: a, at });
+      });
+    }
+
     if (M && metaName) {
       M.draw(ctx, metaName, t, mood.wellbeing, lead);
       if (opts.trace) opts.trace.metaphor = { name: metaName, means: M.means(metaName), anchor: metaAnchor };
@@ -408,8 +425,15 @@
           // Sitting is a SUPPORT state, not a posture, so it is mixed in here
           // rather than expressed as axes. The authored `sit` clip is exactly
           // the shape the pose space provably could not reach.
-          if (support && support.sit && CH_.CLIPS.sit) {
-            pose = CH_.mix(pose, CH_.sample(support.clip || 'sit', 1), 0.9);
+          // Support is PER ACTOR. In a proposal one kneels and one does not,
+          // and at a desk both sit — so an interaction's support declaration
+          // has to reach the individual figure. Without this the kneel clip
+          // existed and was unreachable: `propose` still rendered standing.
+          const spotSupport = spot.support && OBJ && OBJ.SUPPORT[spot.support]
+            ? OBJ.SUPPORT[spot.support] : null;
+          const eff = spotSupport || support;
+          if (eff && eff.sit && CH_.CLIPS[eff.clip || 'sit']) {
+            pose = CH_.mix(pose, CH_.sample(eff.clip || 'sit', 1), 0.9);
           }
           // REACH — the near arm extends toward the other figure. An offered
           // hand is what separates kneeling from merely being lower down.
@@ -443,8 +467,12 @@
         // centre; a failing one drifts back, sideways and down. Standing in
         // the same spot every frame is what made the arc read as static.
         let { x: posX, y: posY, unit } = placeFor(spot, i === 0);
-        // Sitting puts the body ON the seat.
-        if (support && support.sit && i === 0) posY = support.seatY;
+        // Sitting puts the body ON the seat — per actor, so one figure can
+        // kneel while the other stands.
+        const seat = spot.support && OBJ && OBJ.SUPPORT[spot.support]
+          ? OBJ.SUPPORT[spot.support]
+          : (i === 0 ? support : null);
+        if (seat && seat.sit && seat.seatY != null) posY = seat.seatY;
         if (i === 0) leadFrame = { x: posX, y: posY, unit };
 
         // LEAN — the whole body rotates about its own feet, toward or away
