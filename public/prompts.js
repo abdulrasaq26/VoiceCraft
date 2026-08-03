@@ -762,26 +762,60 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
     };
   }
 
+  // Every state change the schema refused, kept for inspection.
+  //
+  // Dropping to silence is right for the RUNTIME and wasteful as evidence. A
+  // rejected attribute is the Director telling us it perceived something the
+  // schema has no place for, which is exactly how a missing dimension
+  // announces itself before anyone has formally discovered it. If `hope`,
+  // `reputation` or `belonging` keep getting emitted and refused, that is data
+  // about the model of story, not noise.
+  const stateRejections = [];
+  const REJECTION_CAP = 500;
+
+  function reject(reason, entry) {
+    stateRejections.push({ reason, at: Date.now(), entry });
+    if (stateRejections.length > REJECTION_CAP) stateRejections.shift();
+  }
+
   function normalizeStateChanges(payload, raw) {
     const data = extractJson(raw) || {};
     const list = Array.isArray(data.changes) ? data.changes : [];
     const n = (payload.sentences || []).length;
     const out = [];
     list.forEach((c) => {
-      if (!c) return;
+      if (!c) { reject('malformed', c); return; }
       const attribute = String(c.attribute || '').trim().toLowerCase();
       // An unknown attribute is DROPPED, never coerced onto the nearest thing
       // we do have. A model inventing "hope" must produce nothing: silence is
       // recoverable and observable, wrong state is neither.
-      if (!STATE_ATTRIBUTES[attribute]) return;
+      if (!STATE_ATTRIBUTES[attribute]) { reject('unknown-attribute', c); return; }
       const sentence = Number(c.sentence);
-      if (!Number.isInteger(sentence) || sentence < 0 || sentence >= n) return;
+      if (!Number.isInteger(sentence) || sentence < 0 || sentence >= n) {
+        reject('bad-sentence-index', c); return;
+      }
       let delta = Number(c.delta);
-      if (!Number.isFinite(delta) || delta === 0) return;
+      if (!Number.isFinite(delta)) { reject('non-numeric-delta', c); return; }
+      if (delta === 0) { reject('zero-delta', c); return; }
+      if (Math.abs(delta) > 1) reject('delta-clamped', c);   // kept, but recorded
       delta = Math.max(-1, Math.min(1, delta));
       out.push({ sentence, attribute, delta, cause: String(c.cause || '').slice(0, 80) });
     });
     return { changes: out };
+  }
+
+  /** What the schema has been refusing, newest last. */
+  function stateRejectionReport() {
+    const byAttr = {};
+    const byReason = {};
+    stateRejections.forEach((r) => {
+      byReason[r.reason] = (byReason[r.reason] || 0) + 1;
+      const a = r.entry && r.entry.attribute
+        ? String(r.entry.attribute).toLowerCase() : '(none)';
+      if (r.reason === 'unknown-attribute') byAttr[a] = (byAttr[a] || 0) + 1;
+    });
+    return { total: stateRejections.length, byReason, unknownAttributes: byAttr,
+             recent: stateRejections.slice(-25) };
   }
 
   const ROUTES = {
@@ -970,6 +1004,9 @@ Respond ONLY with JSON:
 
   window.VISUAL_STYLES = VISUAL_STYLES;
   window.BlvckPrompts = {
+    stateRejections,
+    stateRejectionReport,
+    STATE_ATTRIBUTES,
     build(endpoint, payload) {
       const route = ROUTES[endpoint];
       if (!route) throw new Error(`Unknown prompt endpoint: ${endpoint}`);
