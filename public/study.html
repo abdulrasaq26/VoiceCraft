@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scene recognition study</title>
+<!--
+  BLIND CLASSIFICATION STUDY.
+
+  The only instrument in this project that is external to it. Everything else
+  — the channel metric, the battery scoring, the uniqueness measure — is the
+  engine or its author grading their own work, and both have been wrong in
+  ways only an outside observer would catch.
+
+  Two attempts at measuring legibility from pixels have now failed. The first
+  clustered scenes by how dark the room was. The second, after subtracting the
+  environment, still reported that an embrace of two overlapping figures was
+  the same picture as a lone child. The failure is structural rather than a
+  bug: "can a viewer name what happened" is not a function of pixel distance.
+
+  So a person is asked, with no caption, no narration and no label.
+
+  WHAT IT PRODUCES
+    per-scene accuracy    which situations read and which do not
+    a confusion matrix    WHAT a failing scene is mistaken FOR, which is the
+                          part that says where to work — argument read as
+                          conversation is a different problem from argument
+                          read as an embrace
+    channel thresholds    once enough answers exist, the smallest change at
+                          which viewers stop confusing two scenes, which is
+                          what channel-metric.js currently guesses
+
+  Run it at /study.html. Nothing is uploaded; results download as JSON.
+-->
+<style>
+  :root {
+    --bg: #0e1116; --fg: #e8ecf2; --soft: #98a2b3; --line: #222a35;
+    --panel: #151a22; --accent: #f5b301; --good: #4fb8a6; --bad: #d0685f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center; padding: 2rem 1rem 4rem;
+  }
+  .wrap { width: 100%; max-width: 54rem; display: flex; flex-direction: column; gap: 1.5rem; }
+  h1 { font-size: 1.5rem; letter-spacing: -0.02em; margin: 0; }
+  p { color: var(--soft); margin: 0; max-width: 62ch; }
+  .eyebrow {
+    font: 600 0.68rem/1 ui-monospace, monospace; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .stage {
+    background: #000; border: 1px solid var(--line); border-radius: 4px;
+    aspect-ratio: 16 / 9; display: grid; place-items: center; overflow: hidden;
+  }
+  .stage img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.6rem; }
+  button {
+    font: inherit; color: var(--fg); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 4px; padding: 0.7rem 0.9rem;
+    text-align: left; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+  .meta { font: 0.8rem ui-monospace, monospace; color: var(--soft); }
+  table { border-collapse: collapse; width: 100%; font: 0.82rem ui-monospace, monospace; }
+  th, td { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--line); text-align: left; }
+  th { color: var(--soft); font-weight: 500; }
+  td.hit { color: var(--good); } td.miss { color: var(--bad); }
+  .scroll { overflow-x: auto; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <div class="eyebrow">Blind classification</div>
+    <h1>What is happening in this picture?</h1>
+  </div>
+
+  <div id="intro">
+    <p>You will see a series of illustrated scenes with no captions and no sound.
+    For each one, choose the option that best describes what is happening. There
+    is no time limit and no penalty for guessing — if nothing fits, pick the
+    closest and move on. It takes about three minutes.</p>
+    <p style="margin-top:1rem"><button id="start">Start</button></p>
+  </div>
+
+  <div id="test" class="hidden">
+    <div class="bar"><i id="prog" style="width:0%"></i></div>
+    <div class="meta" id="count"></div>
+    <div class="stage"><img id="shot" alt="Scene to identify"></div>
+    <div class="opts" id="opts"></div>
+  </div>
+
+  <div id="done" class="hidden">
+    <h1>Results</h1>
+    <p id="summary"></p>
+    <div class="scroll"><table id="matrix"></table></div>
+    <p><button id="save">Download results (JSON)</button></p>
+  </div>
+</div>
+
+<script src="character-engine.js"></script>
+<script src="pose-space.js"></script>
+<script src="environments.js"></script>
+<script src="metaphors.js"></script>
+<script src="scene-objects.js"></script>
+<script src="subject.js"></script>
+<script src="interactions.js"></script>
+<script src="stage-layers.js"></script>
+<script src="story-actions.js"></script>
+<script src="visual-intelligence.js"></script>
+<script src="graphic-renderer.js"></script>
+<script src="story-state.js"></script>
+<script src="scene-compositor.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  // The scenes under test, and the answer each is meant to convey. `truth` is
+  // never shown until the end.
+  const SCENES = [
+    ['Someone studying late into the night', 'office', {energy:.15,stress:.7},
+      {support:'chair',objects:[{kind:'paper',rel:'held'},{kind:'crumpled',rel:'floor',count:7},{kind:'clock',rel:'thought'}],role:'demonstrate',kind:'context'},
+      'He studied all night without sleeping.'],
+    ['Someone being given bad news', 'clinic', {health:.2,stress:.85},
+      {role:'social',kind:'pair'}, 'The doctor told her the news was bad.'],
+    ['Two people arguing', 'home', {stress:.85,confidence:.35},
+      {role:'social',kind:'pair'}, 'They argued late into the night.'],
+    ['A marriage proposal', 'street', {confidence:.8,stress:.4},
+      {role:'social',kind:'pair'}, 'He asked her to marry him.'],
+    ['A reunion after a long absence', 'home', {confidence:.7,stress:.3},
+      {role:'social',kind:'pair'}, 'The soldier came home after three years.'],
+    ['Two people saying goodbye', 'street', {stress:.6,confidence:.45},
+      {role:'social',kind:'pair'}, 'They said goodbye on the station platform.'],
+    ['An adult teaching a child', 'street', {confidence:.75},
+      {role:'social',kind:'pair'}, 'She taught her daughter to ride a bicycle.'],
+    ['A job interview', 'office', {stress:.6,confidence:.4},
+      {role:'social',kind:'pair'}, 'He sat across the desk and answered questions.'],
+    ['Sitting with someone in hospital', 'clinic', {energy:.2,stress:.75},
+      {support:'chair',anchors:['bedside'],role:'story',kind:'context'},
+      'She stayed by the hospital bed all week.'],
+    ['Someone waiting anxiously for news', 'home', {stress:.8,uncertainty:.85},
+      {support:'chair',objects:[{kind:'phone',rel:'surface'},{kind:'clock',rel:'thought'}],role:'story',kind:'context'},
+      'She waited three days for the test results.'],
+    ['Someone facing a difficult choice', 'field', {uncertainty:.9,confidence:.2},
+      {role:'demonstrate',kind:'actor',metaphor:'fork'}, 'He had to choose between two paths.'],
+    ['A child waiting at a window', 'home', {energy:.35,stress:.5},
+      {role:'story',kind:'actor'}, 'The child waited at the window for hours.']
+  ];
+
+  // Distractors that are semantically NEAR the truths, so a near-miss is
+  // recorded as a near-miss rather than as noise.
+  const DISTRACTORS = [
+    'Two people having a conversation', 'A celebration', 'A business meeting',
+    'Someone alone and bored', 'A crowd watching something', 'Someone exercising',
+    'A family meal', 'Someone shopping'
+  ];
+
+  const shuffle = (a) => a.map(v => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(v => v[1]);
+
+  const el = (id) => document.getElementById(id);
+  const order = shuffle(SCENES.map((_, i) => i));
+  const answers = [];
+  let at = 0;
+
+  const ent = (st) => window.BlvckStoryState.entity({ name: 'X', baseline: Object.assign(
+    { health:.8, energy:.7, wealth:.5, confidence:.6, stress:.2,
+      uncertainty:.2, resolve:.5, obligation:.2 }, st || {}) });
+
+  async function render(i) {
+    const [, env, st, cfg, text] = SCENES[i];
+    const scene = {
+      index: i, subject: text, environment: env, entity: ent(st), time: 0,
+      subjectKind: cfg.kind, metaphor: cfg.metaphor || null,
+      actors: { role: cfg.role, count: cfg.kind === 'pair' ? 2 : 1, cast: [] }
+    };
+    if (cfg.support) scene.support = cfg.support;
+    if (cfg.objects) scene.objects = cfg.objects;
+    if (cfg.anchors) scene.anchors = cfg.anchors;
+    const blob = await window.BlvckStage.compose(scene, {});
+    return URL.createObjectURL(blob);
+  }
+
+  async function show() {
+    if (at >= order.length) return finish();
+    const idx = order[at];
+    el('count').textContent = 'Scene ' + (at + 1) + ' of ' + order.length;
+    el('prog').style.width = Math.round((at / order.length) * 100) + '%';
+    el('shot').src = await render(idx);
+
+    // Six options: the truth, two other truths as near-misses, three distractors.
+    const others = shuffle(SCENES.map(s => s[0]).filter(t => t !== SCENES[idx][0])).slice(0, 2);
+    const opts = shuffle([SCENES[idx][0], ...others, ...shuffle(DISTRACTORS).slice(0, 3)]);
+    const box = el('opts');
+    box.innerHTML = '';
+    const shownAt = Date.now();
+    opts.forEach((label) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.onclick = () => {
+        // Clear the options SYNCHRONOUSLY. show() awaits a render, and until
+        // it completes the old buttons stay live — a double-click was
+        // recording two answers for one scene. Walking the study
+        // programmatically produced 14 answers for 12 scenes, and a
+        // participant clicking twice would have corrupted their own data
+        // without either of us noticing.
+        box.innerHTML = '';
+        answers.push({ scene: SCENES[idx][0], chose: label,
+          correct: label === SCENES[idx][0], ms: Date.now() - shownAt });
+        at++;
+        show();
+      };
+      box.appendChild(b);
+    });
+  }
+
+  function finish() {
+    el('test').classList.add('hidden');
+    el('done').classList.remove('hidden');
+    const right = answers.filter(a => a.correct).length;
+    el('summary').textContent =
+      right + ' of ' + answers.length + ' identified correctly (' +
+      Math.round((right / answers.length) * 100) + '%). Per scene below; a wrong ' +
+      'answer shows what it was mistaken for, which is the part that says where to work.';
+    const t = el('matrix');
+    t.innerHTML = '<tr><th>Scene</th><th>Answered</th><th>Result</th><th>Seconds</th></tr>';
+    answers.forEach(a => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + a.scene + '</td><td>' + a.chose + '</td>' +
+        '<td class="' + (a.correct ? 'hit">correct' : 'miss">mistaken') + '</td>' +
+        '<td>' + (a.ms / 1000).toFixed(1) + '</td>';
+      t.appendChild(tr);
+    });
+    el('save').onclick = () => {
+      const blob = new Blob([JSON.stringify({
+        at: new Date().toISOString(), total: answers.length, correct: right, answers
+      }, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'scene-study-' + Date.now() + '.json';
+      a.click();
+    };
+  }
+
+  el('start').onclick = () => {
+    el('intro').classList.add('hidden');
+    el('test').classList.remove('hidden');
+    show();
+  };
+})();
+</script>
+</body>
+</html>
