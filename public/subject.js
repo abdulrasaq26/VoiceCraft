@@ -204,6 +204,9 @@
   // it crops away the thing that mattered.
   function infer(scene) {
     const s = scene || {};
+    // The Director's structure, when it staged this beat. Validated at the
+    // prompt boundary, so anything arriving here is one of the six.
+    if (s.subjectKind && SHOTS_KINDS.indexOf(s.subjectKind) > -1) return s.subjectKind;
     if (s.subject && SHOTS_KINDS.indexOf(s.subject) > -1) return s.subject;
     const actors = (s.actors && s.actors.count) || 1;
     if (actors >= 3) return 'group';

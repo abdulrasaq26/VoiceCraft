@@ -349,8 +349,57 @@
     return { scenes, producer: 'timeline', created: true };
   }
 
+  /**
+   * Ask the Director to STAGE a run of scenes, and merge the answer onto them.
+   *
+   * This closes the producer gap. decide() emits prop and metaphor but never
+   * support, objects or subject structure, so everything built for sitting,
+   * held objects, floor accumulation and subject framing worked only when
+   * hand-authored in a test. Nothing in the live pipeline populated those
+   * fields, and a real render still produced a standing figure in an empty
+   * room.
+   *
+   * The identity/structure split survives the trip: `structure` is one of six
+   * and drives bounds and camera; `identity` is free text that drives nothing
+   * automatically — carried so staging can key off it later, and so a frame
+   * can be traced back to what the Director thought it was looking at.
+   */
+  async function planScenes(scenes, opts) {
+    const o = opts || {};
+    const list = Array.isArray(scenes) ? scenes : [];
+    if (!list.length) return { scenes: list, planned: 0, source: 'none' };
+    if (o.useDirector === false || !window.BlvckAI || !window.BlvckAI.generateJSON) {
+      return { scenes: list, planned: 0, source: 'unavailable' };
+    }
+    try {
+      const res = await window.BlvckAI.generateJSON('/api/scene-plan', {
+        subject: o.subject || 'the main subject',
+        sentences: list.map((s) => s.subject || s.text || '')
+      }, o.aiOptions || {});
+      const beats = (res && res.beats) || [];
+      let planned = 0;
+      beats.forEach((b) => {
+        const scene = list[b.beat];
+        if (!scene) return;
+        // Never overwrite what a human or an earlier stage already chose.
+        if (scene.support == null && b.support !== 'ground') scene.support = b.support;
+        if (scene.objects == null && b.objects.length) scene.objects = b.objects;
+        if (scene.subjectKind == null) scene.subjectKind = b.structure;
+        if (scene.identity == null) scene.identity = b.identity;
+        planned++;
+      });
+      return { scenes: list, planned, source: 'director' };
+    } catch (err) {
+      // Staging is an enhancement, not a requirement: an unplanned scene
+      // renders exactly as it did before this existed.
+      console.warn('[scene-engine] scene plan failed:', err && err.message);
+      return { scenes: list, planned: 0, source: 'error' };
+    }
+  }
+
   window.BlvckScenes = {
     makeScene,
+    planScenes,
     timelineFromProject,
     ensureTimeline,
     srtToWords,

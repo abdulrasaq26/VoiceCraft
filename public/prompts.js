@@ -778,6 +778,113 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
     if (stateRejections.length > REJECTION_CAP) stateRejections.shift();
   }
 
+  // --- scene plan ----------------------------------------------------------
+  //
+  // IDENTITY IS OPEN. STRUCTURE IS CLOSED. That split is the architecture, and
+  // it is enforced here rather than left as a convention, because a convention
+  // would erode the first time someone wanted `courtroom` to be a new subject
+  // type.
+  //
+  // It comes from a measurement. 48 beats across eight genres were put to the
+  // Director with a free vocabulary and produced 48 DISTINCT subject labels --
+  // doctor_and_patient, ration_tins, girl_at_microphone, rising_floodwater --
+  // with no reuse whatsoever. Asked to cluster its own answers by what a
+  // camera would frame differently, it produced six structures. So:
+  //
+  //   identity   free text, never validated against any list, never coerced.
+  //              Drives object choice, staging and interpretation.
+  //   structure  one of six. Drives bounds, framing and camera. Anything else
+  //              is dropped.
+  //
+  // The danger this guards against is a second keyword-parser problem one
+  // level up: crowd_at_table, meeting, classroom, courtroom and restaurant all
+  // becoming structural types. They are not. They are identity + context +
+  // objects, and the structure underneath every one of them is already in the
+  // six.
+  const SUBJECT_STRUCTURES = ['actor', 'context', 'pair', 'group', 'object', 'place'];
+  const SUPPORTS = ['ground', 'chair', 'stool', 'bed', 'floor'];
+  const OBJECT_KINDS = ['paper', 'crumpled', 'pencil', 'laptop', 'cup', 'book', 'phone', 'clock'];
+  const OBJECT_RELS = ['held', 'surface', 'floor', 'thought'];
+
+  function scenePlanPrompt(payload) {
+    const sentences = (payload.sentences || []).map((s, i) => `${i}: ${s}`).join('\n');
+    return {
+      system: [
+        'You stage beats of narration for an illustrated explainer. For each beat you',
+        'report WHAT IS IN FRAME. You never describe emotion, camera moves or lighting:',
+        'other systems derive those from state.',
+        '',
+        'For each beat give:',
+        '',
+        '  identity   what the shot IS, in your own words, snake_case, 1-3 words.',
+        '             e.g. student_at_desk, doctor_and_patient, ration_tins.',
+        '             There is no list. Name it however fits.',
+        '',
+        '  structure  EXACTLY ONE of: ' + SUBJECT_STRUCTURES.join(' | '),
+        '             actor = one figure alone. context = one figure with the thing',
+        '             they are at (desk, bed, microphone, roof). pair = two figures.',
+        '             group = three or more. object = a thing, no figure needed.',
+        '             place = the location itself.',
+        '',
+        '  support    what the figure rests on: ' + SUPPORTS.join(' | '),
+        '',
+        '  objects    things in frame. Each: kind (' + OBJECT_KINDS.join('|') + '),',
+        '             rel (' + OBJECT_RELS.join('|') + '), count.',
+        '             `floor` accumulates: raise the count across beats to show',
+        '             effort piling up. Use `thought` for what is on their mind.',
+        '',
+        'Only include a beat if something is actually in frame for it. Omit the rest.',
+        '',
+        'Return ONLY: {"beats":[{"beat":<int>,"identity":"<snake_case>",' +
+          '"structure":"<one>","support":"<one>","objects":[{"kind":"","rel":"","count":1}]}]}'
+      ].join('\n'),
+      user: `Subject: ${payload.subject || 'the main subject'}\n\nNarration:\n${sentences}`
+    };
+  }
+
+  function normalizeScenePlan(payload, raw) {
+    const data = extractJson(raw) || {};
+    const list = Array.isArray(data.beats) ? data.beats : [];
+    const n = (payload.sentences || []).length;
+    const out = [];
+    list.forEach((b) => {
+      if (!b) { reject('malformed-beat', b); return; }
+      const beat = Number(b.beat);
+      if (!Number.isInteger(beat) || beat < 0 || beat >= n) {
+        reject('bad-beat-index', b); return;
+      }
+      const structure = String(b.structure || '').trim().toLowerCase();
+      if (SUBJECT_STRUCTURES.indexOf(structure) === -1) {
+        // A structure we do not have is dropped, never mapped to the nearest.
+        reject('unknown-structure', b); return;
+      }
+      const support = SUPPORTS.indexOf(String(b.support || '').trim().toLowerCase()) > -1
+        ? String(b.support).trim().toLowerCase() : 'ground';
+
+      const objects = [];
+      (Array.isArray(b.objects) ? b.objects : []).forEach((o) => {
+        if (!o) return;
+        const kind = String(o.kind || '').trim().toLowerCase();
+        const rel = String(o.rel || '').trim().toLowerCase();
+        if (OBJECT_KINDS.indexOf(kind) === -1) { reject('unknown-object-kind', o); return; }
+        if (OBJECT_RELS.indexOf(rel) === -1) { reject('unknown-object-rel', o); return; }
+        objects.push({ kind, rel, count: Math.max(1, Math.min(24, Number(o.count) || 1)) });
+      });
+
+      out.push({
+        beat,
+        // NEVER validated against a list. Sanitised for length and shape only,
+        // because the whole point is that identity is unbounded.
+        identity: String(b.identity || '').trim().toLowerCase()
+          .replace(/[^a-z0-9_]/g, '_').slice(0, 40) || null,
+        structure,
+        support,
+        objects
+      });
+    });
+    return { beats: out };
+  }
+
   function normalizeStateChanges(payload, raw) {
     const data = extractJson(raw) || {};
     const list = Array.isArray(data.changes) ? data.changes : [];
@@ -822,6 +929,10 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
     '/api/story-state': {
       build: (p) => storyStatePrompt(p || {}),
       parse: (p, rawText) => normalizeStateChanges(p || {}, rawText)
+    },
+    '/api/scene-plan': {
+      build: (p) => scenePlanPrompt(p || {}),
+      parse: (p, rawText) => normalizeScenePlan(p || {}, rawText)
     },
     '/api/research': {
       build: (p) => researchPrompt(p.topic || '', p.options || {}),
@@ -1007,6 +1118,10 @@ Respond ONLY with JSON:
     stateRejections,
     stateRejectionReport,
     STATE_ATTRIBUTES,
+    SUBJECT_STRUCTURES,
+    OBJECT_KINDS,
+    OBJECT_RELS,
+    SUPPORTS,
     build(endpoint, payload) {
       const route = ROUTES[endpoint];
       if (!route) throw new Error(`Unknown prompt endpoint: ${endpoint}`);
