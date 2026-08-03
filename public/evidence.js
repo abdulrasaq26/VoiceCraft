@@ -105,9 +105,88 @@
     finding: 'confront and embrace separated by only two channels',
     entered: 'retrospective' });
 
+  // --- predictions ---------------------------------------------------------
+  //
+  // Evidence records what happened. Predictions record what was EXPECTED to
+  // happen, before the change is made — which is the only way to find out
+  // whether the recommendations are any good.
+  //
+  // The distinction that makes this worth having: a prediction filed after the
+  // result is known is not a prediction. So `settle()` refuses to score
+  // anything that was not written down first, and the record keeps both
+  // timestamps so the gap is visible.
+  const PREDICTIONS = [];
+
+  function predict(spec) {
+    const s = spec || {};
+    const p = {
+      id: 'pred-' + String(PREDICTIONS.length + 1).padStart(3, '0'),
+      change: String(s.change || ''),
+      subject: String(s.subject || ''),
+      expected: String(s.expected || ''),
+      metric: String(s.metric || ''),
+      baseline: s.baseline == null ? null : s.baseline,
+      target: s.target == null ? null : s.target,
+      author: String(s.author || 'audit'),
+      madeAt: Date.now(),
+      settled: null
+    };
+    PREDICTIONS.push(p);
+    return p;
+  }
+
+  // A prediction has to be at risk to be worth anything, and the first one
+  // filed here was not. The baseline had been measured AFTER the change was
+  // loaded, so "before" and "after" were the same number, the prediction was
+  // held for 93 milliseconds, and the scorecard reported 100%.
+  //
+  // Writing it down first is necessary and not sufficient. So settle() now
+  // also refuses anything held for less than this — long enough that the
+  // change had to be made in between rather than alongside.
+  const MIN_HELD_MS = 30 * 1000;
+
+  /** Score a prediction against what actually happened. */
+  function settle(id, actual, note) {
+    const p = PREDICTIONS.find((x) => x.id === id);
+    if (!p) return { error: 'no such prediction: ' + id };
+    if (p.settled) return { error: 'already settled' };
+    const held = Date.now() - p.madeAt;
+    if (held < MIN_HELD_MS) {
+      p.settled = { actual, correct: null, void: true,
+        note: 'VOID — held ' + held + 'ms; baseline was probably measured after the change',
+        at: Date.now(), heldFor: held };
+      return p;
+    }
+    const hit = p.target != null && actual != null
+      ? (p.target >= p.baseline ? actual >= p.target : actual <= p.target)
+      : null;
+    p.settled = {
+      actual, correct: hit, note: note || '',
+      at: Date.now(), heldFor: Date.now() - p.madeAt
+    };
+    return p;
+  }
+
+  /** How good the recommendations have been, over time. */
+  function scorecard() {
+    const settledAll = PREDICTIONS.filter((p) => p.settled);
+    const voided = settledAll.filter((p) => p.settled.void);
+    const scored = settledAll.filter((p) => !p.settled.void);
+    const right = scored.filter((p) => p.settled.correct === true).length;
+    return {
+      made: PREDICTIONS.length,
+      scored: scored.length,
+      voided: voided.length,          // reported, never silently dropped
+      correct: right,
+      rate: scored.length ? Math.round((right / scored.length) * 100) + '%' : 'n/a',
+      open: PREDICTIONS.filter((p) => !p.settled).map((p) => p.id + ': ' + p.change)
+    };
+  }
+
   window.BlvckEvidence = {
-    record, find, signals,
+    record, find, signals, predict, settle, scorecard,
     all: () => RECORDS.slice(),
+    predictions: () => PREDICTIONS.slice(),
     sources: () => [...new Set(RECORDS.map((r) => r.source))],
     count: () => RECORDS.length
   };

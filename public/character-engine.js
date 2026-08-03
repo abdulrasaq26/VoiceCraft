@@ -182,6 +182,18 @@
                        legL: 20, legR: -20, neck: -6 } }
       ]
     },
+    // KNEEL. A support state, not a posture: it is the body's relationship
+    // to the ground, which every pose-space axis explicitly excludes. One
+    // knee down and back, the other up and forward, spine tall — that
+    // verticality is what separates kneeling from crouching or collapsing.
+    kneel: {
+      dur: 0.7,
+      keys: [
+        { t: 0, p: {} },
+        { t: 1, p: { legL: 76, shinL: -78, legR: -14, shinR: 96,
+                     torso: -3, armL: 12, armR: -12 }, lift: -0.62 }
+      ]
+    },
     // Two clips that exist purely as silhouettes, for state to reach for.
     defeated: {
       dur: 0.9,

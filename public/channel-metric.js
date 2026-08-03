@@ -65,7 +65,7 @@
 
   // Extrinsic requirements the engine can actually satisfy today.
   const WORLD_PROVIDES = [];            // arrangement does not exist yet
-  const SUPPORT_PROVIDES = ['ground', 'chair', 'stool', 'bed', 'floor'];
+  const SUPPORT_PROVIDES = ['ground', 'chair', 'stool', 'bed', 'floor', 'kneel'];
 
   /** Reduce a staging pattern to its channel vector. */
   function vectorFor(it) {

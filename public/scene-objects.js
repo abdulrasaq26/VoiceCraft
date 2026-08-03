@@ -158,6 +158,9 @@
 
   const SUPPORT = {
     ground: { seatY: null, sit: false },
+    // No furniture: kneeling needs the pose, not a prop. `clip` names which
+    // authored shape expresses this support state.
+    kneel: { seatY: 0.835, sit: true, back: false, furniture: false, clip: 'kneel' },
     chair: { seatY: GROUND - 0.11, sit: true, back: true },
     stool: { seatY: GROUND - 0.09, sit: true, back: false },
     bed: { seatY: GROUND - 0.07, sit: true, back: false, wide: true },
@@ -177,6 +180,9 @@
   function drawSupport(g, t, name, x, unit) {
     const s = SUPPORT[name];
     if (!s || !s.sit || s.seatY == null) return null;
+    // Some support states are pure body: nothing to draw, but the compositor
+    // still needs the descriptor so it can mix the right clip.
+    if (s.furniture === false) return Object.assign({}, s);
     // PIXELS, not frame fractions. The first attempt normalised the seat width
     // by frame HEIGHT and then used it as an X width, so the chair came out
     // about 3.5x the figure and read as a fence. Furniture is sized against

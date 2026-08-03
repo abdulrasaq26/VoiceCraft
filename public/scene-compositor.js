@@ -409,7 +409,7 @@
           // rather than expressed as axes. The authored `sit` clip is exactly
           // the shape the pose space provably could not reach.
           if (support && support.sit && CH_.CLIPS.sit) {
-            pose = CH_.mix(pose, CH_.sample('sit', 1), 0.9);
+            pose = CH_.mix(pose, CH_.sample(support.clip || 'sit', 1), 0.9);
           }
           // REACH — the near arm extends toward the other figure. An offered
           // hand is what separates kneeling from merely being lower down.
