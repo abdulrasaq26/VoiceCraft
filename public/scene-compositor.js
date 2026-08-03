@@ -571,10 +571,28 @@
     }
 
     // ---- 4. Props, in the actors' hands ---------------------------------
-    const propName = scene.prop || null;
+    //
+    // THE LEGACY OBJECT VOCABULARY, and it only runs when the current one has
+    // nothing to say. PROPS draws one thing at a hand; OBJECTS draws many with
+    // a relation — held, on a surface, on the floor, in a thought. They are
+    // two representations of the same concept and both were live in this
+    // function.
+    //
+    // That was not merely untidy, it rendered. `decide()` sets `prop` from
+    // inferProp while attachState sets `objects` from inferObjects, so one
+    // scene carried both: "He opened the laptop and typed" produced
+    // prop=laptop AND objects=[laptop/surface], and the frame contained TWO
+    // laptops — one on the desk, one in his hand, the same object under two
+    // relation models.
+    //
+    // Measured rather than seen: the two frames looked identical to me and
+    // differed by 775 pixels. The second laptop is small at this scale, which
+    // is exactly why a duplicate vocabulary can survive a long time.
+    const propName = (scene.objects && scene.objects.length) ? null : (scene.prop || null);
     if (L && propName && L.PROPS[propName] && hands.length) {
       const h = hands[0];
       L.PROPS[propName](ctx, t, h.x, h.y, h.spot.scale * H * 0.14);
+      if (opts.trace) opts.trace.legacyProp = propName;
     }
 
     // ---- Annotation: connect a presenter to what it references ----------
