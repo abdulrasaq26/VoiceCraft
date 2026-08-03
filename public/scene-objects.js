@@ -164,38 +164,65 @@
     floor: { seatY: GROUND + 0.01, sit: true, back: false }
   };
 
-  /** Draw the thing being sat on. Behind the figure, so it reads as support. */
-  function drawSupport(g, t, name, x) {
+  /**
+   * Draw the thing being sat on.
+   *
+   * The first version drew a thin outline and the figure read as STANDING
+   * BESIDE A CHAIR, which is a total failure of the feature no matter what the
+   * state says. Hand-object and body-support relationships are perceived as
+   * binary: interlocking or not. So the seat is now a filled slab sized to the
+   * actual figure, the back rises behind the torso, and the seat plane is
+   * drawn wide enough that thighs land ON it rather than near it.
+   */
+  function drawSupport(g, t, name, x, unit) {
     const s = SUPPORT[name];
     if (!s || !s.sit || s.seatY == null) return null;
-    const cx = x == null ? 0.5 : x;
-    const w = s.wide ? 0.20 : 0.11;
-    stroke(g, t, 4);
-    // Seat.
-    g.beginPath();
-    g.moveTo(px(cx - w), py(s.seatY));
-    g.lineTo(px(cx + w), py(s.seatY));
-    g.stroke();
+    // PIXELS, not frame fractions. The first attempt normalised the seat width
+    // by frame HEIGHT and then used it as an X width, so the chair came out
+    // about 3.5x the figure and read as a fence. Furniture is sized against
+    // the body, and the body is measured in units.
+    const u = unit || 42;
+    const cxp = px(x == null ? 0.5 : x);
+    const halfW = u * (s.wide ? 2.4 : 1.7);
+    const seatTop = py(s.seatY);
+    const thick = u * 0.30;
+
+    // Filled slab: a line reads as a shelf, a slab reads as furniture.
+    g.save();
+    g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
+    g.globalAlpha = 0.5;
+    g.fillRect(cxp - halfW, seatTop, halfW * 2, thick);
+    g.restore();
+    stroke(g, t, Math.max(3, u * 0.10));
+    g.strokeRect(cxp - halfW, seatTop, halfW * 2, thick);
+
     // Legs.
-    [-w * 0.85, w * 0.85].forEach((d) => {
+    [-halfW * 0.85, halfW * 0.85].forEach((d) => {
       g.beginPath();
-      g.moveTo(px(cx + d), py(s.seatY));
-      g.lineTo(px(cx + d), py(GROUND + 0.06));
+      g.moveTo(cxp + d, seatTop + thick);
+      g.lineTo(cxp + d, py(GROUND + 0.05));
       g.stroke();
     });
+
     if (s.back) {
+      // Behind the torso, so body and chair overlap in silhouette — which is
+      // what makes "sitting" read rather than "standing beside a chair".
+      // Short and wide. A tall back with several rungs reads as a LADDER, and
+      // a ladder behind a seated figure is worse than no chair at all — the
+      // eye resolves it as the subject standing in front of one.
+      const bx = cxp - halfW;
+      const top = seatTop - u * 1.25;
       g.beginPath();
-      g.moveTo(px(cx - w), py(s.seatY));
-      g.lineTo(px(cx - w - 0.012), py(s.seatY - 0.19));
+      g.moveTo(bx, seatTop);
+      g.lineTo(bx, top);
+      g.lineTo(bx + halfW * 0.55, top);
       g.stroke();
-      for (let i = 0; i < 2; i++) {
-        g.beginPath();
-        g.moveTo(px(cx - w - 0.004 - i * 0.004), py(s.seatY - 0.07 - i * 0.055));
-        g.lineTo(px(cx - w + 0.075), py(s.seatY - 0.07 - i * 0.055));
-        g.stroke();
-      }
+      g.beginPath();
+      g.moveTo(bx, seatTop - u * 0.62);
+      g.lineTo(bx + halfW * 0.55, seatTop - u * 0.62);
+      g.stroke();
     }
-    return s;
+    return Object.assign({}, s, { seatHalfW: halfW, seatTopY: s.seatY });
   }
 
   // --- placement -----------------------------------------------------------
@@ -234,10 +261,19 @@
         let size;
         switch (o.rel) {
           case 'held':
-            // Slightly forward of the body, at hand height.
-            x = actorX + 0.085;
-            y = actorY - unit * 1.9 / H;
-            size = unit * 1.5;
+            // ON the hand, not near it. Hand-object contact is perceived as
+            // binary: touching reads as "holding", ten pixels away reads as
+            // "an object happens to be nearby", and there is no gradient
+            // between them. So this uses the solved hand bone when the
+            // compositor supplies one and only falls back to an estimate.
+            if (f.hand) {
+              x = f.hand.x / W;
+              y = f.hand.y / H;
+            } else {
+              x = actorX + 0.075;
+              y = actorY - unit * 1.9 / H;
+            }
+            size = unit * 1.7;
             break;
           case 'surface': {
             const k = surfaceIdx++;
@@ -254,10 +290,16 @@
           case 'floor':
           default: {
             // Seeded, so raising the count ADDS without moving what is there.
+            //
+            // Sized and placed for VISIBILITY, which the first pass got wrong:
+            // drafts rendered as specks pinned to the bottom edge, so the
+            // accumulation was correct in the data and invisible in the frame.
+            // Six objects do not communicate effort — six PROMINENT objects
+            // do. Accumulation is a storytelling channel, not set dressing.
             const k = floorIdx++;
-            x = 0.20 + rnd(k, 3) * 0.66;
-            y = GROUND + 0.035 + rnd(k, 11) * 0.10;
-            size = unit * (0.62 + rnd(k, 5) * 0.26);
+            x = 0.16 + rnd(k, 3) * 0.70;
+            y = GROUND + 0.03 + rnd(k, 11) * 0.075;
+            size = unit * (1.15 + rnd(k, 5) * 0.5);
             break;
           }
         }

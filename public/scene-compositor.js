@@ -218,8 +218,6 @@
     // be photographed — so without this they arrive as words and leave as
     // words. Staged behind the actors, because the actor's position ON it is
     // what carries the meaning.
-    const metaName = scene.metaphor
-      || (scene.metaphor === null ? null : (M ? M.infer(scene.subject || '') : null));
     const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
 
     // Where an actor ends up, resolved ONCE.
@@ -255,29 +253,43 @@
       return { x, y, unit };
     }
 
+    const OBJ = window.BlvckObjects;
+    const supportName = scene.support || 'ground';
+
+    // SYMBOL ARBITRATION. A metaphor is a STATED abstraction; an object is a
+    // thing PRESENT in the scene. When both express the same idea the frame
+    // says it twice and means it less — a clock on the desk beside an
+    // hourglass metaphor put two time symbols in one image. The present thing
+    // wins, because it belongs to the world rather than commenting on it.
+    const CLAIMS = { drain: ['clock'], weight: ['book'], barrier: [], fork: [] };
+    let metaName = scene.metaphor
+      || (scene.metaphor === null ? null : (M ? M.infer(scene.subject || '') : null));
+    if (metaName && CLAIMS[metaName] && scene.objects) {
+      const present = scene.objects.map((o) => o && o.kind);
+      if (CLAIMS[metaName].some((k) => present.indexOf(k) > -1)) {
+        if (opts.trace) opts.trace.metaphorSuppressed = metaName;
+        metaName = null;
+      }
+    }
+
+    // Resolved ONCE, before anything is drawn, so the seat and the figure
+    // cannot disagree about where the figure is. Drawing the chair from a
+    // placement computed before the metaphor anchor existed is why the chair
+    // sat beside the body instead of under it.
+    let metaAnchor = M && metaName ? M.anchorFor(metaName, mood.wellbeing) : null;
+    const lead = placeFor(spots[0] || { x: 0.5, y: 0.84, scale: 0.42 }, true);
+
     // ---- 1c. Support ----------------------------------------------------
     // What the body rests on. Drawn before the actor so the seat is behind
     // them, and it MOVES the figure: sitting lowers the origin and folds the
     // legs, which is precisely what the pose space cannot express because
     // every axis there describes the body above its own feet.
-    // Declared before the support block because placeFor() reads it and the
-    // support block calls placeFor(). `let` would otherwise be in its temporal
-    // dead zone and throw on every scene that sits down.
-    let metaAnchor = null;
-
-    const OBJ = window.BlvckObjects;
-    const supportName = scene.support || 'ground';
     let support = null;
     if (OBJ && supportName !== 'ground') {
-      const lead0 = placeFor(spots[0] || { x: 0.5, y: 0.84, scale: 0.42 }, true);
-      support = OBJ.drawSupport(ctx, t, supportName, lead0.x);
+      support = OBJ.drawSupport(ctx, t, supportName, lead.x, lead.unit);
     }
 
     if (M && metaName) {
-      metaAnchor = M.anchorFor(metaName, mood.wellbeing);
-      // Drawn from the LEAD ACTOR'S resolved position, so figure-attached
-      // metaphors land on the figure.
-      const lead = placeFor(spots[0] || { x: 0.5, y: 0.84, scale: 0.42 }, true);
       M.draw(ctx, metaName, t, mood.wellbeing, lead);
       if (opts.trace) opts.trace.metaphor = { name: metaName, means: M.means(metaName), anchor: metaAnchor };
     }
@@ -316,15 +328,20 @@
           let pose = posture.pose;
           // A gesture is something you DO at a moment, layered over how you
           // stand, at a weight set by how big the change is.
+          // sample() takes a clip NAME, not a clip object — it does
+          // `CLIPS[clipName] || CLIPS.idle`, so passing the object silently
+          // resolved to idle and mixed in nothing. Both call sites below had
+          // that bug: the seated figure never sat, and the gesture layer had
+          // been a no-op since the pose space landed, with traces cheerfully
+          // reporting `gesture: facepalm` while the renderer drew idle.
           if (posture.gesture && CH_.CLIPS[posture.gesture] && posture.gestureWeight > 0) {
-            const g = CH_.sample(CH_.CLIPS[posture.gesture], 1);
-            pose = CH_.mix(pose, g, posture.gestureWeight);
+            pose = CH_.mix(pose, CH_.sample(posture.gesture, 1), posture.gestureWeight);
           }
           // Sitting is a SUPPORT state, not a posture, so it is mixed in here
           // rather than expressed as axes. The authored `sit` clip is exactly
           // the shape the pose space provably could not reach.
           if (support && support.sit && CH_.CLIPS.sit) {
-            pose = CH_.mix(pose, CH_.sample(CH_.CLIPS.sit, 1), 0.85);
+            pose = CH_.mix(pose, CH_.sample('sit', 1), 0.9);
           }
           pose.emotion = posture.emotion;
           a = pose;
@@ -371,7 +388,10 @@
     // vocabularies can coexist while the old PROPS table is retired.
     if (OBJ && scene.objects && scene.objects.length) {
       const placed = OBJ.place(ctx, t, { objects: scene.objects },
-        Object.assign({ surfaceY: (L ? L.GROUND : 0.84) - 0.10 }, leadFrame || {}));
+        Object.assign({ surfaceY: (L ? L.GROUND : 0.84) - 0.10 },
+          leadFrame || {},
+          // The solved hand, so a held object touches it.
+          hands.length ? { hand: { x: hands[0].x, y: hands[0].y } } : {}));
       if (opts.trace) opts.trace.objects = placed;
     }
 
