@@ -47,6 +47,13 @@
   //           argument: both bodies committed forward into the space between.
   //   reach   0..1, how far the near arm extends toward the other. An offered
   //           hand is the difference between kneeling and merely being lower.
+  //   reachY  -1..1, WHERE that hand goes: down, level, or up and around.
+  //           Added because the channel-distance metric found confront and
+  //           embrace separated by only two channels -- both lean in, both
+  //           face each other, same scale, same height -- so an argument and
+  //           an embrace differed only by distance and arm extension. Arms
+  //           around the shoulders versus a hand levelled at the chest is the
+  //           distinction a viewer actually reads.
   //
   // bias values are added to the pose-space axes, -1..1 before clamping.
   const INTERACTIONS = {
@@ -56,9 +63,9 @@
     // comfortable. Equal height so neither yields.
     confront: {
       means: 'argument, confrontation, standing your ground',
-      a: { x: 0.34, y: 0, scale: 1.08, flip: false, lean: 13, reach: 0.55,
+      a: { x: 0.34, y: 0, scale: 1.08, flip: false, lean: 13, reach: 0.55, reachY: -0.10,
            bias: { openness: 0.18, compression: -0.10, asymmetry: 0.35 } },
-      b: { x: 0.60, y: 0, scale: 1.00, flip: true, lean: 10, reach: 0.35,
+      b: { x: 0.60, y: 0, scale: 1.00, flip: true, lean: 10, reach: 0.35, reachY: -0.05,
            bias: { openness: 0.14, compression: -0.05, asymmetry: -0.30 } }
     },
 
@@ -79,9 +86,9 @@
     // one arm fully extended. She draws back and away.
     propose: {
       means: 'proposal, plea, asking',
-      a: { x: 0.36, y: 0.17, scale: 1.02, flip: false, lean: 16, reach: 1.0,
+      a: { x: 0.36, y: 0.17, scale: 1.02, flip: false, lean: 16, reach: 1.0, reachY: 0.20,
            bias: { compression: 0.62, openness: 0.30, stability: -0.45, confidence: -0.1 } },
-      b: { x: 0.58, y: -0.02, scale: 1.08, flip: true, lean: -9, reach: 0.15,
+      b: { x: 0.58, y: -0.02, scale: 1.08, flip: true, lean: -9, reach: 0.15, reachY: 0.10,
            bias: { compression: -0.10, openness: 0.20, confidence: 0.2 } }
     },
 
@@ -89,9 +96,9 @@
     // figures overlap.
     embrace: {
       means: 'reunion, homecoming, comfort',
-      a: { x: 0.42, y: 0, scale: 1.04, flip: false, lean: 9, reach: 0.9,
+      a: { x: 0.42, y: 0, scale: 1.04, flip: false, lean: 9, reach: 0.9, reachY: 0.75,
            bias: { openness: 0.4, compression: -0.1, confidence: 0.2 } },
-      b: { x: 0.55, y: 0, scale: 1.00, flip: true, lean: 8, reach: 0.85,
+      b: { x: 0.55, y: 0, scale: 1.00, flip: true, lean: 8, reach: 0.85, reachY: 0.70,
            bias: { openness: 0.38, compression: -0.08, confidence: 0.18 } }
     },
 
@@ -164,9 +171,9 @@
     const s = baseScale == null ? 0.42 : baseScale;
     return [
       { x: it.a.x, y: GROUND + it.a.y, scale: s * it.a.scale, flip: it.a.flip,
-        bias: it.a.bias, lean: it.a.lean || 0, reach: it.a.reach || 0 },
+        bias: it.a.bias, lean: it.a.lean || 0, reach: it.a.reach || 0, reachY: it.a.reachY || 0 },
       { x: it.b.x, y: GROUND + it.b.y, scale: s * it.b.scale, flip: it.b.flip,
-        bias: it.b.bias, lean: it.b.lean || 0, reach: it.b.reach || 0 }
+        bias: it.b.bias, lean: it.b.lean || 0, reach: it.b.reach || 0, reachY: it.b.reachY || 0 }
     ];
   }
 

@@ -413,9 +413,13 @@
           }
           // REACH — the near arm extends toward the other figure. An offered
           // hand is what separates kneeling from merely being lower down.
+          // reachY decides WHERE the hand goes — level at the chest, or up and
+          // around the shoulders. That is the channel separating an argument
+          // from an embrace once both are leaning in at close range.
           if (spot.reach) {
-            pose.armR = -(38 + spot.reach * 58);
-            pose.forearmR = -(spot.reach * 26);
+            const up = spot.reachY || 0;
+            pose.armR = -(30 + spot.reach * 55 + up * 72);
+            pose.forearmR = -(spot.reach * 24 * (1 - Math.abs(up) * 0.6));
           }
           pose.emotion = posture.emotion;
           a = pose;
