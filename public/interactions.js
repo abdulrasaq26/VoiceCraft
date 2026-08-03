@@ -62,6 +62,7 @@
     // Both committed FORWARD into the space between them, and closer than is
     // comfortable. Equal height so neither yields.
     confront: {
+      requires: [], support: [],
       means: 'argument, confrontation, standing your ground',
       a: { x: 0.34, y: 0, scale: 1.08, flip: false, lean: 13, reach: 0.55, reachY: -0.10,
            bias: { openness: 0.18, compression: -0.10, asymmetry: 0.35 } },
@@ -72,6 +73,7 @@
     // The bearer stands, the receiver drops. Distance stays respectful --
     // closeness would read as comfort, and this is not comfort yet.
     deliver_bad_news: {
+      requires: [], support: [],
       means: 'bad news, diagnosis, dismissal',
       a: { x: 0.34, y: -0.02, scale: 0.96, flip: false,
            bias: { compression: 0.15, openness: -0.10, confidence: 0.1 } },
@@ -85,6 +87,7 @@
     // gesture — offering is. Now: down hard, folded, tilted up toward her,
     // one arm fully extended. She draws back and away.
     propose: {
+      requires: [], support: ['kneel'],
       means: 'proposal, plea, asking',
       a: { x: 0.36, y: 0.17, scale: 1.02, flip: false, lean: 16, reach: 1.0, reachY: 0.20,
            bias: { compression: 0.62, openness: 0.30, stability: -0.45, confidence: -0.1 } },
@@ -95,6 +98,7 @@
     // Almost no gap, both leaning in, near-equal. The only pattern where the
     // figures overlap.
     embrace: {
+      requires: [], support: [],
       means: 'reunion, homecoming, comfort',
       a: { x: 0.42, y: 0, scale: 1.04, flip: false, lean: 9, reach: 0.9, reachY: 0.75,
            bias: { openness: 0.4, compression: -0.1, confidence: 0.2 } },
@@ -104,6 +108,7 @@
 
     // One turned AWAY. Orientation carries this: a back is unambiguous.
     part: {
+      requires: [], support: [],
       means: 'goodbye, estrangement, walking out',
       a: { x: 0.28, y: 0, scale: 0.94, flip: false,
            bias: { openness: 0.15, compression: 0.05 } },
@@ -113,6 +118,7 @@
 
     // Side by side, facing the same way, close. Nobody opposes anybody.
     instruct: {
+      requires: [], support: [],
       means: 'teaching, mentoring, showing',
       a: { x: 0.40, y: 0, scale: 1.10, flip: false,
            bias: { openness: 0.3, confidence: 0.25, stability: 0.2 } },
@@ -123,6 +129,7 @@
     // Both seated, a surface between them, unequal scale so one is the
     // subject and one is the examiner.
     across_desk: {
+      requires: ['desk'], support: ['chair'],
       means: 'interview, negotiation, questioning',
       a: { x: 0.32, y: 0, scale: 0.92, flip: false,
            bias: { confidence: 0.2, compression: -0.05 } },
@@ -132,6 +139,7 @@
 
     // One presents, the rest receive. Asymmetric by count, not just position.
     address: {
+      requires: ['podium'], support: [],
       means: 'on stage, verdict, announcement',
       a: { x: 0.30, y: -0.04, scale: 1.18, flip: false,
            bias: { openness: 0.4, confidence: 0.35, stability: 0.25 } },
