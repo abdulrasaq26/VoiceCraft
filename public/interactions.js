@@ -64,9 +64,9 @@
     confront: {
       requires: [], support: [],
       means: 'argument, confrontation, standing your ground',
-      a: { x: 0.34, y: 0, scale: 1.08, flip: false, lean: 13, reach: 0.55, reachY: -0.10,
+      a: { x: 0.34, y: 0, scale: 1.08, flip: false, lean: 13, reach: 0.55, reachY: -0.10, gaze: 'partner', z: 1,
            bias: { openness: 0.18, compression: -0.10, asymmetry: 0.35 } },
-      b: { x: 0.60, y: 0, scale: 1.00, flip: true, lean: 10, reach: 0.35, reachY: -0.05,
+      b: { x: 0.60, y: 0, scale: 1.00, flip: true, lean: 10, reach: 0.35, reachY: -0.05, gaze: 'partner', z: 0,
            bias: { openness: 0.14, compression: -0.05, asymmetry: -0.30 } }
     },
 
@@ -75,9 +75,9 @@
     deliver_bad_news: {
       requires: [], support: [],
       means: 'bad news, diagnosis, dismissal',
-      a: { x: 0.34, y: -0.02, scale: 0.96, flip: false,
+      a: { x: 0.34, y: -0.02, scale: 0.96, flip: false, gaze: 'partner', z: 0,
            bias: { compression: 0.15, openness: -0.10, confidence: 0.1 } },
-      b: { x: 0.64, y: 0.05, scale: 1.10, flip: true,
+      b: { x: 0.64, y: 0.05, scale: 1.10, flip: true, gaze: 'down', z: 1,
            bias: { compression: 0.45, openness: -0.35, stability: -0.3, confidence: -0.4 } }
     },
 
@@ -89,9 +89,9 @@
     propose: {
       requires: [], support: ['kneel'],
       means: 'proposal, plea, asking',
-      a: { x: 0.36, y: 0.17, scale: 1.02, flip: false, lean: 16, reach: 1.0, reachY: 0.20, support: 'kneel',
+      a: { x: 0.36, y: 0.17, scale: 1.02, flip: false, lean: 16, reach: 1.0, reachY: 0.20, support: 'kneel', gaze: 'up', z: 0,
            bias: { compression: 0.62, openness: 0.30, stability: -0.45, confidence: -0.1 } },
-      b: { x: 0.58, y: -0.02, scale: 1.08, flip: true, lean: -9, reach: 0.15, reachY: 0.10,
+      b: { x: 0.58, y: -0.02, scale: 1.08, flip: true, lean: -9, reach: 0.15, reachY: 0.10, gaze: 'partner', z: 1,
            bias: { compression: -0.10, openness: 0.20, confidence: 0.2 } }
     },
 
@@ -100,9 +100,9 @@
     embrace: {
       requires: [], support: [],
       means: 'reunion, homecoming, comfort',
-      a: { x: 0.42, y: 0, scale: 1.04, flip: false, lean: 9, reach: 0.9, reachY: 0.75,
+      a: { x: 0.42, y: 0, scale: 1.04, flip: false, lean: 9, reach: 0.9, reachY: 0.75, gaze: 'partner', z: 0,
            bias: { openness: 0.4, compression: -0.1, confidence: 0.2 } },
-      b: { x: 0.55, y: 0, scale: 1.00, flip: true, lean: 8, reach: 0.85, reachY: 0.70,
+      b: { x: 0.55, y: 0, scale: 1.00, flip: true, lean: 8, reach: 0.85, reachY: 0.70, gaze: 'partner', z: 1,
            bias: { openness: 0.38, compression: -0.08, confidence: 0.18 } }
     },
 
@@ -110,9 +110,9 @@
     part: {
       requires: [], support: [],
       means: 'goodbye, estrangement, walking out',
-      a: { x: 0.28, y: 0, scale: 0.94, flip: false,
+      a: { x: 0.28, y: 0, scale: 0.94, flip: false, gaze: 'partner', z: 0,
            bias: { openness: 0.15, compression: 0.05 } },
-      b: { x: 0.68, y: -0.01, scale: 1.08, flip: false,
+      b: { x: 0.68, y: -0.01, scale: 1.08, flip: false, gaze: 'away', z: 1,
            bias: { compression: 0.2, openness: -0.3, confidence: -0.15 } }
     },
 
@@ -120,9 +120,9 @@
     instruct: {
       requires: [], support: [],
       means: 'teaching, mentoring, showing',
-      a: { x: 0.40, y: 0, scale: 1.10, flip: false,
+      a: { x: 0.40, y: 0, scale: 1.10, flip: false, gaze: 'down', z: 1,
            bias: { openness: 0.3, confidence: 0.25, stability: 0.2 } },
-      b: { x: 0.55, y: 0.06, scale: 0.82, flip: false,
+      b: { x: 0.55, y: 0.06, scale: 0.82, flip: false, gaze: 'away', z: 0,
            bias: { openness: 0.05, compression: 0.1, stability: -0.1 } }
     },
 
@@ -131,9 +131,9 @@
     across_desk: {
       requires: ['desk'], support: ['chair'],
       means: 'interview, negotiation, questioning',
-      a: { x: 0.32, y: 0, scale: 0.92, flip: false, support: 'chair',
+      a: { x: 0.32, y: 0, scale: 0.92, flip: false, support: 'chair', gaze: 'partner', z: 0,
            bias: { confidence: 0.2, compression: -0.05 } },
-      b: { x: 0.66, y: 0, scale: 1.08, flip: true, support: 'chair',
+      b: { x: 0.66, y: 0, scale: 1.08, flip: true, support: 'chair', gaze: 'partner', z: 1,
            bias: { compression: 0.25, openness: -0.25, confidence: -0.25 } }
     },
 
@@ -141,9 +141,9 @@
     address: {
       requires: ['podium'], support: [],
       means: 'on stage, verdict, announcement',
-      a: { x: 0.30, y: -0.04, scale: 1.18, flip: false,
+      a: { x: 0.30, y: -0.04, scale: 1.18, flip: false, gaze: 'away', z: 1,
            bias: { openness: 0.4, confidence: 0.35, stability: 0.25 } },
-      b: { x: 0.70, y: 0.03, scale: 0.72, flip: true,
+      b: { x: 0.70, y: 0.03, scale: 0.72, flip: true, gaze: 'partner', z: 0,
            bias: { openness: -0.15, compression: 0.1 } }
     }
   };
@@ -179,9 +179,9 @@
     const s = baseScale == null ? 0.42 : baseScale;
     return [
       { x: it.a.x, y: GROUND + it.a.y, scale: s * it.a.scale, flip: it.a.flip,
-        bias: it.a.bias, lean: it.a.lean || 0, reach: it.a.reach || 0, reachY: it.a.reachY || 0, support: it.a.support || null },
+        bias: it.a.bias, lean: it.a.lean || 0, reach: it.a.reach || 0, reachY: it.a.reachY || 0, support: it.a.support || null, gaze: it.a.gaze || null, z: it.a.z || 0 },
       { x: it.b.x, y: GROUND + it.b.y, scale: s * it.b.scale, flip: it.b.flip,
-        bias: it.b.bias, lean: it.b.lean || 0, reach: it.b.reach || 0, reachY: it.b.reachY || 0, support: it.b.support || null }
+        bias: it.b.bias, lean: it.b.lean || 0, reach: it.b.reach || 0, reachY: it.b.reachY || 0, support: it.b.support || null, gaze: it.b.gaze || null, z: it.b.z || 0 }
     ];
   }
 

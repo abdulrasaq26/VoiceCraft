@@ -567,8 +567,16 @@
       colour: opts.colour || '#1d2026',
       skin: opts.skinTone,
       lineWidth: opts.lineWidth || Math.max(2, unit * 0.13),
-      face: face(actor.emotion || opts.emotion || 'neutral', actor.time || 0,
-        { seed: actor.seed || 0, speaking: actor.speaking })
+      // GAZE. `look` already existed but was chosen by the emotion, so every
+      // figure looked wherever its mood said regardless of what was in the
+      // scene with it. An explicit look overrides it, which is what lets two
+      // people look AT each other — or lets one refuse to.
+      face: (() => {
+        const f = face(actor.emotion || opts.emotion || 'neutral', actor.time || 0,
+          { seed: actor.seed || 0, speaking: actor.speaking });
+        if (opts.look) f.look = opts.look;
+        return f;
+      })()
     });
     ctx.restore();
     return bones;

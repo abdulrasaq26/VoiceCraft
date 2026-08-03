@@ -391,8 +391,17 @@
     // the state that produced it.
     const stateReasons = [];
 
+    // DEPTH ORDER. Who is drawn in front. It only matters once figures
+    // overlap, which `embrace` is the first pattern to do — and when they do,
+    // arbitrary draw order reads as a rendering accident rather than as one
+    // person in front of another. Sorted low z first so high z lands on top,
+    // while the ORIGINAL index is kept so lead-actor rules still apply to the
+    // lead rather than to whoever happens to be drawn first.
+    const drawOrder = spots.map((s, i) => ({ spot: s, i }))
+      .sort((p, q) => (p.spot.z || 0) - (q.spot.z || 0));
+
     if (window.BlvckChar) {
-      spots.forEach((spot, i) => {
+      drawOrder.forEach(({ spot, i }) => {
         let cast = specs[i] || specs[0] || {};
 
         // STATE DRIVES THE VISUAL. When this scene carries an entity, ask the
@@ -497,10 +506,32 @@
           ctx.translate(-posX * W, -posY * H);
         }
 
+        // GAZE. Resolved against where the OTHER figure actually ended up, so
+        // "look at your partner" survives every offset that moved them. A
+        // figure whose eyes ignore the person opposite reads as two separate
+        // portraits sharing a frame.
+        let look = null;
+        if (spot.gaze) {
+          const other = spots[i === 0 ? 1 : 0];
+          if (spot.gaze === 'partner' && other) {
+            const op = placeFor(other, i !== 0);
+            const dx = Math.max(-1, Math.min(1, (op.x - posX) * 4));
+            const dy = Math.max(-1, Math.min(1, (op.y - posY) * 4));
+            look = [spot.flip ? -dx : dx, dy];
+          } else if (spot.gaze === 'away') {
+            look = [spot.flip ? 0.8 : -0.8, 0];
+          } else if (spot.gaze === 'down') {
+            look = [0, 0.85];
+          } else if (spot.gaze === 'up') {
+            look = [0.4, -0.8];
+          }
+        }
+
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: posX * W,
           y: posY * H,
           scale: unit,
+          look,
           skin: opts.skin || 'stickman',
           colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
           flip: spot.flip
