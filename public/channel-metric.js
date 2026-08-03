@@ -44,6 +44,23 @@
     lean: 5, reach: 0.25, reachY: 0.30, posture: 0.35
   };
 
+  // Not every channel carries the same amount. `part` uses four of eight
+  // channels and still scores 5 on uniqueness — it is carried almost entirely
+  // by gap and facing, which suggests orientation and distance are
+  // high-bandwidth and a wrist angle is not.
+  //
+  // TREAT THESE WITH MORE SUSPICION THAN THE THRESHOLDS, NOT LESS. Weighting
+  // replaces eight invented constants with sixteen, and a weighted score looks
+  // more rigorous while resting on more judgement. So the report carries BOTH
+  // the unweighted count and the weighted score, and disagreement between them
+  // is itself a signal: it means the verdict depends on numbers nobody has
+  // measured. The blind classification test would learn these, not just
+  // validate the thresholds.
+  const WEIGHTS = {
+    facing: 2.2, gap: 1.8, scale: 1.4, vertical: 1.3,
+    posture: 1.0, lean: 1.0, reach: 0.9, reachY: 0.8
+  };
+
   const AXES = ['compression', 'openness', 'stability', 'energy', 'confidence', 'asymmetry'];
 
   // Extrinsic requirements the engine can actually satisfy today.
@@ -65,12 +82,19 @@
     };
   }
 
-  /** Which channels separate two patterns, and how many are in play at all. */
+  /**
+   * Which channels separate two patterns.
+   *
+   * `n` counts them — no weighting, no assumptions beyond the thresholds.
+   * `score` weights them. Both are returned because they can disagree, and
+   * when they do the ranking is resting on unmeasured constants.
+   */
   function distance(a, b) {
     const va = vectorFor(a);
     const vb = vectorFor(b);
     const on = Object.keys(THRESHOLDS).filter((k) => Math.abs(va[k] - vb[k]) >= THRESHOLDS[k]);
-    return { n: on.length, on };
+    const score = on.reduce((s, k) => s + (WEIGHTS[k] || 1), 0);
+    return { n: on.length, score: Math.round(score * 10) / 10, on };
   }
 
   /**
@@ -89,7 +113,7 @@
     let best = null;
     others.forEach((n) => {
       const d = distance(set[name], set[n]);
-      if (!best || d.n < best.n) best = { min: d.n, nearest: n, differsOn: d.on };
+      if (!best || d.n < best.n) best = { min: d.n, score: d.score, nearest: n, differsOn: d.on };
     });
     return best;
   }
@@ -171,8 +195,68 @@
     };
   }
 
+  const ALL_INTRINSIC = ['gap', 'vertical', 'scale', 'facing', 'lean', 'reach', 'reachY', 'posture'];
+
+  /**
+   * A stable audit for one pattern — the instrument's actual interface.
+   *
+   * Reports completeness per subsystem, names the owner AND the reason, and
+   * ends with the work that follows from it. The last part is the point: a
+   * measurement that stops at a number leaves an engineer to argue about what
+   * to do next, which is exactly the arguing this was built to replace.
+   */
+  function audit(set, name) {
+    const it = set[name];
+    if (!it) return null;
+    const v = vectorFor(it);
+    const u = uniqueness(set, name);
+
+    const used = ALL_INTRINSIC.filter((k) => Math.abs(v[k]) >= THRESHOLDS[k]);
+    const unused = ALL_INTRINSIC.filter((k) => used.indexOf(k) === -1);
+    const required = it.requires || [];
+    const metWorld = required.filter((r) => WORLD_PROVIDES.indexOf(r) > -1);
+    const needsWorld = required.filter((r) => WORLD_PROVIDES.indexOf(r) === -1);
+    const needsSupport = (it.support || []).filter((s) => SUPPORT_PROVIDES.indexOf(s) === -1);
+
+    // Reasons, per subsystem, structured rather than prose — so a caller can
+    // act on them without parsing a sentence.
+    const reasons = {
+      interaction: unused.length ? { unusedChannels: unused } : null,
+      arrangement: needsWorld.length ? { missingAnchors: needsWorld } : null,
+      support: needsSupport.length ? { missingSupport: needsSupport } : null
+    };
+
+    // Primary owner is whoever blocks the pattern outright; unused intrinsic
+    // channels are an opportunity, an unplaceable desk is a wall.
+    const order = [];
+    if (reasons.arrangement) order.push('arrangement');
+    if (reasons.support) order.push('support');
+    if (reasons.interaction) order.push('interaction');
+
+    const work = [];
+    needsWorld.forEach((r) => work.push('add ' + r + ' anchor (arrangement)'));
+    needsSupport.forEach((s) => work.push('add ' + s + ' to support vocabulary'));
+    // Only recommend intrinsic work when the pattern is actually close to
+    // something else; unused channels on a distinctive pattern are fine.
+    if (u.min <= 3) unused.slice(0, 3).forEach((k) => work.push('use ' + k + ' channel'));
+
+    return {
+      pattern: name,
+      intrinsic: used.length + ' / ' + ALL_INTRINSIC.length,
+      extrinsic: metWorld.length + ' / ' + required.length,
+      nearest: u.nearest,
+      distance: u.min,
+      weighted: u.score,
+      owner: order[0] || 'none',
+      secondary: order[1] || null,
+      reasons,
+      calibrated: false,
+      work: work.length ? work : ['none — pattern is distinct and complete']
+    };
+  }
+
   window.BlvckMetric = {
-    THRESHOLDS, vectorFor, distance, uniqueness, diagnose, report,
-    calibrated: false   // thresholds are authored; see the note above
+    THRESHOLDS, WEIGHTS, vectorFor, distance, uniqueness, diagnose, report, audit,
+    calibrated: false   // thresholds AND weights are authored; see notes above
   };
 })();
