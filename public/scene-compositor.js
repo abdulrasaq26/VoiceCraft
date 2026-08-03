@@ -255,7 +255,24 @@
       return { x, y, unit };
     }
 
+    // ---- 1c. Support ----------------------------------------------------
+    // What the body rests on. Drawn before the actor so the seat is behind
+    // them, and it MOVES the figure: sitting lowers the origin and folds the
+    // legs, which is precisely what the pose space cannot express because
+    // every axis there describes the body above its own feet.
+    // Declared before the support block because placeFor() reads it and the
+    // support block calls placeFor(). `let` would otherwise be in its temporal
+    // dead zone and throw on every scene that sits down.
     let metaAnchor = null;
+
+    const OBJ = window.BlvckObjects;
+    const supportName = scene.support || 'ground';
+    let support = null;
+    if (OBJ && supportName !== 'ground') {
+      const lead0 = placeFor(spots[0] || { x: 0.5, y: 0.84, scale: 0.42 }, true);
+      support = OBJ.drawSupport(ctx, t, supportName, lead0.x);
+    }
+
     if (M && metaName) {
       metaAnchor = M.anchorFor(metaName, mood.wellbeing);
       // Drawn from the LEAD ACTOR'S resolved position, so figure-attached
@@ -268,6 +285,9 @@
     // ---- 2. Actors ------------------------------------------------------
     const specs = (scene.actors && scene.actors.cast) || [];
     const hands = [];
+    // Where the lead actually ended up, so objects attach to the figure
+    // instead of to the stage's default spot.
+    let leadFrame = null;
     // Why each actor is posed as it is, for tracing a wrong frame back to
     // the state that produced it.
     const stateReasons = [];
@@ -300,6 +320,12 @@
             const g = CH_.sample(CH_.CLIPS[posture.gesture], 1);
             pose = CH_.mix(pose, g, posture.gestureWeight);
           }
+          // Sitting is a SUPPORT state, not a posture, so it is mixed in here
+          // rather than expressed as axes. The authored `sit` clip is exactly
+          // the shape the pose space provably could not reach.
+          if (support && support.sit && CH_.CLIPS.sit) {
+            pose = CH_.mix(pose, CH_.sample(CH_.CLIPS.sit, 1), 0.85);
+          }
           pose.emotion = posture.emotion;
           a = pose;
           stateReasons.push({ entity: ent.name, at: scene.time || 0, ...posture });
@@ -321,7 +347,10 @@
         // Position carries state. A confident figure steps forward and toward
         // centre; a failing one drifts back, sideways and down. Standing in
         // the same spot every frame is what made the arc read as static.
-        const { x: posX, y: posY, unit } = placeFor(spot, i === 0);
+        let { x: posX, y: posY, unit } = placeFor(spot, i === 0);
+        // Sitting puts the body ON the seat.
+        if (support && support.sit && i === 0) posY = support.seatY;
+        if (i === 0) leadFrame = { x: posX, y: posY, unit };
 
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: posX * W,
@@ -334,6 +363,16 @@
         ctx.restore();
         if (bones && bones.forearmR) hands.push({ x: bones.forearmR.x1, y: bones.forearmR.y1, spot, cast });
       });
+    }
+
+    // ---- 4b. Objects, placed by RELATION ---------------------------------
+    // Held, on a surface, on the floor, or in a thought. Drawn after the actor
+    // so a held object reads as in front of the body, and after props so both
+    // vocabularies can coexist while the old PROPS table is retired.
+    if (OBJ && scene.objects && scene.objects.length) {
+      const placed = OBJ.place(ctx, t, { objects: scene.objects },
+        Object.assign({ surfaceY: (L ? L.GROUND : 0.84) - 0.10 }, leadFrame || {}));
+      if (opts.trace) opts.trace.objects = placed;
     }
 
     // ---- 4. Props, in the actors' hands ---------------------------------
