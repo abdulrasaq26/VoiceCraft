@@ -445,8 +445,22 @@
           staged++;
         }
       }
-      // A named prop becomes a held object, which is the relation the old
-      // PROPS table could not express.
+      // What is in frame, and in what relation. The old path took one prop
+      // from inferProp() and put it in a hand, so the studying beat lost its
+      // papers and the waiting beat lost its phone — the interaction producer
+      // had grown to emit interaction, support and anchors while this one
+      // still emitted at most one thing.
+      const OBJ = window.BlvckObjects;
+      if (scene.objects == null && OBJ && OBJ.inferObjects) {
+        const found = OBJ.inferObjects(text);
+        if (found) {
+          scene.objects = found.objects;
+          // Support comes from the same rule, because the objects and the
+          // posture are the same fact: someone studying is at a desk.
+          if (scene.support == null && found.support) scene.support = found.support;
+        }
+      }
+      // Fallback to the single-prop path for anything the rules do not name.
       if (scene.objects == null && L && L.inferProp) {
         const p = L.inferProp(text);
         const KINDS = { laptop: 'laptop', phone: 'phone', document: 'paper',

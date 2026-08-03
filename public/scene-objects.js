@@ -451,8 +451,85 @@
     return drawPlan(ctx, theme, planned, (frame || {}).unit);
   }
 
+  // --- object inference ----------------------------------------------------
+  //
+  // What is in frame, and in what relation. The producer previously took one
+  // prop from inferProp() and put it in a hand, which is why the Sprint 2
+  // battery lost the studying scene's papers and the waiting scene's phone:
+  // the interaction producer had grown to emit interaction, support and
+  // anchors while the object producer still emitted at most one thing.
+  //
+  // Each rule names what is PRESENT and how it relates, because relation is
+  // most of the meaning — a paper held is working, a paper on the floor is a
+  // discarded attempt, a clock in a thought is pressure. The old table could
+  // only say "held".
+  //
+  // Rules also carry `support`, because the objects and the posture come from
+  // the same fact: someone studying is at a desk, and saying so twice in two
+  // places is how they drift apart.
+  const OBJECT_RULES = [
+    [/\b(stud(?:y|ied|ying)|revis\w*|homework|essay|assignment|exam|coursework)\b/i,
+      { support: 'chair', objects: [
+        { kind: 'paper', rel: 'held' }, { kind: 'pencil', rel: 'surface' },
+        { kind: 'crumpled', rel: 'floor', count: 4 } ] }],
+    [/\b(wait\w*|deadline|results|verdict|news to come|any minute|hear back)\b/i,
+      { support: 'chair', objects: [
+        { kind: 'phone', rel: 'surface' }, { kind: 'clock', rel: 'thought' } ] }],
+    [/\b(wrote|writ\w*|letter|note|signed|drafted|application)\b/i,
+      { support: 'chair', objects: [
+        { kind: 'paper', rel: 'held' }, { kind: 'pencil', rel: 'surface' } ] }],
+    [/\b(read\w*|book|report|file|dossier|manuscript)\b/i,
+      { objects: [{ kind: 'book', rel: 'held' }] }],
+    [/\b(laptop|comput\w*|typ\w*|coding|software|email|online|spreadsheet)\b/i,
+      { support: 'chair', objects: [{ kind: 'laptop', rel: 'surface' }] }],
+    [/\b(called|phoned|rang|text\w*|message|mobile)\b/i,
+      { objects: [{ kind: 'phone', rel: 'held' }] }],
+    [/\b(coffee|tea|drink|breakfast|kitchen table|mug)\b/i,
+      { objects: [{ kind: 'cup', rel: 'surface' }] }],
+    // `late` alone matched "argued late into the night", which is a time of
+    // day rather than time pressure. Being late needs an object it is late
+    // FOR.
+    [/\b(late for|running late|hurry|hurried|rush\w*|out of time|running out|overdue|no time left)\b/i,
+      { objects: [{ kind: 'clock', rel: 'thought' }] }],
+    [/\b(paperwork|forms?|invoice|bills?|contract|documents?)\b/i,
+      { support: 'chair', objects: [
+        { kind: 'paper', rel: 'held' }, { kind: 'paper', rel: 'surface' } ] }]
+  ];
+
+  // How long it went on. Evidence accumulates with time, and this is the only
+  // channel that says a thing happened repeatedly before the frame began.
+  const DURATION = [
+    [/\b(all night|for weeks|for months|for years|night after night)\b/i, 3.0],
+    [/\b(for days|three days|for hours|all day|again and again|over and over)\b/i, 2.0],
+    [/\b(twice|a second time|once more)\b/i, 1.4]
+  ];
+
+  /**
+   * Objects and support a line of narration implies.
+   *
+   * Returns null when the line names nothing — silence rather than a guess, so
+   * a beat with no objects renders as a beat with no objects.
+   */
+  function inferObjects(text) {
+    const hay = String(text || '');
+    const hit = OBJECT_RULES.find(([re]) => re.test(hay));
+    if (!hit) return null;
+    const spec = hit[1];
+
+    let mult = 1;
+    DURATION.forEach(([re, m]) => { if (re.test(hay)) mult = Math.max(mult, m); });
+
+    const objects = spec.objects.map((o) => {
+      const out = { kind: o.kind, rel: o.rel };
+      if (o.count) out.count = Math.min(12, Math.round(o.count * mult));
+      return out;
+    });
+    return { objects, support: spec.support || null, duration: mult };
+  }
+
   window.BlvckObjects = {
-    OBJECTS, SUPPORT, ANCHORS, place, plan, drawPlan, drawSupport, drawAnchor, GROUND,
+    OBJECTS, SUPPORT, ANCHORS, OBJECT_RULES, inferObjects,
+    place, plan, drawPlan, drawSupport, drawAnchor, GROUND,
     kinds: () => Object.keys(OBJECTS),
     supports: () => Object.keys(SUPPORT)
   };
