@@ -281,23 +281,38 @@
         // pose someone wrote down. This is the join that makes the pipeline
         // whole: narration → state timeline → compositor → what you see.
         const ent = (scene.entities && scene.entities[i]) || scene.entity || null;
-        if (ent && window.BlvckStoryState) {
-          const derived = window.BlvckStoryState.actorFor(ent, scene.time || 0);
-          if (derived) {
-            cast = { action: derived.clip, emotion: derived.emotion };
-            // Keep the reason on the frame record so a wrong pose can be traced
-            // back to the state that caused it, not guessed at.
-            stateReasons.push({ entity: ent.name, at: scene.time || 0, ...derived });
-          }
-        }
+        const CH_ = window.BlvckChar;
+        let a = null;
 
-        const action = cast.action || (infoRect && role === 'presenter' ? 'point' : 'explain');
-        const a = new window.BlvckChar.Actor({
-          state: window.BlvckChar.CLIPS[action] ? action : 'explain',
-          emotion: cast.emotion || 'confident'
-        });
-        a.time = (window.BlvckChar.CLIPS[a.state] || { dur: 1 }).dur;
-        a.followTimeline = false;
+        // CONTINUOUS POSTURE. Ask the pose space where this state stands,
+        // rather than which of ten clips it classifies as. The room's
+        // brightness and warmth have always responded to fractional changes;
+        // the figure used to quantise them away at a threshold.
+        const posture = ent && window.BlvckStoryState && window.BlvckStoryState.postureFor
+          ? window.BlvckStoryState.postureFor(ent, scene.time || 0)
+          : null;
+
+        if (posture) {
+          let pose = posture.pose;
+          // A gesture is something you DO at a moment, layered over how you
+          // stand, at a weight set by how big the change is.
+          if (posture.gesture && CH_.CLIPS[posture.gesture] && posture.gestureWeight > 0) {
+            const g = CH_.sample(CH_.CLIPS[posture.gesture], 1);
+            pose = CH_.mix(pose, g, posture.gestureWeight);
+          }
+          pose.emotion = posture.emotion;
+          a = pose;
+          stateReasons.push({ entity: ent.name, at: scene.time || 0, ...posture });
+        } else {
+          // No entity: fall back to the authored clip named by the scene.
+          const action = cast.action || (infoRect && role === 'presenter' ? 'point' : 'explain');
+          a = new CH_.Actor({
+            state: CH_.CLIPS[action] ? action : 'explain',
+            emotion: cast.emotion || 'confident'
+          });
+          a.time = (CH_.CLIPS[a.state] || { dur: 1 }).dur;
+          a.followTimeline = false;
+        }
 
         ctx.save();
         // Depth in a crowd: further rows recede rather than repeat.

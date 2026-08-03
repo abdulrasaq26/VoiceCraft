@@ -171,6 +171,72 @@
     return { clip: 'idle', emotion: 'neutral', reason: 'baseline' };
   }
 
+  /**
+   * State -> a POINT IN POSE SPACE, plus any gesture the moment calls for.
+   *
+   * This supersedes actorFor's clip lookup for standing posture. actorFor
+   * answered "which of ten poses is this?", which threw away everything except
+   * which side of a threshold the state landed on — stress 0.66 and stress
+   * 0.98 returned the identical figure. Posture is now continuous, the way the
+   * room's brightness and warmth already were.
+   *
+   * Clips are not gone. They are GESTURES: a facepalm is something you do at a
+   * moment, not a way you stand, so it rides on top of the posture at a weight
+   * set by how big the change is. That keeps "the reaction IS the beat" while
+   * letting the standing body follow the state continuously.
+   */
+  function postureFor(ent, t) {
+    const P = window.BlvckPose;
+    if (!P || !ent) return null;
+    const s = stateAt(ent, t);
+    // Only a change that has ALREADY BEGUN earns a reaction. changeAt's window
+    // reaches 0.4s forward so a beat can anticipate what is coming, which is
+    // right for the standing state and wrong for a gesture: it put a facepalm
+    // at weight 0.62 on "John improved step by step", borrowing the reaction
+    // to a job loss that had not happened yet.
+    const pending = changeAt(ent, t);
+    const c = pending && t >= pending.startTime ? pending : null;
+    const axes = P.axesFromState(s);
+
+    let gesture = null;
+    let gestureWeight = 0;
+    let reason = 'standing state';
+    if (c && NUMERIC.indexOf(c.attribute) > -1) {
+      const raw = Number(c.to) - Number(c.from == null ? s[c.attribute] : c.from);
+      const delta = raw * polarity(c.attribute);
+      if (delta <= -0.28) {
+        gesture = 'facepalm';
+        gestureWeight = Math.min(0.8, Math.abs(delta) * 1.4);
+        reason = `${c.attribute} ${raw < 0 ? 'fell' : 'rose'} sharply — worse`;
+      } else if (delta >= 0.28) {
+        gesture = 'celebrate';
+        gestureWeight = Math.min(0.8, delta * 1.4);
+        reason = `${c.attribute} ${raw < 0 ? 'fell' : 'rose'} sharply — better`;
+      }
+    }
+
+    const stress = s.stress == null ? 0.2 : s.stress;
+    const health = s.health == null ? 0.8 : s.health;
+    const conf = s.confidence == null ? 0.6 : s.confidence;
+    let emotion = 'neutral';
+    if (gesture === 'celebrate') emotion = 'excited';
+    else if (gesture === 'facepalm') emotion = health < 0.4 ? 'sad' : 'crying';
+    else if (stress > 0.6) emotion = 'nervous';
+    else if (health < 0.35) emotion = 'sad';
+    else if (conf > 0.75) emotion = 'confident';
+    else if (health > 0.8 && conf > 0.6) emotion = 'happy';
+
+    return {
+      axes,
+      pose: P.poseFrom(axes),
+      gesture,
+      gestureWeight: Math.round(gestureWeight * 100) / 100,
+      emotion,
+      nearest: P.describe(axes).nearest,
+      reason
+    };
+  }
+
   // --- reading state out of narration -------------------------------------
   //
   // v1 is keyword-driven. The Director will eventually supply these
@@ -467,6 +533,7 @@
     stateAt,
     changeAt,
     actorFor,
+    postureFor,
     moodFor,
     polarity,
     INVERTED,
