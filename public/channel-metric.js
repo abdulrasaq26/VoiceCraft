@@ -251,33 +251,39 @@
     // option has made the decision on the reader's behalf and hidden that it
     // did. Everything is listed; confidence and leverage are reported; the
     // choice stays with whoever is reading.
+    // Evidence is QUERIED, not recited. The previous version listed source
+    // names I had typed from memory, which made recollection look like
+    // provenance. Now the store answers, and it counts distinct sources — so
+    // three findings from one instrument remain one signal.
+    const EV = window.BlvckEvidence;
+    const support = (topic) => {
+      if (!EV) return { count: 0, sources: [], live: 0, retrospective: 0 };
+      return EV.signals(name, topic);
+    };
+
     const work = [];
-    needsWorld.forEach((r) => work.push({
-      action: 'add ' + r + ' anchor',
-      owner: 'arrangement',
-      // Three independent origins: the render visibly failed, the audit routes
-      // here, and the interaction metric found it among the weakest pairs.
-      evidence: ['renderer', 'audit', 'channel-metric'],
-      leverage: 'high',
-      blocking: true
-    }));
-    needsSupport.forEach((s) => work.push({
-      action: 'add ' + s + ' to support vocabulary',
-      owner: 'support',
-      evidence: ['renderer', 'audit', 'support-ontology'],
-      leverage: 'high',
-      blocking: true
-    }));
-    unused.forEach((k) => work.push({
-      action: 'use ' + k + ' channel',
-      owner: 'interaction',
-      // One origin only: this metric said so. Weaker than the above and the
-      // report should not let that difference disappear.
-      evidence: ['channel-metric'],
-      leverage: u.min <= 3 ? 'medium' : 'low',
-      blocking: false
-    }));
-    work.forEach((w) => { w.signals = w.evidence.length; });
+    needsWorld.forEach((r) => {
+      const s = support(r);
+      work.push({ action: 'add ' + r + ' anchor', owner: 'arrangement',
+        evidence: s.sources, signals: s.count,
+        provenance: { live: s.live, retrospective: s.retrospective },
+        leverage: 'high', blocking: true });
+    });
+    needsSupport.forEach((k) => {
+      const s = support(k);
+      work.push({ action: 'add ' + k + ' to support vocabulary', owner: 'support',
+        evidence: s.sources, signals: s.count,
+        provenance: { live: s.live, retrospective: s.retrospective },
+        leverage: 'high', blocking: true });
+    });
+    unused.forEach((k) => {
+      const s = support(k);
+      work.push({ action: 'use ' + k + ' channel', owner: 'interaction',
+        evidence: s.sources.length ? s.sources : ['channel-metric'],
+        signals: Math.max(1, s.count),
+        provenance: { live: s.live, retrospective: s.retrospective },
+        leverage: u.min <= 3 ? 'medium' : 'low', blocking: false });
+    });
     // Blocking first, then by how many independent signals support it.
     work.sort((a, b) => (b.blocking - a.blocking) || (b.signals - a.signals));
 
@@ -306,10 +312,22 @@
       // null rather than being quietly omitted.
       external: null
     };
-    let overall = 'high';
-    if (!grounds.agreement.countVsWeighted) overall = 'medium';
-    if (!grounds.calibration.thresholdsMeasured) overall = 'low';
-    if (!grounds.external) overall = 'low';
+    // TWO SEPARATE THINGS, previously collapsed into one word.
+    //
+    // `overall: low` conflated "we are unsure this is the right work" with
+    // "the instrument cannot quantify the impact". Those come apart: the kneel
+    // recommendation has three independent sources behind it AND rests on
+    // uncalibrated thresholds. The useful statement is "several independent
+    // reasons to believe this is next, no way yet to say how much it buys" —
+    // which one word cannot carry.
+    const best = work.reduce((m, w) => Math.max(m, w.signals || 0), 0);
+    const evidenceStrength = best >= 3 ? 'high' : best === 2 ? 'medium'
+      : best === 1 ? 'low' : 'none';
+
+    let instrumentCalibration = 'high';
+    if (!grounds.agreement.countVsWeighted) instrumentCalibration = 'medium';
+    if (!grounds.calibration.thresholdsMeasured) instrumentCalibration = 'low';
+    if (!grounds.external) instrumentCalibration = 'low';
 
     return {
       pattern: name,
@@ -321,7 +339,7 @@
       owner: order[0] || 'none',
       secondary: order[1] || null,
       reasons,
-      confidence: Object.assign({ overall }, grounds),
+      confidence: Object.assign({ evidenceStrength, instrumentCalibration }, grounds),
       work: work.length ? work : []
     };
   }
