@@ -562,6 +562,25 @@
     const bones = solve(pose, unit, { x: opts.x || 0, y: (opts.y || 0) - lift });
     const skin = SKINS[opts.skin] || SKINS.stickman;
     ctx.save();
+
+    // MATTE. When two figures overlap, their strokes merge into a tangle and
+    // the viewer cannot tell which limb belongs to whom — the depth order
+    // sorts them correctly and it still reads as one knot of lines. So the
+    // front figure is drawn once in the background colour at a wider stroke
+    // first, cutting itself out of whatever is behind it.
+    //
+    // This is why `embrace` could put two bodies in the same space and have it
+    // read as a pile rather than as an embrace.
+    if (opts.matte) {
+      skin(ctx, bones, {
+        unit,
+        colour: opts.matte,
+        skin: opts.matte,
+        lineWidth: (opts.lineWidth || Math.max(2, unit * 0.13)) * 2.6,
+        face: { lid: 1, look: [0, 0], mouth: 0 }
+      });
+    }
+
     skin(ctx, bones, {
       unit,
       colour: opts.colour || '#1d2026',

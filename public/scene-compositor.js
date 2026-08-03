@@ -527,11 +527,22 @@
           }
         }
 
+        // Matte only when this figure is actually in front of another AND
+        // close enough to overlap it. A matte on a figure standing alone would
+        // paint a background-coloured halo around it for no reason.
+        let matte = null;
+        if (spots.length > 1) {
+          const other = spots[i === 0 ? 1 : 0];
+          const inFront = (spot.z || 0) > (other.z || 0);
+          if (inFront && Math.abs((other.x || 0.5) - (spot.x || 0.5)) < 0.20) matte = t.bg;
+        }
+
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: posX * W,
           y: posY * H,
           scale: unit,
           look,
+          matte,
           skin: opts.skin || 'stickman',
           colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
           flip: spot.flip
