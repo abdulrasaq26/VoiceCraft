@@ -245,6 +245,19 @@
     return { visualType: vt, changed: false };
   }
 
+  // ⚠ SOLE CONSUMER IS ltx-video.js, WHICH IS SCHEDULED FOR REMOVAL.
+  //
+  // Deleting LTX orphans this module entirely — it would still load, still
+  // export, and nothing would ever call it. That is the exact failure this
+  // codebase has now hit twice: support and objects sat implemented and
+  // unconsumed for a whole session, and the Director scene-plan route existed
+  // long before attachState asked it anything. Both looked like missing
+  // features and were missing CALLS.
+  //
+  // Found by auditing exports for consumers rather than by tripping over it
+  // later. Before LTX goes: either re-home strategise()/constrain()/briefFor()
+  // into the scene-engine planning path, or remove this with it. Do not leave
+  // it loading with no caller.
   window.BlvckVisualIQ = {
     NICHES,
     GENERAL,

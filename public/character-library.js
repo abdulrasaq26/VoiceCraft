@@ -269,6 +269,14 @@
     return added;
   }
 
+  // ⚠ FIVE OF ITS SIX CALL SITES ARE IN ltx-video.js, WHICH IS SCHEDULED FOR
+  // REMOVAL. Only storyboard.js:502 (importFromBible) survives that deletion.
+  //
+  // Cast is not orphaned by removing LTX, but it is reduced to a single
+  // consumer, and everything it does for character consistency — reference
+  // images, seeds, descriptors — currently only reaches image and video
+  // prompts. None of it reaches the procedural renderer, which has its own
+  // notion of who is on screen and no connection to this one.
   window.BlvckCast = {
     FIELDS,
     list,
