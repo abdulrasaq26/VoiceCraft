@@ -179,38 +179,7 @@
     const role = (scene.actors && scene.actors.role) || 'presenter';
     const roleDef = (L && L.ROLES[role]) || { infoWeight: 0.7 };
 
-    // ---- 3. Environment -------------------------------------------------
-    // A drawn PLACE, not a wireframe. The environment is part of the
-    // storytelling language: it says where before a word is spoken, and a
-    // figure standing in an empty box reads as unfinished.
     const envName = scene.environment || 'none';
-    if (window.BlvckEnv && envName !== 'none') {
-      // The room is handed the mood: the same kitchen is a different place
-      // before and after the thing that happened in it.
-      window.BlvckEnv.draw(ctx, envName, t, opts.skin || 'stickman', mood);
-    }
-    // Ground line only when there is no room to stand in.
-    if (L && envName === 'none') {
-      ctx.strokeStyle = t.dim;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(40, L.GROUND * H + 2);
-      ctx.lineTo(W - 40, L.GROUND * H + 2);
-      ctx.stroke();
-    }
-
-    // ---- 5. Information (only when the beat needs it) -------------------
-    // Last in priority, and sized by the ROLE: a presenter beat gives it most
-    // of the frame, a story beat gives it none at all.
-    let infoRect = null;
-    const info = scene.information;
-    if (info && info.kind && info.kind !== 'none' && roleDef.infoWeight > 0.15) {
-      const wide = roleDef.infoWeight > 0.5;
-      const rect = wide
-        ? { x: 0.28, y: 0.09, w: 0.68, h: 0.66 }
-        : { x: 0.60, y: 0.08, w: 0.36, h: 0.34 };   // a reference, not the subject
-      infoRect = await drawInformation(ctx, info, rect, palette);
-    }
 
     // ---- 1b. Metaphor ---------------------------------------------------
     // The picture for a thing that has no picture. Scripts are mostly about
@@ -278,6 +247,77 @@
     // sat beside the body instead of under it.
     let metaAnchor = M && metaName ? M.anchorFor(metaName, mood.wellbeing) : null;
     const lead = placeFor(spots[0] || { x: 0.5, y: 0.84, scale: 0.42 }, true);
+
+    // ---- 1d. Subject and camera -----------------------------------------
+    //
+    // A camera cannot frame until something says what the subject IS. Framing
+    // the reference beat as a true medium shot transformed legibility and
+    // still failed, because the crop centred on the ACTOR and the desk fell
+    // outside it: "a stressed man on a chair" instead of "a student at a
+    // desk". So the subject is named first, its bounds are computed
+    // ANALYTICALLY, and the camera is set before a single thing is drawn.
+    const SUBJ = window.BlvckSubject;
+    // Objects are PLANNED here rather than drawn, because their positions are
+    // part of the subject's bounds.
+    const objPlan = (OBJ && scene.objects && scene.objects.length)
+      ? OBJ.plan({ objects: scene.objects },
+          { x: lead.x, y: lead.y, unit: lead.unit,
+            surfaceY: (L ? L.GROUND : 0.84) - 0.10 })
+      : [];
+
+    let cam = null;
+    if (SUBJ) {
+      const kind = SUBJ.infer(scene);
+      const bounds = SUBJ.boundsOf(kind, {
+        actor: { x: lead.x, y: lead.y, unit: lead.unit },
+        actors: spots.map((s, i) => {
+          const pl = placeFor(s, i === 0);
+          return { x: pl.x, y: pl.y, unit: pl.unit };
+        }),
+        objects: objPlan,
+        metaphor: metaName || null,
+        surface: envName === 'none' ? null : { x0: 0.50, x1: 0.94, y: 0.62 }
+      });
+      cam = SUBJ.cameraFor(bounds, scene.shot || (kind === 'place' ? 'wide' : 'medium'));
+      if (opts.trace) opts.trace.subject = { kind, bounds, camera: cam };
+    }
+
+    // Everything from here to the matching restore is IN SHOT: room,
+    // furniture, figure and litter scale and crop together.
+    ctx.save();
+    if (cam) SUBJ.apply(ctx, cam);
+
+    // ---- 3. Environment -------------------------------------------------
+    // A drawn PLACE, not a wireframe. The environment is part of the
+    // storytelling language: it says where before a word is spoken, and a
+    // figure standing in an empty box reads as unfinished.
+    if (window.BlvckEnv && envName !== 'none') {
+      // The room is handed the mood: the same kitchen is a different place
+      // before and after the thing that happened in it.
+      window.BlvckEnv.draw(ctx, envName, t, opts.skin || 'stickman', mood);
+    }
+    // Ground line only when there is no room to stand in.
+    if (L && envName === 'none') {
+      ctx.strokeStyle = t.dim;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(40, L.GROUND * H + 2);
+      ctx.lineTo(W - 40, L.GROUND * H + 2);
+      ctx.stroke();
+    }
+
+    // ---- 5. Information (only when the beat needs it) -------------------
+    // Last in priority, and sized by the ROLE: a presenter beat gives it most
+    // of the frame, a story beat gives it none at all.
+    let infoRect = null;
+    const info = scene.information;
+    if (info && info.kind && info.kind !== 'none' && roleDef.infoWeight > 0.15) {
+      const wide = roleDef.infoWeight > 0.5;
+      const rect = wide
+        ? { x: 0.28, y: 0.09, w: 0.68, h: 0.66 }
+        : { x: 0.60, y: 0.08, w: 0.36, h: 0.34 };   // a reference, not the subject
+      infoRect = await drawInformation(ctx, info, rect, palette);
+    }
 
     // ---- 1c. Support ----------------------------------------------------
     // What the body rests on. Drawn before the actor so the seat is behind
@@ -386,13 +426,18 @@
     // Held, on a surface, on the floor, or in a thought. Drawn after the actor
     // so a held object reads as in front of the body, and after props so both
     // vocabularies can coexist while the old PROPS table is retired.
-    if (OBJ && scene.objects && scene.objects.length) {
-      const placed = OBJ.place(ctx, t, { objects: scene.objects },
-        Object.assign({ surfaceY: (L ? L.GROUND : 0.84) - 0.10 },
-          leadFrame || {},
-          // The solved hand, so a held object touches it.
-          hands.length ? { hand: { x: hands[0].x, y: hands[0].y } } : {}));
-      if (opts.trace) opts.trace.objects = placed;
+    if (OBJ && objPlan.length) {
+      // Re-planned only when a solved hand is available, so a held object
+      // touches it. Otherwise the plan the camera framed on is what gets
+      // drawn — the bounds and the pixels must not disagree.
+      const finalPlan = hands.length
+        ? OBJ.plan({ objects: scene.objects },
+            Object.assign({ surfaceY: (L ? L.GROUND : 0.84) - 0.10 },
+              leadFrame || { x: lead.x, y: lead.y, unit: lead.unit },
+              { hand: { x: hands[0].x, y: hands[0].y } }))
+        : objPlan;
+      OBJ.drawPlan(ctx, t, finalPlan, lead.unit);
+      if (opts.trace) opts.trace.objects = finalPlan;
     }
 
     // ---- 4. Props, in the actors' hands ---------------------------------
@@ -419,6 +464,10 @@
         ctx.fillText(txt, spot.x * W - w / 2, spot.y * H + 46);
       });
     }
+
+    // Out of shot. The vignette is a lens effect, not a thing in the room, so
+    // it must not scale with the camera.
+    ctx.restore();
 
     if (mood.vignette > 0.02) {
       const g2 = ctx.createRadialGradient(W/2, H*0.52, H*0.28, W/2, H*0.52, H*0.85);

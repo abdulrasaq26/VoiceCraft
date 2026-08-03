@@ -239,21 +239,28 @@
    * the figure rather than the stage's default spot. Same lesson the metaphor
    * layer had to learn.
    */
-  function place(ctx, theme, spec, frame) {
-    const t = theme || {};
+  /**
+   * Work out WHERE everything goes, without drawing any of it.
+   *
+   * Split out from place() because the camera has to frame the subject, and
+   * the subject's bounds cannot be known until the objects have positions.
+   * Measuring the drawn frame instead was the obvious alternative and a trap:
+   * the first attempt detected the subject by its accent colour and silently
+   * included the window, which is drawn in the same gold.
+   */
+  function plan(spec, frame) {
     const f = frame || {};
     const objects = (spec && spec.objects) || [];
     const actorX = f.x == null ? 0.5 : f.x;
     const actorY = f.y == null ? GROUND : f.y;
     const unit = f.unit || 42;
-    const drawn = [];
+    const out = [];
 
     let surfaceIdx = 0;
     let floorIdx = 0;
 
-    objects.forEach((o, oi) => {
-      const draw = OBJECTS[o.kind];
-      if (!draw) return;
+    objects.forEach((o) => {
+      if (!OBJECTS[o.kind]) return;
       const count = Math.max(1, Math.min(24, Number(o.count) || 1));
       for (let i = 0; i < count; i++) {
         let x;
@@ -296,8 +303,13 @@
             // accumulation was correct in the data and invisible in the frame.
             // Six objects do not communicate effort — six PROMINENT objects
             // do. Accumulation is a storytelling channel, not set dressing.
+            // Scattered around the ACTOR, not across the whole floor.
+            // Room-wide scatter made the litter belong to the room instead of
+            // to the person, and it also defeated the camera: the subject's
+            // bounds stretched from 0.16 to 0.86 and there was nothing left to
+            // frame. Drafts pile up where the work is happening.
             const k = floorIdx++;
-            x = 0.16 + rnd(k, 3) * 0.70;
+            x = actorX + (rnd(k, 3) - 0.5) * 0.46;
             y = GROUND + 0.03 + rnd(k, 11) * 0.075;
             size = unit * (1.15 + rnd(k, 5) * 0.5);
             break;
@@ -305,34 +317,51 @@
         }
         // Never draw over the face.
         if (o.rel === 'floor' && Math.abs(x - actorX) < 0.05) x += 0.09;
-        ctx.save();
-        ctx.globalAlpha = o.rel === 'floor' ? 0.85 : 1;
-        draw(ctx, t, px(x), py(y), size);
-        ctx.restore();
-        drawn.push({ kind: o.kind, rel: o.rel || 'floor', x: +x.toFixed(3), y: +y.toFixed(3) });
+        out.push({ kind: o.kind, rel: o.rel || 'floor',
+                   x: +x.toFixed(4), y: +y.toFixed(4), size });
       }
     });
+    return out;
+  }
 
+  /** Draw a plan produced by plan(). */
+  function drawPlan(ctx, theme, planned, unit) {
+    const t = theme || {};
+    const u = unit || 42;
+    (planned || []).forEach((o) => {
+      const draw = OBJECTS[o.kind];
+      if (!draw) return;
+      ctx.save();
+      ctx.globalAlpha = o.rel === 'floor' ? 0.85 : 1;
+      draw(ctx, t, px(o.x), py(o.y), o.size);
+      ctx.restore();
+    });
     // The bubble is drawn after, around whatever went in it.
-    const thought = drawn.find((d) => d.rel === 'thought');
+    const thought = (planned || []).find((d) => d.rel === 'thought');
     if (thought) {
       ctx.save();
       stroke(ctx, t, 3);
       ctx.beginPath();
-      ctx.ellipse(px(thought.x), py(thought.y), unit * 1.5, unit * 1.25, 0, 0, Math.PI * 2);
+      ctx.ellipse(px(thought.x), py(thought.y), u * 1.5, u * 1.25, 0, 0, Math.PI * 2);
       ctx.stroke();
-      [[0.055, 0.5, 9], [0.078, 0.72, 6]].forEach(([dx, dy, r]) => {
+      [[0.055, 0.9], [0.078, 1.25]].forEach(([dx, dy]) => {
         ctx.beginPath();
-        ctx.arc(px(thought.x - dx), py(thought.y + unit * dy / H * H / H + unit * dy), r, 0, Math.PI * 2);
+        ctx.arc(px(thought.x - dx), py(thought.y) + u * dy, u * 0.16, 0, Math.PI * 2);
         ctx.stroke();
       });
       ctx.restore();
     }
-    return drawn;
+    return planned || [];
+  }
+
+  /** Plan and draw in one go — the original entry point. */
+  function place(ctx, theme, spec, frame) {
+    const planned = plan(spec, frame);
+    return drawPlan(ctx, theme, planned, (frame || {}).unit);
   }
 
   window.BlvckObjects = {
-    OBJECTS, SUPPORT, place, drawSupport, GROUND,
+    OBJECTS, SUPPORT, place, plan, drawPlan, drawSupport, GROUND,
     kinds: () => Object.keys(OBJECTS),
     supports: () => Object.keys(SUPPORT)
   };
