@@ -46,6 +46,21 @@
 
   // --- environments --------------------------------------------------------
   //
+  // ⚠ SUPERSEDED AND UNCONSUMED. environments.js draws these same rooms —
+  // kitchen, clinic, gym, office, meeting, classroom — as illustrated places
+  // that react to story state, and the compositor calls THAT one. This table
+  // is exported and nothing reads it.
+  //
+  // Found by auditing CONCEPTS with more than one representation rather than
+  // modules with no consumer. The earlier consumer audit missed this entirely,
+  // because it checked at module granularity: BlvckStageLayers is consumed, so
+  // the module looked healthy while a dead table sat inside it. Dead exports
+  // hide inside live modules.
+  //
+  // Left in place rather than deleted at the end of a long session: the
+  // primitives below it (counter, shelf, bed, desk, board) are shared with
+  // PROPS, so removal needs checking rather than confidence.
+  //
   // Deliberately crude: a few shapes that say "kitchen" or "office" without
   // competing with the actors. A detailed background would pull focus from the
   // figure, which is the thing carrying the story.
