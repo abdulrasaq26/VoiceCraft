@@ -36,6 +36,25 @@
 // The authored clips in character-engine.js do not go away. They become
 // landmarks in this space (see LANDMARKS) and transient GESTURES layered on
 // top — a facepalm is a thing you do, not a way you stand.
+//
+// WHAT THIS SPACE IS NOT
+//
+// Posture space describes BODY EXPRESSION: what the body does above its own
+// feet. It deliberately does not describe:
+//
+//   support      the actor's relationship to the ground and to furniture —
+//                standing, sitting, kneeling, lying, leaning. This is why
+//                `sit` cannot be reproduced here and is not listed as a
+//                landmark. It is a different dimension of representation, not
+//                a tuning problem, and forcing it in would hide the limit
+//                rather than solve it.
+//   location     where the actor is on the stage. That belongs to the
+//                compositor, which resolves it once from mood and metaphor.
+//   relation     how two actors are arranged toward each other. That needs a
+//                second entity and does not exist yet.
+//
+// Each of those wants its own small continuous space eventually. Naming the
+// boundary is what stops this one from quietly growing into a junk drawer.
 (() => {
   'use strict';
 
@@ -152,18 +171,35 @@
     const wealth = s.wealth == null ? 0.5 : clamp01(s.wealth);
     const conf = s.confidence == null ? 0.6 : clamp01(s.confidence);
     const stress = s.stress == null ? 0.2 : clamp01(s.stress);
+    // Stance attributes. These describe how someone is holding themselves
+    // rather than how they are doing, and they are what let a beat like "he
+    // had to choose" move the body without pretending his circumstances got
+    // worse.
+    const doubt = s.uncertainty == null ? 0.2 : clamp01(s.uncertainty);
+    const resolve = s.resolve == null ? 0.5 : clamp01(s.resolve);
+    const duty = s.obligation == null ? 0.2 : clamp01(s.obligation);
 
     return {
+      // Obligation presses down the way a burden does; resolve holds the
+      // spine up against it.
       compression: clamp01(
-        stress * 0.42 + (1 - conf) * 0.30 + (1 - health) * 0.22 + (1 - wealth) * 0.10 - 0.12),
+        stress * 0.34 + (1 - conf) * 0.24 + (1 - health) * 0.18 + (1 - wealth) * 0.08
+        + duty * 0.20 - resolve * 0.12 - 0.10),
+      // Doubt closes the arms in. Resolve opens them.
       openness: clamp01(
-        conf * 0.46 + energy * 0.22 + (1 - stress) * 0.22 + health * 0.10 - 0.28),
+        conf * 0.38 + energy * 0.18 + (1 - stress) * 0.18 + health * 0.08
+        + resolve * 0.20 - doubt * 0.26 - 0.22),
+      // This is where uncertainty reads most: an undecided body is an
+      // unplanted one. Weight is not committed to either foot.
       stability: clamp01(
-        health * 0.38 + conf * 0.30 + (1 - stress) * 0.22 + wealth * 0.10),
-      energy: clamp01(energy * 0.68 + health * 0.22 + (1 - stress) * 0.10),
-      confidence: clamp01(conf * 0.72 + wealth * 0.16 + (1 - stress) * 0.12),
-      // Only stress breaks the symmetry, and only once it is real.
-      asymmetry: clamp11(Math.max(0, stress - 0.35) * 0.9)
+        health * 0.30 + conf * 0.24 + (1 - stress) * 0.18 + wealth * 0.08
+        + resolve * 0.24 - doubt * 0.34),
+      energy: clamp01(energy * 0.62 + health * 0.20 + (1 - stress) * 0.10 + resolve * 0.10),
+      confidence: clamp01(
+        conf * 0.58 + wealth * 0.12 + (1 - stress) * 0.10 + resolve * 0.20 - doubt * 0.22),
+      // Stress and doubt both break the symmetry, and only once they are real.
+      // Being torn is literally leaning two ways at once.
+      asymmetry: clamp11(Math.max(0, stress - 0.35) * 0.7 + Math.max(0, doubt - 0.3) * 0.9)
     };
   }
 

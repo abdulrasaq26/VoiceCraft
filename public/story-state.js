@@ -20,13 +20,30 @@
 
   // Attributes the renderer knows how to express. Numeric ones interpolate;
   // categorical ones step at the change.
-  const NUMERIC = ['health', 'energy', 'wealth', 'confidence', 'stress', 'size'];
+  const NUMERIC = ['health', 'energy', 'wealth', 'confidence', 'stress', 'size',
+                   'uncertainty', 'resolve', 'obligation'];
+
+  // CONDITION vs STANCE — which attributes mean "things are going well", and
+  // which only describe how a person is holding themselves.
+  //
+  // This split exists because "He had to choose between two paths" changed no
+  // state at all, so the body did not move. The obvious fix is to make a
+  // dilemma an attribute, and the obvious fix is a trap: if uncertainty fed
+  // wellbeing, then facing a choice would dim the lights, cool the room and
+  // sink the figure exactly as though something bad had happened. A dilemma is
+  // not a misfortune. Being torn is not the same as being unwell.
+  //
+  // So condition drives wellbeing and therefore the whole environment; stance
+  // drives posture only. A character can be resolute and destitute, or safe
+  // and paralysed, and those look different.
+  const CONDITION = ['health', 'energy', 'wealth', 'confidence', 'stress'];
+  const STANCE = ['uncertainty', 'resolve', 'obligation'];
 
   // Attributes where MORE is worse. Without this, "stress rose sharply" was
   // rendered as a celebration — the delta was large and positive, and nothing
   // told the engine that rising stress is bad news. Polarity is a property of
   // the attribute, not of the change.
-  const INVERTED = ['stress'];
+  const INVERTED = ['stress', 'uncertainty', 'obligation'];
   const polarity = (attribute) => (INVERTED.indexOf(attribute) > -1 ? -1 : 1);
   const CATEGORICAL = ['emotion', 'status', 'location'];
 
@@ -41,7 +58,10 @@
       // 'person' renders as an actor; anything else renders through its
       // information card. The state model is identical either way.
       type: String(s.type || 'person'),
-      baseline: Object.assign({ health: 0.8, energy: 0.7, wealth: 0.5, confidence: 0.6, stress: 0.2 }, s.baseline || {}),
+      baseline: Object.assign({
+        health: 0.8, energy: 0.7, wealth: 0.5, confidence: 0.6, stress: 0.2,
+        uncertainty: 0.2, resolve: 0.5, obligation: 0.2
+      }, s.baseline || {}),
       changes: []   // StateChange[]
     };
   }
@@ -316,12 +336,40 @@
       { event: 'strain', magnitude: 'moderate', impact: { stress: 0.85, confidence: -0.4, energy: -0.3 } }],
     [/\b(calm|relieved|reassur\w*|settled|at peace)\b/i,
       { event: 'relief', lifts: true, magnitude: 'moderate', impact: { stress: -0.85, confidence: 0.4 } }],
-    [/\b(confident|certain|determined|resolved)\b/i,
+    // Narrowed: 'determined' and 'resolved' now belong to the determination
+    // stance event below, and 'certain' to clarity. They matched here first,
+    // which made both new events unreachable for their most common trigger
+    // words — "He was determined to rebuild" came back tagged `resolve` and
+    // moved confidence instead of resolve. One word, one owner.
+    [/\b(confident|self-assured|assured|sure of (?:himself|herself|themselves))\b/i,
       { event: 'resolve', magnitude: 'moderate', impact: { confidence: 0.85, stress: -0.3 } }],
     [/\b(unsure|doubt\w*|hesitat\w*|confused)\b/i,
       { event: 'doubt', magnitude: 'moderate', impact: { confidence: -0.8, stress: 0.4 } }],
     [/\b(improv\w*|progress\w*|grew|growth|better)\b/i,
       { event: 'progress', lifts: true, magnitude: 'moderate', impact: { confidence: 0.6, wealth: 0.4, stress: -0.3 } }],
+
+    // --- stance events ----------------------------------------------------
+    //
+    // These change how a person stands without claiming their circumstances
+    // got better or worse. "He had to choose between two paths" used to match
+    // nothing at all, so the state was identical to the beat before it and the
+    // figure rendered unchanged while the narration moved on. A dilemma is one
+    // of the most common things a script does; it deserves a body.
+    [/\b(had to choose|must choose|choice|decision|decide|dilemma|torn between|two paths|crossroads|either way)\b/i,
+      { event: 'dilemma', magnitude: 'moderate',
+        impact: { uncertainty: 0.85, resolve: -0.5, stress: 0.25 } }],
+    [/\b(determined|resolved to|committed|made up (?:his|her|their) mind|set out to|vowed)\b/i,
+      { event: 'determination', magnitude: 'moderate',
+        impact: { resolve: 0.9, uncertainty: -0.7, confidence: 0.4 } }],
+    [/\b(had to|obliged|responsib\w*|duty|expected (?:him|her|them)|no choice but|forced to)\b/i,
+      { event: 'obligation', magnitude: 'moderate',
+        impact: { obligation: 0.8, resolve: 0.2, stress: 0.3 } }],
+    [/\b(regret\w*|wished (?:he|she|they)|looked back|should have|if only)\b/i,
+      { event: 'regret', magnitude: 'moderate',
+        impact: { uncertainty: 0.5, confidence: -0.4, resolve: -0.3 } }],
+    [/\b(finally knew|no longer doubted|clear (?:to|about)|certain(?:ty)?|understood at last)\b/i,
+      { event: 'clarity', lifts: true, magnitude: 'moderate',
+        impact: { uncertainty: -0.9, resolve: 0.6, confidence: 0.5 } }],
     // Deliberately last and deliberately small: the control case. If a minor
     // annoyance moved the stage as much as a diagnosis, the tiers would mean
     // nothing.
@@ -484,7 +532,11 @@
     // gone, stress high, confidence gone) from a job loss (money gone).
     let recip = 0;
     let n = 0;
-    NUMERIC.forEach((a) => {
+    // CONDITION only. Stance attributes describe how someone is standing, not
+    // how they are doing, and feeding them in here would make every dilemma
+    // look like a disaster — and would silently recalibrate the four tiers
+    // that were just measured monotonic.
+    CONDITION.forEach((a) => {
       if (s[a] == null) return;
       const v = polarity(a) > 0 ? s[a] : 1 - s[a];
       recip += 1 / Math.max(0.02, v);   // floored so a zeroed attribute cannot divide by zero
@@ -539,6 +591,8 @@
     INVERTED,
     parse,
     NUMERIC,
+    CONDITION,
+    STANCE,
     CATEGORICAL,
     CUES,
     EVENTS,
