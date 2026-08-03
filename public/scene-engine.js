@@ -455,9 +455,11 @@
         const found = OBJ.inferObjects(text);
         if (found) {
           scene.objects = found.objects;
-          // Support comes from the same rule, because the objects and the
-          // posture are the same fact: someone studying is at a desk.
+          // Support and anchors come from the same rule, because the objects,
+          // the posture and the furniture are one fact: someone studying is at
+          // a desk, someone waiting is at a window.
           if (scene.support == null && found.support) scene.support = found.support;
+          if (scene.anchors == null && found.anchors) scene.anchors = found.anchors;
         }
       }
       // Fallback to the single-prop path for anything the rules do not name.

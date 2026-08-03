@@ -141,6 +141,77 @@
       stroke(g, t, Math.max(2, s * 0.07));
       g.strokeRect(x - s * 0.16, y - s * 0.28, s * 0.32, s * 0.56);
     },
+    // --- nouns the battery asked for -------------------------------------
+    //
+    // Object INFERENCE was at ~40% and the object VOCABULARY at maybe 20%: the
+    // rules routing text to objects were adequate while the objects themselves
+    // barely existed. Two 25-scene failures were missing nouns rather than
+    // missing logic — a child at a window with no window, an escape from a
+    // fire with no fire.
+
+    // Carried, not worn. A case reads as leaving.
+    suitcase: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.strokeRect(x - s * 0.34, y - s * 0.22, s * 0.68, s * 0.46);
+      g.beginPath();
+      g.arc(x, y - s * 0.22, s * 0.13, Math.PI, 0);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x - s * 0.34, y - s * 0.02); g.lineTo(x + s * 0.34, y - s * 0.02);
+      g.stroke();
+    },
+    // A sealed box: the moving-out object, and the found-treasure one.
+    box: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.strokeRect(x - s * 0.36, y - s * 0.26, s * 0.72, s * 0.52);
+      g.beginPath();
+      g.moveTo(x - s * 0.36, y - s * 0.08); g.lineTo(x + s * 0.36, y - s * 0.08);
+      g.moveTo(x, y - s * 0.26); g.lineTo(x, y - s * 0.08);
+      g.stroke();
+    },
+    // Cup on a stem on a base — the silhouette does all the work.
+    trophy: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.08));
+      g.beginPath();
+      g.moveTo(x - s * 0.24, y - s * 0.34);
+      g.lineTo(x - s * 0.16, y + s * 0.02);
+      g.lineTo(x + s * 0.16, y + s * 0.02);
+      g.lineTo(x + s * 0.24, y - s * 0.34);
+      g.closePath();
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x, y + s * 0.02); g.lineTo(x, y + s * 0.22);
+      g.moveTo(x - s * 0.20, y + s * 0.24); g.lineTo(x + s * 0.20, y + s * 0.24);
+      g.stroke();
+      // Handles — without them it is a plant pot.
+      [-1, 1].forEach((d) => {
+        g.beginPath();
+        g.arc(x + d * s * 0.24, y - s * 0.18, s * 0.11, -Math.PI / 2, Math.PI / 2, d < 0);
+        g.stroke();
+      });
+    },
+    mic: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.08));
+      g.beginPath();
+      g.ellipse(x, y - s * 0.22, s * 0.13, s * 0.19, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x, y - s * 0.03); g.lineTo(x, y + s * 0.30);
+      g.stroke();
+    },
+    // Flames, drawn as rising tongues rather than a blob.
+    fire: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.08));
+      [-1, 0, 1].forEach((d, i) => {
+        const h = s * (0.5 + (i === 1 ? 0.34 : 0));
+        const bx = x + d * s * 0.24;
+        g.beginPath();
+        g.moveTo(bx - s * 0.16, y + s * 0.26);
+        g.quadraticCurveTo(bx - s * 0.14, y - h * 0.4, bx, y - h);
+        g.quadraticCurveTo(bx + s * 0.14, y - h * 0.4, bx + s * 0.16, y + s * 0.26);
+        g.stroke();
+      });
+    },
     clock: (g, t, x, y, s) => {
       stroke(g, t, Math.max(2, s * 0.07));
       g.beginPath(); g.arc(x, y, s * 0.38, 0, Math.PI * 2); g.stroke();
@@ -222,6 +293,37 @@
       g.beginPath();
       g.moveTo(px(x) - half * 1.25, top);
       g.lineTo(px(x) + half * 1.25, top);
+      g.stroke();
+      return { x, top: top / H };
+    },
+
+    // A WINDOW the figure stands at. An anchor rather than an object, because
+    // it is architecture: you cannot hold it, and its whole meaning is that
+    // someone is positioned AT it looking out. "The child waited at the
+    // window" was one of the two battery scenes that failed outright, and it
+    // failed for want of this noun rather than for want of staging.
+    window(g, t, spots, unit) {
+      if (!spots || !spots.length) return null;
+      const x = spots[0].x + 0.02;
+      const top = py(GROUND) - unit * 5.4;
+      const w = unit * 1.9;
+      const h = unit * 2.6;
+      g.save();
+      // Daylight beyond, which is what the figure is looking at.
+      g.globalAlpha = 0.30;
+      g.fillStyle = (t && t.accent) || '#f5b301';
+      g.fillRect(px(x) - w, top, w * 2, h);
+      g.restore();
+      stroke(g, t, Math.max(3, unit * 0.11));
+      g.strokeRect(px(x) - w, top, w * 2, h);
+      g.beginPath();
+      g.moveTo(px(x), top); g.lineTo(px(x), top + h);
+      g.moveTo(px(x) - w, top + h / 2); g.lineTo(px(x) + w, top + h / 2);
+      g.stroke();
+      // Sill, so it sits in a wall rather than floating.
+      g.beginPath();
+      g.moveTo(px(x) - w * 1.15, top + h);
+      g.lineTo(px(x) + w * 1.15, top + h);
       g.stroke();
       return { x, top: top / H };
     },
@@ -493,7 +595,24 @@
       { objects: [{ kind: 'clock', rel: 'thought' }] }],
     [/\b(paperwork|forms?|invoice|bills?|contract|documents?)\b/i,
       { support: 'chair', objects: [
-        { kind: 'paper', rel: 'held' }, { kind: 'paper', rel: 'surface' } ] }]
+        { kind: 'paper', rel: 'held' }, { kind: 'paper', rel: 'surface' } ] }],
+
+    // The nouns the battery asked for. Each fixes a specific scene that
+    // failed for want of the object rather than for want of staging.
+    [/\b(at the window|out the window|through the window|watching the street)\b/i,
+      { anchors: ['window'], objects: [] }],
+    [/\b(fire|burning|blaze|flames?|smoke|burned down)\b/i,
+      { objects: [{ kind: 'fire', rel: 'floor', count: 2 }] }],
+    // "packed" alone matched "played to a packed room". Packing needs an
+    // object it is packing, the same lesson `late` taught two rules up.
+    [/\b(packed (?:the|his|her|their|up)|packing|moved out|moving out|last box|suitcase|left the flat|left home)\b/i,
+      { objects: [{ kind: 'suitcase', rel: 'held' }, { kind: 'box', rel: 'floor', count: 2 }] }],
+    [/\b(trophy|medal|award|cup|champion|prize|won the)\b/i,
+      { objects: [{ kind: 'trophy', rel: 'held' }] }],
+    [/\b(stage|microphone|sang|sing|played to|performed|gig|concert)\b/i,
+      { objects: [{ kind: 'mic', rel: 'held' }] }],
+    [/\b(chest|buried|treasure|dug up|found under|hidden box)\b/i,
+      { support: 'kneel', objects: [{ kind: 'box', rel: 'floor' }] }]
   ];
 
   // How long it went on. Evidence accumulates with time, and this is the only
@@ -512,19 +631,41 @@
    */
   function inferObjects(text) {
     const hay = String(text || '');
-    const hit = OBJECT_RULES.find(([re]) => re.test(hay));
-    if (!hit) return null;
-    const spec = hit[1];
+    // EVERY matching rule contributes, not just the first.
+    //
+    // First-match-wins meant a sentence naming two things got one of them:
+    // "the child waited at the window" matched the waiting rule, took its
+    // phone and clock, and never reached the window rule — so the beat that
+    // failed for want of a window still had no window after the window was
+    // built. A beat can legitimately name several things.
+    const hits = OBJECT_RULES.filter(([re]) => re.test(hay));
+    if (!hits.length) return null;
 
     let mult = 1;
     DURATION.forEach(([re, m]) => { if (re.test(hay)) mult = Math.max(mult, m); });
 
-    const objects = spec.objects.map((o) => {
-      const out = { kind: o.kind, rel: o.rel };
-      if (o.count) out.count = Math.min(12, Math.round(o.count * mult));
-      return out;
+    const objects = [];
+    const seen = new Set();
+    let support = null;
+    const anchors = [];
+    hits.forEach(([, spec]) => {
+      (spec.objects || []).forEach((o) => {
+        const key = o.kind + '/' + o.rel;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const out = { kind: o.kind, rel: o.rel };
+        if (o.count) out.count = Math.min(12, Math.round(o.count * mult));
+        objects.push(out);
+      });
+      if (!support && spec.support) support = spec.support;
+      (spec.anchors || []).forEach((a) => { if (anchors.indexOf(a) === -1) anchors.push(a); });
     });
-    return { objects, support: spec.support || null, duration: mult };
+
+    // A frame with everything in it says nothing. Earlier rules are the more
+    // specific ones, so their objects survive the trim.
+    return { objects: objects.slice(0, 5), support,
+             anchors: anchors.length ? anchors : null,
+             duration: mult, rules: hits.length };
   }
 
   window.BlvckObjects = {
