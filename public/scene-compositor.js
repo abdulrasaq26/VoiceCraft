@@ -187,7 +187,26 @@
     // be photographed — so without this they arrive as words and leave as
     // words. Staged behind the actors, because the actor's position ON it is
     // what carries the meaning.
-    const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
+    let spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
+
+    // INTERACTION overrides symmetric placement.
+    //
+    // placeActors returns y = GROUND for every layout and pair positions
+    // symmetric about centre, so it cannot produce an asymmetric two-shot.
+    // Measured consequence: nine two-person situations in the 25-scene battery
+    // rendered as the SAME image. A proposal and an argument differ by
+    // relative height, distance and orientation — a pattern, not a number.
+    const IX = window.BlvckInteract;
+    const ixName = scene.interaction !== undefined
+      ? scene.interaction
+      : (IX ? IX.infer(scene.subject || '') : null);
+    if (IX && ixName && spots.length >= 2) {
+      const staged = IX.stage(ixName, spots[0] && spots[0].scale);
+      if (staged) {
+        spots = staged;
+        if (opts.trace) opts.trace.interaction = { name: ixName, means: IX.means(ixName) };
+      }
+    }
 
     // Where an actor ends up, resolved ONCE.
     //
@@ -365,7 +384,16 @@
           : null;
 
         if (posture) {
-          let pose = posture.pose;
+          // The interaction nudges each body differently, so the two figures
+          // are not the same person twice. Applied to the AXES rather than to
+          // the drawn pose, so it stays inside the continuous space.
+          let pose = spot.bias && window.BlvckPose
+            ? window.BlvckPose.poseFrom(
+                Object.keys(posture.axes).reduce((acc, k) => {
+                  acc[k] = posture.axes[k] + (spot.bias[k] || 0);
+                  return acc;
+                }, {}))
+            : posture.pose;
           // A gesture is something you DO at a moment, layered over how you
           // stand, at a weight set by how big the change is.
           // sample() takes a clip NAME, not a clip object — it does
