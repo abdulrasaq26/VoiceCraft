@@ -398,6 +398,29 @@
       S.parse(ent, tl);
     }
 
+    // THE DIRECTOR STAGES FIRST; KEYWORDS ARE THE FALLBACK.
+    //
+    // Same migration state inference went through, for the same reason and on
+    // the same evidence. Keyword object rules have now produced four distinct
+    // classes of failure, none of them bugs in a particular entry:
+    //
+    //   substring    `form` matched "platform"
+    //   morphology   `invest` matched "investigation"
+    //   polysemy     `packed` matched "packed room", `late` matched
+    //                "late into the night"
+    //   competition  first-match-wins took the waiting rule and never reached
+    //                the window rule for "waited at the window"
+    //
+    // Those are consequences of recovering meaning from text fragments, and
+    // every rule added is another chance to hit the wrong sense. So the
+    // Director plans staging when it can, and the table below runs only when
+    // it cannot — offline, or without a key.
+    let planned = 0;
+    if (o.useDirector !== false) {
+      const res = await planScenes(list, o);
+      planned = res.planned || 0;
+    }
+
     const IX = window.BlvckInteract;
     const L = window.BlvckStageLayers;
     let staged = 0;
@@ -472,7 +495,9 @@
     });
 
     return { scenes: list, source: ent.stateSource || 'keywords',
-             staged, changes: ent.changes.length };
+             staged, planned,
+             staging: planned ? 'director' : 'keywords',
+             changes: ent.changes.length };
   }
 
   /**
