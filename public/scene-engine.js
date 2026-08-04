@@ -424,6 +424,7 @@
     const IX = window.BlvckInteract;
     const L = window.BlvckStageLayers;
     let staged = 0;
+    let raised = 0;   // interactions that had to overrule an earlier actor count
 
     // ONE palette for the whole run, chosen from the whole narration.
     //
@@ -459,12 +460,29 @@
           if (scene.anchors == null && pat.requires && pat.requires.length) {
             scene.anchors = pat.requires.slice();
           }
-          // Two actors are implied by an interaction; without this the pattern
-          // is inferred and then never used, because staging only applies when
-          // there are two spots to stage.
+          // AN INTERACTION IS A CLAIM THAT TWO PEOPLE ARE PRESENT, and it
+          // outranks an earlier guess that there is one.
+          //
+          // Setting the count only when it was null was not enough. Story
+          // Actions and Interactions are two vocabularies for "what is
+          // happening", and they disagree: "They said goodbye at the door"
+          // gets role=presenter/count=1 from Actions and `part` from
+          // Interactions. A scene arriving through the storyboard path
+          // therefore carried the interaction AND rendered one person —
+          // staging needs two spots, found one, and skipped silently. Same
+          // sentence, two producer paths, two different pictures.
+          //
+          // Raising the count is the honest resolution: if the interaction is
+          // trusted enough to assign, it must be staged. Assigning a pattern
+          // that quietly does nothing is the worst of the three options.
           if (!scene.actors) scene.actors = {};
-          if (scene.actors.count == null) scene.actors.count = 2;
-          if (!scene.actors.role) scene.actors.role = 'social';
+          if (!(scene.actors.count >= 2)) {
+            if (scene.actors.count != null) raised++;
+            scene.actors.count = 2;
+          }
+          if (!scene.actors.role || scene.actors.role === 'presenter') {
+            scene.actors.role = 'social';
+          }
           staged++;
         }
       }
@@ -495,7 +513,7 @@
     });
 
     return { scenes: list, source: ent.stateSource || 'keywords',
-             staged, planned,
+             staged, planned, raised,
              staging: planned ? 'director' : 'keywords',
              changes: ent.changes.length };
   }
