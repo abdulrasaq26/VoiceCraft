@@ -397,6 +397,10 @@
     } else {
       S.parse(ent, tl);
     }
+    // What the subject is PURSUING, read across the whole narration rather
+    // than per beat — a goal is a thread through a story, not a property of
+    // one sentence.
+    if (S.readIntent) S.readIntent(ent, tl);
 
     // THE DIRECTOR STAGES FIRST; KEYWORDS ARE THE FALLBACK.
     //

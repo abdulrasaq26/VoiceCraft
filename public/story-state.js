@@ -584,6 +584,90 @@
    * Returns multipliers the compositor applies, so every layer answers to the
    * same fact instead of being directed separately.
    */
+  // --- intent --------------------------------------------------------------
+  //
+  // What the subject is PURSUING, which is different from how they feel.
+  // Condition and stance describe a person; intent describes a person aimed at
+  // something. Without it there is tension but no stakes: a story can only get
+  // better or worse, never closer or further.
+  //
+  // Eight staged metaphors already existed — climb, barrier, fork, gap,
+  // bridge, drain, weight, fall — and they were chosen by KEYWORD. "He climbed
+  // for six hours" got a staircase because it contained the word climb, not
+  // because anyone was making progress toward anything. So the metaphor
+  // vocabulary illustrated the wording rather than the situation, and two
+  // beats with the same words got the same picture however the story had
+  // moved. This is the join that gives them something true to attach to.
+  //
+  // Deliberately small: one goal at a time, three facts about it. Multiple
+  // competing goals are a later problem, and inventing them now would repeat
+  // the mistake of building representation ahead of the render loop.
+  const GOAL_EVENTS = [
+    [/\b(wanted to|set out to|decided to|hoped to|aimed to|dreamed of|needed to)\b/i,
+      { act: 'want' }],
+    [/\b(worked at|kept at|pushed on|carried on|tried again|step by step|inch(?:ed)? closer)\b/i,
+      { act: 'advance', by: 0.25 }],
+    [/\b(blocked|refused|denied|turned (?:him|her|them) down|stood in (?:his|her|their) way|could not afford|ran out of)\b/i,
+      { act: 'block' }],
+    [/\b(finally|at last|achieved|succeeded|got there|made it|reached it|won)\b/i,
+      { act: 'achieve' }],
+    [/\b(gave up|abandoned|walked away from|stopped trying|let it go)\b/i,
+      { act: 'abandon' }]
+  ];
+
+  /** Read a goal out of narration, as a small timeline of its own. */
+  function readIntent(ent, timeline) {
+    if (!ent || !timeline || !timeline.sentences) return ent;
+    ent.goal = null;
+    const marks = [];
+    timeline.sentences.forEach((s) => {
+      for (const [re, spec] of GOAL_EVENTS) {
+        const m = re.exec(s.text);
+        if (!m) continue;
+        marks.push({ at: s.start, act: spec.act, by: spec.by || 0, cause: m[0] });
+        break;
+      }
+    });
+    if (!marks.length) return ent;
+    ent.goal = { marks, want: marks[0].cause };
+    return ent;
+  }
+
+  /**
+   * Where the goal stands at time t: how far along, and whether it is blocked.
+   */
+  function goalAt(ent, t) {
+    if (!ent || !ent.goal) return null;
+    let progress = 0;
+    let blocked = false;
+    let done = null;
+    ent.goal.marks.forEach((m) => {
+      if (m.at > t) return;
+      if (m.act === 'advance') { progress = Math.min(1, progress + m.by); blocked = false; }
+      else if (m.act === 'block') blocked = true;
+      else if (m.act === 'achieve') { progress = 1; done = 'achieved'; blocked = false; }
+      else if (m.act === 'abandon') done = 'abandoned';
+    });
+    return { progress: Math.round(progress * 100) / 100, blocked, done, want: ent.goal.want };
+  }
+
+  /**
+   * The metaphor a GOAL implies — the join intent exists for.
+   *
+   * Returns null when there is no goal, so keyword inference still runs for
+   * beats that are not about pursuing anything. Intent supersedes wording; it
+   * does not replace it everywhere.
+   */
+  function metaphorForGoal(ent, t) {
+    const g = goalAt(ent, t);
+    if (!g) return null;
+    if (g.done === 'abandoned') return 'fall';
+    if (g.blocked) return 'barrier';
+    if (g.done === 'achieved') return 'climb';
+    if (g.progress >= 0.2) return 'climb';
+    return 'gap';          // wanted, not yet moving — the distance is the point
+  }
+
   function moodFor(ent, t) {
     const s = stateAt(ent, t);
     const c = changeAt(ent, t);
@@ -677,6 +761,9 @@
     polarity,
     INVERTED,
     parse,
+    readIntent,
+    goalAt,
+    metaphorForGoal,
     readState,
     applyDirectorChanges,
     NUMERIC,

@@ -261,8 +261,22 @@
     // hourglass metaphor put two time symbols in one image. The present thing
     // wins, because it belongs to the world rather than commenting on it.
     const CLAIMS = { drain: ['clock'], weight: ['book'], barrier: [], fork: [] };
+    // INTENT OUTRANKS WORDING.
+    //
+    // The metaphor vocabulary was chosen by keyword, so it illustrated the
+    // sentence rather than the situation: "he climbed for six hours" got a
+    // staircase because it contained the word climb, and two beats with the
+    // same words got the same picture however far the story had moved. A goal
+    // that is blocked is a barrier whatever the sentence says; a goal being
+    // advanced is a climb. Keywords still run for beats that are not about
+    // pursuing anything.
+    const goalMeta = (stateEnt && window.BlvckStoryState
+      && window.BlvckStoryState.metaphorForGoal)
+      ? window.BlvckStoryState.metaphorForGoal(stateEnt, scene.time || 0) : null;
     let metaName = scene.metaphor
+      || goalMeta
       || (scene.metaphor === null ? null : (M ? M.infer(scene.subject || '') : null));
+    if (goalMeta && opts.trace) opts.trace.metaphorFrom = 'goal';
     if (metaName && CLAIMS[metaName] && scene.objects) {
       const present = scene.objects.map((o) => o && o.kind);
       if (CLAIMS[metaName].some((k) => present.indexOf(k) > -1)) {
