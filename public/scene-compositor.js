@@ -537,14 +537,29 @@
           if (inFront && Math.abs((other.x || 0.5) - (spot.x || 0.5)) < 0.20) matte = t.bg;
         }
 
+        // IDENTITY REACHES THE FIGURE.
+        //
+        // The Director emits `identity` — child_at_window, doctor_and_patient
+        // — and until now nothing drew it: two different identities produced
+        // byte-identical frames, measured at 0 differing pixels. Cast knew what
+        // characters look like and everything it knew went to image and video
+        // PROMPTS only.
+        //
+        // Appearance shifts within the palette rather than replacing it, so
+        // this does not undo sequence colour continuity.
+        const look0 = scene.identity && window.BlvckCast && window.BlvckCast.appearanceFor
+          ? window.BlvckCast.appearanceFor(scene.identity, pal) : null;
+        const idColour = look0 && i === 0 ? look0.colour : null;
+        const idScale = look0 && i === 0 ? look0.scale : 1;
+
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: posX * W,
           y: posY * H,
-          scale: unit,
+          scale: unit * idScale,
           look,
           matte,
           skin: opts.skin || 'stickman',
-          colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
+          colour: idColour || (i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim)),
           flip: spot.flip
         });
         ctx.restore();
