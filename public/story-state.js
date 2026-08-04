@@ -603,19 +603,42 @@
   // competing goals are a later problem, and inventing them now would repeat
   // the mistake of building representation ahead of the render loop.
   const GOAL_EVENTS = [
-    [/\b(wanted to|set out to|decided to|hoped to|aimed to|dreamed of|needed to)\b/i,
+    // `wanted to` alone missed "He wanted the promotion" — the commonest way
+    // anyone states a goal — so the first stress test had a story whose goal
+    // never began. The want went unrecorded and `want` reported "worked at".
+    [/\b(wanted|set out to|decided to|hoped (?:to|for)|aimed (?:to|for)|dreamed of|needed|longed for|was determined to)\b/i,
       { act: 'want' }],
-    [/\b(worked at|kept at|pushed on|carried on|tried again|step by step|inch(?:ed)? closer)\b/i,
+    [/\b(worked at|kept at|pushed on|carried on|tried again|step by step|inch(?:ed)? closer|got closer|made progress)\b/i,
       { act: 'advance', by: 0.25 }],
     [/\b(blocked|refused|denied|turned (?:him|her|them) down|stood in (?:his|her|their) way|could not afford|ran out of)\b/i,
       { act: 'block' }],
     [/\b(finally|at last|achieved|succeeded|got there|made it|reached it|won)\b/i,
       { act: 'achieve' }],
-    [/\b(gave up|abandoned|walked away from|stopped trying|let it go)\b/i,
+    // "lost interest" was absent, so a lapsed goal and an achieved one
+    // rendered the SAME four frames — the exact failure intent exists to
+    // prevent, reappearing through a thin vocabulary rather than a wrong
+    // design. Coverage is the weakness of the mechanism, which is why this
+    // belongs in the scene plan eventually.
+    [/\b(gave up|abandoned|walked away from|stopped trying|let it go|lost interest|stopped caring|no longer wanted)\b/i,
       { act: 'abandon' }]
   ];
 
-  /** Read a goal out of narration, as a small timeline of its own. */
+  /**
+   * Read a goal out of narration, as a small timeline of its own.
+   *
+   * ONE THREAD, AND THE STRESS TEST SHOWED WHAT THAT COSTS. Given "he wanted
+   * the promotion / he also wanted to see his daughter / he worked at it / he
+   * gave up the evenings at home", every mark lands on a single goal, so
+   * giving up the evenings marks the PROMOTION abandoned and the frame falls.
+   * He was pursuing one thing by surrendering another; the model cannot hold
+   * that.
+   *
+   * Not fixed here on purpose. Separating threads needs each mark bound to
+   * WHICH goal it belongs to, and deciding that from a regex means matching a
+   * verb to an object across a clause — the thing keyword matching is worst
+   * at. It is the same argument that moved objects into the scene plan, and
+   * intent should follow rather than grow a second table.
+   */
   function readIntent(ent, timeline) {
     if (!ent || !timeline || !timeline.sentences) return ent;
     ent.goal = null;
