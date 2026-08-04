@@ -591,6 +591,11 @@
       // scene with it. An explicit look overrides it, which is what lets two
       // people look AT each other — or lets one refuse to.
       face: (() => {
+        // BLANK. A figure that is not a person in this moment — a remembered
+        // self, an anticipated one — must not be drawn with a live face, or
+        // the viewer counts two characters instead of two moments. Features
+        // are what make a silhouette read as somebody.
+        if (opts.blank) return { lid: 1, look: [0, 0], mouth: 0 };
         const f = face(actor.emotion || opts.emotion || 'neutral', actor.time || 0,
           { seed: actor.seed || 0, speaking: actor.speaking });
         if (opts.look) f.look = opts.look;

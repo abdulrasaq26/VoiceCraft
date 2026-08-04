@@ -401,6 +401,9 @@
     // than per beat — a goal is a thread through a story, not a property of
     // one sentence.
     if (S.readIntent) S.readIntent(ent, tl);
+    // Which way each beat faces — read across the narration for the same
+    // reason intent is: a memory is placed in a story, not in a sentence.
+    if (S.readTime) S.readTime(ent, tl);
 
     // THE DIRECTOR STAGES FIRST; KEYWORDS ARE THE FALLBACK.
     //

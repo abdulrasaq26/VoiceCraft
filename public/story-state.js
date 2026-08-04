@@ -691,6 +691,62 @@
     return 'gap';          // wanted, not yet moving — the distance is the point
   }
 
+  // --- time ----------------------------------------------------------------
+  //
+  // Which way a beat FACES. Everything else in the model describes now:
+  // condition now, stance now, what is being pursued now. But a great deal of
+  // narration is about a moment that is not this one — a memory, a dread, a
+  // deadline — and those had no representation at all, so "he remembered the
+  // day she left" and "he waited for the call" rendered as the same present
+  // tense.
+  //
+  // Two facts, deliberately: WHICH WAY and HOW HARD. Direction is past or
+  // future; pressure is how much that other moment is pushing on this one.
+  // Nostalgia and regret share a direction and differ in condition, which the
+  // existing model already carries — so this does not need its own valence.
+  const TIME_EVENTS = [
+    [/\b(remember\w*|recall\w*|looked back|years (?:ago|before)|had once|used to|as a (?:child|boy|girl)|thought back)\b/i,
+      { dir: 'past', push: 0.5 }],
+    [/\b(regret\w*|should have|if only|wished (?:he|she|they) had|never forgot)\b/i,
+      { dir: 'past', push: 0.8 }],
+    [/\b(tomorrow|next (?:week|month|year|morning)|would (?:one day|eventually)|some day|one day)\b/i,
+      { dir: 'future', push: 0.4 }],
+    [/\b(waited for|waiting for|any day now|due|deadline|by (?:friday|monday|morning)|before it was too late)\b/i,
+      { dir: 'future', push: 0.7 }],
+    [/\b(running out|no time left|hours left|days left|counting down|closing in)\b/i,
+      { dir: 'future', push: 1 }]
+  ];
+
+  /** Read temporal orientation across the narration, like intent. */
+  function readTime(ent, timeline) {
+    if (!ent || !timeline || !timeline.sentences) return ent;
+    ent.horizon = [];
+    timeline.sentences.forEach((s) => {
+      for (const [re, spec] of TIME_EVENTS) {
+        const m = re.exec(s.text);
+        if (!m) continue;
+        ent.horizon.push({ at: s.start, until: s.end, dir: spec.dir,
+                           push: spec.push, cause: m[0] });
+        break;
+      }
+    });
+    return ent;
+  }
+
+  /**
+   * Which way this beat faces, if anywhere but now.
+   *
+   * Scoped to the SENTENCE that carried it rather than latching. A memory is
+   * something a beat does, not a state a character enters — latching it would
+   * tint the rest of the story with one remembered line, which is the mistake
+   * the metaphor keywords made in the other direction.
+   */
+  function horizonAt(ent, t) {
+    if (!ent || !ent.horizon || !ent.horizon.length) return null;
+    const h = ent.horizon.find((x) => t >= x.at - 0.3 && t <= x.until + 0.3);
+    return h ? { dir: h.dir, push: h.push, cause: h.cause } : null;
+  }
+
   function moodFor(ent, t) {
     const s = stateAt(ent, t);
     const c = changeAt(ent, t);
@@ -785,6 +841,8 @@
     INVERTED,
     parse,
     readIntent,
+    readTime,
+    horizonAt,
     goalAt,
     metaphorForGoal,
     readState,

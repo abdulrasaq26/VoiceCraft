@@ -520,6 +520,49 @@
           ctx.translate(-posX * W, -posY * H);
         }
 
+        // TIME — the beat facing somewhere other than now.
+        //
+        // A memory needs a visual REGISTER, not just a different pose: the
+        // same figure doing the same thing has to read as then rather than
+        // now. A faint, offset echo behind the figure is the cheapest honest
+        // one — it is the same body, displaced and thinned, which is what a
+        // recollection is. Future orientation already had channels (a clock in
+        // thought, the drain metaphor) and gets none of this.
+        const horizon = stateEnt && window.BlvckStoryState
+          && window.BlvckStoryState.horizonAt
+          ? window.BlvckStoryState.horizonAt(stateEnt, scene.time || 0) : null;
+        if (horizon && i === 0) {
+          const back = horizon.dir === 'past';
+          // Pressure is distance, INVERTED. A deadline hours away is not
+          // further off than a vague someday, it is nearer — and an intrusive
+          // regret sits closer than a fond recollection. So push pulls the
+          // echo in and solidifies it. The first version had push scaling the
+          // offset outward across a 28% span, which was both backwards and
+          // too small to see: 0.4 and 1.0 rendered as the same picture.
+          const dist = 0.115 - horizon.push * 0.05;
+          ctx.save();
+          ctx.globalAlpha = 0.10 + horizon.push * 0.30;
+          // Memory is solid but faded — it happened, and its shape is fixed.
+          // Anticipation is drawn as an outline, because the thing being
+          // waited for has not taken a shape yet. Same body, opposite side,
+          // opposite certainty.
+          if (!back) ctx.setLineDash([unit * 0.16, unit * 0.12]);
+          const off = (back ? -1 : 1) * dist;
+          window.BlvckChar.drawActor(ctx, a, {
+            x: (posX + off) * W,
+            y: (posY - 0.012) * H,
+            scale: unit * (back ? 0.94 : 1.04),
+            skin: opts.skin || 'stickman',
+            colour: t.dim,
+            lineWidth: Math.max(2, unit * (back ? 0.10 : 0.08)),
+            blank: true,
+            flip: spot.flip
+          });
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+        if (opts.trace && horizon) opts.trace.horizon = horizon;
+
         // GAZE. Resolved against where the OTHER figure actually ended up, so
         // "look at your partner" survives every offset that moved them. A
         // figure whose eyes ignore the person opposite reads as two separate
