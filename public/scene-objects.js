@@ -251,6 +251,21 @@
   // in an object no system could place. An anchor is that object, placed
   // relative to the people using it.
 
+  // ARCHITECTURE IS NOT ACTOR-SIZED.
+  //
+  // Every anchor sized itself from the unit of whoever was standing there, so
+  // a seated child shrank the window and a kneeling figure shrank the desk.
+  // Measured consequence: "the child waited at the window" and "she waited
+  // three days for the results" rendered as the same picture — a seated figure
+  // with a clock — because the window that should have separated them came out
+  // chest-high and box-sized.
+  //
+  // A window is the same window whether a child sits beneath it or an adult
+  // stands at it. So anchors size from the ROOM and take only their x position
+  // from the actor. The desk learned this first, from the opposite direction:
+  // fixed environment furniture that never met the figure.
+  const ARCH = H * 0.062;   // one architectural unit — a standing adult's scale
+
   const ANCHORS = {
     // A surface BETWEEN two figures, spanning the gap they leave.
     desk(g, t, spots, unit) {
@@ -258,8 +273,8 @@
       const a = Math.min(spots[0].x, spots[1].x);
       const b = Math.max(spots[0].x, spots[1].x);
       const mid = (a + b) / 2;
-      const half = Math.max(unit * 1.9, ((b - a) / 2 + 0.045) * W);
-      const top = py(GROUND) - unit * 2.3;
+      const half = Math.max(ARCH * 1.9, ((b - a) / 2 + 0.045) * W);
+      const top = py(GROUND) - ARCH * 2.3;
       g.save();
       g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
       g.globalAlpha = 0.55;
@@ -281,8 +296,8 @@
     podium(g, t, spots, unit) {
       if (!spots || !spots.length) return null;
       const x = spots[0].x + 0.03;
-      const top = py(GROUND) - unit * 2.6;
-      const half = unit * 0.85;
+      const top = py(GROUND) - ARCH * 2.6;
+      const half = ARCH * 0.85;
       g.save();
       g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
       g.globalAlpha = 0.6;
@@ -304,10 +319,27 @@
     // failed for want of this noun rather than for want of staging.
     window(g, t, spots, unit) {
       if (!spots || !spots.length) return null;
-      const x = spots[0].x + 0.02;
-      const top = py(GROUND) - unit * 5.4;
-      const w = unit * 1.9;
-      const h = unit * 2.6;
+      // BESIDE the figure, not on top of it. Sizing the window architecturally
+      // fixed its scale and immediately put it over the child's head, because
+      // x still sat at the actor. A window someone waits at is something they
+      // stand next to and look through; drawn through them it reads as a
+      // pattern on their face.
+      //
+      // Offset by the window's own half-width plus a body, so the two never
+      // overlap whatever the figure's scale.
+      //
+      // Clamped to the frame. Offsetting it sideways pushed it off the left
+      // edge — position fixed without a bound, which is the same mistake the
+      // actor made when sinking dropped its legs out of shot. When there is no
+      // room on the near side it goes to the other one.
+      const halfW = (ARCH * 2.0) / W;
+      const gap = halfW + (ARCH * 1.4) / W;
+      let x = spots[0].x - gap;
+      if (x - halfW < 0.03) x = spots[0].x + gap;
+      x = Math.max(halfW + 0.03, Math.min(1 - halfW - 0.03, x));
+      const top = py(GROUND) - ARCH * 5.6;
+      const w = ARCH * 2.0;
+      const h = ARCH * 2.9;
       g.save();
       // Daylight beyond, which is what the figure is looking at.
       g.globalAlpha = 0.30;
@@ -332,8 +364,8 @@
     bedside(g, t, spots, unit) {
       if (!spots || !spots.length) return null;
       const x = (spots[spots.length - 1].x) + 0.10;
-      const top = py(GROUND) - unit * 0.9;
-      const half = unit * 2.6;
+      const top = py(GROUND) - ARCH * 0.9;
+      const half = ARCH * 2.6;
       g.save();
       g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
       g.globalAlpha = 0.5;
