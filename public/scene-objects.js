@@ -553,11 +553,17 @@
   function drawPlan(ctx, theme, planned, unit) {
     const t = theme || {};
     const u = unit || 42;
+    // COMPOSES with the caller's alpha rather than replacing it. This assigned
+    // absolutely, so a caller that wrapped the call in a globalAlpha to fade a
+    // whole group got no fade at all and never knew — the causal residue was
+    // drawn at 0.3 and came out fully opaque, indistinguishable from a prop
+    // that was actually there.
+    const base = ctx.globalAlpha;
     (planned || []).forEach((o) => {
       const draw = OBJECTS[o.kind];
       if (!draw) return;
       ctx.save();
-      ctx.globalAlpha = o.rel === 'floor' ? 0.85 : 1;
+      ctx.globalAlpha = base * (o.rel === 'floor' ? 0.85 : 1);
       draw(ctx, t, px(o.x), py(o.y), o.size);
       ctx.restore();
     });

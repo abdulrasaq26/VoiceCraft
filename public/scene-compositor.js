@@ -303,8 +303,13 @@
     const SUBJ = window.BlvckSubject;
     // Objects are PLANNED here rather than drawn, because their positions are
     // part of the subject's bounds.
-    const objPlan = (OBJ && scene.objects && scene.objects.length)
-      ? OBJ.plan({ objects: scene.objects },
+    // Residue is excluded from the bounds. A carried-forward cause is not a
+    // subject the camera has to accommodate — when it counted, adding two
+    // faint props to a beat pulled the shot from a medium to a wide and
+    // changed 19% of the frame, almost none of it the residue itself.
+    const framedObjects = (scene.objects || []).filter((o) => o && !o.residue);
+    const objPlan = (OBJ && framedObjects.length)
+      ? OBJ.plan({ objects: framedObjects },
           { x: lead.x, y: lead.y, unit: lead.unit,
             surfaceY: (L ? L.GROUND : 0.84) - 0.10 })
       : [];
@@ -628,18 +633,44 @@
     // Held, on a surface, on the floor, or in a thought. Drawn after the actor
     // so a held object reads as in front of the body, and after props so both
     // vocabularies can coexist while the old PROPS table is retired.
-    if (OBJ && objPlan.length) {
+    // Gated on the objects themselves, not on objPlan. objPlan now excludes
+    // residue for framing, and an effect beat whose only objects are carried
+    // forward has an empty plan — gating on it would have drawn nothing.
+    if (OBJ && scene.objects && scene.objects.length) {
       // Re-planned only when a solved hand is available, so a held object
       // touches it. Otherwise the plan the camera framed on is what gets
       // drawn — the bounds and the pixels must not disagree.
-      const finalPlan = hands.length
-        ? OBJ.plan({ objects: scene.objects },
+      const replan = (objs) => (hands.length
+        ? OBJ.plan({ objects: objs },
             Object.assign({ surfaceY: (L ? L.GROUND : 0.84) - 0.10 },
               leadFrame || { x: lead.x, y: lead.y, unit: lead.unit },
               { hand: { x: hands[0].x, y: hands[0].y } }))
-        : objPlan;
-      OBJ.drawPlan(ctx, t, finalPlan, lead.unit);
-      if (opts.trace) opts.trace.objects = finalPlan;
+        : OBJ.plan({ objects: objs },
+            { surfaceY: (L ? L.GROUND : 0.84) - 0.10,
+              x: lead.x, y: lead.y, unit: lead.unit }));
+
+      // RESIDUE — what the previous beat left behind, because this beat was
+      // caused by it. Drawn first and dimmed so it sits underneath the things
+      // that are actually here: a chain reads as a chain when the cause is
+      // still visible, and as a coincidence when it is not.
+      //
+      // Planned separately rather than filtered out of one plan, because the
+      // planner lays objects out relative to each other — mixing residue into
+      // that would let a ghost push a real object off its surface.
+      const solid = scene.objects.filter((o) => o && !o.residue);
+      const residue = scene.objects.filter((o) => o && o.residue);
+      if (residue.length) {
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        OBJ.drawPlan(ctx, t, replan(residue), lead.unit);
+        ctx.restore();
+      }
+      const finalPlan = solid.length ? replan(solid) : [];
+      if (finalPlan.length) OBJ.drawPlan(ctx, t, finalPlan, lead.unit);
+      if (opts.trace) {
+        opts.trace.objects = finalPlan;
+        opts.trace.residue = residue.map((o) => o.kind);
+      }
     }
 
     // ---- 4. Props, in the actors' hands ---------------------------------

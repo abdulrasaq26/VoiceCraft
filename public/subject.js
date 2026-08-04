@@ -212,7 +212,14 @@
     if (actors >= 3) return 'group';
     if (actors === 2) return 'pair';
     if (s.support && s.support !== 'ground') return 'context';
-    if (s.objects && s.objects.some((o) => o.rel === 'held' || o.rel === 'surface')) {
+    // Residue is excluded. A prop carried forward from the beat that CAUSED
+    // this one is not what this beat is about — it is context in the ordinary
+    // sense, not a `context` subject. When it counted, adding two faint props
+    // to a lone figure flipped the structure from `actor` to `context` and
+    // pulled the shot from a medium to a wide, so a causal link silently
+    // rewrote the framing of the beat it was supposed to annotate.
+    if (s.objects && s.objects.some((o) => !o.residue
+        && (o.rel === 'held' || o.rel === 'surface'))) {
       return 'context';
     }
     if (!s.entity && !s.entities) return 'place';

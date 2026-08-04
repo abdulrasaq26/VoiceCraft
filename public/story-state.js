@@ -747,6 +747,79 @@
     return h ? { dir: h.dir, push: h.push, cause: h.cause } : null;
   }
 
+  // --- causality -----------------------------------------------------------
+  //
+  // The last system, and the one with the least obvious picture. Every other
+  // system describes a single beat: how someone is, how they hold themselves,
+  // what they want, which moment they face. Causality is the only one that is
+  // a statement about TWO beats — this happened because that did.
+  //
+  // Which is why it cannot have a pose. The pose space already consumes every
+  // condition and stance attribute, so routing cause through the body would
+  // be a second representation of something already represented, and the only
+  // honest way to tell them apart on screen would be that they disagree.
+  //
+  // What is actually unclaimed is PERSISTENCE. A list of beats and a chain of
+  // beats differ in one visible way: in a chain, the thing that caused it is
+  // still there. "The factory closed. He could not pay the rent." reads as
+  // cause and effect when the second frame still contains the factory, and as
+  // two unrelated facts when it does not. So causality renders by carrying
+  // the cause's world forward into the effect, dimmed — present, but past.
+  //
+  // Deliberately conservative about direction. `because` points backward and
+  // `so` points forward, and getting that wrong inverts the chain, so each
+  // marker declares which side of it the cause sits on.
+  const CAUSAL_MARKERS = [
+    // The effect sentence names its own cause, which lies BEFORE it.
+    [/\b(because of (?:this|that|it)|as a result|consequently|therefore|which meant|which left|that is why|for this reason)\b/i, 'back'],
+    // `so` only where it OPENS the sentence. As a connective it leads —
+    // "So he sold the car" — and as an intensifier it sits inside the clause
+    // — "he was so tired". In the general alternation it matched every
+    // intensifier in the language: a false-positive probe scored 4 of 4,
+    // linking a sunset to someone's youth. Position separates the two senses
+    // where vocabulary cannot.
+    [/^\s*so\b/i, 'back'],
+    // The cause sentence names what follows, which lies AFTER it.
+    [/\b(led to|caused|meant that|forced (?:him|her|them)|left (?:him|her|them) (?:with|to)|set off|triggered)\b/i, 'forward']
+  ];
+
+  /**
+   * Link beats that are causally joined.
+   *
+   * Adjacency only — a marker links a sentence to its immediate neighbour on
+   * the declared side. Longer chains are real but resolving them needs the
+   * Director; guessing across three sentences would manufacture links that
+   * are not in the text, and a wrong link renders as a wrong frame.
+   */
+  function readCause(ent, timeline) {
+    if (!ent || !timeline || !timeline.sentences) return ent;
+    const sents = timeline.sentences;
+    ent.links = [];
+    sents.forEach((s, i) => {
+      for (const [re, side] of CAUSAL_MARKERS) {
+        const m = re.exec(s.text);
+        if (!m) continue;
+        const causeIdx = side === 'back' ? i - 1 : i;
+        const effectIdx = side === 'back' ? i : i + 1;
+        if (causeIdx < 0 || effectIdx >= sents.length || causeIdx === effectIdx) break;
+        ent.links.push({
+          causeAt: sents[causeIdx].start, causeUntil: sents[causeIdx].end,
+          effectAt: sents[effectIdx].start, effectUntil: sents[effectIdx].end,
+          marker: m[0], side
+        });
+        break;
+      }
+    });
+    return ent;
+  }
+
+  /** If the beat at t is an effect, when its cause happened. */
+  function causeAt(ent, t) {
+    if (!ent || !ent.links || !ent.links.length) return null;
+    const l = ent.links.find((x) => t >= x.effectAt - 0.3 && t <= x.effectUntil + 0.3);
+    return l ? { at: l.causeAt, until: l.causeUntil, marker: l.marker } : null;
+  }
+
   function moodFor(ent, t) {
     const s = stateAt(ent, t);
     const c = changeAt(ent, t);
@@ -843,6 +916,8 @@
     readIntent,
     readTime,
     horizonAt,
+    readCause,
+    causeAt,
     goalAt,
     metaphorForGoal,
     readState,

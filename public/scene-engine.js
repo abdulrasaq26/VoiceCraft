@@ -519,7 +519,40 @@
       }
     });
 
-    return { scenes: list, source: ent.stateSource || 'keywords',
+    // CAUSALITY. A second pass, because a link is a statement about two beats
+    // and the loop above can only see one. This is also why it lives here and
+    // not in the compositor: the compositor composes a single scene and has no
+    // way to know what the previous one contained.
+    //
+    // The carry is capped at two and skips anything the effect beat already
+    // has. Waiting beats already draw a clock; carrying a second one in would
+    // be the duplicate-object failure again, arriving through a new door.
+    let linked = 0;
+    if (S.readCause && S.causeAt) {
+      S.readCause(ent, tl);
+      list.forEach((scene) => {
+        const c = S.causeAt(ent, scene.time || 0);
+        if (!c) return;
+        // Matched by SPAN OVERLAP, not by point equality. `scene.time` is the
+        // end of a beat's span, not its start — "00:00:00 - 00:00:02" carries
+        // time 2 — so comparing it against the cause sentence's start missed
+        // every link by the full width of the beat.
+        const src = list.find((s) => (s.time || 0) >= c.at - 0.35
+                                  && (s.time || 0) <= c.until + 0.35);
+        if (!src || src === scene || !src.objects || !src.objects.length) return;
+        const have = new Set((scene.objects || []).map((o) => o && o.kind));
+        const carry = src.objects
+          .filter((o) => o && !have.has(o.kind))
+          .slice(0, 2)
+          .map((o) => Object.assign({}, o, { residue: true }));
+        if (!carry.length) return;
+        scene.objects = (scene.objects || []).concat(carry);
+        scene.causedBy = c.marker;
+        linked++;
+      });
+    }
+
+    return { scenes: list, source: ent.stateSource || 'keywords', linked,
              staged, planned, raised,
              staging: planned ? 'director' : 'keywords',
              changes: ent.changes.length };
