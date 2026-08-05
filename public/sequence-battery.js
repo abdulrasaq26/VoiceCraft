@@ -377,7 +377,10 @@
 // recorded when the number first appeared and it was correct.
 //
 // WHAT SURVIVED THE CHANGE OF CORPUS: efficiency 1.00 and unused 0.00, on a
-// corpus twenty-three times poorer. Delivery is not the bottleneck, and
+// corpus twenty-three times poorer. Delivery is not the bottleneck FOR
+// REPRESENTABLE INFORMATION — the qualification matters and was missing
+// here for six runs; see the bread note below, where the renderer delivered
+// everything it was given and was not given the right concepts — and
 // that now holds across two samples selected on different principles —
 // which is the first claim here with any external validity at all.
 //
@@ -459,16 +462,47 @@
 // stands; the reading of it does not, wherever it was taken to mean the
 // frames were RIGHT rather than merely populated.
 //
-// It also moves the ceiling a third time. Discovery was the bottleneck until
-// the Director doubled it; representation diversity looked like the
-// bottleneck after entropy collapsed; underneath both is a closed object
-// vocabulary of thirteen desk objects, which caps what any producer can say
-// and explains the collapse — everything maps onto the same small set
-// because there is nothing else to map onto.
+// THE FAILURE IS SYSTEMATIC, NOT ERRATIC, and that is what makes it useful.
+// The model was not confused about baking. It was optimising against the
+// ontology it was handed, in which `flour` has no legal representation and
+// `book` may genuinely be the best available answer. Any model constrained
+// to this vocabulary can be forced into a semantically wrong substitution;
+// this is a property of the ontology and not of the model that ran, and the
+// claim is written that way deliberately — no frontier model has been run on
+// the baking story, so nothing here licenses a statement about one.
 //
-// The blind study catches this and the battery cannot. A viewer shown a book
-// for "the dough rested" picks the wrong sentence. That is now the second
-// independent reason to run it.
+// A THIRD STAGE, which the two-stage split above did not have:
+//
+//   discovery            does the producer find anything          measured
+//   semantic grounding   does what it found mean the sentence     NOT measured
+//   delivery             does it reach pixels                     measured
+//
+// Everything in this file — payload, efficiency, entropy, prevalence — lives
+// on either side of the middle row and never in it. The renderer faithfully
+// drew the wrong object, so the renderer is still not the constraint and
+// discovery is no longer the whole of it. What sits between them is the
+// mapping from story concepts into an ontology that can hold them.
+//
+// It also moves the ceiling a third time. Discovery was the bottleneck until
+// the Director doubled it; representation diversity looked like it after
+// entropy collapsed; underneath both is a closed vocabulary of thirteen desk
+// objects, which caps what any producer can say and explains the collapse —
+// everything maps onto the same small set because there is nothing else to
+// map onto.
+//
+// DO NOT EXPAND THE ONTOLOGY BEFORE THE STUDY RUNS. Adding bowl, oven, loaf
+// and basket would certainly fix `bread`, and would erase the only clean
+// evidence of WHY it failed. Run the study against this version first: if
+// participants fail the baking story while succeeding elsewhere, that is a
+// demonstration that semantic fidelity rather than information flow is the
+// limiting factor, and it is a far stronger argument for the work than
+// somebody observing that a book looks wrong in a kitchen.
+//
+// The study measures this and the battery cannot, which is the second
+// independent reason to run it. A viewer shown a book for "the dough rested"
+// picks the wrong sentence — no new automated proxy needed, because the
+// question "which sentence does this frame show" already IS the semantic
+// fidelity question asked of the only judge that can answer it.
 //
 // BUT THE GENERAL GAIN IS MONOTONOUS. entropy 0.34, 2 combinations across
 // 16 expressive beats, dominance 0.94 — fifteen of them are the identical
@@ -522,8 +556,9 @@
 // the bar a real difference has to clear.
 //
 // EFFICIENCY HELD AT 1.00 IN BOTH ARMS OF BOTH SETS, across a 34x change in
-// payload. Delivery has now survived every condition this instrument can
-// produce.
+// payload. Delivery of REPRESENTABLE information has now survived every
+// condition this instrument can produce — which is a narrower claim than it
+// reads, since the instrument cannot tell a correct object from a legal one.
 //
 // horizon fell 0.86 -> 0.40 on temporal and stayed 0.00 on general, which
 // is consistent with the eighth run: Time answers to the corpus, not to
@@ -555,7 +590,9 @@
 // and gone on being quoted.
 //
 // This is the first battery where the renderer was NOT at fault. Everything
-// handed to it was drawn. The loss is entirely upstream — and the two numbers
+// handed to it was drawn — which says nothing about whether the right thing
+// was handed to it, a distinction this file did not draw until `bread` forced
+// it. The loss measured here is upstream — and the two numbers
 // separate cleanly: throughput is solved, bandwidth is not.
 //
 // PERSISTENCE 0.45 OVER A BASE OF 11. Under half of what one beat knows is
@@ -655,10 +692,12 @@
     // sequence-battery.js scored that as success because they count whether
     // a channel fired and never whether it is true.
     //
-    // Do not delete. Do not tune the keyword tables against it — a
-    // vocabulary entry for `flour` satisfies the letter of the case and
-    // destroys its only purpose. The honest fix is drawable objects for
-    // domains that are not an office.
+    // Do not delete, and do not fix it yet. A keyword entry for `flour`
+    // satisfies the letter of the case and destroys its purpose; adding bowl,
+    // oven and loaf to the object vocabulary is the honest repair and still
+    // erases the evidence. This version is the clean demonstration that the
+    // ontology, not the producer, is the constraint — worth more than a
+    // passing test until the study has been run against it once.
     bread: [
       'She mixed flour, water and salt in a wide bowl.',
       'The dough rested on the counter for an hour.',
