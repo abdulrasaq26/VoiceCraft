@@ -166,17 +166,37 @@
 //
 // METAPHOR AT 0.00 IS THE FINDING. Not a low share — no beat in the corpus
 // carries a metaphor at all, while the reason histogram independently
-// reports `intent-only` three times, meaning a goal was live and produced
-// no metaphor on three separate beats. Two instruments computed from
-// different properties of the same run agree that the intent -> metaphor
-// link is dead on this corpus, and each of them alone would have been easy
-// to read past: 0.00 looks like a channel that had nothing to say, and
-// `intent-only: 3` looks like a small bucket.
+// reports `intent-only` three times. Stated exactly:
 //
-// Deliberately NOT fixed here. Chasing it means work on the keyword-only
-// path, which is the path the remaining experiments exist to evaluate
-// rather than optimise. Recorded because it is now localised precisely
-// enough to act on later without rediscovering it.
+//   ON THIS CORPUS, UNDER KEYWORD STAGING, NO BEAT CARRYING A LIVE GOAL
+//   PRODUCED A RENDERED METAPHOR.
+//
+// Not "the intent -> metaphor link is dead", which is what the first draft
+// of this note said and is a claim about the engine rather than about the
+// run. The measurements localise a SYMPTOM. At least five causes remain
+// distinguishable and none is ruled out:
+//
+//   1 metaphor inference ran and found nothing
+//   2 metaphor inference ran and legitimately selected none
+//   3 inference produced one and the compositor suppressed it
+//   4 the Director was unavailable, and metaphor depends on it
+//   5 the corpus contains no situation that crosses the threshold
+//
+// Cause 5 in particular would make this not a defect at all. Four stories
+// chosen to vary temporal and causal language are not a sample designed to
+// contain goals.
+//
+// The cheapest next probe is already in the code and costs no new metric:
+// the compositor writes `trace.metaphorSuppressed`, which separates 3 from
+// 1 and 2 outright. Left unrun deliberately — chasing it is work on the
+// keyword-only path, and that is the path the two remaining experiments
+// exist to evaluate rather than optimise. Recorded here so the next person
+// starts from a narrowed question instead of rediscovering the symptom.
+//
+// What makes this worth writing down at all is that neither instrument
+// found it alone. 0.00 reads as a channel with nothing to say; three beats
+// reads as a small bucket. The pair is what localises anything — which is
+// the argument for carrying several cheap metrics over one good one.
 //
 // residue at 0.00 is the already-known consequence of Causality carrying
 // objects the causing beats do not have.
