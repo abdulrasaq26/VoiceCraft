@@ -198,6 +198,68 @@
 // reads as a small bucket. The pair is what localises anything — which is
 // the argument for carrying several cheap metrics over one good one.
 //
+// SEVENTH RUN — the Director A/B. valid: true. This one is a result.
+//
+// Producer: keywords 20/20 beats · director 15/20 (5 fell back).
+// Model: meta/llama-3.3-70b-instruct via NVIDIA NIM. 384s, no failovers.
+//
+//                    keywords   director
+//   producerPayload     0.70      1.60     +129%
+//   expressive base     7/20     14/20
+//   efficiency          1.00      1.00     unchanged
+//   persistence         0.45      0.68
+//   entropy             1.95      1.92     unchanged
+//   combinations           4         5
+//   dominance           0.29      0.50
+//
+//   reason           keywords  director  delta
+//   no-actor              7        2      -5
+//   intent-only           3        1      -2
+//   keyword-miss          3        2      -1
+//   state-only            0        1      +1
+//
+//   channel        keywords  director  delta
+//   objects           0.57     0.93    +0.36
+//   support           0.29     0.79    +0.50
+//   horizon           0.86     0.43    -0.43
+//   interaction       0.14     0.07    -0.07
+//   anchors           0.14     0.07    -0.07
+//   metaphor          0.00     0.00     0.00
+//   residue           0.00     0.00     0.00
+//
+// PAYLOAD MORE THAN DOUBLED AND ENTROPY DID NOT MOVE. That was the
+// prediction made before the run — payload up, coverage up, entropy flat —
+// and it is what happened, to two decimal places. The Director roughly
+// doubles how many beats say anything without opening combinations that
+// keywords could not reach. One new combination, and dominance rose from
+// 0.29 to 0.50, so the gain is concentrated rather than spread.
+//
+// THE BUCKET THAT SHRANK MOST WAS THE ONE PREDICTED NOT TO. `no-actor` fell
+// 7 -> 2, `keyword-miss` only 3 -> 2. The expectation was the reverse: that
+// a scene-plan would read existing actors better and leave actorless beats
+// alone. It does the opposite here — it finds subjects in prose the pronoun
+// test called subjectless, which is why `no-actor` was marked medium
+// confidence rather than high. That caveat earned its place.
+//
+// EFFICIENCY HELD AT 1.00 ACROSS A DOUBLING OF PAYLOAD. Twice the extracted
+// information, all of it still reaching pixels. The renderer absorbed the
+// increase without a single dropped channel — the strongest evidence yet
+// that delivery is not the constraint.
+//
+// WHAT THE DIRECTOR DOES NOT FIX: metaphor 0.00 and residue 0.00, both
+// unchanged. That eliminates cause 4 from the metaphor list above — the
+// Director being unavailable was not the reason — and leaves inference,
+// suppression, and corpus. Causality still carries nothing.
+//
+// horizon FELL 0.86 -> 0.43. Not a regression in Time: the expressive base
+// doubled from 7 to 14, and horizon holds 6 beats either way. It was 86% of
+// a small set and is 43% of a larger one. A share whose denominator moved.
+//
+// Caveats. One model, one corpus, four stories, single run, no repeats —
+// and 5 of 20 beats fell back to keywords inside the director arm, so B is
+// a mixture rather than a clean condition. Llama 3.3 70B is not a frontier
+// model and these numbers will not transfer to one.
+//
 // residue at 0.00 is the already-known consequence of Causality carrying
 // objects the causing beats do not have.
 //
