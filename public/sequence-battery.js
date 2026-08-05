@@ -116,6 +116,37 @@
 // hypothesis. The A/B is built and its keyword arm is validated. The
 // Director arm is blocked on credentials, not on code.
 //
+// FIFTH RUN — channel diversity, keyword staging.
+//
+//   entropy 1.95 bits · combinations 4 · dominance 0.29 · base 7
+//
+//   anchors+interaction        1
+//   horizon                    2
+//   horizon+objects            2
+//   horizon+objects+support    2
+//
+// This did not say what it was expected to say. The worry entropy was added
+// to catch — one combination firing over and over while payload rises — is
+// not what is happening. Maximum entropy for four combinations is 2.00 bits
+// and the corpus sits at 1.95 with a dominance of 0.29, which is close to
+// uniform. Among the beats that express anything, the engine is already
+// varied.
+//
+// The problem is the base: 7 of 20. Not monotony among firing beats, but
+// how few fire. That is a different diagnosis from the one entropy was
+// meant to test for, and it is the same conclusion producerPayload reached
+// by another route — which is worth something, since the two numbers are
+// computed from different properties of the same run.
+//
+// One observation the distribution hands over for free: `horizon` appears
+// in 6 of the 7 expressive beats. Time — the newest system, and one of the
+// two built in this session — is carrying nearly all of the expressiveness
+// in this corpus. Read carefully. It may mean temporal language is common
+// in narration, or only that these four stories are full of it.
+//
+// Base 7 is small and entropy estimates are biased low on small samples.
+// The figure travels with its base for that reason.
+//
 // PAYLOAD 0.70 CHANNELS PER BEAT. Not "35% of beats have something" but the
 // sharper form: the average beat yields two thirds of one channel. Seven
 // channels exist in the engine and a typical sentence lights none of them.
@@ -399,8 +430,51 @@
     };
   }
 
+  /**
+   * Which COMBINATIONS of channels occur, not just how many fire.
+   *
+   * producerPayload can rise without the engine becoming more expressive. If
+   * nine beats in ten come back `objects` and the tenth comes back
+   * `objects+objects again`, the mean goes up and the pictures do not get
+   * more various. Firing frequency and representational range are different
+   * quantities and payload alone cannot tell them apart — which matters
+   * precisely at the Director A/B, where the interesting question is whether
+   * a better producer opens combinations that keywords never reach or simply
+   * hits the same one more often.
+   *
+   * Computed over NON-EMPTY beats only, and reported with that base. Folding
+   * the empty beats in would make entropy a measure of how much was
+   * discovered, which producerPayload already reports, and would let a
+   * corpus of silence read as low diversity rather than as no data.
+   *
+   *   entropy       bits over the distribution of channel signatures
+   *   combinations  distinct signatures observed
+   *   dominance     share held by the most common one
+   */
+  function diversityOf(shots) {
+    const sigs = shots
+      .map((s) => s.payload.extracted.slice().sort().join('+'))
+      .filter(Boolean);
+    if (!sigs.length) {
+      return { entropy: null, combinations: 0, dominance: null, base: 0, dist: {} };
+    }
+    const counts = {};
+    sigs.forEach((s) => { counts[s] = (counts[s] || 0) + 1; });
+    const keys = Object.keys(counts);
+    let h = 0;
+    keys.forEach((k) => { const p = counts[k] / sigs.length; h -= p * Math.log2(p); });
+    const top = keys.reduce((m, k) => Math.max(m, counts[k]), 0);
+    return {
+      entropy: +h.toFixed(2),
+      combinations: keys.length,
+      dominance: +(top / sigs.length).toFixed(2),
+      base: sigs.length,
+      dist: counts
+    };
+  }
+
   /** Corpus totals, so no ratio is reported off a denominator of two. */
-  function totals(report) {
+  function totals(report, allShots) {
     let ext = 0, drew = 0, drop = 0, carried = 0, carriable = 0, beats = 0;
     const why = {}, staging = {}, confidence = {};
     report.forEach((r) => {
@@ -426,6 +500,10 @@
       unused: ext ? +(drop / ext).toFixed(2) : null,
       persistence: carriable ? +(carried / carriable).toFixed(2) : null,
       carriable,
+      // Pooled across the corpus rather than averaged from per-story figures.
+      // Entropy of an average is not the average of entropies, and four
+      // five-beat stories give bases too small to mean anything alone.
+      diversity: diversityOf(allShots || []),
       why,
       confidence,
       staging
@@ -465,6 +543,7 @@
     const names = o.only ? [o.only] : Object.keys(STORIES);
     const report = [];
     const sheets = [];
+    const allShots = [];
 
     for (const name of names) {
       const sents = STORIES[name];
@@ -498,6 +577,7 @@
         movement: +(move * 100).toFixed(2),
         orderEffect: compared ? +(sensitive / compared).toFixed(2) : 0,
         flow: flowOf(ordered.shots),
+        diversity: diversityOf(ordered.shots),
         staging: ordered.staging,
         why: ordered.shots.reduce((acc, s) => {
           if (s.reason) acc[s.reason] = (acc[s.reason] || 0) + 1;
@@ -514,10 +594,11 @@
         }))
       });
       sheets.push({ name, shots: ordered.shots });
+      allShots.push.apply(allShots, ordered.shots);
     }
 
     if (o.post !== false) await postSheet(sheets, o.post);
-    report.totals = totals(report);
+    report.totals = totals(report, allShots);
     return report;
   }
 
@@ -603,6 +684,21 @@
       // No person referenced at all.
       noActor: await classify('Gulls circled above the awnings.')
     };
+    // Entropy is the one number here with a closed-form answer, so it is
+    // checked against arithmetic rather than against a rendered frame. All
+    // one signature is 0 bits; four equally likely signatures is exactly 2.
+    // A diversity metric that cannot distinguish those two cases would make
+    // the Director A/B unreadable in exactly the situation it exists for.
+    const fake = (sigs) => sigs.map((s) => ({ payload: { extracted: s } }));
+    const flat = diversityOf(fake([['objects'], ['objects'], ['objects'], ['objects']]));
+    const wide = diversityOf(fake([['objects'], ['support'], ['horizon'], ['metaphor']]));
+    // Order must not matter — a signature is a set, not a sequence.
+    const perm = diversityOf(fake([['objects', 'support'], ['support', 'objects']]));
+    const entropyPass = flat.entropy === 0 && flat.combinations === 1 && flat.dominance === 1
+      && wide.entropy === 2 && wide.combinations === 4 && wide.dominance === 0.25
+      && perm.combinations === 1
+      && diversityOf(fake([[], []])).entropy === null;
+
     const reasonsPass = cases.hasPayload.reason === null
       && cases.stateOnly.reason === 'state-only'
       && cases.stateOnlyLate.reason === 'state-only'
@@ -613,9 +709,10 @@
       drawable: { efficiency: good.efficiency, unused: good.unused },
       undrawable: { efficiency: bad.efficiency, unused: bad.unused },
       reasons: cases,
+      entropy: { flat, wide, permutationCollapses: perm.combinations === 1 },
       // All must hold, or none of these numbers is load-bearing.
       pass: good.efficiency === 1 && bad.efficiency === 0
-        && good.unused === 0 && bad.unused === 1 && reasonsPass
+        && good.unused === 0 && bad.unused === 1 && reasonsPass && entropyPass
     };
   }
 
@@ -657,6 +754,11 @@
                          director: B.totals.producerPayload },
       efficiency: { keywords: A.totals.efficiency, director: B.totals.efficiency },
       persistence: { keywords: A.totals.persistence, director: B.totals.persistence },
+      // Payload and entropy answer different questions and the pair is the
+      // point. Payload up with entropy flat means the same combinations
+      // firing more often; payload up with entropy up means combinations
+      // keywords could not reach.
+      diversity: { keywords: A.totals.diversity, director: B.totals.diversity },
       why,
       // Guards against the result that looks like a win and is not one: if
       // staging never says `director`, the B arm silently fell back to
