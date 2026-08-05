@@ -474,6 +474,18 @@
 // blind study decides which, and until it runs, raising entropy is an
 // intervention with no established direction.
 //
+// That study now exists in the form this result requires. /study.html
+// renders this same corpus through both producers and asks a viewer which
+// sentence each frame depicts, with the wrong answers drawn mostly from the
+// SAME story — because within-story confusion is this entropy number
+// restated as something a person can be wrong about. Stimuli are frozen in
+// study-fixture.json so every participant judges identical pictures.
+//
+// Four of the ten stories fell back to keyword staging when the fixture was
+// captured, which the study keeps as a null condition: both arms render the
+// same picture there, so the measured gap between them is noise and sets
+// the bar a real difference has to clear.
+//
 // EFFICIENCY HELD AT 1.00 IN BOTH ARMS OF BOTH SETS, across a 34x change in
 // payload. Delivery has now survived every condition this instrument can
 // produce.
