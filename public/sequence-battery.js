@@ -200,7 +200,19 @@
 //
 // SEVENTH RUN — the Director A/B. valid: true. This one is a result.
 //
-// Producer: keywords 20/20 beats · director 15/20 (5 fell back).
+// WHAT THE ARMS ACTUALLY ARE, before any number below is read. The B arm is
+// not the Director. 5 of its 20 beats fell back to keyword staging, so the
+// comparison is
+//
+//   keywords   vs   (75% Director + 25% keywords)
+//
+// not keywords vs Director. Every delta here is the effect of a MIXTURE.
+// The pure-Director effect is probably larger than what is reported —
+// a quarter of the B arm is the A arm — but that is an inference, not a
+// measurement, and nothing here measures it. `valid` only checks that the
+// condition was present at all; it does not check that it was pure, and
+// this run is the reason to know the difference.
+//
 // Model: meta/llama-3.3-70b-instruct via NVIDIA NIM. 384s, no failovers.
 //
 //                    keywords   director
@@ -229,10 +241,16 @@
 //
 // PAYLOAD MORE THAN DOUBLED AND ENTROPY DID NOT MOVE. That was the
 // prediction made before the run — payload up, coverage up, entropy flat —
-// and it is what happened, to two decimal places. The Director roughly
-// doubles how many beats say anything without opening combinations that
-// keywords could not reach. One new combination, and dominance rose from
-// 0.29 to 0.50, so the gain is concentrated rather than spread.
+// and it is what happened, to two decimal places.
+//
+// Stated to match the data: MOST OF THE GAIN CAME FROM FIRING EXISTING
+// COMBINATIONS MORE OFTEN RATHER THAN FROM SUBSTANTIALLY EXPANDING THE
+// COMBINATION SPACE. Not "without opening combinations keywords could not
+// reach", which was the first phrasing here and is contradicted by the
+// table one screen up: combinations went 4 -> 5. One did open. The
+// supported claim is about proportion, not absence — the base doubled, one
+// combination was added, and dominance rose 0.29 -> 0.50, which is what
+// concentration looks like.
 //
 // THE BUCKET THAT SHRANK MOST WAS THE ONE PREDICTED NOT TO. `no-actor` fell
 // 7 -> 2, `keyword-miss` only 3 -> 2. The expectation was the reverse: that
@@ -247,18 +265,41 @@
 // that delivery is not the constraint.
 //
 // WHAT THE DIRECTOR DOES NOT FIX: metaphor 0.00 and residue 0.00, both
-// unchanged. That eliminates cause 4 from the metaphor list above — the
-// Director being unavailable was not the reason — and leaves inference,
-// suppression, and corpus. Causality still carries nothing.
+// unchanged. That rules out the producer as the cause — metaphor does not
+// fire under either staging, so keyword discovery was not suppressing it
+// and the Director does not supply it. Four explanations survive and the
+// run separates none of them:
+//
+//   the scene-plan never emits a metaphor
+//   attachState never consumes the one it emits
+//   the compositor suppresses it
+//   the corpus contains no situation that produces one
+//
+// Narrower than before by one, and still a symptom rather than a cause.
+// trace.metaphorSuppressed remains the cheapest next probe and would
+// separate the third from the first two in a single run.
+//
+// Causality still carries nothing: residue 0.00 in both arms, which is
+// consistent with the known cause — it carries objects the causing beats
+// do not have — and is not further evidence about it.
 //
 // horizon FELL 0.86 -> 0.43. Not a regression in Time: the expressive base
 // doubled from 7 to 14, and horizon holds 6 beats either way. It was 86% of
 // a small set and is 43% of a larger one. A share whose denominator moved.
 //
-// Caveats. One model, one corpus, four stories, single run, no repeats —
-// and 5 of 20 beats fell back to keywords inside the director arm, so B is
-// a mixture rather than a clean condition. Llama 3.3 70B is not a frontier
-// model and these numbers will not transfer to one.
+// Caveats beyond the mixture stated at the top: one model, one corpus,
+// four stories, a single run with no repeats, and no variance estimate —
+// nothing here distinguishes a real +129% from a large one plus noise.
+// Llama 3.3 70B is not a frontier model and these numbers will not
+// transfer to one.
+//
+// The supported conclusion, in full:
+//
+//   On this corpus, with this model, a producer that is three-quarters
+//   Director extracts substantially more information than keyword
+//   discovery, and the existing renderer delivers all of it.
+//
+// Everything past that sentence is inference.
 //
 // residue at 0.00 is the already-known consequence of Causality carrying
 // objects the causing beats do not have.
