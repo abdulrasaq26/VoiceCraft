@@ -147,6 +147,40 @@
 // Base 7 is small and entropy estimates are biased low on small samples.
 // The figure travels with its base for that reason.
 //
+// SIXTH RUN — channel prevalence, keyword staging, base 7.
+//
+//   channel        beats   share
+//   horizon          6      0.86
+//   objects          4      0.57
+//   support          2      0.29
+//   interaction      1      0.14
+//   anchors          1      0.14
+//   metaphor         0      0.00
+//   residue          0      0.00
+//
+// Entropy could not have found this. It scores how evenly the SIGNATURES
+// are spread, and {horizon}, {horizon,objects}, {horizon,objects,support}
+// are three distinct combinations with near-maximal entropy and the same
+// channel in all three. 1.95 bits and one channel in 86% of expressive
+// beats are both true at once. The two numbers are not redundant.
+//
+// METAPHOR AT 0.00 IS THE FINDING. Not a low share — no beat in the corpus
+// carries a metaphor at all, while the reason histogram independently
+// reports `intent-only` three times, meaning a goal was live and produced
+// no metaphor on three separate beats. Two instruments computed from
+// different properties of the same run agree that the intent -> metaphor
+// link is dead on this corpus, and each of them alone would have been easy
+// to read past: 0.00 looks like a channel that had nothing to say, and
+// `intent-only: 3` looks like a small bucket.
+//
+// Deliberately NOT fixed here. Chasing it means work on the keyword-only
+// path, which is the path the remaining experiments exist to evaluate
+// rather than optimise. Recorded because it is now localised precisely
+// enough to act on later without rediscovering it.
+//
+// residue at 0.00 is the already-known consequence of Causality carrying
+// objects the causing beats do not have.
+//
 // PAYLOAD 0.70 CHANNELS PER BEAT. Not "35% of beats have something" but the
 // sharper form: the average beat yields two thirds of one channel. Seven
 // channels exist in the engine and a typical sentence lights none of them.
@@ -473,6 +507,39 @@
     };
   }
 
+  /**
+   * How often each channel appears among the beats that express anything.
+   *
+   * Entropy is blind to this by construction. It scores a corpus on how
+   * evenly the SIGNATURES are spread, and a set of signatures can be close to
+   * uniform while one channel sits inside almost all of them: {horizon},
+   * {horizon,objects}, {horizon,objects,support} are three distinct
+   * combinations, near-maximal entropy, and the same channel in every one.
+   * That is exactly the shape this corpus has, and entropy reported 1.95 bits
+   * without noticing.
+   *
+   * Every channel is listed including the ones that never fire, because a
+   * zero is a finding — `metaphor` at 0.00 says the Intent path reached no
+   * beat in this corpus, and a table that omitted it would leave that to be
+   * discovered by someone reading a distribution and noticing an absence.
+   */
+  function prevalenceOf(shots) {
+    const expressive = shots.filter((s) => s.payload.extracted.length);
+    const counts = {};
+    CHANNELS.forEach(([name]) => { counts[name] = 0; });
+    expressive.forEach((s) => {
+      s.payload.extracted.forEach((c) => { counts[c] = (counts[c] || 0) + 1; });
+    });
+    const channels = {};
+    Object.keys(counts).forEach((k) => {
+      channels[k] = {
+        beats: counts[k],
+        share: expressive.length ? +(counts[k] / expressive.length).toFixed(2) : null
+      };
+    });
+    return { base: expressive.length, channels };
+  }
+
   /** Corpus totals, so no ratio is reported off a denominator of two. */
   function totals(report, allShots) {
     let ext = 0, drew = 0, drop = 0, carried = 0, carriable = 0, beats = 0;
@@ -504,6 +571,7 @@
       // Entropy of an average is not the average of entropies, and four
       // five-beat stories give bases too small to mean anything alone.
       diversity: diversityOf(allShots || []),
+      prevalence: prevalenceOf(allShots || []),
       why,
       confidence,
       staging
@@ -694,6 +762,19 @@
     const wide = diversityOf(fake([['objects'], ['support'], ['horizon'], ['metaphor']]));
     // Order must not matter — a signature is a set, not a sequence.
     const perm = diversityOf(fake([['objects', 'support'], ['support', 'objects']]));
+    // Prevalence against the case entropy cannot see: three distinct
+    // signatures, near-uniform, one channel present in all of them. Entropy
+    // must read high and prevalence must read 1.00 for that channel, or the
+    // pair is not telling us two different things.
+    const shared = fake([['horizon'], ['horizon', 'objects'], ['horizon', 'support']]);
+    const pv = prevalenceOf(shared);
+    const prevalencePass = pv.base === 3
+      && pv.channels.horizon.share === 1
+      && pv.channels.objects.share === 0.33
+      && pv.channels.metaphor.share === 0
+      && diversityOf(shared).entropy > 1.5
+      && prevalenceOf(fake([[], []])).base === 0;
+
     const entropyPass = flat.entropy === 0 && flat.combinations === 1 && flat.dominance === 1
       && wide.entropy === 2 && wide.combinations === 4 && wide.dominance === 0.25
       && perm.combinations === 1
@@ -710,9 +791,11 @@
       undrawable: { efficiency: bad.efficiency, unused: bad.unused },
       reasons: cases,
       entropy: { flat, wide, permutationCollapses: perm.combinations === 1 },
+      prevalence: { sharedChannel: pv, entropyOfSame: diversityOf(shared).entropy },
       // All must hold, or none of these numbers is load-bearing.
       pass: good.efficiency === 1 && bad.efficiency === 0
-        && good.unused === 0 && bad.unused === 1 && reasonsPass && entropyPass
+        && good.unused === 0 && bad.unused === 1
+        && reasonsPass && entropyPass && prevalencePass
     };
   }
 
@@ -759,6 +842,24 @@
       // firing more often; payload up with entropy up means combinations
       // keywords could not reach.
       diversity: { keywords: A.totals.diversity, director: B.totals.diversity },
+      // Per channel, so the A/B can answer WHAT the Director adds rather than
+      // whether it is better. A producer that lifts payload entirely through
+      // one channel and one that spreads the gain across six are different
+      // outcomes pointing at different next steps, and every other number
+      // here reports them identically.
+      prevalence: (() => {
+        const out = {};
+        const names = new Set([...Object.keys(A.totals.prevalence.channels),
+                               ...Object.keys(B.totals.prevalence.channels)]);
+        names.forEach((n) => {
+          const a = (A.totals.prevalence.channels[n] || {}).share;
+          const b = (B.totals.prevalence.channels[n] || {}).share;
+          out[n] = { keywords: a, director: b,
+                     delta: (a == null || b == null) ? null : +(b - a).toFixed(2) };
+        });
+        return { base: { keywords: A.totals.prevalence.base,
+                         director: B.totals.prevalence.base }, channels: out };
+      })(),
       why,
       // Guards against the result that looks like a win and is not one: if
       // staging never says `director`, the B arm silently fell back to
