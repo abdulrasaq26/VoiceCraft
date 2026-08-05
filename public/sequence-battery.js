@@ -59,6 +59,37 @@
 // 6 with a horizon, 2 with support, 1 interaction, 1 anchor, 0 metaphors —
 // 7 beats total carry anything at all, and 13 carry nothing. The cross-beat
 // systems are no longer the bottleneck. Per-beat content is.
+//
+// SECOND RUN — information flow, same corpus, same code path.
+//
+//   story        payload  delivered  unused  persistence (base)
+//   redundancy     0.60     0.60      0.00     0.00  (3)
+//   diagnosis      1.40     1.40      0.00     0.50  (6)
+//   startup        0.80     0.80      0.00     1.00  (2)
+//   plain          0.00     0.00       —        —    (0)
+//   ------------------------------------------------------------
+//   corpus         0.70     0.70      0.00     0.45  (11)
+//
+// PAYLOAD 0.70 CHANNELS PER BEAT. Not "35% of beats have something" but the
+// sharper form: the average beat yields two thirds of one channel. Seven
+// channels exist in the engine and a typical sentence lights none of them.
+//
+// DELIVERED EQUALS PAYLOAD, AND UNUSED IS ZERO. Every channel the producer
+// extracted reached pixels — no dormancy anywhere in the corpus. That number
+// is only worth stating because the detector was given a negative control:
+// support 'chair' traces drawn:true, support 'hammock' — a name with no
+// drawing behind it — traces drawn:false. The detector can see a dead
+// channel, so its silence means there was none to see.
+//
+// This is the first battery where the renderer was NOT at fault. Everything
+// handed to it was drawn. The loss is entirely upstream.
+//
+// PERSISTENCE 0.45 OVER A BASE OF 11. Under half of what one beat knows is
+// still known by the next. Per-story persistence is not worth quoting:
+// `startup` scored 1.00 off a single adjacent pair, which reads as perfect
+// continuity and means two consecutive beats both had a horizon. Ratios are
+// reported with their denominators now, and null rather than zero when there
+// is nothing to divide, because that 1.00 was on its way into a summary.
 (() => {
   'use strict';
 
@@ -123,10 +154,120 @@
         text: sc.sceneSummary || '',
         horizon: trace.horizon || null,
         residue: (trace.residue || []).slice(),
-        causedBy: sc.causedBy || null
+        causedBy: sc.causedBy || null,
+        payload: payloadOf(sc, trace)
       });
     }
     return { shots: out, linked: (res && res.linked) || 0 };
+  }
+
+  // --- information flow ----------------------------------------------------
+  //
+  // Coverage answered "did this beat get anything". It could not answer why a
+  // sequence works, because it counts a beat with one channel the same as a
+  // beat with five, and it counts a channel that was inferred the same as one
+  // that reached pixels.
+  //
+  // So every channel is recorded twice: what the producer EXTRACTED, and what
+  // the trace shows the renderer DREW. The gap between them is the thing that
+  // has gone wrong repeatedly in this codebase — a capability implemented,
+  // inferred, carried on the scene, and silently ignored downstream. Coverage
+  // cannot see that. This can.
+  //
+  // The channels are named once here so that adding a system to the engine and
+  // forgetting to add it to the instrument is a visible omission rather than a
+  // quiet one.
+  const CHANNELS = [
+    ['objects',     (s) => (s.objects || []).some((o) => o && !o.residue),
+                    (t) => !!(t.objects && t.objects.length)],
+    ['residue',     (s) => (s.objects || []).some((o) => o && o.residue),
+                    (t) => !!(t.residue && t.residue.length)],
+    ['interaction', (s) => !!s.interaction,          (t) => !!t.interaction],
+    ['support',     (s) => !!(s.support && s.support !== 'ground'),
+                    (t) => !!(t.support && t.support.drawn)],
+    ['anchors',     (s) => !!(s.anchors && s.anchors.length),
+                    (t) => !!(t.anchors && t.anchors.length)],
+    ['metaphor',    (s) => !!s.metaphor,             (t) => !!t.metaphor],
+    // Horizon is not carried on the scene — it is resolved at draw time from
+    // the entity — so extraction and render are read from the same place and
+    // this row can only ever report agreement. Kept because leaving it out
+    // would understate the payload of a beat that genuinely has one.
+    ['horizon',     (s, t) => !!t.horizon,           (t) => !!t.horizon]
+  ];
+
+  function payloadOf(scene, trace) {
+    const extracted = [], drawn = [], dropped = [];
+    CHANNELS.forEach(([name, has, shown]) => {
+      if (!has(scene, trace)) return;
+      extracted.push(name);
+      if (shown(trace)) drawn.push(name); else dropped.push(name);
+    });
+    return { extracted, drawn, dropped };
+  }
+
+  /**
+   * Four numbers over a rendered sequence.
+   *
+   *   payload    mean channels EXTRACTED per beat. The semantic bandwidth of
+   *              the narration as this engine reads it.
+   *   delivered  mean channels DRAWN per beat. What the viewer could act on.
+   *   unused     share of extracted channels that never reached pixels. A
+   *              dormancy detector that runs on every channel at once instead
+   *              of waiting for someone to notice one is dead.
+   *   persistence  share of a beat's channels still present in the next beat.
+   *              Low means each frame starts from nothing, which is what makes
+   *              a run of beats read as unrelated pictures rather than a scene.
+   */
+  function flowOf(shots) {
+    if (!shots.length) return null;
+    let ext = 0, drew = 0, drop = 0;
+    shots.forEach((s) => {
+      ext += s.payload.extracted.length;
+      drew += s.payload.drawn.length;
+      drop += s.payload.dropped.length;
+    });
+    let carried = 0, carriable = 0;
+    for (let i = 1; i < shots.length; i++) {
+      const prev = shots[i - 1].payload.extracted;
+      const here = new Set(shots[i].payload.extracted);
+      carriable += prev.length;
+      prev.forEach((c) => { if (here.has(c)) carried++; });
+    }
+    return {
+      payload: +(ext / shots.length).toFixed(2),
+      delivered: +(drew / shots.length).toFixed(2),
+      unused: ext ? +(drop / ext).toFixed(2) : null,
+      // Reported WITH its denominator, and null rather than 0 when there is
+      // nothing to divide. One story scored a persistence of 1.00 off a single
+      // adjacent pair, which reads as perfect continuity and means two beats
+      // in a row happened to have a horizon. A ratio without its base is not
+      // a measurement.
+      persistence: carriable ? +(carried / carriable).toFixed(2) : null,
+      carriable,
+      extracted: ext
+    };
+  }
+
+  /** Corpus totals, so no ratio is reported off a denominator of two. */
+  function totals(report) {
+    let ext = 0, drew = 0, drop = 0, carried = 0, carriable = 0, beats = 0;
+    report.forEach((r) => {
+      const f = r.flow; if (!f) return;
+      beats += r.beats;
+      ext += f.extracted;
+      drew += f.delivered * r.beats;
+      drop += (f.unused || 0) * f.extracted;
+      carriable += f.carriable;
+      carried += (f.persistence || 0) * f.carriable;
+    });
+    return {
+      beats,
+      payload: beats ? +(ext / beats).toFixed(2) : 0,
+      delivered: beats ? +(drew / beats).toFixed(2) : 0,
+      unused: ext ? +(drop / ext).toFixed(2) : null,
+      persistence: carriable ? +(carried / carriable).toFixed(2) : null,
+      carriable
+    };
   }
 
   async function pixels(blob) {
@@ -194,17 +335,21 @@
         links: ordered.linked,
         movement: +(move * 100).toFixed(2),
         orderEffect: compared ? +(sensitive / compared).toFixed(2) : 0,
+        flow: flowOf(ordered.shots),
         detail: ordered.shots.map((s) => ({
           t: s.text.slice(0, 30),
           h: s.horizon ? s.horizon.dir + '/' + s.horizon.push : null,
           c: s.causedBy || null,
-          r: s.residue.join(',') || null
+          r: s.residue.join(',') || null,
+          got: s.payload.extracted.join('+') || null,
+          lost: s.payload.dropped.join('+') || null
         }))
       });
       sheets.push({ name, shots: ordered.shots });
     }
 
     if (o.post !== false) await postSheet(sheets, o.post);
+    report.totals = totals(report);
     return report;
   }
 

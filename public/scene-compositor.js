@@ -376,6 +376,10 @@
     let support = null;
     if (OBJ && supportName !== 'ground') {
       support = OBJ.drawSupport(ctx, t, supportName, lead.x, lead.unit);
+      // Traced because an instrument cannot audit a channel it cannot see.
+      // Every other channel reports whether it reached pixels; support was
+      // the one that only reported that it had been inferred.
+      if (opts.trace) opts.trace.support = { name: supportName, drawn: !!support };
     }
 
     // ---- 1e. Arrangement anchors ----------------------------------------
