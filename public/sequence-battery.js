@@ -28,6 +28,41 @@
 //
 // Run from the console: BlvckSeqBattery.run().
 //
+// --- how to write down what this returns ---------------------------------
+//
+// Three summaries in this file have had to be narrowed after the fact, and
+// they failed the same way:
+//
+//   written                              supported
+//   no dormancy anywhere                 none among the TRACED channels on
+//                                        THIS corpus
+//   the intent -> metaphor link is dead  on THIS corpus, no live goal
+//                                        produced a rendered metaphor
+//   the Director extracts more           a producer that is 75% DIRECTOR,
+//                                        on THIS corpus, with THIS model,
+//                                        extracted more
+//
+// Every correction moved the same direction: from a property of the ENGINE
+// to a property of the RUN. Not one of the numbers was wrong. The error was
+// always one layer above them, in the sentence that generalised them — and
+// that sentence is the part that gets quoted six months later, long after
+// the run behind it is forgotten.
+//
+// So, the rule:
+//
+//   EVERY DECLARATIVE CONCLUSION CARRIES ITS CONDITIONING, unless the claim
+//   has been demonstrated across multiple independent runs.
+//
+// A summary sentence should answer, without being asked: on which corpus?
+// under which producer? with which model? over how many runs? at what
+// purity? If it does not, it is claiming more than the run established.
+//
+// This applies to the perceptual results too, when they exist. "Director
+// images are more legible" will be the tempting sentence and the wrong one;
+// "on this corpus, with these participants and this renderer, images from
+// the 75%-Director producer were recognised more accurately" is the one the
+// study can actually support.
+//
 // FIRST RUN — the baseline this instrument exists to be measured against.
 // Append later runs, do not edit these.
 //
@@ -206,7 +241,8 @@
 //
 //   keywords   vs   (75% Director + 25% keywords)
 //
-// not keywords vs Director. Every delta here is the effect of a MIXTURE.
+// not keywords vs Director. purity: keywords 1.00, director 0.75.
+// Every delta here is the effect of a MIXTURE.
 // The pure-Director effect is probably larger than what is reported —
 // a quarter of the B arm is the A arm — but that is an inference, not a
 // measurement, and nothing here measures it. `valid` only checks that the
@@ -898,6 +934,13 @@
       && diversityOf(shared).entropy > 1.5
       && prevalenceOf(fake([[], []])).base === 0;
 
+    // Purity against the exact case that slipped through: a valid run that
+    // is three-quarters its intended condition must not report 1.00.
+    const purityPass = purityOf({ director: 15, keywords: 5 }, 'director') === 0.75
+      && purityOf({ keywords: 20 }, 'keywords') === 1
+      && purityOf({ keywords: 20 }, 'director') === 0
+      && purityOf({}, 'director') === null;
+
     const entropyPass = flat.entropy === 0 && flat.combinations === 1 && flat.dominance === 1
       && wide.entropy === 2 && wide.combinations === 4 && wide.dominance === 0.25
       && perm.combinations === 1
@@ -918,7 +961,7 @@
       // All must hold, or none of these numbers is load-bearing.
       pass: good.efficiency === 1 && bad.efficiency === 0
         && good.unused === 0 && bad.unused === 1
-        && reasonsPass && entropyPass && prevalencePass
+        && reasonsPass && entropyPass && prevalencePass && purityPass
     };
   }
 
@@ -944,6 +987,28 @@
    * COSTS API CALLS — the Director is a model. Nothing here calls it unless
    * this function is invoked deliberately.
    */
+  /**
+   * How COMPLETELY a condition occurred, which is not whether it occurred.
+   *
+   * Two orthogonal checks, and the difference is a run that was reported
+   * wrong rather than a run that was fabricated:
+   *
+   *   validity  did the condition occur at all — catches a FALSE experiment
+   *   purity    what share of beats it actually staged — catches a
+   *             MISDESCRIBED one
+   *
+   * The Director A/B was valid and 0.75 pure. Nothing failed, nothing was
+   * caught, and the write-up called it "keywords vs Director" when it was
+   * keywords vs three-quarters Director. `valid` had already gone green, so
+   * there was no prompt to look closer. A number that has to be printed is.
+   */
+  function purityOf(staging, expected) {
+    const total = Object.keys(staging || {})
+      .reduce((n, k) => n + staging[k], 0);
+    if (!total) return null;
+    return +((staging[expected] || 0) / total).toFixed(2);
+  }
+
   async function compare(opts) {
     const o = opts || {};
     const A = await run(Object.assign({}, o, { useDirector: false, post: false }));
@@ -987,7 +1052,11 @@
       // Guards against the result that looks like a win and is not one: if
       // staging never says `director`, the B arm silently fell back to
       // keywords and every difference below is noise.
-      valid: !!(B.totals.staging && B.totals.staging.director)
+      valid: !!(B.totals.staging && B.totals.staging.director),
+      // Printed whether or not it is 1.00, so a summary cannot be written
+      // without it having been on screen.
+      purity: { keywords: purityOf(A.totals.staging, 'keywords'),
+                director: purityOf(B.totals.staging, 'director') }
     };
   }
 
