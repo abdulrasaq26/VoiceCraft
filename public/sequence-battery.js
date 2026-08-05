@@ -93,8 +93,28 @@
 //
 // Caveat that belongs next to every number above: staging is `keywords` for
 // all 20 beats. This is keyword-only bandwidth. What the Director would add
-// is exactly the unmeasured quantity, and payload 0.70 should never be
-// quoted without that label.
+// is exactly the unmeasured quantity, and the figure is named
+// producerPayload rather than payload so it cannot be quoted without it.
+//
+// FOURTH RUN — compare(), the A/B. NOT A RESULT. valid: false.
+//
+//   producer      keywords: {keywords:20}   director: {keywords:20}
+//   producerPayload   0.70 / 0.70
+//   every bucket delta 0
+//
+// The B arm never reached a model. The AI gateway returns "AI Gateway
+// request failed", attachState caught it and fell back to keyword staging,
+// and the run completed successfully with every number identical.
+//
+// Read without the guard, that table says the Director contributes nothing
+// to discovery — a strong, quotable, entirely false conclusion produced by
+// an outage. `valid` is false because staging never reported `director` for
+// a single beat, and the comparison refuses to be a finding.
+//
+// This is the same failure the session hit repeatedly in another form: an
+// instrument agreeing with a hypothesis for a reason unrelated to the
+// hypothesis. The A/B is built and its keyword arm is validated. The
+// Director arm is blocked on credentials, not on code.
 //
 // PAYLOAD 0.70 CHANNELS PER BEAT. Not "35% of beats have something" but the
 // sharper form: the average beat yields two thirds of one channel. Seven
@@ -170,13 +190,14 @@
     text: w, start: i * 0.4, end: i * 0.4 + 0.34
   }));
 
-  async function frames(sentences, subject) {
+  async function frames(sentences, subject, useDirector) {
     const Sc = window.BlvckScenes, Sy = window.BlvckSync, St = window.BlvckStage;
     const subj = subject || 'Subject';
     const words = wordsFrom(sentences.join(' '));
     const tl = Sy.normalize({ words, duration: words[words.length - 1].end }, 'aligned');
     const scenes = Sc.fromTimeline(tl, { minSec: 0.1 });
-    const res = await Sc.attachState(scenes, tl, { useDirector: false, subject: subj });
+    const res = await Sc.attachState(scenes, tl,
+      { useDirector: !!useDirector, subject: subj });
     const out = [];
     for (const sc of scenes) {
       const trace = {};
@@ -193,7 +214,8 @@
         residue: (trace.residue || []).slice(),
         causedBy: sc.causedBy || null,
         payload,
-        reason: reasonFor(sc, trace, payload, subj)
+        reason: reasonFor(sc, trace, payload, subj),
+        confidence: confidenceOf(reasonFor(sc, trace, payload, subj))
       });
     }
     // `staging` labels what produced these scenes. It matters because every
@@ -274,6 +296,27 @@
   // the keyword table this whole exercise concluded not to build.
   const PRONOUN = /\b(he|she|they|him|her|them|his|their|hers|theirs)\b/i;
 
+  // Confidence in the DIAGNOSIS, not in the renderer. The rule is structural
+  // rather than a table of judgements: a classification resting on positive
+  // evidence — state demonstrably moved, a goal is demonstrably live, a
+  // pronoun is demonstrably present — is high. One resting on the ABSENCE of
+  // evidence is medium, because absence is also what a detector looks like
+  // when it is simply not looking hard enough.
+  //
+  // `no-actor` is the case that matters. It is inferred from finding no
+  // pronoun, and the pronoun test misses "Traders set out crates of fish".
+  // It is also the bucket a Director might legitimately empty by choosing to
+  // personify a scene rather than by finding an actor that was already there.
+  // Both are reasons to hold it loosely, and it is currently the largest
+  // bucket — so marking it medium keeps the biggest number in the histogram
+  // from being read as the firmest.
+  const CONFIDENCE = {
+    'state-only': 'high',
+    'intent-only': 'high',
+    'keyword-miss': 'high',
+    'no-actor': 'medium'
+  };
+
   function reasonFor(scene, trace, payload, subject) {
     if (payload.extracted.length) return null;
     const S = window.BlvckStoryState;
@@ -298,11 +341,14 @@
     return (PRONOUN.test(text) || named) ? 'keyword-miss' : 'no-actor';
   }
 
+  const confidenceOf = (reason) => (reason ? CONFIDENCE[reason] || 'low' : null);
+
   /**
    * Four numbers over a rendered sequence.
    *
-   *   payload    mean channels EXTRACTED per beat. The semantic bandwidth of
-   *              the narration as this engine reads it.
+   *   producerPayload  mean channels EXTRACTED per beat, GIVEN the producer
+   *              that ran. The semantic bandwidth of the narration as this
+   *              engine reads it with that half of discovery switched on.
    *   delivered  mean channels DRAWN per beat. What the viewer could act on.
    *   unused     share of extracted channels that never reached pixels. A
    *              dormancy detector that runs on every channel at once instead
@@ -327,7 +373,12 @@
       prev.forEach((c) => { if (here.has(c)) carried++; });
     }
     return {
-      payload: +(ext / shots.length).toFixed(2),
+      // NAMED FOR ITS CONDITION. What this measures is payload GIVEN a
+      // producer, and the producer has been `keywords` for every run so far.
+      // Called plain `payload` it reads as a property of the engine, and I
+      // quoted 0.70 that way more than once before noticing the whole figure
+      // was conditional on the half of discovery that was switched off.
+      producerPayload: +(ext / shots.length).toFixed(2),
       delivered: +(drew / shots.length).toFixed(2),
       // THE INVARIANT, stated rather than carried in someone's head. It reads
       // as redundant today because it is 1.00 and payload already equals
@@ -351,27 +402,32 @@
   /** Corpus totals, so no ratio is reported off a denominator of two. */
   function totals(report) {
     let ext = 0, drew = 0, drop = 0, carried = 0, carriable = 0, beats = 0;
-    const why = {}, staging = {};
+    const why = {}, staging = {}, confidence = {};
     report.forEach((r) => {
       const f = r.flow; if (!f) return;
       staging[r.staging] = (staging[r.staging] || 0) + r.beats;
-      Object.keys(r.why || {}).forEach((k) => { why[k] = (why[k] || 0) + r.why[k]; });
+      Object.keys(r.why || {}).forEach((k) => {
+        why[k] = (why[k] || 0) + r.why[k];
+        const c = confidenceOf(k);
+        confidence[c] = (confidence[c] || 0) + r.why[k];
+      });
       beats += r.beats;
       ext += f.extracted;
-      drew += f.delivered * r.beats;
+      drew += Math.round(f.delivered * r.beats);
       drop += (f.unused || 0) * f.extracted;
       carriable += f.carriable;
       carried += (f.persistence || 0) * f.carriable;
     });
     return {
       beats,
-      payload: beats ? +(ext / beats).toFixed(2) : 0,
+      producerPayload: beats ? +(ext / beats).toFixed(2) : 0,
       delivered: beats ? +(drew / beats).toFixed(2) : 0,
       efficiency: ext ? +(drew / ext).toFixed(2) : null,
       unused: ext ? +(drop / ext).toFixed(2) : null,
       persistence: carriable ? +(carried / carriable).toFixed(2) : null,
       carriable,
       why,
+      confidence,
       staging
     };
   }
@@ -412,8 +468,8 @@
 
     for (const name of names) {
       const sents = STORIES[name];
-      const ordered = await frames(sents);
-      const shuffled = await frames(rotate(sents));
+      const ordered = await frames(sents, o.subject, o.useDirector);
+      const shuffled = await frames(rotate(sents), o.subject, o.useDirector);
 
       const ox = []; for (const s of ordered.shots) ox.push(await pixels(s.blob));
       const sx = []; for (const s of shuffled.shots) sx.push(await pixels(s.blob));
@@ -563,5 +619,51 @@
     };
   }
 
-  window.BlvckSeqBattery = { run, selfTest, STORIES };
+  /**
+   * A/B the two producers over the same corpus, same renderer, same metrics.
+   *
+   * The comparison that matters is NOT producerPayload_B > producerPayload_A.
+   * A larger number says migration helped without saying what it helped, and
+   * the buckets correspond to different hypotheses:
+   *
+   *   keyword-miss shrinks, no-actor holds   the Director reads existing
+   *                                          actors better but does not
+   *                                          invent subjects where none exist
+   *   both shrink                            it also does environmental
+   *                                          storytelling
+   *   neither shrinks                        discovery is not the producer's
+   *                                          fault and the channels are the
+   *                                          limit
+   *
+   * Each outcome points at different work, which is why the histogram is the
+   * result and payload is a summary of it.
+   *
+   * COSTS API CALLS — the Director is a model. Nothing here calls it unless
+   * this function is invoked deliberately.
+   */
+  async function compare(opts) {
+    const o = opts || {};
+    const A = await run(Object.assign({}, o, { useDirector: false, post: false }));
+    const B = await run(Object.assign({}, o, { useDirector: true, post: false }));
+    const buckets = new Set([...Object.keys(A.totals.why), ...Object.keys(B.totals.why)]);
+    const why = {};
+    buckets.forEach((k) => {
+      const a = A.totals.why[k] || 0, b = B.totals.why[k] || 0;
+      why[k] = { keywords: a, director: b, delta: b - a, confidence: confidenceOf(k) };
+    });
+    return {
+      producer: { keywords: A.totals.staging, director: B.totals.staging },
+      producerPayload: { keywords: A.totals.producerPayload,
+                         director: B.totals.producerPayload },
+      efficiency: { keywords: A.totals.efficiency, director: B.totals.efficiency },
+      persistence: { keywords: A.totals.persistence, director: B.totals.persistence },
+      why,
+      // Guards against the result that looks like a win and is not one: if
+      // staging never says `director`, the B arm silently fell back to
+      // keywords and every difference below is noise.
+      valid: !!(B.totals.staging && B.totals.staging.director)
+    };
+  }
+
+  window.BlvckSeqBattery = { run, compare, selfTest, STORIES };
 })();
