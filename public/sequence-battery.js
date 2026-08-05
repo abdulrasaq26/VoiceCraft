@@ -73,6 +73,29 @@
 //   selfTest()     chair -> eff 1.00 / unused 0.00
 //                  hammock -> eff 0.00 / unused 1.00      pass
 //
+// THIRD RUN — why the empty beats were empty. staging: keywords (20/20).
+//
+//   reason         beats     what it means
+//   no-actor         7       no person referenced; description or place
+//   intent-only      3       a goal is live and produced no metaphor
+//   keyword-miss     3       a person is present and nothing matched
+//   state-only       0       state moved with no channel to carry it
+//   ----------------------------------------------------------------
+//   empty           13       of 20
+//
+// The largest bucket is not the one the roadmap assumed. `keyword-miss` —
+// the bucket the Director is expected to empty — is 3 beats. `no-actor` is
+// 7, more than half the loss, and those are sentences like "Gulls circled
+// above the awnings" and "Traders set out crates of fish along the wet
+// stone". A better scene-plan does not obviously help a beat with no person
+// in it; those need a place-and-object vocabulary, which is a different
+// piece of work from replacing keyword discovery.
+//
+// Caveat that belongs next to every number above: staging is `keywords` for
+// all 20 beats. This is keyword-only bandwidth. What the Director would add
+// is exactly the unmeasured quantity, and payload 0.70 should never be
+// quoted without that label.
+//
 // PAYLOAD 0.70 CHANNELS PER BEAT. Not "35% of beats have something" but the
 // sharper form: the average beat yields two thirds of one channel. Seven
 // channels exist in the engine and a typical sentence lights none of them.
@@ -147,12 +170,13 @@
     text: w, start: i * 0.4, end: i * 0.4 + 0.34
   }));
 
-  async function frames(sentences) {
+  async function frames(sentences, subject) {
     const Sc = window.BlvckScenes, Sy = window.BlvckSync, St = window.BlvckStage;
+    const subj = subject || 'Subject';
     const words = wordsFrom(sentences.join(' '));
     const tl = Sy.normalize({ words, duration: words[words.length - 1].end }, 'aligned');
     const scenes = Sc.fromTimeline(tl, { minSec: 0.1 });
-    const res = await Sc.attachState(scenes, tl, { useDirector: false, subject: 'Subject' });
+    const res = await Sc.attachState(scenes, tl, { useDirector: false, subject: subj });
     const out = [];
     for (const sc of scenes) {
       const trace = {};
@@ -161,16 +185,23 @@
       const blob = await St.compose(Object.assign({}, sc, {
         subject: sc.sceneSummary, visualType: 'stickman'
       }), { trace });
+      const payload = payloadOf(sc, trace);
       out.push({
         blob,
         text: sc.sceneSummary || '',
         horizon: trace.horizon || null,
         residue: (trace.residue || []).slice(),
         causedBy: sc.causedBy || null,
-        payload: payloadOf(sc, trace)
+        payload,
+        reason: reasonFor(sc, trace, payload, subj)
       });
     }
-    return { shots: out, linked: (res && res.linked) || 0 };
+    // `staging` labels what produced these scenes. It matters because every
+    // number this battery reports is keyword-only discovery unless it says
+    // otherwise, and quoting payload without that label overstates how much
+    // the engine can find when the Director is reachable.
+    return { shots: out, linked: (res && res.linked) || 0,
+             staging: (res && res.staging) || 'keywords' };
   }
 
   // --- information flow ----------------------------------------------------
@@ -215,6 +246,56 @@
       if (shown(trace)) drawn.push(name); else dropped.push(name);
     });
     return { extracted, drawn, dropped };
+  }
+
+  // --- why a beat came back empty ------------------------------------------
+  //
+  // payload says how much was discovered. It does not say why the rest was
+  // not, and every zero looks identical — which is the same asymmetry the
+  // renderer had before `unused` and `efficiency` existed, one stage upstream.
+  //
+  // Four reasons, in priority order, all derived from detectors that already
+  // run. None of them adds discovery vocabulary: a reason is metadata about a
+  // failure and never reaches the renderer, so being approximate here costs
+  // nothing on screen.
+  //
+  //   state-only    the state engine DID find something — a condition moved —
+  //                 but no channel carries it. Discovered and unchannelled,
+  //                 which is a missing channel rather than a missing reader.
+  //   intent-only   a goal is live at this beat and produced no metaphor.
+  //   keyword-miss  a person is present and nothing matched. This is the
+  //                 bucket the Director is expected to empty.
+  //   no-actor      no person referenced at all — a description or a place.
+  //                 Arguably not a failure: some beats are bridges.
+  //
+  // The person test is pronouns plus the caller's subject name. It will call
+  // "Traders set out crates of fish" actorless, which is wrong. Named because
+  // the alternative is a list of person-nouns, and a list of person-nouns is
+  // the keyword table this whole exercise concluded not to build.
+  const PRONOUN = /\b(he|she|they|him|her|them|his|their|hers|theirs)\b/i;
+
+  function reasonFor(scene, trace, payload, subject) {
+    if (payload.extracted.length) return null;
+    const S = window.BlvckStoryState;
+    const ent = scene.entity;
+    const t = scene.time || 0;
+    // Probed across the beat's SPAN rather than at the instant it ends.
+    // scene.time is the end of the beat, and changeAt tests a point with a
+    // 0.4s window, so whether a change was found depended on where in the
+    // sentence its keyword happened to fall: "She fell ill that winter" was
+    // found and "He lost his job at the plant" was not, though both carry
+    // three changes. Half the state-only beats were being reported as
+    // keyword misses, which would have pointed the next stretch of work at
+    // the wrong stage entirely.
+    const dur = Number(scene.duration) || 0;
+    if (S && ent) {
+      if (S.changeAt && S.changeAt(ent, t - dur / 2, dur / 2 + 0.4)) return 'state-only';
+      if (S.goalAt && S.goalAt(ent, t)) return 'intent-only';
+    }
+    const text = String(scene.sceneSummary || '');
+    const named = subject && subject.length > 2
+      && text.toLowerCase().indexOf(String(subject).toLowerCase()) > -1;
+    return (PRONOUN.test(text) || named) ? 'keyword-miss' : 'no-actor';
   }
 
   /**
@@ -270,8 +351,11 @@
   /** Corpus totals, so no ratio is reported off a denominator of two. */
   function totals(report) {
     let ext = 0, drew = 0, drop = 0, carried = 0, carriable = 0, beats = 0;
+    const why = {}, staging = {};
     report.forEach((r) => {
       const f = r.flow; if (!f) return;
+      staging[r.staging] = (staging[r.staging] || 0) + r.beats;
+      Object.keys(r.why || {}).forEach((k) => { why[k] = (why[k] || 0) + r.why[k]; });
       beats += r.beats;
       ext += f.extracted;
       drew += f.delivered * r.beats;
@@ -286,7 +370,9 @@
       efficiency: ext ? +(drew / ext).toFixed(2) : null,
       unused: ext ? +(drop / ext).toFixed(2) : null,
       persistence: carriable ? +(carried / carriable).toFixed(2) : null,
-      carriable
+      carriable,
+      why,
+      staging
     };
   }
 
@@ -356,13 +442,19 @@
         movement: +(move * 100).toFixed(2),
         orderEffect: compared ? +(sensitive / compared).toFixed(2) : 0,
         flow: flowOf(ordered.shots),
+        staging: ordered.staging,
+        why: ordered.shots.reduce((acc, s) => {
+          if (s.reason) acc[s.reason] = (acc[s.reason] || 0) + 1;
+          return acc;
+        }, {}),
         detail: ordered.shots.map((s) => ({
           t: s.text.slice(0, 30),
           h: s.horizon ? s.horizon.dir + '/' + s.horizon.push : null,
           c: s.causedBy || null,
           r: s.residue.join(',') || null,
           got: s.payload.extracted.join('+') || null,
-          lost: s.payload.dropped.join('+') || null
+          lost: s.payload.dropped.join('+') || null,
+          why: s.reason
         }))
       });
       sheets.push({ name, shots: ordered.shots });
@@ -422,12 +514,52 @@
     };
     const good = flowOf([await shotFor('chair')]);
     const bad = flowOf([await shotFor('hammock')]);
+    // The reason classifier needs controls for the same reason `unused` did.
+    // A classifier that has only ever returned one label is indistinguishable
+    // from a constant, and one that labels a beat which HAS payload is
+    // reporting on the wrong beats entirely.
+    const Sy = window.BlvckSync, Sc = window.BlvckScenes;
+    const classify = async (sentence, subject) => {
+      const words = wordsFrom(sentence);
+      const tl = Sy.normalize({ words, duration: words[words.length - 1].end }, 'aligned');
+      const scenes = Sc.fromTimeline(tl, { minSec: 0.1 });
+      await Sc.attachState(scenes, tl, { useDirector: false, subject: subject || 'Subject' });
+      const sc = scenes[0], trace = {};
+      await St.compose(Object.assign({}, sc, {
+        subject: sc.sceneSummary, visualType: 'stickman' }), { trace });
+      const p = payloadOf(sc, trace);
+      return { reason: reasonFor(sc, trace, p, subject || 'Subject'),
+               payload: p.extracted.length };
+    };
+    const cases = {
+      // Has a channel — must not be given a reason at all.
+      hasPayload: await classify('She sat at the desk and typed the report.'),
+      // Nothing physical, but the state engine moves — discovered, unchannelled.
+      // Two sentences, because the first draft used "He was devastated by the
+      // news", which moves NO state at all — the word is not in the cue
+      // vocabulary — so the control was testing the classifier against a beat
+      // that genuinely had nothing. A control has to be verified to contain
+      // the thing it is controlling for.
+      stateOnly: await classify('She fell ill that winter.'),
+      stateOnlyLate: await classify('He lost his job at the plant.'),
+      // A person is present and nothing matched.
+      keywordMiss: await classify('He considered the matter at length.'),
+      // No person referenced at all.
+      noActor: await classify('Gulls circled above the awnings.')
+    };
+    const reasonsPass = cases.hasPayload.reason === null
+      && cases.stateOnly.reason === 'state-only'
+      && cases.stateOnlyLate.reason === 'state-only'
+      && cases.keywordMiss.reason === 'keyword-miss'
+      && cases.noActor.reason === 'no-actor';
+
     return {
       drawable: { efficiency: good.efficiency, unused: good.unused },
       undrawable: { efficiency: bad.efficiency, unused: bad.unused },
-      // Both must hold, or neither number is load-bearing.
+      reasons: cases,
+      // All must hold, or none of these numbers is load-bearing.
       pass: good.efficiency === 1 && bad.efficiency === 0
-        && good.unused === 0 && bad.unused === 1
+        && good.unused === 0 && bad.unused === 1 && reasonsPass
     };
   }
 
