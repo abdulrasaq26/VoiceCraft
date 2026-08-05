@@ -46,10 +46,27 @@
   Nobody sees both arms of one beat. A second look scores the memory rather
   than the picture.
 
-  Stimuli are frozen in study-fixture.json rather than generated live: a
+  Stimuli are frozen in study-fixture.js rather than generated live: a
   Director call takes 30-120s, which no participant will sit through, and a
   model re-run mid-study would have different people judging different
-  pictures.
+  pictures. Loaded by script tag rather than fetch so the page works from a
+  file:// path — opened that way the first time, it showed "No stimuli" and
+  nothing else, because fetch is blocked by CORS on file:// and script tags
+  are not.
+
+  WHAT THIS STUDY DOES NOT ESTIMATE. A frozen fixture is ONE SAMPLED
+  Director output. The result is how people read those particular pictures,
+  not how people read the Director — a second generation from the same model
+  on the same prose would differ, and nothing here bounds by how much. That
+  is the right trade for a first perceptual study, since the alternative is
+  every participant judging different stimuli, but it constrains the wording
+  of anything concluded from it. The limitation is repeated inside every
+  downloaded result file, which is what actually gets read later.
+
+  REPORT PER CORPUS, NOT POOLED. The temporal and general sets differ by 23x
+  in their keyword baseline, and pooling them was exactly what hid the real
+  finding in the sequence battery. The results table breaks every figure out
+  by corpus and keeps the null stories on their own rows.
 -->
 <style>
   :root { color-scheme: dark;
@@ -124,6 +141,7 @@
 <script src="stage-layers.js"></script>
 <script src="story-state.js"></script>
 <script src="scene-compositor.js"></script>
+<script src="study-fixture.js"></script>
 <script>
 (() => {
   'use strict';
@@ -216,6 +234,10 @@
         box.innerHTML = '';
         const correct = label === t.text;
         answers.push({
+          // Trial index recorded because order effects and fatigue are the
+          // first things to suspect if the null condition ever shows a gap,
+          // and they cannot be checked after the fact without it.
+          trial: at,
           story: t.story, set: t.set, beat: t.beat, arm: t.arm, staged: t.staged,
           truth: t.text, chose: label, correct,
           // A miss inside the story means the frame read as a scene but not as
@@ -231,11 +253,26 @@
     });
   }
 
+  const median = (xs) => {
+    if (!xs.length) return null;
+    const s = xs.slice().sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)];
+  };
+
+  // Median rather than mean: one participant who walks away mid-trial adds a
+  // 90-second response that moves a mean and not a median.
   const rate = (rows) => (rows.length ? {
     n: rows.length,
     correct: rows.filter(r => r.correct).length / rows.length,
     sibling: rows.filter(r => r.confusion === 'sibling').length / rows.length,
-    foreign: rows.filter(r => r.confusion === 'foreign').length / rows.length
+    foreign: rows.filter(r => r.confusion === 'foreign').length / rows.length,
+    // Two errors that look identical in an accuracy column and are not the
+    // same thing. A slow wrong answer is someone who could not decide; a fast
+    // one is someone who was sure and was wrong. If a producer converts fast
+    // confident errors into slow uncertain ones it has made the frame more
+    // informative even when accuracy has not moved yet.
+    msRight: median(rows.filter(r => r.correct).map(r => r.ms)),
+    msWrong: median(rows.filter(r => !r.correct).map(r => r.ms))
   } : null);
 
   function finish() {
@@ -265,34 +302,55 @@
 
     const t = el('matrix');
     t.innerHTML = '<tr><th>Producer</th><th>Corpus</th><th>n</th><th>Correct</th>' +
-                  '<th>Wrong beat, right story</th><th>Wrong story</th></tr>';
+                  '<th>Wrong beat, right story</th><th>Wrong story</th>' +
+                  '<th>Median s, right</th><th>Median s, wrong</th></tr>';
+    const secs = (ms) => (ms == null ? '—' : (ms / 1000).toFixed(1));
     rows.forEach(([arm, set, r, isNull]) => {
       const tr = document.createElement('tr');
       if (isNull) tr.className = 'null';
       tr.innerHTML = '<td>' + arm + '</td><td>' + set + '</td><td>' + r.n + '</td>' +
         '<td class="hit">' + Math.round(r.correct * 100) + '%</td>' +
         '<td class="near">' + Math.round(r.sibling * 100) + '%</td>' +
-        '<td class="miss">' + Math.round(r.foreign * 100) + '%</td>';
+        '<td class="miss">' + Math.round(r.foreign * 100) + '%</td>' +
+        '<td>' + secs(r.msRight) + '</td><td>' + secs(r.msWrong) + '</td>';
       t.appendChild(tr);
     });
 
+    // THE SANITY CHECK, stated as its own number rather than left for a
+    // reader to subtract two rows. On the fallback stories the two arms are
+    // the same picture, so this should sit near zero. If it does not, it is
+    // not evidence about the producers at all — it is evidence about the
+    // study: order effects, fatigue, an uneven split. Every future run gets
+    // to check itself before its headline is believed.
     const nk = rate(answers.filter(a => a.arm === 'keywords' && !a.staged));
     const nd = rate(answers.filter(a => a.arm === 'director' && !a.staged));
     if (nk && nd) {
-      const gap = Math.abs(nk.correct - nd.correct);
+      const gap = Math.round(Math.abs(nk.correct - nd.correct) * 100);
       el('nullnote').textContent =
-        'On the four stories where the Director fell back, both arms rendered ' +
-        'the identical picture, so the ' + Math.round(gap * 100) + ' point gap ' +
-        'between those two rows is pure noise. Treat any real difference ' +
-        'smaller than that as nothing.';
+        'Null check: on the ' + Object.keys(FIX.stories).filter(s => !staged(s)).length +
+        ' stories where the Director fell back, both arms rendered the identical ' +
+        'picture. The gap between those two rows is ' + gap + ' points and should ' +
+        'be near zero. Treat any real difference smaller than ' + gap + ' points as ' +
+        'nothing. If this number is large, the finding is about the study rather ' +
+        'than the producers — check the trial numbers for order effects before ' +
+        'reading anything else.';
     }
 
     el('save').onclick = () => {
       const blob = new Blob([JSON.stringify({
         at: new Date().toISOString(),
         // Carried into the file so a downloaded set of answers can never be
-        // read without knowing which model produced the stimuli it judged.
+        // read without knowing which model produced the stimuli it judged —
+        // and what the study does NOT estimate. A frozen fixture is one
+        // SAMPLED Director output. These answers measure how people read
+        // those particular pictures, not how people read the Director, and
+        // the difference matters the moment anyone writes a conclusion. It
+        // is stated here rather than in a note somewhere because this file
+        // is what gets opened six months later.
         fixture: { model: FIX.model, generated: FIX.at },
+        estimates: 'human response to one sampled Director output, not to the '
+          + 'Director distribution — a single generation is frozen so every '
+          + 'participant judges identical stimuli',
         total: answers.length, correct: right, answers
       }, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
@@ -302,22 +360,24 @@
     };
   }
 
-  fetch('study-fixture.json')
-    .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then((f) => {
-      FIX = f;
-      trials = build();
-      const nStaged = Object.keys(FIX.stories).filter(staged).length;
-      el('loading').textContent = trials.length + ' pictures · ' + nStaged + ' of ' +
-        Object.keys(FIX.stories).length + ' stories Director-staged · ' +
-        (FIX.model || 'unknown model');
-      el('start').classList.remove('hidden');
-    })
-    .catch((e) => {
-      el('loading').textContent = 'No stimuli. study-fixture.json is missing or ' +
-        'unreadable (' + e.message + '). It is generated from the sequence ' +
-        'battery corpus and must exist before this page can run.';
-    });
+  // Read from a script tag, not fetch(). The page has to open from a file://
+  // path — emailed to someone, copied onto a stick, double-clicked — and
+  // fetch is blocked by CORS on file:// while script tags load fine. Opened
+  // that way the first time, this page showed "No stimuli" and nothing else,
+  // which is a study that cannot be run by the people it needs.
+  if (window.STUDY_FIXTURE) {
+    FIX = window.STUDY_FIXTURE;
+    trials = build();
+    const nStaged = Object.keys(FIX.stories).filter(staged).length;
+    el('loading').textContent = trials.length + ' pictures · ' + nStaged + ' of ' +
+      Object.keys(FIX.stories).length + ' stories Director-staged · ' +
+      (FIX.model || 'unknown model');
+    el('start').classList.remove('hidden');
+  } else {
+    el('loading').textContent = 'No stimuli. study-fixture.js did not load — it ' +
+      'must sit beside this page. It is generated from the sequence battery ' +
+      'corpus and must exist before this page can run.';
+  }
 
   el('start').onclick = () => {
     el('intro').classList.add('hidden');
