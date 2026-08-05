@@ -414,10 +414,13 @@
 //     entropy            0.00     0.34
 //     combinations          1        2
 //
-// THE DIRECTOR RECOVERS ORDINARY NARRATION. That was the open question and
-// the answer is not marginal: the gain is LARGEST exactly where keyword
-// discovery failed most. 34x on general prose against 2.4x on the corpus
-// written to suit keywords.
+// ON THESE TWO CORPORA, THE DIRECTOR SUBSTANTIALLY RECOVERS INFORMATION
+// THAT KEYWORD DISCOVERY LARGELY MISSES. Not "the Director recovers
+// ordinary narration", which was the first heading here and promotes one
+// thirty-beat corpus into a category. The gain is LARGEST exactly where
+// keyword discovery failed most — 34x on the general set against 2.4x on
+// the set written to suit keywords — and that is a statement about these
+// fifty beats.
 //
 // The two arms converge. Keyword payload spans 23x across the corpora
 // (0.03 to 0.70); Director payload spans 1.6x (1.03 to 1.65). Most of the
@@ -426,9 +429,11 @@
 // this file, because it was obtained by varying the thing that was
 // suspected rather than by arguing about it.
 //
-// `bread` was kept as a regression case on the argument that a producer
-// which cannot get flour, bowl, oven and loaf out of it is missing
-// something deeper than vocabulary. The Director gets them.
+// `bread` was kept on the argument that a producer which cannot get flour,
+// bowl, oven and loaf out of it is missing something deeper than
+// vocabulary. The Director gets them — and the story still renders as one
+// signature five times, so the case now tests diversity rather than
+// payload. See the note on it in STORIES.
 //
 // BUT THE GENERAL GAIN IS MONOTONOUS. entropy 0.34, 2 combinations across
 // 16 expressive beats, dominance 0.94 — fifteen of them are the identical
@@ -442,6 +447,32 @@
 // and variety are separate axes and the Director moves them separately:
 // on `temporal` it raised both (entropy 1.95 -> 2.21, 4 -> 6 combinations),
 // on `general` it raised coverage sixteenfold and variety barely at all.
+//
+// TWO-STAGE RECOVERY, and it relocates the bottleneck. The pipeline used to
+// read as one funnel with discovery at the top. These two sets separate it:
+//
+//   temporal   discovery UP, diversity UP
+//   general    discovery UP, diversity FLAT
+//
+// If discovery and representation moved together they would be one stage.
+// They do not, so they are two, and the constraint has moved from WHETHER
+// the engine finds something to HOW MANY QUALITATIVELY DIFFERENT WAYS it
+// can say what it found.
+//
+// DO NOT ENGINEER AGAINST THIS NUMBER YET. The obvious response is to make
+// the Director emit more horizons, metaphors and interactions, which would
+// raise entropy by construction and prove nothing — a channel forced to
+// fire is not a channel that had something to say, and this metric would
+// applaud either one. Entropy is a diagnostic, and it becomes a target the
+// moment it is optimised against.
+//
+// The prior question is perceptual and is not answerable from here: are
+// sixteen mostly-identical `objects+support` frames more understandable
+// than sixteen blank ones? If they are, low entropy is an acceptable
+// property of this class of prose rather than a defect. If they are not,
+// the bottleneck above is confirmed and worth engineering against. The
+// blind study decides which, and until it runs, raising entropy is an
+// intervention with no established direction.
 //
 // EFFICIENCY HELD AT 1.00 IN BOTH ARMS OF BOTH SETS, across a 34x change in
 // payload. Delivery has now survived every condition this instrument can
@@ -559,14 +590,23 @@
       'That energy splits the water and releases oxygen.',
       'What remains is sugar, which the plant stores or spends.'
     ],
-    // REGRESSION CASE. Kept permanently, and not because it is
-    // representative — because it is diagnostic. Five sentences of a person
+    // CALIBRATION CASE. Kept permanently, and not because it is
+    // representative — because it discriminates. Five sentences of a person
     // doing physical things to physical objects, which is the case object
-    // inference exists for, and keyword discovery extracts nothing from any
-    // of them. A producer that cannot get flour, bowl, oven and loaf out of
-    // this is missing something deeper than vocabulary; one that can has
-    // demonstrated the gain comes from planning rather than a longer word
-    // list. Do not delete, and do not tune the keyword tables against it.
+    // inference exists for. Keyword discovery extracts nothing from any of
+    // them; the Director gets flour, bowl, oven and loaf.
+    //
+    // Which raised the bar rather than clearing it. The pass condition is
+    // NOT that payload goes up — that has now happened, and the story still
+    // renders as the same `objects+support` frame five times over. A future
+    // producer passes this case when the five beats stop sharing one
+    // signature: mixing is not sitting, an oven is not a counter, and a
+    // finished loaf is not dough. Diversity across the beats, not channels
+    // per beat.
+    //
+    // Do not delete, and do not tune the keyword tables against it — a
+    // vocabulary entry for `flour` would satisfy the letter of this case
+    // and destroy its only purpose.
     bread: [
       'She mixed flour, water and salt in a wide bowl.',
       'The dough rested on the counter for an hour.',
