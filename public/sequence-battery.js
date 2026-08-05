@@ -353,7 +353,12 @@
 //   per story (general): photosynthesis 0.00 · bread 0.00 · bridge 0.00
 //                        quarter 0.00 · apology 0.20 · inflation 0.00
 //
-// 0.70 WAS A PROPERTY OF THE CORPUS, NOT OF THE PRODUCER. On six stories
+// 0.70 IS NOT AN INTRINSIC PROPERTY OF THE PRODUCER — it depends strongly
+// on the corpus. Not "a property of the corpus, not the producer", which
+// was the first phrasing and trades one unsupported attribution for
+// another. Producer and corpus INTERACT, and this run does not separate
+// their contributions: it varies the corpus while holding the producer
+// fixed, so it can show dependence and cannot apportion it. On six stories
 // written without a detector in mind, keyword discovery extracts 0.03
 // channels per beat and one beat in thirty says anything at all. The
 // figure quoted through seven runs — and conditioned carefully on producer,
@@ -385,6 +390,69 @@
 // It was measured on the temporal set, where the keyword baseline is
 // twenty-three times its general value. A rerun across both sets is the
 // obvious next experiment and costs roughly 40 model calls.
+//
+// NINTH RUN — the Director across two corpora. valid: true, purity 0.70
+// (35 of 50 beats director-staged). 2400s, 20 calls, no failovers,
+// meta/llama-3.3-70b-instruct. Reported per set; pooled is a summary of
+// these two and not a substitute for them.
+//
+//   TEMPORAL (20 beats, director purity 0.75)
+//                     keywords  director
+//     producerPayload    0.70     1.65     x2.4
+//     expressive         7/20    15/20
+//     efficiency         1.00     1.00
+//     persistence        0.45     0.71
+//     entropy            1.95     2.21
+//     combinations          4        6
+//
+//   GENERAL (30 beats, director purity 0.67)
+//                     keywords  director
+//     producerPayload    0.03     1.03     x34
+//     expressive         1/30    16/30
+//     efficiency         1.00     1.00
+//     persistence        0.00     0.88
+//     entropy            0.00     0.34
+//     combinations          1        2
+//
+// THE DIRECTOR RECOVERS ORDINARY NARRATION. That was the open question and
+// the answer is not marginal: the gain is LARGEST exactly where keyword
+// discovery failed most. 34x on general prose against 2.4x on the corpus
+// written to suit keywords.
+//
+// The two arms converge. Keyword payload spans 23x across the corpora
+// (0.03 to 0.70); Director payload spans 1.6x (1.03 to 1.65). Most of the
+// corpus-dependence measured in the eighth run is a property of KEYWORD
+// discovery, not of the engine. That is the strongest single result in
+// this file, because it was obtained by varying the thing that was
+// suspected rather than by arguing about it.
+//
+// `bread` was kept as a regression case on the argument that a producer
+// which cannot get flour, bowl, oven and loaf out of it is missing
+// something deeper than vocabulary. The Director gets them.
+//
+// BUT THE GENERAL GAIN IS MONOTONOUS. entropy 0.34, 2 combinations across
+// 16 expressive beats, dominance 0.94 — fifteen of them are the identical
+// signature `objects+support` and one is `objects`. Prevalence says the
+// same thing from the other side: objects 1.00, support 0.94, and every
+// other channel 0.00. On general prose the Director finds a person and a
+// thing to sit on, fifteen times.
+//
+// This is the failure mode entropy was built to catch and did not find in
+// run five. It exists — it was simply in a condition not yet run. Coverage
+// and variety are separate axes and the Director moves them separately:
+// on `temporal` it raised both (entropy 1.95 -> 2.21, 4 -> 6 combinations),
+// on `general` it raised coverage sixteenfold and variety barely at all.
+//
+// EFFICIENCY HELD AT 1.00 IN BOTH ARMS OF BOTH SETS, across a 34x change in
+// payload. Delivery has now survived every condition this instrument can
+// produce.
+//
+// horizon fell 0.86 -> 0.40 on temporal and stayed 0.00 on general, which
+// is consistent with the eighth run: Time answers to the corpus, not to
+// the producer.
+//
+// Caveats unchanged and now more load-bearing: one model, one run, no
+// repeats, no variance estimate, purity 0.70. Both arms are mixtures.
 //
 // residue at 0.00 is the already-known consequence of Causality carrying
 // objects the causing beats do not have.
@@ -491,7 +559,14 @@
       'That energy splits the water and releases oxygen.',
       'What remains is sugar, which the plant stores or spends.'
     ],
-    // Process with a person doing physical things to objects.
+    // REGRESSION CASE. Kept permanently, and not because it is
+    // representative — because it is diagnostic. Five sentences of a person
+    // doing physical things to physical objects, which is the case object
+    // inference exists for, and keyword discovery extracts nothing from any
+    // of them. A producer that cannot get flour, bowl, oven and loaf out of
+    // this is missing something deeper than vocabulary; one that can has
+    // demonstrated the gain comes from planning rather than a longer word
+    // list. Do not delete, and do not tune the keyword tables against it.
     bread: [
       'She mixed flour, water and salt in a wide bowl.',
       'The dough rested on the counter for an hour.',
@@ -1148,49 +1223,76 @@
     return +((staging[expected] || 0) / total).toFixed(2);
   }
 
-  async function compare(opts) {
-    const o = opts || {};
-    const A = await run(Object.assign({}, o, { useDirector: false, post: false }));
-    const B = await run(Object.assign({}, o, { useDirector: true, post: false }));
-    const buckets = new Set([...Object.keys(A.totals.why), ...Object.keys(B.totals.why)]);
+  /** One arm against another, over whatever slice is handed in. */
+  function deltasFor(a, b) {
+    if (!a || !b) return null;
+    const buckets = new Set([...Object.keys(a.why), ...Object.keys(b.why)]);
     const why = {};
     buckets.forEach((k) => {
-      const a = A.totals.why[k] || 0, b = B.totals.why[k] || 0;
-      why[k] = { keywords: a, director: b, delta: b - a, confidence: confidenceOf(k) };
+      const x = a.why[k] || 0, y = b.why[k] || 0;
+      why[k] = { keywords: x, director: y, delta: y - x, confidence: confidenceOf(k) };
+    });
+    const names = new Set([...Object.keys(a.prevalence.channels),
+                           ...Object.keys(b.prevalence.channels)]);
+    const channels = {};
+    names.forEach((n) => {
+      const x = (a.prevalence.channels[n] || {}).share;
+      const y = (b.prevalence.channels[n] || {}).share;
+      channels[n] = { keywords: x, director: y,
+                      delta: (x == null || y == null) ? null : +(y - x).toFixed(2) };
     });
     return {
-      producer: { keywords: A.totals.staging, director: B.totals.staging },
-      producerPayload: { keywords: A.totals.producerPayload,
-                         director: B.totals.producerPayload },
-      efficiency: { keywords: A.totals.efficiency, director: B.totals.efficiency },
-      persistence: { keywords: A.totals.persistence, director: B.totals.persistence },
+      beats: a.beats,
+      producerPayload: { keywords: a.producerPayload, director: b.producerPayload },
+      expressive: { keywords: a.prevalence.base, director: b.prevalence.base },
+      efficiency: { keywords: a.efficiency, director: b.efficiency },
+      persistence: { keywords: a.persistence, director: b.persistence },
       // Payload and entropy answer different questions and the pair is the
       // point. Payload up with entropy flat means the same combinations
       // firing more often; payload up with entropy up means combinations
       // keywords could not reach.
-      diversity: { keywords: A.totals.diversity, director: B.totals.diversity },
+      diversity: { keywords: a.diversity, director: b.diversity },
       // Per channel, so the A/B can answer WHAT the Director adds rather than
       // whether it is better. A producer that lifts payload entirely through
       // one channel and one that spreads the gain across six are different
-      // outcomes pointing at different next steps, and every other number
-      // here reports them identically.
-      prevalence: (() => {
-        const out = {};
-        const names = new Set([...Object.keys(A.totals.prevalence.channels),
-                               ...Object.keys(B.totals.prevalence.channels)]);
-        names.forEach((n) => {
-          const a = (A.totals.prevalence.channels[n] || {}).share;
-          const b = (B.totals.prevalence.channels[n] || {}).share;
-          out[n] = { keywords: a, director: b,
-                     delta: (a == null || b == null) ? null : +(b - a).toFixed(2) };
-        });
-        return { base: { keywords: A.totals.prevalence.base,
-                         director: B.totals.prevalence.base }, channels: out };
-      })(),
+      // outcomes pointing at different next steps.
+      prevalence: { channels },
       why,
+      purity: { keywords: purityOf(a.staging, 'keywords'),
+                director: purityOf(b.staging, 'director') }
+    };
+  }
+
+  /**
+   * The Director across two qualitatively different corpora.
+   *
+   * Reported PER SET first and pooled only afterwards. The corpora differ by
+   * 23x in their keyword baseline, so a pooled figure is dominated by
+   * whichever set happens to carry more beats and would hide the only thing
+   * worth learning: whether the gain is uniform or concentrated.
+   *
+   * If the Director lifts both, it recovers ordinary narration and the
+   * earlier +129% was an understatement. If it lifts only `temporal`, it was
+   * mostly helping a corpus that already matched the keyword vocabulary, and
+   * the architecture conclusion is entirely different. Pooling these from the
+   * outset would average those two answers into one meaningless number.
+   */
+  async function compare(opts) {
+    const o = opts || {};
+    const A = await run(Object.assign({}, o, { useDirector: false, post: false }));
+    const B = await run(Object.assign({}, o, { useDirector: true, post: false }));
+    const bySet = {};
+    Object.keys(SETS).forEach((s) => {
+      if (A.bySet[s] && B.bySet[s]) bySet[s] = deltasFor(A.bySet[s], B.bySet[s]);
+    });
+    return {
+      producer: { keywords: A.totals.staging, director: B.totals.staging },
+      // Per set first. Pooled is a summary of these, not a substitute.
+      bySet,
+      pooled: deltasFor(A.totals, B.totals),
       // Guards against the result that looks like a win and is not one: if
       // staging never says `director`, the B arm silently fell back to
-      // keywords and every difference below is noise.
+      // keywords and every difference is noise.
       valid: !!(B.totals.staging && B.totals.staging.director),
       // Printed whether or not it is 1.00, so a summary cannot be written
       // without it having been on screen.
