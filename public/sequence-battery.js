@@ -429,11 +429,46 @@
 // this file, because it was obtained by varying the thing that was
 // suspected rather than by arguing about it.
 //
-// `bread` was kept on the argument that a producer which cannot get flour,
-// bowl, oven and loaf out of it is missing something deeper than
-// vocabulary. The Director gets them — and the story still renders as one
-// signature five times, so the case now tests diversity rather than
-// payload. See the note on it in STORIES.
+// `bread` DID NOT PASS, and the note that said it did was wrong.
+//
+// "The Director gets flour, bowl, oven and loaf" was written from payload
+// rising on the general set. Payload is a count. Looking at what was
+// actually extracted:
+//
+//   mixed flour, water and salt in a bowl   ->  nothing
+//   the dough rested on the counter         ->  book
+//   she folded it over itself               ->  laptop, paper
+//   the oven heated, the loaf proved        ->  pencil, paper
+//   it came out dark and hollow-sounding    ->  clock
+//
+// Office supplies, laid over a baking story. Not one of flour, bowl, dough,
+// oven, loaf or basket, because none of them exists to be drawn: the
+// renderer knows thirteen objects — paper, crumpled, pencil, laptop, cup,
+// book, phone, suitcase, box, trophy, mic, fire, clock — and the Director is
+// handed eight of them as a closed list. Asked to depict a kitchen from a
+// vocabulary of desk objects it returns a book, which is the best available
+// answer and still the wrong picture.
+//
+// EVERY METRIC IN THIS FILE SCORED THAT AS A SUCCESS. payload up, efficiency
+// 1.00, unused 0.00, prevalence objects 1.00. A book drawn for "the dough
+// rested on the counter" is a channel extracted and a channel delivered.
+//
+// Which names a limitation none of these numbers has ever stated: THEY
+// MEASURE PRESENCE, NOT CORRECTNESS. Whether a channel fired, never whether
+// what it says is true of the sentence. The arithmetic in every run above
+// stands; the reading of it does not, wherever it was taken to mean the
+// frames were RIGHT rather than merely populated.
+//
+// It also moves the ceiling a third time. Discovery was the bottleneck until
+// the Director doubled it; representation diversity looked like the
+// bottleneck after entropy collapsed; underneath both is a closed object
+// vocabulary of thirteen desk objects, which caps what any producer can say
+// and explains the collapse — everything maps onto the same small set
+// because there is nothing else to map onto.
+//
+// The blind study catches this and the battery cannot. A viewer shown a book
+// for "the dough rested" picks the wrong sentence. That is now the second
+// independent reason to run it.
 //
 // BUT THE GENERAL GAIN IS MONOTONOUS. entropy 0.34, 2 combinations across
 // 16 expressive beats, dominance 0.94 — fifteen of them are the identical
@@ -602,23 +637,28 @@
       'That energy splits the water and releases oxygen.',
       'What remains is sugar, which the plant stores or spends.'
     ],
-    // CALIBRATION CASE. Kept permanently, and not because it is
-    // representative — because it discriminates. Five sentences of a person
-    // doing physical things to physical objects, which is the case object
-    // inference exists for. Keyword discovery extracts nothing from any of
-    // them; the Director gets flour, bowl, oven and loaf.
+    // CALIBRATION CASE, and it is currently FAILING. Kept permanently, not
+    // because it is representative but because it discriminates: five
+    // sentences of a person doing physical things to physical objects, which
+    // is the case object inference exists for.
     //
-    // Which raised the bar rather than clearing it. The pass condition is
-    // NOT that payload goes up — that has now happened, and the story still
-    // renders as the same `objects+support` frame five times over. A future
-    // producer passes this case when the five beats stop sharing one
-    // signature: mixing is not sitting, an oven is not a counter, and a
-    // finished loaf is not dough. Diversity across the beats, not channels
-    // per beat.
+    // Keyword discovery extracts nothing. The Director extracts book,
+    // laptop, paper, pencil and clock — desk objects laid over a kitchen,
+    // because the renderer knows thirteen objects and none of them is a
+    // bowl, an oven or a loaf. It is answering correctly from a vocabulary
+    // that cannot express the question.
     //
-    // Do not delete, and do not tune the keyword tables against it — a
-    // vocabulary entry for `flour` would satisfy the letter of this case
-    // and destroy its only purpose.
+    // PASS CONDITION, in order. The story renders with objects that belong
+    // to it; the five beats stop sharing one signature, since mixing is not
+    // sitting and an oven is not a counter. Payload rising is not a pass —
+    // it already rose, while the frames stayed wrong, and the metrics in
+    // sequence-battery.js scored that as success because they count whether
+    // a channel fired and never whether it is true.
+    //
+    // Do not delete. Do not tune the keyword tables against it — a
+    // vocabulary entry for `flour` satisfies the letter of the case and
+    // destroys its only purpose. The honest fix is drawable objects for
+    // domains that are not an office.
     bread: [
       'She mixed flour, water and salt in a wide bowl.',
       'The dough rested on the counter for an hour.',
@@ -1353,5 +1393,75 @@
     };
   }
 
-  window.BlvckSeqBattery = { run, compare, selfTest, STORIES, SETS };
+  /**
+   * Freeze the corpus through both producers into the blind study's stimuli.
+   *
+   * The study cannot call a model: a Director call takes 30-120s and a
+   * re-run mid-study would have different people judging different pictures.
+   * So the scenes are captured once, here, and the page renders them offline.
+   *
+   * Emitted as JS assigning window.STUDY_FIXTURE rather than JSON, because
+   * the study has to open from a file:// path and fetch is blocked by CORS
+   * there while script tags are not.
+   *
+   * THE MODEL IS RECORDED, and the reason is the whole history of this file.
+   * A fixture is a claim about a producer, and a set of participant answers
+   * that does not say which model drew the pictures cannot be interpreted at
+   * all — it looks like a result about the Director and is a result about
+   * one sampled output of one model on one day.
+   *
+   * `staged` counts how many stories actually reached the model. A capture
+   * taken during an outage silently produces two identical arms and a study
+   * that measures nothing; this is the purity check applied one stage
+   * earlier, where it is cheaper to notice.
+   */
+  async function captureFixture(opts) {
+    const o = opts || {};
+    const Sc = window.BlvckScenes, Sy = window.BlvckSync;
+    const names = o.only ? [o.only] : Object.keys(STORIES);
+    const out = { model: (window.BlvckAI && window.BlvckAI.chatModel && window.BlvckAI.chatModel()) || 'unknown',
+                  at: new Date().toISOString(), sets: SETS, stories: {} };
+    for (const name of names) {
+      const sents = STORIES[name];
+      out.stories[name] = { sentences: sents, arms: {} };
+      for (const arm of ['keywords', 'director']) {
+        const words = wordsFrom(sents.join(' '));
+        const tl = Sy.normalize({ words, duration: words[words.length - 1].end }, 'aligned');
+        const scenes = Sc.fromTimeline(tl, { minSec: 0.1 });
+        const res = await Sc.attachState(scenes, tl,
+          { useDirector: arm === 'director', subject: o.subject || 'Subject' });
+        out.stories[name].arms[arm] = {
+          staging: res.staging,
+          scenes: scenes.map((s) => JSON.parse(JSON.stringify(s)))
+        };
+      }
+    }
+    const total = Object.keys(out.stories).length;
+    const staged = Object.keys(out.stories)
+      .filter((s) => out.stories[s].arms.director.staging === 'director').length;
+    out.capture = { stories: total, directorStaged: staged,
+                    purity: total ? +(staged / total).toFixed(2) : null };
+    return out;
+  }
+
+  /** Save a capture as study-fixture.js, ready to sit beside study.html. */
+  function downloadFixture(fix) {
+    const head = '// Frozen study stimuli. Loaded via a SCRIPT TAG rather than fetch()\n'
+      + '// because the study must open from a file:// path and fetch is blocked by\n'
+      + '// CORS there. Generated by BlvckSeqBattery.captureFixture().\n'
+      + '//\n'
+      + '// One sampled run of ' + fix.model + ' on ' + fix.at + '. Director staged '
+      + fix.capture.directorStaged + ' of ' + fix.capture.stories + ' stories.\n'
+      + 'window.STUDY_FIXTURE = ';
+    const blob = new Blob([head + JSON.stringify(fix) + ';\n'],
+      { type: 'application/javascript' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'study-fixture.js';
+    a.click();
+    return fix.capture;
+  }
+
+  window.BlvckSeqBattery = { run, compare, selfTest, captureFixture, downloadFixture,
+                             STORIES, SETS };
 })();
