@@ -55,6 +55,128 @@
   // Each draws centred on (x, y) at size s. Kept small and legible rather than
   // detailed: at 1280x720 with a figure 200px tall, a sheet of paper is 40px.
 
+  // --- generic FORMS ------------------------------------------------------
+  //
+  // The bread failure: the Director was handed eight object kinds, all desk
+  // objects, and asked to depict "she mixed flour, water and salt in a wide
+  // bowl". It answered `book` — correctly, from a vocabulary in which flour
+  // has no legal representation. Payload rose, efficiency stayed 1.00, and
+  // the frame was wrong in a way no metric in this project can see.
+  //
+  // The fix is the principle this codebase already applies to subjects, one
+  // level down. Subjects have OPEN IDENTITY and CLOSED STRUCTURE: anyone can
+  // be in a scene, and there are six ways a scene can be arranged. Objects
+  // had closed identity, which is why a kitchen could not be drawn.
+  //
+  // So identity opens — the Director may name anything — and structure
+  // closes: six forms, chosen to be distinguishable as silhouettes rather
+  // than to be a taxonomy. A bowl is not a laptop because it is open at the
+  // top; flour is not paper because it has no edges. That is the whole
+  // requirement. Anything nameable resolves to one of these, and a beat that
+  // would have drawn the wrong specific object now draws the right general
+  // one, which is the trade WordNet's hypernym chain makes: lose specificity,
+  // keep truth.
+  //
+  // Deliberately NOT a keyword table. The mapping from `flour` to `mass` is
+  // done by the model at plan time, which is the same argument that moved
+  // discovery off keywords — polysemy is not resolvable by a list, and a list
+  // of nouns is the thing this project has repeatedly concluded not to build.
+  const FORMS = {
+    // Open at the top: bowl, basket, pot, pan, cup, box of things.
+    vessel: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.beginPath();
+      g.moveTo(x - s * 0.40, y - s * 0.18);
+      g.bezierCurveTo(x - s * 0.34, y + s * 0.34, x + s * 0.34, y + s * 0.34,
+                      x + s * 0.40, y - s * 0.18);
+      g.stroke();
+      // The rim, drawn flat and wide — it is what stops a vessel reading as
+      // a ball, and what makes it read as something you put things IN.
+      g.beginPath();
+      g.moveTo(x - s * 0.46, y - s * 0.18);
+      g.lineTo(x + s * 0.46, y - s * 0.18);
+      g.stroke();
+    },
+    // A quantity with no edges: flour, dough, soil, snow, a heap of anything.
+    mass: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.beginPath();
+      g.moveTo(x - s * 0.44, y + s * 0.24);
+      g.bezierCurveTo(x - s * 0.30, y - s * 0.30, x - s * 0.02, y - s * 0.14,
+                      x + s * 0.06, y - s * 0.26);
+      g.bezierCurveTo(x + s * 0.26, y - s * 0.36, x + s * 0.42, y - s * 0.02,
+                      x + s * 0.44, y + s * 0.24);
+      g.closePath();
+      g.stroke();
+    },
+    // Flat and horizontal: counter, table top, board, tray, plank.
+    slab: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.06));
+      g.beginPath();
+      g.rect(x - s * 0.50, y - s * 0.10, s * 1.00, s * 0.20);
+      g.stroke();
+      // A near edge, so it reads as a surface seen slightly from above
+      // rather than as a closed box.
+      g.beginPath();
+      g.moveTo(x - s * 0.44, y + s * 0.10);
+      g.lineTo(x - s * 0.36, y + s * 0.24);
+      g.moveTo(x + s * 0.44, y + s * 0.10);
+      g.lineTo(x + s * 0.36, y + s * 0.24);
+      g.stroke();
+    },
+    // A handle and a working end: spoon, hammer, brush, knife, trowel.
+    tool: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.beginPath();
+      g.moveTo(x - s * 0.40, y + s * 0.26);
+      g.lineTo(x + s * 0.12, y - s * 0.10);
+      g.stroke();
+      g.beginPath();
+      g.ellipse(x + s * 0.26, y - s * 0.22, s * 0.20, s * 0.13, -0.6, 0, Math.PI * 2);
+      g.stroke();
+    },
+    // A box that does something: oven, machine, engine, cabinet, appliance.
+    apparatus: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.06));
+      g.beginPath();
+      g.rect(x - s * 0.42, y - s * 0.40, s * 0.84, s * 0.80);
+      g.stroke();
+      // A door and a dial. Without them this is `box`, which already exists.
+      g.beginPath();
+      g.rect(x - s * 0.30, y - s * 0.24, s * 0.60, s * 0.44);
+      g.stroke();
+      g.beginPath();
+      g.arc(x + s * 0.26, y - s * 0.30, s * 0.07, 0, Math.PI * 2);
+      g.stroke();
+    },
+    // Growing and organic: leaf, plant, tree, crop, flower.
+    //
+    // The first version drew both leaves curving back to nearly the same
+    // point, which closed them into one blob on a bare stem and read as a
+    // lollipop. The pixel check agreed before I did: tool/plant was the
+    // closest pair of the six, both being a stick with a lump on top.
+    // Leaves have to LEAVE the stem — separate heights, opposite sides,
+    // each returning to its own base — and the stem has to continue past
+    // them or the whole thing is a flower.
+    plant: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.06));
+      g.beginPath();
+      g.moveTo(x, y + s * 0.46);
+      g.lineTo(x, y - s * 0.44);
+      g.stroke();
+      // Three leaves, alternating sides, each an almond with its own base.
+      [[-1, 0.20], [1, -0.04], [-1, -0.28]].forEach(([d, h]) => {
+        const by = y + s * h;
+        g.beginPath();
+        g.moveTo(x, by);
+        g.quadraticCurveTo(x + d * s * 0.26, by - s * 0.20,
+                           x + d * s * 0.42, by - s * 0.06);
+        g.quadraticCurveTo(x + d * s * 0.24, by + s * 0.06, x, by);
+        g.stroke();
+      });
+    }
+  };
+
   const OBJECTS = {
     paper: (g, t, x, y, s) => {
       stroke(g, t, Math.max(2, s * 0.06));
@@ -485,7 +607,12 @@
     let floorIdx = 0;
 
     objects.forEach((o) => {
-      if (!OBJECTS[o.kind]) return;
+      // Must accept anything DRAWABLE, by glyph or by form. This filtered on
+      // the specific glyph alone, so an object with a valid form was
+      // discarded here and never reached drawPlan's fallback — the fallback
+      // would have been dead code, which is the dormancy pattern this
+      // codebase has produced more often than any other.
+      if (!OBJECTS[o.kind] && !FORMS[o.form] && !FORMS[o.kind]) return;
       const count = Math.max(1, Math.min(24, Number(o.count) || 1));
       for (let i = 0; i < count; i++) {
         let x;
@@ -542,7 +669,15 @@
         }
         // Never draw over the face.
         if (o.rel === 'floor' && Math.abs(x - actorX) < 0.05) x += 0.09;
-        out.push({ kind: o.kind, rel: o.rel || 'floor',
+        // `form` and `residue` must survive the planner. It rebuilds each
+        // item from scratch rather than copying it, so a field added upstream
+        // is silently dropped here and the renderer never sees it — the plan
+        // listed bowl and flour, the frame contained neither, and the trace
+        // showed them present because the trace reads the plan. Two lines
+        // above, the filter was fixed for exactly this reason and this was
+        // missed in the same edit.
+        out.push({ kind: o.kind, form: o.form || null, residue: !!o.residue,
+                   rel: o.rel || 'floor',
                    x: +x.toFixed(4), y: +y.toFixed(4), size });
       }
     });
@@ -560,7 +695,13 @@
     // that was actually there.
     const base = ctx.globalAlpha;
     (planned || []).forEach((o) => {
-      const draw = OBJECTS[o.kind];
+      // Specific glyph first, then the general form. A named object the
+      // renderer has no drawing for used to vanish here — silently, with no
+      // trace and no metric able to see it — or, worse, never got named at
+      // all because the producer was handed a closed list and picked the
+      // nearest legal wrong answer. Falling back to the form loses
+      // specificity and keeps the frame true.
+      const draw = OBJECTS[o.kind] || FORMS[o.form] || FORMS[o.kind];
       if (!draw) return;
       ctx.save();
       ctx.globalAlpha = base * (o.rel === 'floor' ? 0.85 : 1);
@@ -707,9 +848,13 @@
   }
 
   window.BlvckObjects = {
-    OBJECTS, SUPPORT, ANCHORS, OBJECT_RULES, inferObjects,
+    OBJECTS, FORMS, SUPPORT, ANCHORS, OBJECT_RULES, inferObjects,
     place, plan, drawPlan, drawSupport, drawAnchor, GROUND,
     kinds: () => Object.keys(OBJECTS),
+    forms: () => Object.keys(FORMS),
+    // Can this be drawn at all, by glyph or by form? One answer, so the
+    // planner, the renderer and the prompt cannot disagree about it.
+    drawable: (o) => !!(o && (OBJECTS[o.kind] || FORMS[o.form] || FORMS[o.kind])),
     supports: () => Object.keys(SUPPORT)
   };
 })();

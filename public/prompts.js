@@ -803,7 +803,18 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
   // six.
   const SUBJECT_STRUCTURES = ['actor', 'context', 'pair', 'group', 'object', 'place'];
   const SUPPORTS = ['ground', 'chair', 'stool', 'bed', 'floor'];
-  const OBJECT_KINDS = ['paper', 'crumpled', 'pencil', 'laptop', 'cup', 'book', 'phone', 'clock'];
+  // Specific glyphs the renderer has an exact drawing for. All thirteen are
+  // offered now; five of them — suitcase, box, trophy, mic, fire — were
+  // drawable and simply never mentioned, so the Director could not ask for
+  // them.
+  const OBJECT_KINDS = ['paper', 'crumpled', 'pencil', 'laptop', 'cup', 'book',
+                        'phone', 'suitcase', 'box', 'trophy', 'mic', 'fire', 'clock'];
+  // General forms, for everything else. This is the closed half of "identity
+  // open, structure closed" applied to objects — the same rule the `identity`
+  // field below already follows, and the reason a kitchen could not be drawn
+  // until now: a beat about flour in a bowl had to answer from a list of desk
+  // objects, and answered `book`.
+  const OBJECT_FORMS = ['vessel', 'mass', 'slab', 'tool', 'apparatus', 'plant'];
   const OBJECT_RELS = ['held', 'surface', 'floor', 'thought'];
 
   function scenePlanPrompt(payload) {
@@ -828,7 +839,25 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
         '',
         '  support    what the figure rests on: ' + SUPPORTS.join(' | '),
         '',
-        '  objects    things in frame. Each: kind (' + OBJECT_KINDS.join('|') + '),',
+        '  objects    things in frame. Each: kind, form, rel, count.',
+        '             kind is the ORDINARY NAME of the thing — flour, bowl, oven,',
+        '             loaf, leaf, spanner. Name what is actually there. Do not',
+        '             substitute something else because it seems easier to draw.',
+        '             form is how it is drawn, one of: ' + OBJECT_FORMS.join(' | ') + '.',
+        '               vessel    open container — bowl, basket, pot, pan, cup',
+        '               mass      a quantity with no edges — flour, dough, soil',
+        '               slab      flat surface — counter, table, board, tray',
+        '               tool      handle and a working end — spoon, hammer, brush',
+        '               apparatus a box that does something — oven, machine, engine',
+        '               plant     growing thing — leaf, tree, crop, flower',
+        // The glyph inventory is deliberately NOT listed here. It was, and it
+        // acted as an attractor: given thirteen concrete nouns in the prompt,
+        // the model sometimes returned `book` and `laptop` for a baking story
+        // instead of the flour and oven it named on other samples. A list of
+        // easy answers is a list of answers. The renderer already resolves
+        // specific-before-general on its own, so naming the thing truthfully
+        // is always the right move and `book` upgrades itself when a beat is
+        // genuinely about a book.
         '             rel (' + OBJECT_RELS.join('|') + '), count.',
         '             `floor` accumulates: raise the count across beats to show',
         '             effort piling up. Use `thought` for what is on their mind.',
@@ -864,11 +893,25 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
       const objects = [];
       (Array.isArray(b.objects) ? b.objects : []).forEach((o) => {
         if (!o) return;
-        const kind = String(o.kind || '').trim().toLowerCase();
+        // KIND IS NOT VALIDATED AGAINST A LIST, for the same reason identity
+        // below is not: the set of things a story can mention is unbounded,
+        // and a closed list does not make the frame correct, it makes the
+        // model pick the nearest legal wrong answer. Sanitised for shape.
+        const kind = String(o.kind || '').trim().toLowerCase()
+          .replace(/[^a-z0-9 _-]/g, '').slice(0, 32);
+        const form = String(o.form || '').trim().toLowerCase();
         const rel = String(o.rel || '').trim().toLowerCase();
-        if (OBJECT_KINDS.indexOf(kind) === -1) { reject('unknown-object-kind', o); return; }
+        const known = OBJECT_KINDS.indexOf(kind) > -1;
+        // FORM is the closed half and carries the guarantee: a specific glyph
+        // if one exists, otherwise something drawable. Reject only when the
+        // beat has named a thing with no way to render it at all — which is a
+        // real rejection rather than the vocabulary rejection it replaces.
+        if (!known && OBJECT_FORMS.indexOf(form) === -1) {
+          reject('unrenderable-object', o); return;
+        }
         if (OBJECT_RELS.indexOf(rel) === -1) { reject('unknown-object-rel', o); return; }
-        objects.push({ kind, rel, count: Math.max(1, Math.min(24, Number(o.count) || 1)) });
+        objects.push({ kind, form: form || null, rel,
+                       count: Math.max(1, Math.min(24, Number(o.count) || 1)) });
       });
 
       out.push({
@@ -1120,6 +1163,7 @@ Respond ONLY with JSON:
     STATE_ATTRIBUTES,
     SUBJECT_STRUCTURES,
     OBJECT_KINDS,
+    OBJECT_FORMS,
     OBJECT_RELS,
     SUPPORTS,
     build(endpoint, payload) {
