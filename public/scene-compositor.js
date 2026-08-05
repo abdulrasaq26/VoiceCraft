@@ -670,7 +670,13 @@
         ctx.restore();
       }
       const finalPlan = solid.length ? replan(solid) : [];
-      if (finalPlan.length) OBJ.drawPlan(ctx, t, finalPlan, lead.unit);
+      // `hasSurface` tells the object layer whether anything already drew a
+      // top to rest on — an anchor like a desk or a bedside, or a support
+      // that is furniture. Without it the implied line doubles up on a desk
+      // that is already in frame.
+      const hasSurface = (anchors && anchors.length > 0)
+        || (supportName !== 'ground' && supportName !== 'kneel');
+      if (finalPlan.length) OBJ.drawPlan(ctx, t, finalPlan, lead.unit, { hasSurface });
       if (opts.trace) {
         opts.trace.objects = finalPlan;
         opts.trace.residue = residue.map((o) => o.kind);

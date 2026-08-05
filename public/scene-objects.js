@@ -81,6 +81,15 @@
   // done by the model at plan time, which is the same argument that moved
   // discovery off keywords — polysemy is not resolvable by a list, and a list
   // of nouns is the thing this project has repeatedly concluded not to build.
+  //
+  // WHAT THIS DOES AND DOES NOT ESTABLISH. The representational ceiling
+  // imposed by CLOSED OBJECT IDENTITY is removed: a kitchen can now be drawn,
+  // and adding bucket, pitcher, teapot, vase or pot needs no renderer work at
+  // all because the renderer depends on forms rather than on nouns. Whether a
+  // producer reliably USES that space is a separate, empirical question, and
+  // the first evidence is not encouraging — llama-3.3-70b gave flour/bowl/oven
+  // on one sample and a classroom for photosynthesis on another. Ceiling and
+  // exploitation are different claims and the second is unmeasured.
   const FORMS = {
     // Open at the top: bowl, basket, pot, pan, cup, box of things.
     vessel: (g, t, x, y, s) => {
@@ -636,9 +645,26 @@
             break;
           case 'surface': {
             const k = surfaceIdx++;
-            x = 0.62 + rnd(k, 7) * 0.26;
+            // ACTOR-RELATIVE, and clamped. This was absolute — 0.62 to 0.88 —
+            // so a bowl sat in the right of frame however far left the person
+            // was, and read as belonging to the room rather than to them.
+            // That is the identical mistake the `floor` case below documents
+            // fixing, for the identical reason; it was corrected there and
+            // never here, which is why a kitchen beat put the flour across
+            // the room from the hands mixing it.
+            //
+            // Placed just in front and slightly to one side, which is where a
+            // thing being worked on sits. The clamp is the containment rule
+            // this codebase expects beside every placement rule: an actor
+            // near the frame edge must not push the object out of shot.
+            const spread = (rnd(k, 7) - 0.5) * 0.13;
+            x = Math.max(0.10, Math.min(0.90, actorX + 0.19 + spread));
             y = (f.surfaceY == null ? GROUND - 0.10 : f.surfaceY) - 0.012;
-            size = unit * 1.0;
+            // Was unit * 1.0, the SMALLEST of any relation, though a surface
+            // object is usually what the beat is about — the bowl being mixed
+            // in, the laptop being typed on. Held is 1.7 and floor is 1.15 to
+            // 1.65; there was no reason for this to be the runt.
+            size = unit * 1.45;
             break;
           }
           case 'thought':
@@ -685,7 +711,40 @@
   }
 
   /** Draw a plan produced by plan(). */
-  function drawPlan(ctx, theme, planned, unit) {
+  /**
+   * The surface a `surface` object is resting on, when nothing else drew one.
+   *
+   * `surfaceY` is a constant the compositor passes — a notional counter
+   * height — and no line is drawn at it unless the beat happens to have an
+   * anchor like a desk. So a bowl on a surface hovered at chest height with
+   * nothing beneath it, which reads as a floating bowl rather than as a bowl
+   * on a counter. The objects were correct, placed correctly, and still
+   * wrong in the frame.
+   *
+   * Drawn under the objects' own extent rather than across the room, for the
+   * same reason floor litter is scattered around the actor: a full-width line
+   * belongs to the room, a short one belongs to the work.
+   */
+  function drawImpliedSurface(ctx, theme, planned, unit) {
+    const on = (planned || []).filter((o) => o.rel === 'surface');
+    if (!on.length) return;
+    const xs = on.map((o) => px(o.x));
+    const half = (on[0].size || unit) * 0.62;
+    const y = py(on[0].y) + (on[0].size || unit) * 0.46;
+    ctx.save();
+    ctx.globalAlpha = ctx.globalAlpha * 0.5;
+    stroke(ctx, theme, Math.max(1.5, unit * 0.05));
+    ctx.beginPath();
+    ctx.moveTo(Math.min.apply(null, xs) - half, y);
+    ctx.lineTo(Math.max.apply(null, xs) + half, y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPlan(ctx, theme, planned, unit, opts) {
+    // Suppressed when the scene already drew furniture, or the implied line
+    // would sit across a desk that is already there.
+    if (!(opts && opts.hasSurface)) drawImpliedSurface(ctx, theme, planned, unit);
     const t = theme || {};
     const u = unit || 42;
     // COMPOSES with the caller's alpha rather than replacing it. This assigned

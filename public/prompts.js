@@ -853,11 +853,22 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
         // The glyph inventory is deliberately NOT listed here. It was, and it
         // acted as an attractor: given thirteen concrete nouns in the prompt,
         // the model sometimes returned `book` and `laptop` for a baking story
-        // instead of the flour and oven it named on other samples. A list of
-        // easy answers is a list of answers. The renderer already resolves
-        // specific-before-general on its own, so naming the thing truthfully
-        // is always the right move and `book` upgrades itself when a beat is
-        // genuinely about a book.
+        // instead of the flour and oven it named on other samples. The
+        // renderer already resolves specific-before-general on its own, so
+        // naming the thing truthfully is always the right move and `book`
+        // upgrades itself when a beat is genuinely about a book.
+        //
+        // THE GENERAL RULE, which is worth more than this instance:
+        //
+        //   IMPLEMENTATION INVENTORIES DO NOT BELONG IN PLANNER PROMPTS
+        //   UNLESS SELECTION FROM THAT INVENTORY IS ITSELF THE TASK.
+        //
+        // A list of what the system can do reads to a model as a list of what
+        // it should answer. The planner's job is to describe the beat; which
+        // glyph exists is a rendering concern and leaks bias when it crosses
+        // the boundary. Applies to SUPPORTS and OBJECT_RELS too — both are
+        // still listed below, and both are genuinely selection tasks, which is
+        // the test to apply before adding anything else here.
         '             rel (' + OBJECT_RELS.join('|') + '), count.',
         '             `floor` accumulates: raise the count across beats to show',
         '             effort piling up. Use `thought` for what is on their mind.',
