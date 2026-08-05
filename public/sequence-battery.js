@@ -337,6 +337,55 @@
 //
 // Everything past that sentence is inference.
 //
+// EIGHTH RUN — the corpus doubled. Keyword staging, purity 1.00.
+//
+//                    temporal   general    pooled
+//   stories              4          6         10
+//   beats               20         30         50
+//   producerPayload   0.70       0.03       0.30
+//   expressive base   7/20       1/30       8/50
+//   efficiency        1.00       1.00       1.00
+//   unused            0.00       0.00       0.00
+//   entropy           1.95       0.00       2.25
+//   horizon prev      0.86       0.00       0.75
+//   objects prev      0.57       1.00       0.63
+//
+//   per story (general): photosynthesis 0.00 · bread 0.00 · bridge 0.00
+//                        quarter 0.00 · apology 0.20 · inflation 0.00
+//
+// 0.70 WAS A PROPERTY OF THE CORPUS, NOT OF THE PRODUCER. On six stories
+// written without a detector in mind, keyword discovery extracts 0.03
+// channels per beat and one beat in thirty says anything at all. The
+// figure quoted through seven runs — and conditioned carefully on producer,
+// model, purity and run count — was measured on four stories I wrote to
+// exercise the systems being measured. The conditioning that mattered most
+// was the one nobody thought to state.
+//
+// `bread` is the case worth staring at: five sentences about flour, a bowl,
+// a counter, an oven and a loaf, and it produces nothing. Not an abstract
+// beat, not an actorless one — a person doing physical things to objects,
+// which is the case object inference exists for.
+//
+// HORIZON AT 0.86 WAS ENTIRELY SELECTION. It is 0.00 across all thirty
+// general beats. Time is not carrying the engine; Time was carrying a
+// corpus built to contain remembering and waiting. The suspicion was
+// recorded when the number first appeared and it was correct.
+//
+// WHAT SURVIVED THE CHANGE OF CORPUS: efficiency 1.00 and unused 0.00, on a
+// corpus twenty-three times poorer. Delivery is not the bottleneck, and
+// that now holds across two samples selected on different principles —
+// which is the first claim here with any external validity at all.
+//
+// `state-only` appears for the first time: 5 beats, all in the general set,
+// where state moved and no channel carried it. It read 0 on the temporal
+// corpus and was noted as "not currently a bottleneck". It was absent, not
+// unimportant.
+//
+// The A/B's +129% is now suspect in the direction of being far too small.
+// It was measured on the temporal set, where the keyword baseline is
+// twenty-three times its general value. A rerun across both sets is the
+// obvious next experiment and costs roughly 40 model calls.
+//
 // residue at 0.00 is the already-known consequence of Causality carrying
 // objects the causing beats do not have.
 //
@@ -372,10 +421,32 @@
 (() => {
   'use strict';
 
-  // Prose written the way narration actually arrives — not probe sentences.
-  // Each story deliberately carries a different mix: some causal, some
-  // temporal, some neither, so coverage is a measurement and not a foregone
-  // conclusion.
+  // TWO SETS, kept apart on purpose.
+  //
+  // `temporal` is the original four. They were written to exercise Time and
+  // Causality, which means they are full of remembering, waiting and because
+  // — and every number from runs one to seven came off them. That shows: the
+  // `horizon` channel appeared in 86% of expressive beats, which reads as a
+  // fact about the engine and may be a fact about the sample. A corpus chosen
+  // to contain temporal language will find temporal language.
+  //
+  // `general` is six stories across the kinds of narration this product is
+  // actually pointed at — an explainer, a process, a piece of history, a
+  // business account, an interpersonal scene, a piece of abstract exposition.
+  // None was written with a detector in mind.
+  //
+  // The old set is not replaced, because seven runs of recorded baselines are
+  // only comparable against the corpus that produced them. Results are
+  // reported per set and pooled.
+  //
+  // One bias this does not remove: I wrote both sets, and I know what the
+  // detectors look for. Genuinely external prose would be better and is the
+  // obvious next improvement to this instrument.
+  const SETS = {
+    temporal: ['redundancy', 'diagnosis', 'startup', 'plain'],
+    general: ['photosynthesis', 'bread', 'bridge', 'quarter', 'apology', 'inflation']
+  };
+
   const STORIES = {
     redundancy: [
       'Marcus had worked at the plant for nineteen years.',
@@ -407,8 +478,63 @@
       'A woman weighed a basket of lemons on a brass scale.',
       'Gulls circled above the awnings.',
       'By noon the stalls were bare.'
+    ],
+
+    // --- general set: ordinary narration, no detector in mind -------------
+
+    // Expository science. The core explainer case, and the one with no
+    // human subject anywhere in it.
+    photosynthesis: [
+      'A leaf takes in carbon dioxide through pores on its underside.',
+      'Water travels up from the roots through narrow vessels.',
+      'Chlorophyll in the leaf absorbs energy from sunlight.',
+      'That energy splits the water and releases oxygen.',
+      'What remains is sugar, which the plant stores or spends.'
+    ],
+    // Process with a person doing physical things to objects.
+    bread: [
+      'She mixed flour, water and salt in a wide bowl.',
+      'The dough rested on the counter for an hour.',
+      'She folded it over itself and left it again.',
+      'The oven heated while the loaf proved in a basket.',
+      'It came out dark and hollow-sounding underneath.'
+    ],
+    // History. Named people, dates, institutions, consequence.
+    bridge: [
+      'The city council approved the crossing in 1883.',
+      'Engineers drove caissons into the riverbed by hand.',
+      'Twenty-seven workers died before the towers were finished.',
+      'The bridge opened to traffic on a cold morning in May.',
+      'It carried more people in a day than the ferries had in a week.'
+    ],
+    // Business reporting. Numbers, entities, no physical scene at all.
+    quarter: [
+      'Revenue grew eleven percent over the previous quarter.',
+      'Most of the increase came from enterprise renewals.',
+      'Marketing spend stayed flat while headcount rose.',
+      'The board asked for a hiring freeze until March.',
+      'Two competitors cut their prices the same week.'
+    ],
+    // Interpersonal, dialogue-adjacent, two people.
+    apology: [
+      'Daniel knocked on the door twice before she answered.',
+      'He said he had been wrong about the money.',
+      'She listened without interrupting him.',
+      'They sat at the kitchen table for a long time.',
+      'Neither of them mentioned it again.'
+    ],
+    // Abstract exposition. No people, no objects, no place.
+    inflation: [
+      'Inflation measures how quickly money loses its purchasing power.',
+      'Central banks raise interest rates to slow it down.',
+      'Higher rates make borrowing more expensive for everyone.',
+      'Spending falls, and prices rise more slowly than before.',
+      'The cost of that adjustment is usually unemployment.'
     ]
   };
+
+  const setOf = (name) => Object.keys(SETS)
+    .find((s) => SETS[s].indexOf(name) > -1) || 'unsorted';
 
   const wordsFrom = (text) => text.split(/\s+/).map((w, i) => ({
     text: w, start: i * 0.4, end: i * 0.4 + 0.34
@@ -767,7 +893,8 @@
 
   async function run(opts) {
     const o = opts || {};
-    const names = o.only ? [o.only] : Object.keys(STORIES);
+    const names = o.only ? [o.only]
+      : (o.set ? (SETS[o.set] || []) : Object.keys(STORIES));
     const report = [];
     const sheets = [];
     const allShots = [];
@@ -805,6 +932,7 @@
         orderEffect: compared ? +(sensitive / compared).toFixed(2) : 0,
         flow: flowOf(ordered.shots),
         diversity: diversityOf(ordered.shots),
+        set: setOf(name),
         staging: ordered.staging,
         why: ordered.shots.reduce((acc, s) => {
           if (s.reason) acc[s.reason] = (acc[s.reason] || 0) + 1;
@@ -821,11 +949,22 @@
         }))
       });
       sheets.push({ name, shots: ordered.shots });
+      ordered.shots.forEach((s) => { s.set = setOf(name); });
       allShots.push.apply(allShots, ordered.shots);
     }
 
     if (o.post !== false) await postSheet(sheets, o.post);
     report.totals = totals(report, allShots);
+    // Per set as well as pooled. A pooled figure over two corpora chosen on
+    // different principles describes neither of them, and the whole reason
+    // for splitting the sets is that one of them was selected for the
+    // channel that then dominated the results.
+    report.bySet = {};
+    Object.keys(SETS).forEach((s) => {
+      const rows = report.filter((r) => r.set === s);
+      if (!rows.length) return;
+      report.bySet[s] = totals(rows, allShots.filter((x) => x.set === s));
+    });
     return report;
   }
 
@@ -1060,5 +1199,5 @@
     };
   }
 
-  window.BlvckSeqBattery = { run, compare, selfTest, STORIES };
+  window.BlvckSeqBattery = { run, compare, selfTest, STORIES, SETS };
 })();
