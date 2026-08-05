@@ -62,27 +62,39 @@
 //
 // SECOND RUN — information flow, same corpus, same code path.
 //
-//   story        payload  delivered  unused  persistence (base)
-//   redundancy     0.60     0.60      0.00     0.00  (3)
-//   diagnosis      1.40     1.40      0.00     0.50  (6)
-//   startup        0.80     0.80      0.00     1.00  (2)
-//   plain          0.00     0.00       —        —    (0)
-//   ------------------------------------------------------------
-//   corpus         0.70     0.70      0.00     0.45  (11)
+//   story        payload  delivered  eff.  unused  persistence (base)
+//   redundancy     0.60     0.60     1.00   0.00     0.00  (3)
+//   diagnosis      1.40     1.40     1.00   0.00     0.50  (6)
+//   startup        0.80     0.80     1.00   0.00     1.00  (2)
+//   plain          0.00     0.00      —      —        —    (0)
+//   -------------------------------------------------------------------
+//   corpus         0.70     0.70     1.00   0.00     0.45  (11)
+//
+//   selfTest()     chair -> eff 1.00 / unused 0.00
+//                  hammock -> eff 0.00 / unused 1.00      pass
 //
 // PAYLOAD 0.70 CHANNELS PER BEAT. Not "35% of beats have something" but the
 // sharper form: the average beat yields two thirds of one channel. Seven
 // channels exist in the engine and a typical sentence lights none of them.
 //
 // DELIVERED EQUALS PAYLOAD, AND UNUSED IS ZERO. Every channel the producer
-// extracted reached pixels — no dormancy anywhere in the corpus. That number
-// is only worth stating because the detector was given a negative control:
-// support 'chair' traces drawn:true, support 'hammock' — a name with no
-// drawing behind it — traces drawn:false. The detector can see a dead
-// channel, so its silence means there was none to see.
+// extracted reached pixels. That number is only worth stating because the
+// detector was given a negative control: support 'chair' traces drawn:true,
+// support 'hammock' — a name with no drawing behind it — traces drawn:false.
+// The detector can see a dead channel, so its silence means there was none
+// to see.
+//
+// Stated exactly: NO DORMANCY AMONG THE TRACED CHANNELS ON THIS CORPUS. Not
+// "no dormancy", which is what the first draft of this note claimed and what
+// the data do not support. Seven channels are traced; anything the engine
+// gains later is invisible here until it is added to CHANNELS, and four
+// stories are a corpus, not a population. The narrow claim survives a future
+// integration change. The broad one would have been quietly falsified by it
+// and gone on being quoted.
 //
 // This is the first battery where the renderer was NOT at fault. Everything
-// handed to it was drawn. The loss is entirely upstream.
+// handed to it was drawn. The loss is entirely upstream — and the two numbers
+// separate cleanly: throughput is solved, bandwidth is not.
 //
 // PERSISTENCE 0.45 OVER A BASE OF 11. Under half of what one beat knows is
 // still known by the next. Per-story persistence is not worth quoting:
@@ -236,6 +248,13 @@
     return {
       payload: +(ext / shots.length).toFixed(2),
       delivered: +(drew / shots.length).toFixed(2),
+      // THE INVARIANT, stated rather than carried in someone's head. It reads
+      // as redundant today because it is 1.00 and payload already equals
+      // delivered. That is the point: the day a new channel is added and
+      // routed nowhere, this is the number that moves, and it moves before
+      // anyone thinks to go looking. Computed from the counts rather than
+      // from the two rounded means, so it cannot drift by rounding alone.
+      efficiency: ext ? +(drew / ext).toFixed(2) : null,
       unused: ext ? +(drop / ext).toFixed(2) : null,
       // Reported WITH its denominator, and null rather than 0 when there is
       // nothing to divide. One story scored a persistence of 1.00 off a single
@@ -264,6 +283,7 @@
       beats,
       payload: beats ? +(ext / beats).toFixed(2) : 0,
       delivered: beats ? +(drew / beats).toFixed(2) : 0,
+      efficiency: ext ? +(drew / ext).toFixed(2) : null,
       unused: ext ? +(drop / ext).toFixed(2) : null,
       persistence: carriable ? +(carried / carriable).toFixed(2) : null,
       carriable
@@ -378,5 +398,38 @@
       { method: 'POST', body: b64 }).then((r) => r.text());
   }
 
-  window.BlvckSeqBattery = { run, STORIES };
+  /**
+   * Prove the invariant can break.
+   *
+   * `efficiency` reads 1.00 on the corpus, and a ratio that has only ever
+   * been 1.00 is indistinguishable from one that is hardcoded. So a channel
+   * is deliberately broken — a support named 'hammock', which the producer
+   * will happily carry and the renderer has no drawing for — and the ratio
+   * must fall. If it does not, every future 1.00 means nothing.
+   *
+   * The same argument as the negative control on `unused`, applied to the
+   * derived number rather than the raw one.
+   */
+  async function selfTest() {
+    const St = window.BlvckStage;
+    const base = { index: 0, sceneSummary: 'She sat by the window.',
+                   subject: 'She sat by the window.', visualType: 'stickman', time: 1 };
+    const shotFor = async (support) => {
+      const trace = {};
+      const blob = await St.compose(Object.assign({}, base, { support }), { trace });
+      return { blob, text: base.sceneSummary,
+               payload: payloadOf(Object.assign({}, base, { support }), trace) };
+    };
+    const good = flowOf([await shotFor('chair')]);
+    const bad = flowOf([await shotFor('hammock')]);
+    return {
+      drawable: { efficiency: good.efficiency, unused: good.unused },
+      undrawable: { efficiency: bad.efficiency, unused: bad.unused },
+      // Both must hold, or neither number is load-bearing.
+      pass: good.efficiency === 1 && bad.efficiency === 0
+        && good.unused === 0 && bad.unused === 1
+    };
+  }
+
+  window.BlvckSeqBattery = { run, selfTest, STORIES };
 })();
