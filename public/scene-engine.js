@@ -601,10 +601,25 @@
       return { scenes: list, planned: 0, source: 'unavailable' };
     }
     try {
+      // TOKEN BUDGET, sized to the plan rather than left at the default.
+      //
+      // generateJSON falls back to max_tokens 1024 and nothing here overrode
+      // it, so every Director call in this project has been capped there. A
+      // five-beat plan carrying identity, structure, support and several
+      // objects per beat sits right on that boundary — a raw probe of the
+      // baking story truncated mid-object at `{"beat":4,` — and the richer
+      // the plan, the more certain the cut. That biases the output in the
+      // worst possible direction: plans get truncated precisely when the beat
+      // had a lot in it, and the salvaged tail arrives malformed rather than
+      // absent, which reads as a bad model instead of a clipped one.
+      //
+      // Roughly 220 tokens a beat plus headroom, floored so short narrations
+      // are not starved either.
+      const budget = Math.max(1536, Math.min(8192, 400 + list.length * 220));
       const res = await window.BlvckAI.generateJSON('/api/scene-plan', {
         subject: o.subject || 'the main subject',
         sentences: list.map((s) => s.subject || s.text || '')
-      }, o.aiOptions || {});
+      }, Object.assign({ max_tokens: budget }, o.aiOptions || {}));
       const beats = (res && res.beats) || [];
       let planned = 0;
       beats.forEach((b) => {
