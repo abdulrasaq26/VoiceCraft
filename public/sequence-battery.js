@@ -28,6 +28,38 @@
 //
 // Run from the console: BlvckSeqBattery.run().
 //
+// ==========================================================================
+// EVERY DIRECTOR NUMBER BELOW IS PROVISIONAL. READ THIS FIRST.
+// ==========================================================================
+//
+// All of them were produced under a prompt-delivery bug. BlvckPrompts.build()
+// returns {system, user}; chat() had no branch for that shape and sent
+// JSON.stringify({system, user}) as a single user message. The planner never
+// received a system prompt — it received a JSON blob and had to dig its
+// instructions out of an escaped string. Fixed in ai-provider.js.
+//
+// The correct status is PROVISIONAL UNTIL REPLICATED, not invalid. These runs
+// measured something real; they measured a planner working under a handicap,
+// and which conclusions depended on the handicap is an open question rather
+// than a settled one. A guess at what survives, recorded now so it can be
+// wrong later:
+//
+//   likely to replicate    efficiency near 1.00, delivery not the bottleneck,
+//                          keyword-arm figures (no model involved at all),
+//                          Director coverage and payload UP vs keywords
+//   likely to change       entropy 0.34, prevalence collapse, objects+support
+//                          dominance, the 15-of-16 signature, purity 0.70
+//   unaffected             everything measured with useDirector:false
+//
+// The bread finding is the one to watch. The ontology ceiling was real —
+// eight desk objects cannot express a kitchen whatever the prompt — but
+// `book` for "the dough rested" may have been the blob rather than the
+// vocabulary, and those are different diagnoses with different fixes.
+//
+// Replicate before quoting: bread and photosynthesis first, then run(), then
+// compare(). Do not regenerate the study fixture until that is done, or the
+// stimuli freeze a planner that was being prompted incorrectly.
+//
 // --- how to write down what this returns ---------------------------------
 //
 // Three summaries in this file have had to be narrowed after the fact, and

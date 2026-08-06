@@ -618,7 +618,23 @@
       const budget = Math.max(1536, Math.min(8192, 400 + list.length * 220));
       const res = await window.BlvckAI.generateJSON('/api/scene-plan', {
         subject: o.subject || 'the main subject',
-        sentences: list.map((s) => s.subject || s.text || '')
+        // THE NARRATION. Read `sceneSummary` and `subtitle` FIRST, because
+        // those are the fields every producer in this file actually writes —
+        // makeScene defines them and fromTimeline fills them from the words.
+        //
+        // This read `s.subject || s.text`, and no producer sets either. So
+        // the Director received five EMPTY STRINGS and was asked to stage a
+        // story it had never been shown. It answered the only way it could:
+        // by inventing something generic, which is where `book`, `pencil` and
+        // `laptop` came from on a baking story and a photosynthesis one
+        // alike, and why the same input gave different answers run to run —
+        // that was sampling noise on an empty prompt, not planner variance.
+        //
+        // Every Director measurement in this project was taken this way. The
+        // A/B that reported payload 0.70 -> 1.65 was comparing keyword
+        // discovery against a model improvising from nothing.
+        sentences: list.map((s) => s.sceneSummary || s.subtitle
+                                || s.subject || s.text || '')
       }, Object.assign({ max_tokens: budget }, o.aiOptions || {}));
       const beats = (res && res.beats) || [];
       let planned = 0;
