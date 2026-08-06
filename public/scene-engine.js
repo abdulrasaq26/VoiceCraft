@@ -600,6 +600,44 @@
     if (o.useDirector === false || !window.BlvckAI || !window.BlvckAI.generateJSON) {
       return { scenes: list, planned: 0, source: 'unavailable' };
     }
+    // --- pipeline invariant: the Director must be given something to read ---
+    //
+    // Checked BEFORE the call, deterministically, on every run. This project
+    // spent its entire measurement history handing the planner five empty
+    // strings, and not one of payload, entropy, efficiency, prevalence,
+    // persistence or purity could see it — because every one of them measures
+    // a property of the OUTPUT. An input can be void and the output still
+    // scores well, since a model with nothing to go on emits plausible
+    // furniture and plausible furniture is indistinguishable from discovery
+    // to a metric that counts presence.
+    //
+    // So there are two layers here and they protect different things:
+    //
+    //   pipeline invariants   narration non-empty, prompt delivered as a
+    //                         prompt, model actually invoked, purity, schema
+    //                         valid — cheap, deterministic, and PRECONDITIONS
+    //   behavioural metrics   payload, entropy, coverage, prevalence,
+    //                         efficiency — expensive, statistical, and
+    //                         MEANINGLESS if the first layer is violated
+    //
+    // The first is not a weaker version of the second. No amount of the
+    // second substitutes for the first.
+    //
+    // Named `blank-narration` in `source` rather than thrown, because
+    // planScenes' caller catches and silently falls back to keywords — a
+    // throw here would be swallowed into exactly the quiet degradation this
+    // exists to prevent. It has to come back as a value someone reads.
+    const narration = list.map((s) => s.sceneSummary || s.subtitle
+                                   || s.subject || s.text || '');
+    const blanks = narration.filter((t) => !String(t).trim()).length;
+    if (blanks) {
+      console.error('[SceneEngine] Director NOT called: ' + blanks + ' of '
+        + list.length + ' beats have blank narration. Every Director metric '
+        + 'taken in this state is invalid — the planner would be inventing '
+        + 'content, not discovering it.');
+      return { scenes: list, planned: 0, source: 'blank-narration', blanks };
+    }
+
     try {
       // TOKEN BUDGET, sized to the plan rather than left at the default.
       //
@@ -633,8 +671,7 @@
         // Every Director measurement in this project was taken this way. The
         // A/B that reported payload 0.70 -> 1.65 was comparing keyword
         // discovery against a model improvising from nothing.
-        sentences: list.map((s) => s.sceneSummary || s.subtitle
-                                || s.subject || s.text || '')
+        sentences: narration
       }, Object.assign({ max_tokens: budget }, o.aiOptions || {}));
       const beats = (res && res.beats) || [];
       let planned = 0;
