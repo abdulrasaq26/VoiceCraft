@@ -593,6 +593,27 @@
    * automatically — carried so staging can key off it later, and so a frame
    * can be traced back to what the Director thought it was looking at.
    */
+  /**
+   * FNV-1a over the things that decide what the planner sees.
+   *
+   * Not for security — for reproducibility. Two batteries that disagree are
+   * either measuring a real change or were handed different inputs, and
+   * nothing in this project could previously tell those apart. Runs nine and
+   * ten differ enormously and the honest reason is known only because the
+   * bug was found by hand; had it been subtler, the hashes would have
+   * separated "the planner behaves differently" from "the planner was asked
+   * something different" in one line.
+   */
+  function fingerprint(parts) {
+    const s = parts.join('');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return ('0000000' + h.toString(16)).slice(-8);
+  }
+
   async function planScenes(scenes, opts) {
     const o = opts || {};
     const list = Array.isArray(scenes) ? scenes : [];
@@ -680,7 +701,7 @@
       // Roughly 220 tokens a beat plus headroom, floored so short narrations
       // are not starved either.
       const budget = Math.max(1536, Math.min(8192, 400 + list.length * 220));
-      const res = await window.BlvckAI.generateJSON('/api/scene-plan', {
+      const payload = {
         subject: o.subject || 'the main subject',
         // THE NARRATION. Read `sceneSummary` and `subtitle` FIRST, because
         // those are the fields every producer in this file actually writes —
@@ -698,7 +719,30 @@
         // A/B that reported payload 0.70 -> 1.65 was comparing keyword
         // discovery against a model improvising from nothing.
         sentences: narration
-      }, Object.assign({ max_tokens: budget }, o.aiOptions || {}));
+      };
+
+      // Hashed over everything that determines what the planner is asked:
+      // the narration, the beat indices it will be rejoined by, the model,
+      // the token budget, and the BUILT PROMPT — the last because a prompt
+      // edit changes the input as surely as a corpus edit does, and a version
+      // number has to be remembered to be bumped. build() is pure, so this
+      // costs a string.
+      let promptText = '';
+      try {
+        const p = window.BlvckPrompts && window.BlvckPrompts.build
+          ? window.BlvckPrompts.build('/api/scene-plan', payload) : null;
+        promptText = p ? String(p.system || '') + String(p.user || '') : '';
+      } catch (e) { promptText = 'unbuildable'; }
+      const inputHash = fingerprint([
+        narration.join(''),
+        list.map((s, i) => (s.index == null ? i : s.index)).join(','),
+        String((window.BlvckAI.chatModel && window.BlvckAI.chatModel()) || ''),
+        String(budget), promptText
+      ]);
+      pipeline.push({ check: 'planner-input-hash', ok: true, detail: inputHash });
+
+      const res = await window.BlvckAI.generateJSON('/api/scene-plan',
+        payload, Object.assign({ max_tokens: budget }, o.aiOptions || {}));
       const beats = (res && res.beats) || [];
       let planned = 0;
       beats.forEach((b) => {
@@ -711,7 +755,7 @@
         if (scene.identity == null) scene.identity = b.identity;
         planned++;
       });
-      return { scenes: list, planned, source: 'director' };
+      return { scenes: list, planned, source: 'director', pipeline, inputHash };
     } catch (err) {
       // Staging is an enhancement, not a requirement: an unplanned scene
       // renders exactly as it did before this existed.
