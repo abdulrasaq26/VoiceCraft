@@ -95,6 +95,31 @@
       messages = [{ role: 'user', content: promptOrMessages }];
     } else if (Array.isArray(promptOrMessages)) {
       messages = promptOrMessages;
+    } else if (promptOrMessages && typeof promptOrMessages === 'object'
+               && !promptOrMessages.role
+               && (promptOrMessages.system != null || promptOrMessages.user != null)) {
+      // THE SHAPE BlvckPrompts.build() RETURNS. Without this branch a
+      // {system, user} pair fell through to the generic object handler below,
+      // which has no `role` or `content` to find and therefore sent
+      // JSON.stringify({system, user}) as a single user message.
+      //
+      // Every generateJSON call in this app went out that way: the model
+      // received a JSON blob and had to dig its instructions out of an
+      // escaped string rather than being given a system prompt. Some models
+      // coped, some returned `book` and `pencil` for a photosynthesis story
+      // and put `thought` — a rel value — in the kind field.
+      //
+      // It is why removing the glyph list from the prompt changed nothing,
+      // why raising the token budget changed nothing, and why the same story
+      // gave different answers on different runs. The prompt was never the
+      // problem; the prompt was never being sent as a prompt. Calling
+      // chat(system + '\n\n' + user) by hand produced correct output all
+      // along, which is what finally separated the two paths.
+      messages = [];
+      if (promptOrMessages.system) {
+        messages.push({ role: 'system', content: String(promptOrMessages.system) });
+      }
+      messages.push({ role: 'user', content: String(promptOrMessages.user || '') });
     } else if (promptOrMessages && typeof promptOrMessages === 'object') {
       messages = [promptOrMessages];
     } else {
