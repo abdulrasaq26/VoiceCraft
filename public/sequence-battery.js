@@ -60,6 +60,64 @@
 // compare(). Do not regenerate the study fixture until that is done, or the
 // stimuli freeze a planner that was being prompted incorrectly.
 //
+// TENTH RUN — the replication. Done. valid: true, purity 0.80, selfTest
+// passed, 0 failovers, 1767s, meta/llama-3.3-70b-instruct. Same corpus, same
+// model, same metrics as run nine; the only change is that the Director now
+// receives its prompt as a prompt and the narration as narration.
+//
+//   GENERAL (30 beats)        run 9 (bug)   run 10 (fixed)
+//     producerPayload         0.03 -> 1.03   0.03 -> 1.20
+//     expressive               1/30 -> 16     1/30 -> 27
+//     entropy                 0.00 -> 0.34   0.00 -> 1.12
+//     combinations               1 -> 2         1 -> 3
+//     dominance               1.00 -> 0.94   1.00 -> 0.63
+//     no-actor                  17 -> 5        17 -> 0
+//     purity                        0.67           1.00
+//
+//   TEMPORAL (20 beats)
+//     producerPayload         0.70 -> 1.65   0.70 -> 1.25
+//     expressive               7/20 -> 15     7/20 -> 12
+//     entropy                 1.95 -> 2.21   1.95 -> 2.86
+//     combinations               4 -> 6         4 -> 8
+//     dominance               0.29 -> 0.40   0.29 -> 0.25
+//     purity                        0.75           0.50
+//
+//   efficiency 1.00 in every arm of both sets, both runs.
+//
+// FALSIFIED — THE ENTROPY COLLAPSE WAS THE BUG. Run nine found the Director
+// raising coverage sixteenfold on general prose while producing two
+// combinations and dominance 0.94: fifteen of sixteen expressive beats the
+// identical `objects+support`. That was read here as a real property, named
+// "the general gain is monotonous", built into a two-stage model separating
+// discovery from representation, and used to argue the bottleneck had moved.
+//
+// It was a model improvising from an empty narration. Given the sentences,
+// entropy triples, combinations rise 2 -> 3, dominance falls to 0.63 and
+// no-actor goes to ZERO — every one of thirty general beats now finds a
+// human subject. Coverage and diversity rose TOGETHER, which is exactly what
+// the two-stage split said did not happen. That model is withdrawn.
+//
+// SURVIVED. Every one of these held across the change:
+//   efficiency 1.00 and unused 0.00 — delivery is not the bottleneck for
+//     representable information, now shown under two implementations
+//   the Director beats keyword discovery by a wide margin
+//   the gain is LARGEST where keywords fail most — general 0.03 -> 1.20 is
+//     a 40x lift against temporal's 1.8x
+//   the arms converge: keyword payload spans 23x across the corpora,
+//     Director payload now spans 1.04x (1.20 vs 1.25), tighter than before
+//   the keyword arm is bit-identical, as it must be — no model involved
+//
+// CHANGED WITHOUT BEING WRONG. Temporal payload FELL, 1.65 -> 1.25, while
+// its entropy rose 2.21 -> 2.86 and its combinations 6 -> 8. Fewer objects,
+// more distinct arrangements. The old figure was partly invention; a planner
+// with nothing to go on emits plausible furniture, and that counts as payload
+// under a metric that measures presence rather than correctness.
+//
+// CAVEAT, and it is the weakest part of this run: temporal purity is 0.50 —
+// half those beats fell back to keywords, against 1.00 on general. The
+// temporal deltas rest on ten staged beats. The general set is the solid
+// half of this table.
+//
 // --- how to write down what this returns ---------------------------------
 //
 // Three summaries in this file have had to be narrowed after the fact, and
