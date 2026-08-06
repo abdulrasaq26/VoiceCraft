@@ -613,15 +613,23 @@
     //
     // So there are two layers here and they protect different things:
     //
-    //   pipeline invariants   narration non-empty, prompt delivered as a
-    //                         prompt, model actually invoked, purity, schema
-    //                         valid — cheap, deterministic, and PRECONDITIONS
+    //   pipeline invariants   narration non-empty and aligned, beats indexed,
+    //                         prompt delivered as a prompt, model actually
+    //                         invoked, purity, schema valid — cheap,
+    //                         deterministic, and PRECONDITIONS
     //   behavioural metrics   payload, entropy, coverage, prevalence,
     //                         efficiency — expensive, statistical, and
     //                         MEANINGLESS if the first layer is violated
     //
     // The first is not a weaker version of the second. No amount of the
     // second substitutes for the first.
+    //
+    // Stated precisely, because "the first layer was empty" overstates it:
+    // this project HAD infrastructure validation — self-tests, the A/B
+    // validity guard, purity — and almost no SEMANTIC INPUT validation. The
+    // existing checks confirmed that a thing ran; none confirmed that what it
+    // ran on meant anything. `purity` is the closest miss: it asks whether
+    // the model was invoked, never what it was handed.
     //
     // Named `blank-narration` in `source` rather than thrown, because
     // planScenes' caller catches and silently falls back to keywords — a
@@ -630,12 +638,30 @@
     const narration = list.map((s) => s.sceneSummary || s.subtitle
                                    || s.subject || s.text || '');
     const blanks = narration.filter((t) => !String(t).trim()).length;
-    if (blanks) {
-      console.error('[SceneEngine] Director NOT called: ' + blanks + ' of '
-        + list.length + ' beats have blank narration. Every Director metric '
-        + 'taken in this state is invalid — the planner would be inventing '
-        + 'content, not discovering it.');
-      return { scenes: list, planned: 0, source: 'blank-narration', blanks };
+
+    // Each check names the specific way an experiment can be invalid rather
+    // than reporting one undifferentiated "failed" — a misaligned narration
+    // and an unindexed beat are different bugs and want different fixes.
+    const pipeline = [
+      { check: 'narration-present', ok: blanks === 0,
+        detail: blanks + ' of ' + list.length + ' beats blank' },
+      // Beat indices are how the planner's answer is rejoined to the scenes.
+      // If the arrays are different lengths the join is silently off by
+      // however many, and every beat after the gap is annotated with the
+      // wrong sentence — which would look like a bad planner, not a bad join.
+      { check: 'narration-aligned', ok: narration.length === list.length,
+        detail: narration.length + ' sentences for ' + list.length + ' beats' },
+      { check: 'beats-indexed',
+        ok: list.every((s, i) => Number.isFinite(s.index) || i === list.indexOf(s)),
+        detail: 'every beat carries a usable index' }
+    ];
+    const failed = pipeline.filter((c) => !c.ok);
+    if (failed.length) {
+      console.error('[SceneEngine] Director NOT called — pipeline invariant '
+        + 'violated: ' + failed.map((c) => c.check + ' (' + c.detail + ')').join('; ')
+        + '. Behavioural metrics taken in this state describe a model '
+        + 'inventing content, not discovering it.');
+      return { scenes: list, planned: 0, source: failed[0].check, pipeline };
     }
 
     try {

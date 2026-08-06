@@ -1514,6 +1514,19 @@
       // Guards against the result that looks like a win and is not one: if
       // staging never says `director`, the B arm silently fell back to
       // keywords and every difference is noise.
+      // PIPELINE STATUS, printed above the behavioural numbers rather than
+      // beside them, because they are not peers: if any line here is false
+      // the numbers below describe a broken experiment and reading them is
+      // worse than having none. Every entry is a precondition someone can
+      // check in O(1) and that no output metric can substitute for.
+      pipeline: {
+        'prompt-delivered': true,     // asserted in generateJSON
+        'narration-present': !(A.totals.blankNarration || B.totals.blankNarration),
+        'model-invoked': !!(B.totals.staging && B.totals.staging.director),
+        'director-purity': purityOf(B.totals.staging, 'director'),
+        'renderer-completed': A.totals.beats > 0 && B.totals.beats > 0,
+        'selftest': undefined         // filled by the caller when run
+      },
       valid: !!(B.totals.staging && B.totals.staging.director),
       // Printed whether or not it is 1.00, so a summary cannot be written
       // without it having been on screen.

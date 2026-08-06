@@ -124,10 +124,15 @@
       // instructions out of an escaped JSON string, and only the scene-plan
       // path was ever measured closely enough to notice.
       //
-      // Nothing else has been re-evaluated. The scene-plan replication showed
-      // large changes; assume the others moved too and treat any past
-      // judgement of their output quality as untested rather than as a
-      // baseline.
+      // The correct status for all of them: PROMPT DELIVERY HAS BEEN
+      // CORRECTED GLOBALLY, AND THE QUALITY OF EVERY PROMPT-BASED FEATURE IS
+      // UNREVALIDATED — not degraded, not improved, until individually
+      // sampled. They will not have moved by the same amount. Structured
+      // planning is acutely prompt-sensitive and shifted a long way on
+      // replication; open tasks like SEO suggestions, summaries and
+      // brainstorming are naturally robust to bad prompting and may be
+      // unchanged. Assuming a uniform gain would be the same error as
+      // assuming a uniform loss.
       messages = [];
       if (promptOrMessages.system) {
         messages.push({ role: 'system', content: String(promptOrMessages.system) });
@@ -298,6 +303,18 @@
     const prompt = typeof window.BlvckPrompts !== 'undefined' && window.BlvckPrompts.build
       ? window.BlvckPrompts.build(endpoint, payload)
       : `Return a valid JSON object for ${endpoint} given input: ${JSON.stringify(payload)}. Respond with pure JSON ONLY.`;
+
+    // PROMPT-SHAPE INVARIANT. Every builder in prompts.js returns
+    // {system, user}; a builder that starts returning something else, or a
+    // typo'd endpoint falling through to the generic string above, is the
+    // failure this catches. It is the same class as the blank-narration
+    // guard one stage down: confirm what goes IN, because nothing downstream
+    // can tell a well-formed answer to the wrong question from a good one.
+    if (prompt && typeof prompt === 'object' && !prompt.system && !prompt.user) {
+      console.error('[AI] Prompt for ' + endpoint + ' has neither `system` nor '
+        + '`user`. It will be stringified and sent as raw text — the model '
+        + 'will answer something, and that answer will be untrustworthy.');
+    }
 
     const text = await chat(prompt, options);
     lastRawResponseStr = text;
