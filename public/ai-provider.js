@@ -115,6 +115,19 @@
       // problem; the prompt was never being sent as a prompt. Calling
       // chat(system + '\n\n' + user) by hand produced correct output all
       // along, which is what finally separated the two paths.
+      //
+      // SCOPE — this was not a scene-plan bug. All nine builders in
+      // prompts.js return {system, user}, so every LLM feature in the product
+      // went out this way: script, SEO, research, audit, storyboard bible,
+      // storyboard scenes, story state, scene plan and video plan. Anything
+      // downstream of them was working from a model that had to dig its
+      // instructions out of an escaped JSON string, and only the scene-plan
+      // path was ever measured closely enough to notice.
+      //
+      // Nothing else has been re-evaluated. The scene-plan replication showed
+      // large changes; assume the others moved too and treat any past
+      // judgement of their output quality as untested rather than as a
+      // baseline.
       messages = [];
       if (promptOrMessages.system) {
         messages.push({ role: 'system', content: String(promptOrMessages.system) });
