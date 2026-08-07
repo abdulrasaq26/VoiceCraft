@@ -367,14 +367,27 @@
     const nd = rate(answers.filter(a => a.arm === 'director' && !a.staged));
     if (nk && nd) {
       const gap = Math.round(Math.abs(nk.correct - nd.correct) * 100);
+      // ONE PARTICIPANT CANNOT CALIBRATE THIS. The null arms carry ~5 trials
+      // each in a single sitting, and 5 trials of a six-way choice swing
+      // enormously — a full walkthrough answering at random produced a
+      // 20-point gap, which as a noise floor would swallow any real effect
+      // the study could detect. The null is a POOLED quantity: it means
+      // something across a dozen participants and nothing within one, so the
+      // wording says so rather than inviting a reader to apply it now.
+      const thin = (nk.n + nd.n) < 40;
       el('nullnote').textContent =
         'Null check: on the ' + Object.keys(FIX.stories).filter(s => !staged(s)).length +
-        ' stories where the Director fell back, both arms rendered the identical ' +
-        'picture. The gap between those two rows is ' + gap + ' points and should ' +
-        'be near zero. Treat any real difference smaller than ' + gap + ' points as ' +
-        'nothing. If this number is large, the finding is about the study rather ' +
-        'than the producers — check the trial numbers for order effects before ' +
-        'reading anything else.';
+        ' stories held at identical staging, both arms render the same picture, '
+        + 'so the gap between those rows is measurement noise rather than a '
+        + 'producer effect. Here it is ' + gap + ' points across ' + (nk.n + nd.n)
+        + ' trials'
+        + (thin
+          ? ' — far too few to calibrate anything. This figure is only meaningful '
+            + 'POOLED ACROSS PARTICIPANTS; do not treat it as a threshold for a '
+            + 'single session. Pool a dozen sittings before quoting it.'
+          : '. Treat any producer difference smaller than that as nothing.')
+        + ' If it stays large once pooled, the finding is about the study rather '
+        + 'than the producers — check the trial numbers for order effects first.';
     }
 
     el('save').onclick = () => {
