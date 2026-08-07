@@ -12,6 +12,29 @@
 
   let lastRawResponseStr = '';
 
+  // --- OpenAI OAuth circuit breaker ---------------------------------------
+  //
+  // Persisted, because a production run is many page loads and an in-memory
+  // flag would re-learn the same lesson on each one. Fifteen minutes is long
+  // enough to save a whole render queue and short enough that a topped-up
+  // account is picked up without anyone restarting anything.
+  const OA_COOLDOWN_MS = 15 * 60 * 1000;
+  const OA_BREAKER_KEY = 'blvck:oa-breaker-until';
+
+  function oaBreakerOpen() {
+    try {
+      const until = Number(localStorage.getItem(OA_BREAKER_KEY) || 0);
+      return Number.isFinite(until) && Date.now() < until;
+    } catch { return false; }
+  }
+  function oaBreakerTrip() {
+    try { localStorage.setItem(OA_BREAKER_KEY, String(Date.now() + OA_COOLDOWN_MS)); }
+    catch { /* private mode — degrade to per-session behaviour */ }
+  }
+  function oaBreakerReset() {
+    try { localStorage.removeItem(OA_BREAKER_KEY); } catch { /* no-op */ }
+  }
+
   // Persist which model actually generated a task for the current project —
   // Channel Brain joins this against logged performance to learn which
   // models correlate with results (see brain.js modelBias()).
@@ -171,7 +194,18 @@
                        (targetModel && (targetModel.includes('chatgpt') || targetModel.startsWith('gpt-')));
 
     // 1.5 OpenAI OAuth Primary Execution (ChatGPT Account for ALL tasks across app)
-    if (isOaActive && (isOaTarget || !window.ProviderManager?.getActiveKey('nim'))) {
+    //
+    // CIRCUIT BREAKER. When the ChatGPT account hits its usage limit this
+    // route fails after three internal retries, roughly ten seconds, and then
+    // falls through to NIM anyway. Every generation in a production run pays
+    // that ten seconds for an answer that was never coming — on a fifty-beat
+    // video that is eight minutes of waiting to be told no fifty times.
+    //
+    // Chosen over pinning the model because pinning is a setting someone
+    // changes back, and this recovers on its own: after the cooldown the next
+    // call tries again, so quota returning needs no intervention.
+    if (isOaActive && (isOaTarget || !window.ProviderManager?.getActiveKey('nim'))
+        && !oaBreakerOpen()) {
       try {
         const oaModel = (targetModel && targetModel.startsWith('gpt-')) ? targetModel : 'gpt-5.4-mini';
         console.log(`[BlvckAI] Routing task [${taskType}] via OpenAI OAuth (ChatGPT Account) using [${oaModel}]`);
@@ -186,7 +220,17 @@
         recordModelUsed(taskType, oaModel);
         return text;
       } catch (oaErr) {
-        console.warn(`[BlvckAI] OpenAI OAuth task [${taskType}] failed, attempting fallback:`, oaErr.message);
+        // Only quota trips the breaker. A one-off network blip or a bad
+        // request should not disable a working provider for a quarter of an
+        // hour — those fall through and are retried next call as before.
+        if (/usage limit|quota|rate.?limit|insufficient|429/i.test(String(oaErr && oaErr.message))) {
+          oaBreakerTrip();
+          console.warn(`[BlvckAI] OpenAI OAuth is out of quota. Skipping it for `
+            + `${Math.round(OA_COOLDOWN_MS / 60000)} minutes so every generation `
+            + `stops paying its timeout. It retries automatically after that.`);
+        } else {
+          console.warn(`[BlvckAI] OpenAI OAuth task [${taskType}] failed, attempting fallback:`, oaErr.message);
+        }
       }
     }
 
@@ -681,6 +725,10 @@
     chat,
     chatStream,
     generateJSON,
+    // Exposed so a topped-up account can be picked up immediately rather than
+    // waiting out the cooldown: BlvckAI.clearQuotaBlock().
+    clearQuotaBlock: oaBreakerReset,
+    quotaBlocked: oaBreakerOpen,
     speak,
     generateImage,
     generateVideo,
