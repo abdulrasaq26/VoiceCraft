@@ -554,6 +554,39 @@
       if (refs.mode === 'CANVAS') {
         if (!window.BlvckGraphic) throw new Error('graphic renderer unavailable');
         const g = scene.graphic || {};
+
+        // STORY BEATS GO TO THE COMPOSITOR; INFORMATION CARDS STAY HERE.
+        //
+        // This queue called BlvckGraphic.render for every canvas beat, and for
+        // visualType 'stickman' that reached the OLD stickman engine. Meanwhile
+        // BlvckStage.compose — pose space, interactions, support, anchors,
+        // subject framing, camera, metaphors, objects, identity, matte, gaze,
+        // palette continuity — was called by nothing in the app. Only by the
+        // study harness.
+        //
+        // attachState was writing entity, interaction, objects and support onto
+        // scenes that this function then handed to a renderer reading none of
+        // those fields. Every battery in the last stretch ran through compose()
+        // — real code, and not the code the product runs.
+        //
+        // A chart, map, timeline or whiteboard is TYPESET and belongs to the
+        // graphic renderer. A stickman beat is STAGED. The compositor draws
+        // information itself when a beat carries both.
+        const staged = String(scene.visualType || '') === 'stickman'
+          && window.BlvckStage && window.BlvckStage.compose;
+        if (staged) {
+          const blob = await window.BlvckStage.compose(scene, {});
+          await idbPut(String(scene.index), blob);
+          try {
+            window.dispatchEvent(new CustomEvent('blvck:clip-rendered', {
+              detail: { index: scene.index, kind: 'image' }
+            }));
+          } catch { /* no-op */ }
+          st[key] = { status: 'canvas', visualType: scene.visualType,
+                      bytes: blob.size, staged: true, at: Date.now() };
+          writeState(st);
+          return st[key];
+        }
         // The title is the POINT of the card, not a description of a picture.
         // Using sceneSummary put "The farmer examines a thin, underfilled rice
         // head" above a chart about production falling twenty percent.

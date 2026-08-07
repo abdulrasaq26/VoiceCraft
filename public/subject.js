@@ -12,11 +12,34 @@
 //
 // The subject is a GROUP, not an object:
 //
-//   actor       one figure. A reaction shot.
-//   workstation figure + what they are working at + the litter around it.
-//   pair        two figures and the space between them, which is the point.
-//   object      a thing, with the figure incidental or absent.
-//   place       the room. Establishing.
+//   actor    one figure. A reaction shot.
+//   context  figure + what they are with: a desk, a bed, a microphone, a roof.
+//   pair     two figures and the space between them, which is the point.
+//   group    three or more. A team, a family, a crowd.
+//   object   a thing, with the figure incidental or absent.
+//   place    the room. Establishing.
+//
+// THAT SET IS MEASURED, NOT INVENTED. 48 beats spanning eight genres were put
+// to the Director with an open vocabulary -- name what the camera should
+// frame, in your own words, not from a list. It returned 48 DISTINCT labels,
+// no reuse at all: doctor_and_patient, phone_on_table, rising_floodwater,
+// girl_at_microphone. Asked separately to cluster its own answers into the
+// smallest set a camera would frame differently, it produced six:
+//
+//   single_person              12    actor
+//   single_person_with_context 10    context
+//   two_people                 10    pair
+//   single_object               6    object
+//   group_of_people             6    group
+//   empty_scene                 4    place
+//
+// Two things follow. First, subject IDENTITY is open-ended (48/48 unique) but
+// subject TYPE is closed and small — so framing rules key off the type while
+// staging and object choice key off the identity. Second, `workstation` was
+// the wrong name: it was one instance mistaken for the category. A patient on
+// a bed, a girl at a microphone and a person on a roof are the same structure
+// as a student at a desk. Renamed to `context`, and `group` was simply
+// missing — 12.5% of beats, every one of them unrenderable today.
 //
 // Note what this is NOT. It does not describe furniture geometry or make a
 // chair interlock with a desk -- a hand-authored workstation arrangement was
@@ -64,7 +87,18 @@
       case 'place':
         return { x0: 0, y0: 0, x1: 1, y1: 1 };
 
-      case 'workstation':
+      case 'group':
+        // Everyone, plus the gaps between them. A crowd framed on one member
+        // is a portrait, not a group.
+        (p.actors || []).forEach((act) => boxes.push({
+          x0: act.x - (act.unit * 2.4) / W, x1: act.x + (act.unit * 2.4) / W,
+          y0: act.y - (act.unit * 3.8) / H, y1: act.y + (act.unit * 3.4) / H
+        }));
+        if (!boxes.length && actorBox) boxes.push(actorBox);
+        break;
+
+      case 'context':
+      case 'workstation':   // former name, kept so existing scenes keep working
         if (actorBox) boxes.push(actorBox);
         // The surface being worked at is half the subject. Without it the
         // crop says "a man on a chair".
@@ -170,18 +204,29 @@
   // it crops away the thing that mattered.
   function infer(scene) {
     const s = scene || {};
+    // The Director's structure, when it staged this beat. Validated at the
+    // prompt boundary, so anything arriving here is one of the six.
+    if (s.subjectKind && SHOTS_KINDS.indexOf(s.subjectKind) > -1) return s.subjectKind;
     if (s.subject && SHOTS_KINDS.indexOf(s.subject) > -1) return s.subject;
     const actors = (s.actors && s.actors.count) || 1;
-    if (actors >= 2) return 'pair';
-    if (s.support && s.support !== 'ground') return 'workstation';
-    if (s.objects && s.objects.some((o) => o.rel === 'held' || o.rel === 'surface')) {
-      return 'workstation';
+    if (actors >= 3) return 'group';
+    if (actors === 2) return 'pair';
+    if (s.support && s.support !== 'ground') return 'context';
+    // Residue is excluded. A prop carried forward from the beat that CAUSED
+    // this one is not what this beat is about — it is context in the ordinary
+    // sense, not a `context` subject. When it counted, adding two faint props
+    // to a lone figure flipped the structure from `actor` to `context` and
+    // pulled the shot from a medium to a wide, so a causal link silently
+    // rewrote the framing of the beat it was supposed to annotate.
+    if (s.objects && s.objects.some((o) => !o.residue
+        && (o.rel === 'held' || o.rel === 'surface'))) {
+      return 'context';
     }
     if (!s.entity && !s.entities) return 'place';
     return 'actor';
   }
 
-  const SHOTS_KINDS = ['actor', 'workstation', 'pair', 'object', 'place'];
+  const SHOTS_KINDS = ['actor', 'context', 'pair', 'group', 'object', 'place', 'workstation'];
 
   window.BlvckSubject = {
     SHOTS, KINDS: SHOTS_KINDS, boundsOf, cameraFor, apply, infer

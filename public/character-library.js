@@ -269,7 +269,99 @@
     return added;
   }
 
+  /**
+   * How a named character LOOKS to the procedural renderer.
+   *
+   * The missing join. Cast has always known what a character looks like and
+   * everything it knows reached image and video PROMPTS only — descriptors,
+   * seeds, reference images. The compositor drew anonymous figures with no
+   * idea they had identities, so the Director could emit
+   * identity=old_man_alone and the frame was byte-identical to
+   * young_woman_alone. Measured: 0 differing pixels.
+   *
+   * DERIVED, NOT STORED, so an identity the Director invents on the spot still
+   * looks consistent without anyone registering it first. A registered Cast
+   * member's own seed takes precedence when present, which is what keeps a
+   * named character stable across a whole project.
+   *
+   * Deliberately does NOT choose a free colour. Sequence colour continuity was
+   * fixed two commits ago by giving the whole run one palette, and handing
+   * every character an arbitrary hue would undo exactly that. Identity shifts
+   * WITHIN the palette and changes size — the channel `instruct` proved does
+   * most of the work in telling an adult from a child.
+   */
+  function appearanceFor(identity, palette) {
+    const id = String(identity || '').trim().toLowerCase();
+    if (!id) return null;
+
+    let h = 2166136261;
+    for (let i = 0; i < id.length; i++) {
+      h ^= id.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    const known = has(id) ? seedFor(id) : null;
+    const seed = known != null ? Number(known) : (h >>> 0);
+    const r1 = ((seed % 997) / 997);
+    const r2 = (((seed >>> 7) % 991) / 991);
+
+    // Words that describe stature outrank the hash: a child should be small
+    // because it is a child, not because its name happened to hash low.
+    //
+    // Tested against the identity with underscores turned into spaces. `_` is
+    // a WORD character in JS regex, so /\bchild\b/ does not match inside
+    // "child_at_window" — there is no boundary after "child". The stature test
+    // silently never fired and the child rendered adult-sized. Fourth
+    // appearance of this family in one session, and the first I wrote while
+    // fixing the previous three.
+    const words = id.replace(/[_\-]+/g, ' ');
+    const small = /\b(child|kid|boy|girl|daughter|son|baby|toddler|student|pupil)\b/.test(words);
+    const large = /\b(man|woman|father|mother|doctor|officer|judge|soldier|manager)\b/.test(words);
+
+    const base = (palette && palette.accent) || '#f5b301';
+    return {
+      // A shift along the palette, not a replacement for it.
+      colour: shiftHue(base, (r1 - 0.5) * 26),
+      scale: small ? 0.74 : (large ? 1.06 : 0.92 + r2 * 0.16),
+      seed
+    };
+  }
+
+  /** Rotate a hex colour's hue by a few degrees, keeping its light and sat. */
+  function shiftHue(hex, deg) {
+    const s = String(hex).replace('#', '');
+    const n = s.length === 3 ? s.split('').map((c) => parseInt(c + c, 16))
+      : [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+    if (n.some(isNaN)) return hex;
+    const [r, g, b] = n.map((v) => v / 255);
+    const mx = Math.max(r, g, b);
+    const mn = Math.min(r, g, b);
+    const l = (mx + mn) / 2;
+    const d = mx - mn;
+    let hh = 0;
+    if (d) {
+      if (mx === r) hh = ((g - b) / d) % 6;
+      else if (mx === g) hh = (b - r) / d + 2;
+      else hh = (r - g) / d + 4;
+    }
+    hh = (hh * 60 + deg + 360) % 360;
+    const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    const c = (1 - Math.abs(2 * l - 1)) * sat;
+    const x = c * (1 - Math.abs(((hh / 60) % 2) - 1));
+    const m = l - c / 2;
+    const seg = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][Math.floor(hh / 60) % 6];
+    return '#' + seg.map((v) => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
+  }
+
+  // ⚠ FIVE OF ITS SIX CALL SITES ARE IN ltx-video.js, WHICH IS SCHEDULED FOR
+  // REMOVAL. Only storyboard.js:502 (importFromBible) survives that deletion.
+  //
+  // Cast is not orphaned by removing LTX, but it is reduced to a single
+  // consumer, and everything it does for character consistency — reference
+  // images, seeds, descriptors — currently only reaches image and video
+  // prompts. None of it reaches the procedural renderer, which has its own
+  // notion of who is on screen and no connection to this one.
   window.BlvckCast = {
+    appearanceFor,
     FIELDS,
     list,
     get,

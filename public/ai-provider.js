@@ -12,6 +12,29 @@
 
   let lastRawResponseStr = '';
 
+  // --- OpenAI OAuth circuit breaker ---------------------------------------
+  //
+  // Persisted, because a production run is many page loads and an in-memory
+  // flag would re-learn the same lesson on each one. Fifteen minutes is long
+  // enough to save a whole render queue and short enough that a topped-up
+  // account is picked up without anyone restarting anything.
+  const OA_COOLDOWN_MS = 15 * 60 * 1000;
+  const OA_BREAKER_KEY = 'blvck:oa-breaker-until';
+
+  function oaBreakerOpen() {
+    try {
+      const until = Number(localStorage.getItem(OA_BREAKER_KEY) || 0);
+      return Number.isFinite(until) && Date.now() < until;
+    } catch { return false; }
+  }
+  function oaBreakerTrip() {
+    try { localStorage.setItem(OA_BREAKER_KEY, String(Date.now() + OA_COOLDOWN_MS)); }
+    catch { /* private mode — degrade to per-session behaviour */ }
+  }
+  function oaBreakerReset() {
+    try { localStorage.removeItem(OA_BREAKER_KEY); } catch { /* no-op */ }
+  }
+
   // Persist which model actually generated a task for the current project —
   // Channel Brain joins this against logged performance to learn which
   // models correlate with results (see brain.js modelBias()).
@@ -95,6 +118,49 @@
       messages = [{ role: 'user', content: promptOrMessages }];
     } else if (Array.isArray(promptOrMessages)) {
       messages = promptOrMessages;
+    } else if (promptOrMessages && typeof promptOrMessages === 'object'
+               && !promptOrMessages.role
+               && (promptOrMessages.system != null || promptOrMessages.user != null)) {
+      // THE SHAPE BlvckPrompts.build() RETURNS. Without this branch a
+      // {system, user} pair fell through to the generic object handler below,
+      // which has no `role` or `content` to find and therefore sent
+      // JSON.stringify({system, user}) as a single user message.
+      //
+      // Every generateJSON call in this app went out that way: the model
+      // received a JSON blob and had to dig its instructions out of an
+      // escaped string rather than being given a system prompt. Some models
+      // coped, some returned `book` and `pencil` for a photosynthesis story
+      // and put `thought` — a rel value — in the kind field.
+      //
+      // It is why removing the glyph list from the prompt changed nothing,
+      // why raising the token budget changed nothing, and why the same story
+      // gave different answers on different runs. The prompt was never the
+      // problem; the prompt was never being sent as a prompt. Calling
+      // chat(system + '\n\n' + user) by hand produced correct output all
+      // along, which is what finally separated the two paths.
+      //
+      // SCOPE — this was not a scene-plan bug. All nine builders in
+      // prompts.js return {system, user}, so every LLM feature in the product
+      // went out this way: script, SEO, research, audit, storyboard bible,
+      // storyboard scenes, story state, scene plan and video plan. Anything
+      // downstream of them was working from a model that had to dig its
+      // instructions out of an escaped JSON string, and only the scene-plan
+      // path was ever measured closely enough to notice.
+      //
+      // The correct status for all of them: PROMPT DELIVERY HAS BEEN
+      // CORRECTED GLOBALLY, AND THE QUALITY OF EVERY PROMPT-BASED FEATURE IS
+      // UNREVALIDATED — not degraded, not improved, until individually
+      // sampled. They will not have moved by the same amount. Structured
+      // planning is acutely prompt-sensitive and shifted a long way on
+      // replication; open tasks like SEO suggestions, summaries and
+      // brainstorming are naturally robust to bad prompting and may be
+      // unchanged. Assuming a uniform gain would be the same error as
+      // assuming a uniform loss.
+      messages = [];
+      if (promptOrMessages.system) {
+        messages.push({ role: 'system', content: String(promptOrMessages.system) });
+      }
+      messages.push({ role: 'user', content: String(promptOrMessages.user || '') });
     } else if (promptOrMessages && typeof promptOrMessages === 'object') {
       messages = [promptOrMessages];
     } else {
@@ -128,7 +194,18 @@
                        (targetModel && (targetModel.includes('chatgpt') || targetModel.startsWith('gpt-')));
 
     // 1.5 OpenAI OAuth Primary Execution (ChatGPT Account for ALL tasks across app)
-    if (isOaActive && (isOaTarget || !window.ProviderManager?.getActiveKey('nim'))) {
+    //
+    // CIRCUIT BREAKER. When the ChatGPT account hits its usage limit this
+    // route fails after three internal retries, roughly ten seconds, and then
+    // falls through to NIM anyway. Every generation in a production run pays
+    // that ten seconds for an answer that was never coming — on a fifty-beat
+    // video that is eight minutes of waiting to be told no fifty times.
+    //
+    // Chosen over pinning the model because pinning is a setting someone
+    // changes back, and this recovers on its own: after the cooldown the next
+    // call tries again, so quota returning needs no intervention.
+    if (isOaActive && (isOaTarget || !window.ProviderManager?.getActiveKey('nim'))
+        && !oaBreakerOpen()) {
       try {
         const oaModel = (targetModel && targetModel.startsWith('gpt-')) ? targetModel : 'gpt-5.4-mini';
         console.log(`[BlvckAI] Routing task [${taskType}] via OpenAI OAuth (ChatGPT Account) using [${oaModel}]`);
@@ -143,7 +220,17 @@
         recordModelUsed(taskType, oaModel);
         return text;
       } catch (oaErr) {
-        console.warn(`[BlvckAI] OpenAI OAuth task [${taskType}] failed, attempting fallback:`, oaErr.message);
+        // Only quota trips the breaker. A one-off network blip or a bad
+        // request should not disable a working provider for a quarter of an
+        // hour — those fall through and are retried next call as before.
+        if (/usage limit|quota|rate.?limit|insufficient|429/i.test(String(oaErr && oaErr.message))) {
+          oaBreakerTrip();
+          console.warn(`[BlvckAI] OpenAI OAuth is out of quota. Skipping it for `
+            + `${Math.round(OA_COOLDOWN_MS / 60000)} minutes so every generation `
+            + `stops paying its timeout. It retries automatically after that.`);
+        } else {
+          console.warn(`[BlvckAI] OpenAI OAuth task [${taskType}] failed, attempting fallback:`, oaErr.message);
+        }
       }
     }
 
@@ -260,6 +347,18 @@
     const prompt = typeof window.BlvckPrompts !== 'undefined' && window.BlvckPrompts.build
       ? window.BlvckPrompts.build(endpoint, payload)
       : `Return a valid JSON object for ${endpoint} given input: ${JSON.stringify(payload)}. Respond with pure JSON ONLY.`;
+
+    // PROMPT-SHAPE INVARIANT. Every builder in prompts.js returns
+    // {system, user}; a builder that starts returning something else, or a
+    // typo'd endpoint falling through to the generic string above, is the
+    // failure this catches. It is the same class as the blank-narration
+    // guard one stage down: confirm what goes IN, because nothing downstream
+    // can tell a well-formed answer to the wrong question from a good one.
+    if (prompt && typeof prompt === 'object' && !prompt.system && !prompt.user) {
+      console.error('[AI] Prompt for ' + endpoint + ' has neither `system` nor '
+        + '`user`. It will be stringified and sent as raw text — the model '
+        + 'will answer something, and that answer will be untrustworthy.');
+    }
 
     const text = await chat(prompt, options);
     lastRawResponseStr = text;
@@ -626,6 +725,10 @@
     chat,
     chatStream,
     generateJSON,
+    // Exposed so a topped-up account can be picked up immediately rather than
+    // waiting out the cooldown: BlvckAI.clearQuotaBlock().
+    clearQuotaBlock: oaBreakerReset,
+    quotaBlocked: oaBreakerOpen,
     speak,
     generateImage,
     generateVideo,

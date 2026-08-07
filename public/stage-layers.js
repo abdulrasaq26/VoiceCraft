@@ -46,6 +46,21 @@
 
   // --- environments --------------------------------------------------------
   //
+  // ⚠ SUPERSEDED AND UNCONSUMED. environments.js draws these same rooms —
+  // kitchen, clinic, gym, office, meeting, classroom — as illustrated places
+  // that react to story state, and the compositor calls THAT one. This table
+  // is exported and nothing reads it.
+  //
+  // Found by auditing CONCEPTS with more than one representation rather than
+  // modules with no consumer. The earlier consumer audit missed this entirely,
+  // because it checked at module granularity: BlvckStageLayers is consumed, so
+  // the module looked healthy while a dead table sat inside it. Dead exports
+  // hide inside live modules.
+  //
+  // Left in place rather than deleted at the end of a long session: the
+  // primitives below it (counter, shelf, bed, desk, board) are shared with
+  // PROPS, so removal needs checking rather than confidence.
+  //
   // Deliberately crude: a few shapes that say "kitchen" or "office" without
   // competing with the actors. A detailed background would pull focus from the
   // figure, which is the thing carrying the story.
@@ -132,15 +147,26 @@
     book: (g, t, x, y, s) => { g.strokeStyle = t.ink; g.lineWidth = 3; g.strokeRect(x - s * .3, y - s * .22, s * .6, s * .44); g.beginPath(); g.moveTo(x, y - s * .22); g.lineTo(x, y + s * .22); g.stroke(); }
   };
 
+  // Every one of these was written as /\ba|b|c\b/ — which binds the word
+  // boundary to the FIRST and LAST alternative only, leaving everything
+  // between them free to match inside another word. So `form` matched
+  // "platform", `read` matched "already", `text` matched "context" and
+  // `invest` matched "investigation". Prop inference has been misfiring across
+  // the whole app on ordinary English, not only on the new object path that
+  // exposed it. Grouped, so the boundaries apply to every alternative.
   const PROP_HINTS = [
-    [/\blaptop|computer|coding|software\b/i, 'laptop'],
-    [/\bphone|call|text|mobile\b/i, 'phone'],
-    [/\bdocument|report|paper|contract|form\b/i, 'document'],
-    [/\bmoney|cash|salary|pay|price|cost|invest\b/i, 'money'],
-    [/\bcoffee|drink|tea|cup\b/i, 'cup'],
-    [/\bmedicine|pill|drug|dose|bottle\b/i, 'bottle'],
-    [/\bbriefcase|business trip|commut\b/i, 'briefcase'],
-    [/\bbook|read|study|textbook\b/i, 'book']
+    [/\b(laptop|computer|coding|software)\b/i, 'laptop'],
+    [/\b(phone|call|text|mobile)\b/i, 'phone'],
+    [/\b(document|report|paper|contract|form)s?\b/i, 'document'],
+    // Explicit endings, not \w*. Adding \w* to catch "invested" and "costs"
+    // reintroduced the bug one step along: it matched "investigation" and
+    // "costume" too. A stem is allowed to grow only in the ways it actually
+    // grows.
+    [/\b(money|cash|salary|pays?|paid|prices?|costs?|invest(?:ed|ing|ment|ments|s)?)\b/i, 'money'],
+    [/\b(coffee|drink|tea|cup)\b/i, 'cup'],
+    [/\b(medicine|pill|drug|dose|bottle)s?\b/i, 'bottle'],
+    [/\b(briefcase|business trip|commut\w*)\b/i, 'briefcase'],
+    [/\b(books?|read|reads|reading|studys?|studied|studying|textbooks?)\b/i, 'book']
   ];
 
   function inferProp(text) {

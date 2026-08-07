@@ -149,7 +149,18 @@
     const palette = window.BlvckGraphic
       ? window.BlvckGraphic.paletteFor(scene.subject || '')
       : { bg: '#0f1116', ink: '#f5f7fa', dim: '#9aa4b2', accent: '#f5b301', hot: '#ffe066' };
-    const t = { bg: palette.bg, ink: '#f5f7fa', dim: '#5b6472', accent: palette.accent, hot: palette.hot };
+    // COLOUR IS A PROPERTY OF THE SEQUENCE, NOT THE BEAT.
+    //
+    // paletteFor() keyed on each scene's own text, so a run of shots changed
+    // colour every time the narration changed subject: one green frame and
+    // three blue among ambers in the last battery. Nothing else in the frame
+    // survives that — a viewer reads it as a broken video before they read
+    // anything the staging is saying.
+    //
+    // A palette stamped by the producer wins, and opts.palette overrides both
+    // so a caller can force one.
+    const pal = opts.palette || scene.palette || palette;
+    const t = { bg: pal.bg, ink: '#f5f7fa', dim: '#5b6472', accent: pal.accent, hot: pal.hot };
 
     // ONE state change, every layer responds. Framing, light and vignette come
     // from the same fact as the pose, so a worsening beat is a tighter, darker
@@ -187,7 +198,26 @@
     // be photographed — so without this they arrive as words and leave as
     // words. Staged behind the actors, because the actor's position ON it is
     // what carries the meaning.
-    const spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
+    let spots = L ? L.placeActors(role, (scene.actors && scene.actors.count) || null) : [{ x: 0.5, y: 0.84, scale: 0.42 }];
+
+    // INTERACTION overrides symmetric placement.
+    //
+    // placeActors returns y = GROUND for every layout and pair positions
+    // symmetric about centre, so it cannot produce an asymmetric two-shot.
+    // Measured consequence: nine two-person situations in the 25-scene battery
+    // rendered as the SAME image. A proposal and an argument differ by
+    // relative height, distance and orientation — a pattern, not a number.
+    const IX = window.BlvckInteract;
+    const ixName = scene.interaction !== undefined
+      ? scene.interaction
+      : (IX ? IX.infer(scene.subject || '') : null);
+    if (IX && ixName && spots.length >= 2) {
+      const staged = IX.stage(ixName, spots[0] && spots[0].scale);
+      if (staged) {
+        spots = staged;
+        if (opts.trace) opts.trace.interaction = { name: ixName, means: IX.means(ixName) };
+      }
+    }
 
     // Where an actor ends up, resolved ONCE.
     //
@@ -231,8 +261,22 @@
     // hourglass metaphor put two time symbols in one image. The present thing
     // wins, because it belongs to the world rather than commenting on it.
     const CLAIMS = { drain: ['clock'], weight: ['book'], barrier: [], fork: [] };
+    // INTENT OUTRANKS WORDING.
+    //
+    // The metaphor vocabulary was chosen by keyword, so it illustrated the
+    // sentence rather than the situation: "he climbed for six hours" got a
+    // staircase because it contained the word climb, and two beats with the
+    // same words got the same picture however far the story had moved. A goal
+    // that is blocked is a barrier whatever the sentence says; a goal being
+    // advanced is a climb. Keywords still run for beats that are not about
+    // pursuing anything.
+    const goalMeta = (stateEnt && window.BlvckStoryState
+      && window.BlvckStoryState.metaphorForGoal)
+      ? window.BlvckStoryState.metaphorForGoal(stateEnt, scene.time || 0) : null;
     let metaName = scene.metaphor
+      || goalMeta
       || (scene.metaphor === null ? null : (M ? M.infer(scene.subject || '') : null));
+    if (goalMeta && opts.trace) opts.trace.metaphorFrom = 'goal';
     if (metaName && CLAIMS[metaName] && scene.objects) {
       const present = scene.objects.map((o) => o && o.kind);
       if (CLAIMS[metaName].some((k) => present.indexOf(k) > -1)) {
@@ -259,8 +303,13 @@
     const SUBJ = window.BlvckSubject;
     // Objects are PLANNED here rather than drawn, because their positions are
     // part of the subject's bounds.
-    const objPlan = (OBJ && scene.objects && scene.objects.length)
-      ? OBJ.plan({ objects: scene.objects },
+    // Residue is excluded from the bounds. A carried-forward cause is not a
+    // subject the camera has to accommodate — when it counted, adding two
+    // faint props to a beat pulled the shot from a medium to a wide and
+    // changed 19% of the frame, almost none of it the residue itself.
+    const framedObjects = (scene.objects || []).filter((o) => o && !o.residue);
+    const objPlan = (OBJ && framedObjects.length)
+      ? OBJ.plan({ objects: framedObjects },
           { x: lead.x, y: lead.y, unit: lead.unit,
             surfaceY: (L ? L.GROUND : 0.84) - 0.10 })
       : [];
@@ -316,7 +365,7 @@
       const rect = wide
         ? { x: 0.28, y: 0.09, w: 0.68, h: 0.66 }
         : { x: 0.60, y: 0.08, w: 0.36, h: 0.34 };   // a reference, not the subject
-      infoRect = await drawInformation(ctx, info, rect, palette);
+      infoRect = await drawInformation(ctx, info, rect, pal);
     }
 
     // ---- 1c. Support ----------------------------------------------------
@@ -327,6 +376,27 @@
     let support = null;
     if (OBJ && supportName !== 'ground') {
       support = OBJ.drawSupport(ctx, t, supportName, lead.x, lead.unit);
+      // Traced because an instrument cannot audit a channel it cannot see.
+      // Every other channel reports whether it reached pixels; support was
+      // the one that only reported that it had been inferred.
+      if (opts.trace) opts.trace.support = { name: supportName, drawn: !!support };
+    }
+
+    // ---- 1e. Arrangement anchors ----------------------------------------
+    // Furniture placed FROM the actors, which is what separates arrangement
+    // from scenery. The office already drew a desk and it never helped: fixed
+    // in the room while the figures stood wherever staging put them, so the
+    // two never formed a workstation. An interaction that declares it needs a
+    // desk now gets one, between the people using it.
+    const anchors = (scene.anchors
+      || (ixName && IX && IX.INTERACTIONS[ixName] && IX.INTERACTIONS[ixName].requires)
+      || []);
+    if (OBJ && OBJ.drawAnchor && anchors.length) {
+      const placed = spots.map((s, i) => placeFor(s, i === 0));
+      anchors.forEach((a) => {
+        const at = OBJ.drawAnchor(ctx, t, a, placed, lead.unit);
+        if (opts.trace && at) (opts.trace.anchors = opts.trace.anchors || []).push({ name: a, at });
+      });
     }
 
     if (M && metaName) {
@@ -344,8 +414,17 @@
     // the state that produced it.
     const stateReasons = [];
 
+    // DEPTH ORDER. Who is drawn in front. It only matters once figures
+    // overlap, which `embrace` is the first pattern to do — and when they do,
+    // arbitrary draw order reads as a rendering accident rather than as one
+    // person in front of another. Sorted low z first so high z lands on top,
+    // while the ORIGINAL index is kept so lead-actor rules still apply to the
+    // lead rather than to whoever happens to be drawn first.
+    const drawOrder = spots.map((s, i) => ({ spot: s, i }))
+      .sort((p, q) => (p.spot.z || 0) - (q.spot.z || 0));
+
     if (window.BlvckChar) {
-      spots.forEach((spot, i) => {
+      drawOrder.forEach(({ spot, i }) => {
         let cast = specs[i] || specs[0] || {};
 
         // STATE DRIVES THE VISUAL. When this scene carries an entity, ask the
@@ -365,7 +444,16 @@
           : null;
 
         if (posture) {
-          let pose = posture.pose;
+          // The interaction nudges each body differently, so the two figures
+          // are not the same person twice. Applied to the AXES rather than to
+          // the drawn pose, so it stays inside the continuous space.
+          let pose = spot.bias && window.BlvckPose
+            ? window.BlvckPose.poseFrom(
+                Object.keys(posture.axes).reduce((acc, k) => {
+                  acc[k] = posture.axes[k] + (spot.bias[k] || 0);
+                  return acc;
+                }, {}))
+            : posture.pose;
           // A gesture is something you DO at a moment, layered over how you
           // stand, at a weight set by how big the change is.
           // sample() takes a clip NAME, not a clip object — it does
@@ -380,8 +468,25 @@
           // Sitting is a SUPPORT state, not a posture, so it is mixed in here
           // rather than expressed as axes. The authored `sit` clip is exactly
           // the shape the pose space provably could not reach.
-          if (support && support.sit && CH_.CLIPS.sit) {
-            pose = CH_.mix(pose, CH_.sample('sit', 1), 0.9);
+          // Support is PER ACTOR. In a proposal one kneels and one does not,
+          // and at a desk both sit — so an interaction's support declaration
+          // has to reach the individual figure. Without this the kneel clip
+          // existed and was unreachable: `propose` still rendered standing.
+          const spotSupport = spot.support && OBJ && OBJ.SUPPORT[spot.support]
+            ? OBJ.SUPPORT[spot.support] : null;
+          const eff = spotSupport || support;
+          if (eff && eff.sit && CH_.CLIPS[eff.clip || 'sit']) {
+            pose = CH_.mix(pose, CH_.sample(eff.clip || 'sit', 1), 0.9);
+          }
+          // REACH — the near arm extends toward the other figure. An offered
+          // hand is what separates kneeling from merely being lower down.
+          // reachY decides WHERE the hand goes — level at the chest, or up and
+          // around the shoulders. That is the channel separating an argument
+          // from an embrace once both are leaning in at close range.
+          if (spot.reach) {
+            const up = spot.reachY || 0;
+            pose.armR = -(30 + spot.reach * 55 + up * 72);
+            pose.forearmR = -(spot.reach * 24 * (1 - Math.abs(up) * 0.6));
           }
           pose.emotion = posture.emotion;
           a = pose;
@@ -405,16 +510,122 @@
         // centre; a failing one drifts back, sideways and down. Standing in
         // the same spot every frame is what made the arc read as static.
         let { x: posX, y: posY, unit } = placeFor(spot, i === 0);
-        // Sitting puts the body ON the seat.
-        if (support && support.sit && i === 0) posY = support.seatY;
+        // Sitting puts the body ON the seat — per actor, so one figure can
+        // kneel while the other stands.
+        const seat = spot.support && OBJ && OBJ.SUPPORT[spot.support]
+          ? OBJ.SUPPORT[spot.support]
+          : (i === 0 ? support : null);
+        if (seat && seat.sit && seat.seatY != null) posY = seat.seatY;
         if (i === 0) leadFrame = { x: posX, y: posY, unit };
+
+        // LEAN — the whole body rotates about its own feet, toward or away
+        // from the other figure. Two upright figures at a distance read as a
+        // conversation no matter what their faces do; commitment into the
+        // space between them is what makes an argument an argument.
+        if (spot.lean) {
+          const dir = spot.flip ? -1 : 1;
+          ctx.translate(posX * W, posY * H);
+          ctx.rotate((spot.lean * dir * Math.PI) / 180);
+          ctx.translate(-posX * W, -posY * H);
+        }
+
+        // TIME — the beat facing somewhere other than now.
+        //
+        // A memory needs a visual REGISTER, not just a different pose: the
+        // same figure doing the same thing has to read as then rather than
+        // now. A faint, offset echo behind the figure is the cheapest honest
+        // one — it is the same body, displaced and thinned, which is what a
+        // recollection is. Future orientation already had channels (a clock in
+        // thought, the drain metaphor) and gets none of this.
+        const horizon = stateEnt && window.BlvckStoryState
+          && window.BlvckStoryState.horizonAt
+          ? window.BlvckStoryState.horizonAt(stateEnt, scene.time || 0) : null;
+        if (horizon && i === 0) {
+          const back = horizon.dir === 'past';
+          // Pressure is distance, INVERTED. A deadline hours away is not
+          // further off than a vague someday, it is nearer — and an intrusive
+          // regret sits closer than a fond recollection. So push pulls the
+          // echo in and solidifies it. The first version had push scaling the
+          // offset outward across a 28% span, which was both backwards and
+          // too small to see: 0.4 and 1.0 rendered as the same picture.
+          const dist = 0.115 - horizon.push * 0.05;
+          ctx.save();
+          ctx.globalAlpha = 0.10 + horizon.push * 0.30;
+          // Memory is solid but faded — it happened, and its shape is fixed.
+          // Anticipation is drawn as an outline, because the thing being
+          // waited for has not taken a shape yet. Same body, opposite side,
+          // opposite certainty.
+          if (!back) ctx.setLineDash([unit * 0.16, unit * 0.12]);
+          const off = (back ? -1 : 1) * dist;
+          window.BlvckChar.drawActor(ctx, a, {
+            x: (posX + off) * W,
+            y: (posY - 0.012) * H,
+            scale: unit * (back ? 0.94 : 1.04),
+            skin: opts.skin || 'stickman',
+            colour: t.dim,
+            lineWidth: Math.max(2, unit * (back ? 0.10 : 0.08)),
+            blank: true,
+            flip: spot.flip
+          });
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+        if (opts.trace && horizon) opts.trace.horizon = horizon;
+
+        // GAZE. Resolved against where the OTHER figure actually ended up, so
+        // "look at your partner" survives every offset that moved them. A
+        // figure whose eyes ignore the person opposite reads as two separate
+        // portraits sharing a frame.
+        let look = null;
+        if (spot.gaze) {
+          const other = spots[i === 0 ? 1 : 0];
+          if (spot.gaze === 'partner' && other) {
+            const op = placeFor(other, i !== 0);
+            const dx = Math.max(-1, Math.min(1, (op.x - posX) * 4));
+            const dy = Math.max(-1, Math.min(1, (op.y - posY) * 4));
+            look = [spot.flip ? -dx : dx, dy];
+          } else if (spot.gaze === 'away') {
+            look = [spot.flip ? 0.8 : -0.8, 0];
+          } else if (spot.gaze === 'down') {
+            look = [0, 0.85];
+          } else if (spot.gaze === 'up') {
+            look = [0.4, -0.8];
+          }
+        }
+
+        // Matte only when this figure is actually in front of another AND
+        // close enough to overlap it. A matte on a figure standing alone would
+        // paint a background-coloured halo around it for no reason.
+        let matte = null;
+        if (spots.length > 1) {
+          const other = spots[i === 0 ? 1 : 0];
+          const inFront = (spot.z || 0) > (other.z || 0);
+          if (inFront && Math.abs((other.x || 0.5) - (spot.x || 0.5)) < 0.20) matte = t.bg;
+        }
+
+        // IDENTITY REACHES THE FIGURE.
+        //
+        // The Director emits `identity` — child_at_window, doctor_and_patient
+        // — and until now nothing drew it: two different identities produced
+        // byte-identical frames, measured at 0 differing pixels. Cast knew what
+        // characters look like and everything it knew went to image and video
+        // PROMPTS only.
+        //
+        // Appearance shifts within the palette rather than replacing it, so
+        // this does not undo sequence colour continuity.
+        const look0 = scene.identity && window.BlvckCast && window.BlvckCast.appearanceFor
+          ? window.BlvckCast.appearanceFor(scene.identity, pal) : null;
+        const idColour = look0 && i === 0 ? look0.colour : null;
+        const idScale = look0 && i === 0 ? look0.scale : 1;
 
         const bones = window.BlvckChar.drawActor(ctx, a, {
           x: posX * W,
           y: posY * H,
-          scale: unit,
+          scale: unit * idScale,
+          look,
+          matte,
           skin: opts.skin || 'stickman',
-          colour: i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim),
+          colour: idColour || (i === 0 ? t.accent : (i === 1 ? (t.hot || '#7ec8ff') : t.dim)),
           flip: spot.flip
         });
         ctx.restore();
@@ -426,25 +637,75 @@
     // Held, on a surface, on the floor, or in a thought. Drawn after the actor
     // so a held object reads as in front of the body, and after props so both
     // vocabularies can coexist while the old PROPS table is retired.
-    if (OBJ && objPlan.length) {
+    // Gated on the objects themselves, not on objPlan. objPlan now excludes
+    // residue for framing, and an effect beat whose only objects are carried
+    // forward has an empty plan — gating on it would have drawn nothing.
+    if (OBJ && scene.objects && scene.objects.length) {
       // Re-planned only when a solved hand is available, so a held object
       // touches it. Otherwise the plan the camera framed on is what gets
       // drawn — the bounds and the pixels must not disagree.
-      const finalPlan = hands.length
-        ? OBJ.plan({ objects: scene.objects },
+      const replan = (objs) => (hands.length
+        ? OBJ.plan({ objects: objs },
             Object.assign({ surfaceY: (L ? L.GROUND : 0.84) - 0.10 },
               leadFrame || { x: lead.x, y: lead.y, unit: lead.unit },
               { hand: { x: hands[0].x, y: hands[0].y } }))
-        : objPlan;
-      OBJ.drawPlan(ctx, t, finalPlan, lead.unit);
-      if (opts.trace) opts.trace.objects = finalPlan;
+        : OBJ.plan({ objects: objs },
+            { surfaceY: (L ? L.GROUND : 0.84) - 0.10,
+              x: lead.x, y: lead.y, unit: lead.unit }));
+
+      // RESIDUE — what the previous beat left behind, because this beat was
+      // caused by it. Drawn first and dimmed so it sits underneath the things
+      // that are actually here: a chain reads as a chain when the cause is
+      // still visible, and as a coincidence when it is not.
+      //
+      // Planned separately rather than filtered out of one plan, because the
+      // planner lays objects out relative to each other — mixing residue into
+      // that would let a ghost push a real object off its surface.
+      const solid = scene.objects.filter((o) => o && !o.residue);
+      const residue = scene.objects.filter((o) => o && o.residue);
+      if (residue.length) {
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        OBJ.drawPlan(ctx, t, replan(residue), lead.unit);
+        ctx.restore();
+      }
+      const finalPlan = solid.length ? replan(solid) : [];
+      // `hasSurface` tells the object layer whether anything already drew a
+      // top to rest on — an anchor like a desk or a bedside, or a support
+      // that is furniture. Without it the implied line doubles up on a desk
+      // that is already in frame.
+      const hasSurface = (anchors && anchors.length > 0)
+        || (supportName !== 'ground' && supportName !== 'kneel');
+      if (finalPlan.length) OBJ.drawPlan(ctx, t, finalPlan, lead.unit, { hasSurface });
+      if (opts.trace) {
+        opts.trace.objects = finalPlan;
+        opts.trace.residue = residue.map((o) => o.kind);
+      }
     }
 
     // ---- 4. Props, in the actors' hands ---------------------------------
-    const propName = scene.prop || null;
+    //
+    // THE LEGACY OBJECT VOCABULARY, and it only runs when the current one has
+    // nothing to say. PROPS draws one thing at a hand; OBJECTS draws many with
+    // a relation — held, on a surface, on the floor, in a thought. They are
+    // two representations of the same concept and both were live in this
+    // function.
+    //
+    // That was not merely untidy, it rendered. `decide()` sets `prop` from
+    // inferProp while attachState sets `objects` from inferObjects, so one
+    // scene carried both: "He opened the laptop and typed" produced
+    // prop=laptop AND objects=[laptop/surface], and the frame contained TWO
+    // laptops — one on the desk, one in his hand, the same object under two
+    // relation models.
+    //
+    // Measured rather than seen: the two frames looked identical to me and
+    // differed by 775 pixels. The second laptop is small at this scale, which
+    // is exactly why a duplicate vocabulary can survive a long time.
+    const propName = (scene.objects && scene.objects.length) ? null : (scene.prop || null);
     if (L && propName && L.PROPS[propName] && hands.length) {
       const h = hands[0];
       L.PROPS[propName](ctx, t, h.x, h.y, h.spot.scale * H * 0.14);
+      if (opts.trace) opts.trace.legacyProp = propName;
     }
 
     // ---- Annotation: connect a presenter to what it references ----------

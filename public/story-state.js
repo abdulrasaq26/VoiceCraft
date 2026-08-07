@@ -584,6 +584,242 @@
    * Returns multipliers the compositor applies, so every layer answers to the
    * same fact instead of being directed separately.
    */
+  // --- intent --------------------------------------------------------------
+  //
+  // What the subject is PURSUING, which is different from how they feel.
+  // Condition and stance describe a person; intent describes a person aimed at
+  // something. Without it there is tension but no stakes: a story can only get
+  // better or worse, never closer or further.
+  //
+  // Eight staged metaphors already existed — climb, barrier, fork, gap,
+  // bridge, drain, weight, fall — and they were chosen by KEYWORD. "He climbed
+  // for six hours" got a staircase because it contained the word climb, not
+  // because anyone was making progress toward anything. So the metaphor
+  // vocabulary illustrated the wording rather than the situation, and two
+  // beats with the same words got the same picture however the story had
+  // moved. This is the join that gives them something true to attach to.
+  //
+  // Deliberately small: one goal at a time, three facts about it. Multiple
+  // competing goals are a later problem, and inventing them now would repeat
+  // the mistake of building representation ahead of the render loop.
+  const GOAL_EVENTS = [
+    // `wanted to` alone missed "He wanted the promotion" — the commonest way
+    // anyone states a goal — so the first stress test had a story whose goal
+    // never began. The want went unrecorded and `want` reported "worked at".
+    [/\b(wanted|set out to|decided to|hoped (?:to|for)|aimed (?:to|for)|dreamed of|needed|longed for|was determined to)\b/i,
+      { act: 'want' }],
+    [/\b(worked at|kept at|pushed on|carried on|tried again|step by step|inch(?:ed)? closer|got closer|made progress)\b/i,
+      { act: 'advance', by: 0.25 }],
+    [/\b(blocked|refused|denied|turned (?:him|her|them) down|stood in (?:his|her|their) way|could not afford|ran out of)\b/i,
+      { act: 'block' }],
+    [/\b(finally|at last|achieved|succeeded|got there|made it|reached it|won)\b/i,
+      { act: 'achieve' }],
+    // "lost interest" was absent, so a lapsed goal and an achieved one
+    // rendered the SAME four frames — the exact failure intent exists to
+    // prevent, reappearing through a thin vocabulary rather than a wrong
+    // design. Coverage is the weakness of the mechanism, which is why this
+    // belongs in the scene plan eventually.
+    [/\b(gave up|abandoned|walked away from|stopped trying|let it go|lost interest|stopped caring|no longer wanted)\b/i,
+      { act: 'abandon' }]
+  ];
+
+  /**
+   * Read a goal out of narration, as a small timeline of its own.
+   *
+   * ONE THREAD, AND THE STRESS TEST SHOWED WHAT THAT COSTS. Given "he wanted
+   * the promotion / he also wanted to see his daughter / he worked at it / he
+   * gave up the evenings at home", every mark lands on a single goal, so
+   * giving up the evenings marks the PROMOTION abandoned and the frame falls.
+   * He was pursuing one thing by surrendering another; the model cannot hold
+   * that.
+   *
+   * Not fixed here on purpose. Separating threads needs each mark bound to
+   * WHICH goal it belongs to, and deciding that from a regex means matching a
+   * verb to an object across a clause — the thing keyword matching is worst
+   * at. It is the same argument that moved objects into the scene plan, and
+   * intent should follow rather than grow a second table.
+   */
+  function readIntent(ent, timeline) {
+    if (!ent || !timeline || !timeline.sentences) return ent;
+    ent.goal = null;
+    const marks = [];
+    timeline.sentences.forEach((s) => {
+      for (const [re, spec] of GOAL_EVENTS) {
+        const m = re.exec(s.text);
+        if (!m) continue;
+        marks.push({ at: s.start, act: spec.act, by: spec.by || 0, cause: m[0] });
+        break;
+      }
+    });
+    if (!marks.length) return ent;
+    ent.goal = { marks, want: marks[0].cause };
+    return ent;
+  }
+
+  /**
+   * Where the goal stands at time t: how far along, and whether it is blocked.
+   */
+  function goalAt(ent, t) {
+    if (!ent || !ent.goal) return null;
+    let progress = 0;
+    let blocked = false;
+    let done = null;
+    ent.goal.marks.forEach((m) => {
+      if (m.at > t) return;
+      if (m.act === 'advance') { progress = Math.min(1, progress + m.by); blocked = false; }
+      else if (m.act === 'block') blocked = true;
+      else if (m.act === 'achieve') { progress = 1; done = 'achieved'; blocked = false; }
+      else if (m.act === 'abandon') done = 'abandoned';
+    });
+    return { progress: Math.round(progress * 100) / 100, blocked, done, want: ent.goal.want };
+  }
+
+  /**
+   * The metaphor a GOAL implies — the join intent exists for.
+   *
+   * Returns null when there is no goal, so keyword inference still runs for
+   * beats that are not about pursuing anything. Intent supersedes wording; it
+   * does not replace it everywhere.
+   */
+  function metaphorForGoal(ent, t) {
+    const g = goalAt(ent, t);
+    if (!g) return null;
+    if (g.done === 'abandoned') return 'fall';
+    if (g.blocked) return 'barrier';
+    if (g.done === 'achieved') return 'climb';
+    if (g.progress >= 0.2) return 'climb';
+    return 'gap';          // wanted, not yet moving — the distance is the point
+  }
+
+  // --- time ----------------------------------------------------------------
+  //
+  // Which way a beat FACES. Everything else in the model describes now:
+  // condition now, stance now, what is being pursued now. But a great deal of
+  // narration is about a moment that is not this one — a memory, a dread, a
+  // deadline — and those had no representation at all, so "he remembered the
+  // day she left" and "he waited for the call" rendered as the same present
+  // tense.
+  //
+  // Two facts, deliberately: WHICH WAY and HOW HARD. Direction is past or
+  // future; pressure is how much that other moment is pushing on this one.
+  // Nostalgia and regret share a direction and differ in condition, which the
+  // existing model already carries — so this does not need its own valence.
+  const TIME_EVENTS = [
+    [/\b(remember\w*|recall\w*|looked back|years (?:ago|before)|had once|used to|as a (?:child|boy|girl)|thought back)\b/i,
+      { dir: 'past', push: 0.5 }],
+    [/\b(regret\w*|should have|if only|wished (?:he|she|they) had|never forgot)\b/i,
+      { dir: 'past', push: 0.8 }],
+    [/\b(tomorrow|next (?:week|month|year|morning)|would (?:one day|eventually)|some day|one day)\b/i,
+      { dir: 'future', push: 0.4 }],
+    [/\b(waited for|waiting for|any day now|due|deadline|by (?:friday|monday|morning)|before it was too late)\b/i,
+      { dir: 'future', push: 0.7 }],
+    [/\b(running out|no time left|hours left|days left|counting down|closing in)\b/i,
+      { dir: 'future', push: 1 }]
+  ];
+
+  /** Read temporal orientation across the narration, like intent. */
+  function readTime(ent, timeline) {
+    if (!ent || !timeline || !timeline.sentences) return ent;
+    ent.horizon = [];
+    timeline.sentences.forEach((s) => {
+      for (const [re, spec] of TIME_EVENTS) {
+        const m = re.exec(s.text);
+        if (!m) continue;
+        ent.horizon.push({ at: s.start, until: s.end, dir: spec.dir,
+                           push: spec.push, cause: m[0] });
+        break;
+      }
+    });
+    return ent;
+  }
+
+  /**
+   * Which way this beat faces, if anywhere but now.
+   *
+   * Scoped to the SENTENCE that carried it rather than latching. A memory is
+   * something a beat does, not a state a character enters — latching it would
+   * tint the rest of the story with one remembered line, which is the mistake
+   * the metaphor keywords made in the other direction.
+   */
+  function horizonAt(ent, t) {
+    if (!ent || !ent.horizon || !ent.horizon.length) return null;
+    const h = ent.horizon.find((x) => t >= x.at - 0.3 && t <= x.until + 0.3);
+    return h ? { dir: h.dir, push: h.push, cause: h.cause } : null;
+  }
+
+  // --- causality -----------------------------------------------------------
+  //
+  // The last system, and the one with the least obvious picture. Every other
+  // system describes a single beat: how someone is, how they hold themselves,
+  // what they want, which moment they face. Causality is the only one that is
+  // a statement about TWO beats — this happened because that did.
+  //
+  // Which is why it cannot have a pose. The pose space already consumes every
+  // condition and stance attribute, so routing cause through the body would
+  // be a second representation of something already represented, and the only
+  // honest way to tell them apart on screen would be that they disagree.
+  //
+  // What is actually unclaimed is PERSISTENCE. A list of beats and a chain of
+  // beats differ in one visible way: in a chain, the thing that caused it is
+  // still there. "The factory closed. He could not pay the rent." reads as
+  // cause and effect when the second frame still contains the factory, and as
+  // two unrelated facts when it does not. So causality renders by carrying
+  // the cause's world forward into the effect, dimmed — present, but past.
+  //
+  // Deliberately conservative about direction. `because` points backward and
+  // `so` points forward, and getting that wrong inverts the chain, so each
+  // marker declares which side of it the cause sits on.
+  const CAUSAL_MARKERS = [
+    // The effect sentence names its own cause, which lies BEFORE it.
+    [/\b(because of (?:this|that|it)|as a result|consequently|therefore|which meant|which left|that is why|for this reason)\b/i, 'back'],
+    // `so` only where it OPENS the sentence. As a connective it leads —
+    // "So he sold the car" — and as an intensifier it sits inside the clause
+    // — "he was so tired". In the general alternation it matched every
+    // intensifier in the language: a false-positive probe scored 4 of 4,
+    // linking a sunset to someone's youth. Position separates the two senses
+    // where vocabulary cannot.
+    [/^\s*so\b/i, 'back'],
+    // The cause sentence names what follows, which lies AFTER it.
+    [/\b(led to|caused|meant that|forced (?:him|her|them)|left (?:him|her|them) (?:with|to)|set off|triggered)\b/i, 'forward']
+  ];
+
+  /**
+   * Link beats that are causally joined.
+   *
+   * Adjacency only — a marker links a sentence to its immediate neighbour on
+   * the declared side. Longer chains are real but resolving them needs the
+   * Director; guessing across three sentences would manufacture links that
+   * are not in the text, and a wrong link renders as a wrong frame.
+   */
+  function readCause(ent, timeline) {
+    if (!ent || !timeline || !timeline.sentences) return ent;
+    const sents = timeline.sentences;
+    ent.links = [];
+    sents.forEach((s, i) => {
+      for (const [re, side] of CAUSAL_MARKERS) {
+        const m = re.exec(s.text);
+        if (!m) continue;
+        const causeIdx = side === 'back' ? i - 1 : i;
+        const effectIdx = side === 'back' ? i : i + 1;
+        if (causeIdx < 0 || effectIdx >= sents.length || causeIdx === effectIdx) break;
+        ent.links.push({
+          causeAt: sents[causeIdx].start, causeUntil: sents[causeIdx].end,
+          effectAt: sents[effectIdx].start, effectUntil: sents[effectIdx].end,
+          marker: m[0], side
+        });
+        break;
+      }
+    });
+    return ent;
+  }
+
+  /** If the beat at t is an effect, when its cause happened. */
+  function causeAt(ent, t) {
+    if (!ent || !ent.links || !ent.links.length) return null;
+    const l = ent.links.find((x) => t >= x.effectAt - 0.3 && t <= x.effectUntil + 0.3);
+    return l ? { at: l.causeAt, until: l.causeUntil, marker: l.marker } : null;
+  }
+
   function moodFor(ent, t) {
     const s = stateAt(ent, t);
     const c = changeAt(ent, t);
@@ -677,6 +913,13 @@
     polarity,
     INVERTED,
     parse,
+    readIntent,
+    readTime,
+    horizonAt,
+    readCause,
+    causeAt,
+    goalAt,
+    metaphorForGoal,
     readState,
     applyDirectorChanges,
     NUMERIC,

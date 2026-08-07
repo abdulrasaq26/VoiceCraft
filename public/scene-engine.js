@@ -333,24 +333,441 @@
    * simply cannot occur: if there is a timeline, there is a video.
    */
   async function ensureScenes(opts = {}) {
+    const tl = opts.timeline || ensureTimeline();
     const found = currentScenes(opts);
-    if (found.scenes.length) return found;
+    if (found.scenes.length) {
+      // Stored scenes get state too. They are held as plain JSON, so an entity
+      // never survives a reload — without this, every scene loaded from a
+      // saved project would render stateless no matter what produced it.
+      const st = await attachState(found.scenes, tl, opts);
+      return Object.assign({}, found, { state: st.source, staged: st.staged });
+    }
 
     // Nothing stored — try to build from narration.
     // Bind a timeline from the project's own narration if none is loaded —
     // otherwise "Voice complete" and "nothing to assemble" are both true.
-    const tl = opts.timeline || ensureTimeline();
     if (!tl || !tl.sentences || !tl.sentences.length) {
       return { scenes: [], producer: 'none', reason: 'no storyboard, and no narration to build scenes from' };
     }
     const scenes = fromTimeline(tl, opts);
     if (!scenes.length) return { scenes: [], producer: 'none', reason: 'timeline produced no sentences' };
     save(scenes, { producer: 'timeline' });
-    return { scenes, producer: 'timeline', created: true };
+    const st = await attachState(scenes, tl, opts);
+    return { scenes, producer: 'timeline', created: true,
+             state: st.source, staged: st.staged, changes: st.changes };
+  }
+
+  /**
+   * Attach story state and staging to a run of scenes.
+   *
+   * THIS IS THE WIRE THAT WAS MISSING. Scene production never created a
+   * StoryEntity, so `scene.entity` was always null — which meant postureFor()
+   * returned null, the compositor fell back to an authored clip, and the
+   * ENTIRE state-to-visual chain sat dormant in the live pipeline: pose space,
+   * mood-driven light and colour, position, metaphor progress, silhouette.
+   * All of it worked, and none of it was reachable from the app. Every render
+   * a user actually produced was the standing-figure-in-an-empty-room frame
+   * from the first battery.
+   *
+   * Two things are attached here.
+   *
+   *   state     one entity for the narration, read ONCE — Director first,
+   *             keyword parser as the offline fallback — then each scene is
+   *             given the moment in that arc it belongs to.
+   *   staging   the interaction its text implies, whatever support and anchors
+   *             that interaction needs, and any object it names.
+   *
+   * A scene that already carries a value keeps it: a human or an earlier stage
+   * outranks inference.
+   */
+  async function attachState(scenes, timeline, opts) {
+    const o = opts || {};
+    const list = Array.isArray(scenes) ? scenes : [];
+    const tl = timeline || ensureTimeline();
+    const S = window.BlvckStoryState;
+    if (!list.length || !tl || !tl.sentences || !S) {
+      return { scenes: list, source: 'none', staged: 0 };
+    }
+
+    // One subject for the whole narration. Multi-entity casting is a later
+    // problem; today every beat follows the same protagonist.
+    const ent = S.entity({ name: o.subject || 'Subject' });
+    if (o.useDirector !== false && S.readState) {
+      await S.readState(ent, tl, o);
+    } else {
+      S.parse(ent, tl);
+    }
+    // What the subject is PURSUING, read across the whole narration rather
+    // than per beat — a goal is a thread through a story, not a property of
+    // one sentence.
+    if (S.readIntent) S.readIntent(ent, tl);
+    // Which way each beat faces — read across the narration for the same
+    // reason intent is: a memory is placed in a story, not in a sentence.
+    if (S.readTime) S.readTime(ent, tl);
+
+    // THE DIRECTOR STAGES FIRST; KEYWORDS ARE THE FALLBACK.
+    //
+    // Same migration state inference went through, for the same reason and on
+    // the same evidence. Keyword object rules have now produced four distinct
+    // classes of failure, none of them bugs in a particular entry:
+    //
+    //   substring    `form` matched "platform"
+    //   morphology   `invest` matched "investigation"
+    //   polysemy     `packed` matched "packed room", `late` matched
+    //                "late into the night"
+    //   competition  first-match-wins took the waiting rule and never reached
+    //                the window rule for "waited at the window"
+    //
+    // Those are consequences of recovering meaning from text fragments, and
+    // every rule added is another chance to hit the wrong sense. So the
+    // Director plans staging when it can, and the table below runs only when
+    // it cannot — offline, or without a key.
+    let planned = 0;
+    if (o.useDirector !== false) {
+      const res = await planScenes(list, o);
+      planned = res.planned || 0;
+    }
+
+    const IX = window.BlvckInteract;
+    const L = window.BlvckStageLayers;
+    let staged = 0;
+    let raised = 0;   // interactions that had to overrule an earlier actor count
+
+    // ONE palette for the whole run, chosen from the whole narration.
+    //
+    // The compositor picked a palette per beat from that beat's own text, so a
+    // sequence changed colour whenever the subject changed: one green frame
+    // and three blue among ambers in the last battery. A viewer reads that as
+    // a broken video before they read anything the staging is saying, and no
+    // amount of good composition survives it.
+    const G = window.BlvckGraphic;
+    const wholeText = (o.subject ? o.subject + ' ' : '')
+      + tl.sentences.map((s) => s.text).join(' ');
+    const palette = G && G.paletteFor ? G.paletteFor(wholeText) : null;
+
+    list.forEach((scene) => {
+      const text = scene.sceneSummary || scene.subtitle || scene.subject || '';
+      scene.entity = scene.entity || ent;
+      if (palette && !scene.palette) scene.palette = palette;
+      // Where in the arc this beat sits. The END of the sentence, because a
+      // change is anchored to the word that causes it and must have landed by
+      // the time the beat is over.
+      if (scene.time == null) {
+        const at = parseTimestamp(scene.timestamp);
+        scene.time = at == null ? 0 : at;
+      }
+      if (!scene.subject) scene.subject = text;
+
+      const ix = scene.interaction !== undefined ? scene.interaction
+        : (IX ? IX.infer(text) : null);
+      if (ix) {
+        scene.interaction = ix;
+        const pat = IX.INTERACTIONS[ix];
+        if (pat) {
+          if (scene.anchors == null && pat.requires && pat.requires.length) {
+            scene.anchors = pat.requires.slice();
+          }
+          // AN INTERACTION IS A CLAIM THAT TWO PEOPLE ARE PRESENT, and it
+          // outranks an earlier guess that there is one.
+          //
+          // Setting the count only when it was null was not enough. Story
+          // Actions and Interactions are two vocabularies for "what is
+          // happening", and they disagree: "They said goodbye at the door"
+          // gets role=presenter/count=1 from Actions and `part` from
+          // Interactions. A scene arriving through the storyboard path
+          // therefore carried the interaction AND rendered one person —
+          // staging needs two spots, found one, and skipped silently. Same
+          // sentence, two producer paths, two different pictures.
+          //
+          // Raising the count is the honest resolution: if the interaction is
+          // trusted enough to assign, it must be staged. Assigning a pattern
+          // that quietly does nothing is the worst of the three options.
+          if (!scene.actors) scene.actors = {};
+          if (!(scene.actors.count >= 2)) {
+            if (scene.actors.count != null) raised++;
+            scene.actors.count = 2;
+          }
+          if (!scene.actors.role || scene.actors.role === 'presenter') {
+            scene.actors.role = 'social';
+          }
+          staged++;
+        }
+      }
+      // What is in frame, and in what relation. The old path took one prop
+      // from inferProp() and put it in a hand, so the studying beat lost its
+      // papers and the waiting beat lost its phone — the interaction producer
+      // had grown to emit interaction, support and anchors while this one
+      // still emitted at most one thing.
+      const OBJ = window.BlvckObjects;
+      if (scene.objects == null && OBJ && OBJ.inferObjects) {
+        const found = OBJ.inferObjects(text);
+        if (found) {
+          scene.objects = found.objects;
+          // Support and anchors come from the same rule, because the objects,
+          // the posture and the furniture are one fact: someone studying is at
+          // a desk, someone waiting is at a window.
+          if (scene.support == null && found.support) scene.support = found.support;
+          if (scene.anchors == null && found.anchors) scene.anchors = found.anchors;
+        }
+      }
+      // Fallback to the single-prop path for anything the rules do not name.
+      if (scene.objects == null && L && L.inferProp) {
+        const p = L.inferProp(text);
+        const KINDS = { laptop: 'laptop', phone: 'phone', document: 'paper',
+                        book: 'book', cup: 'cup' };
+        if (p && KINDS[p]) scene.objects = [{ kind: KINDS[p], rel: 'held' }];
+      }
+    });
+
+    // CAUSALITY. A second pass, because a link is a statement about two beats
+    // and the loop above can only see one. This is also why it lives here and
+    // not in the compositor: the compositor composes a single scene and has no
+    // way to know what the previous one contained.
+    //
+    // The carry is capped at two and skips anything the effect beat already
+    // has. Waiting beats already draw a clock; carrying a second one in would
+    // be the duplicate-object failure again, arriving through a new door.
+    let linked = 0;
+    if (S.readCause && S.causeAt) {
+      S.readCause(ent, tl);
+      list.forEach((scene) => {
+        const c = S.causeAt(ent, scene.time || 0);
+        if (!c) return;
+        // Matched by SPAN OVERLAP, not by point equality. `scene.time` is the
+        // end of a beat's span, not its start — "00:00:00 - 00:00:02" carries
+        // time 2 — so comparing it against the cause sentence's start missed
+        // every link by the full width of the beat.
+        const src = list.find((s) => (s.time || 0) >= c.at - 0.35
+                                  && (s.time || 0) <= c.until + 0.35);
+        if (!src || src === scene || !src.objects || !src.objects.length) return;
+        const have = new Set((scene.objects || []).map((o) => o && o.kind));
+        const carry = src.objects
+          .filter((o) => o && !have.has(o.kind))
+          .slice(0, 2)
+          .map((o) => Object.assign({}, o, { residue: true }));
+        if (!carry.length) return;
+        scene.objects = (scene.objects || []).concat(carry);
+        scene.causedBy = c.marker;
+        linked++;
+      });
+    }
+
+    return { scenes: list, source: ent.stateSource || 'keywords', linked,
+             staged, planned, raised,
+             staging: planned ? 'director' : 'keywords',
+             changes: ent.changes.length };
+  }
+
+  /**
+   * The moment a beat has landed, in seconds.
+   *
+   * Handles both "0:04 – 0:09" and "00:00:04 - 00:00:09". The first version
+   * only understood M:SS, and stamp() emits HH:MM:SS — so every scene parsed
+   * to null, took time 0, and the whole run rendered at the same instant of
+   * the arc. Entity attached, state parsed, six changes recorded, and every
+   * frame identical: correct in the data, invisible in the pixels, for the
+   * fourth time in this project.
+   */
+  function parseTimestamp(ts) {
+    const parts = String(ts || '').split(/\s*[–\-—]\s*/);
+    const last = parts[parts.length - 1];
+    if (!last) return null;
+    const nums = last.trim().split(':').map(Number);
+    if (!nums.length || nums.some((n) => !Number.isFinite(n))) return null;
+    // ss | mm:ss | hh:mm:ss
+    return nums.reduce((acc, n) => acc * 60 + n, 0);
+  }
+
+  /**
+   * Ask the Director to STAGE a run of scenes, and merge the answer onto them.
+   *
+   * This closes the producer gap. decide() emits prop and metaphor but never
+   * support, objects or subject structure, so everything built for sitting,
+   * held objects, floor accumulation and subject framing worked only when
+   * hand-authored in a test. Nothing in the live pipeline populated those
+   * fields, and a real render still produced a standing figure in an empty
+   * room.
+   *
+   * The identity/structure split survives the trip: `structure` is one of six
+   * and drives bounds and camera; `identity` is free text that drives nothing
+   * automatically — carried so staging can key off it later, and so a frame
+   * can be traced back to what the Director thought it was looking at.
+   */
+  /**
+   * FNV-1a over the things that decide what the planner sees.
+   *
+   * Not for security — for reproducibility. Two batteries that disagree are
+   * either measuring a real change or were handed different inputs, and
+   * nothing in this project could previously tell those apart. Runs nine and
+   * ten differ enormously and the honest reason is known only because the
+   * bug was found by hand; had it been subtler, the hashes would have
+   * separated "the planner behaves differently" from "the planner was asked
+   * something different" in one line.
+   */
+  function fingerprint(parts) {
+    const s = parts.join('');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return ('0000000' + h.toString(16)).slice(-8);
+  }
+
+  async function planScenes(scenes, opts) {
+    const o = opts || {};
+    const list = Array.isArray(scenes) ? scenes : [];
+    if (!list.length) return { scenes: list, planned: 0, source: 'none' };
+    if (o.useDirector === false || !window.BlvckAI || !window.BlvckAI.generateJSON) {
+      return { scenes: list, planned: 0, source: 'unavailable' };
+    }
+    // --- pipeline invariant: the Director must be given something to read ---
+    //
+    // Checked BEFORE the call, deterministically, on every run. This project
+    // spent its entire measurement history handing the planner five empty
+    // strings, and not one of payload, entropy, efficiency, prevalence,
+    // persistence or purity could see it — because every one of them measures
+    // a property of the OUTPUT. An input can be void and the output still
+    // scores well, since a model with nothing to go on emits plausible
+    // furniture and plausible furniture is indistinguishable from discovery
+    // to a metric that counts presence.
+    //
+    // So there are two layers here and they protect different things:
+    //
+    //   pipeline invariants   narration non-empty and aligned, beats indexed,
+    //                         prompt delivered as a prompt, model actually
+    //                         invoked, purity, schema valid — cheap,
+    //                         deterministic, and PRECONDITIONS
+    //   behavioural metrics   payload, entropy, coverage, prevalence,
+    //                         efficiency — expensive, statistical, and
+    //                         MEANINGLESS if the first layer is violated
+    //
+    // The first is not a weaker version of the second. No amount of the
+    // second substitutes for the first.
+    //
+    // Stated precisely, because "the first layer was empty" overstates it:
+    // this project HAD infrastructure validation — self-tests, the A/B
+    // validity guard, purity — and almost no SEMANTIC INPUT validation. The
+    // existing checks confirmed that a thing ran; none confirmed that what it
+    // ran on meant anything. `purity` is the closest miss: it asks whether
+    // the model was invoked, never what it was handed.
+    //
+    // Named `blank-narration` in `source` rather than thrown, because
+    // planScenes' caller catches and silently falls back to keywords — a
+    // throw here would be swallowed into exactly the quiet degradation this
+    // exists to prevent. It has to come back as a value someone reads.
+    const narration = list.map((s) => s.sceneSummary || s.subtitle
+                                   || s.subject || s.text || '');
+    const blanks = narration.filter((t) => !String(t).trim()).length;
+
+    // Each check names the specific way an experiment can be invalid rather
+    // than reporting one undifferentiated "failed" — a misaligned narration
+    // and an unindexed beat are different bugs and want different fixes.
+    const pipeline = [
+      { check: 'narration-present', ok: blanks === 0,
+        detail: blanks + ' of ' + list.length + ' beats blank' },
+      // Beat indices are how the planner's answer is rejoined to the scenes.
+      // If the arrays are different lengths the join is silently off by
+      // however many, and every beat after the gap is annotated with the
+      // wrong sentence — which would look like a bad planner, not a bad join.
+      { check: 'narration-aligned', ok: narration.length === list.length,
+        detail: narration.length + ' sentences for ' + list.length + ' beats' },
+      { check: 'beats-indexed',
+        ok: list.every((s, i) => Number.isFinite(s.index) || i === list.indexOf(s)),
+        detail: 'every beat carries a usable index' }
+    ];
+    const failed = pipeline.filter((c) => !c.ok);
+    if (failed.length) {
+      console.error('[SceneEngine] Director NOT called — pipeline invariant '
+        + 'violated: ' + failed.map((c) => c.check + ' (' + c.detail + ')').join('; ')
+        + '. Behavioural metrics taken in this state describe a model '
+        + 'inventing content, not discovering it.');
+      return { scenes: list, planned: 0, source: failed[0].check, pipeline };
+    }
+
+    try {
+      // TOKEN BUDGET, sized to the plan rather than left at the default.
+      //
+      // generateJSON falls back to max_tokens 1024 and nothing here overrode
+      // it, so every Director call in this project has been capped there. A
+      // five-beat plan carrying identity, structure, support and several
+      // objects per beat sits right on that boundary — a raw probe of the
+      // baking story truncated mid-object at `{"beat":4,` — and the richer
+      // the plan, the more certain the cut. That biases the output in the
+      // worst possible direction: plans get truncated precisely when the beat
+      // had a lot in it, and the salvaged tail arrives malformed rather than
+      // absent, which reads as a bad model instead of a clipped one.
+      //
+      // Roughly 220 tokens a beat plus headroom, floored so short narrations
+      // are not starved either.
+      const budget = Math.max(1536, Math.min(8192, 400 + list.length * 220));
+      const payload = {
+        subject: o.subject || 'the main subject',
+        // THE NARRATION. Read `sceneSummary` and `subtitle` FIRST, because
+        // those are the fields every producer in this file actually writes —
+        // makeScene defines them and fromTimeline fills them from the words.
+        //
+        // This read `s.subject || s.text`, and no producer sets either. So
+        // the Director received five EMPTY STRINGS and was asked to stage a
+        // story it had never been shown. It answered the only way it could:
+        // by inventing something generic, which is where `book`, `pencil` and
+        // `laptop` came from on a baking story and a photosynthesis one
+        // alike, and why the same input gave different answers run to run —
+        // that was sampling noise on an empty prompt, not planner variance.
+        //
+        // Every Director measurement in this project was taken this way. The
+        // A/B that reported payload 0.70 -> 1.65 was comparing keyword
+        // discovery against a model improvising from nothing.
+        sentences: narration
+      };
+
+      // Hashed over everything that determines what the planner is asked:
+      // the narration, the beat indices it will be rejoined by, the model,
+      // the token budget, and the BUILT PROMPT — the last because a prompt
+      // edit changes the input as surely as a corpus edit does, and a version
+      // number has to be remembered to be bumped. build() is pure, so this
+      // costs a string.
+      let promptText = '';
+      try {
+        const p = window.BlvckPrompts && window.BlvckPrompts.build
+          ? window.BlvckPrompts.build('/api/scene-plan', payload) : null;
+        promptText = p ? String(p.system || '') + String(p.user || '') : '';
+      } catch (e) { promptText = 'unbuildable'; }
+      const inputHash = fingerprint([
+        narration.join(''),
+        list.map((s, i) => (s.index == null ? i : s.index)).join(','),
+        String((window.BlvckAI.chatModel && window.BlvckAI.chatModel()) || ''),
+        String(budget), promptText
+      ]);
+      pipeline.push({ check: 'planner-input-hash', ok: true, detail: inputHash });
+
+      const res = await window.BlvckAI.generateJSON('/api/scene-plan',
+        payload, Object.assign({ max_tokens: budget }, o.aiOptions || {}));
+      const beats = (res && res.beats) || [];
+      let planned = 0;
+      beats.forEach((b) => {
+        const scene = list[b.beat];
+        if (!scene) return;
+        // Never overwrite what a human or an earlier stage already chose.
+        if (scene.support == null && b.support !== 'ground') scene.support = b.support;
+        if (scene.objects == null && b.objects.length) scene.objects = b.objects;
+        if (scene.subjectKind == null) scene.subjectKind = b.structure;
+        if (scene.identity == null) scene.identity = b.identity;
+        planned++;
+      });
+      return { scenes: list, planned, source: 'director', pipeline, inputHash };
+    } catch (err) {
+      // Staging is an enhancement, not a requirement: an unplanned scene
+      // renders exactly as it did before this existed.
+      console.warn('[scene-engine] scene plan failed:', err && err.message);
+      return { scenes: list, planned: 0, source: 'error' };
+    }
   }
 
   window.BlvckScenes = {
     makeScene,
+    planScenes,
+    attachState,
     timelineFromProject,
     ensureTimeline,
     srtToWords,

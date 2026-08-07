@@ -55,6 +55,137 @@
   // Each draws centred on (x, y) at size s. Kept small and legible rather than
   // detailed: at 1280x720 with a figure 200px tall, a sheet of paper is 40px.
 
+  // --- generic FORMS ------------------------------------------------------
+  //
+  // The bread failure: the Director was handed eight object kinds, all desk
+  // objects, and asked to depict "she mixed flour, water and salt in a wide
+  // bowl". It answered `book` — correctly, from a vocabulary in which flour
+  // has no legal representation. Payload rose, efficiency stayed 1.00, and
+  // the frame was wrong in a way no metric in this project can see.
+  //
+  // The fix is the principle this codebase already applies to subjects, one
+  // level down. Subjects have OPEN IDENTITY and CLOSED STRUCTURE: anyone can
+  // be in a scene, and there are six ways a scene can be arranged. Objects
+  // had closed identity, which is why a kitchen could not be drawn.
+  //
+  // So identity opens — the Director may name anything — and structure
+  // closes: six forms, chosen to be distinguishable as silhouettes rather
+  // than to be a taxonomy. A bowl is not a laptop because it is open at the
+  // top; flour is not paper because it has no edges. That is the whole
+  // requirement. Anything nameable resolves to one of these, and a beat that
+  // would have drawn the wrong specific object now draws the right general
+  // one, which is the trade WordNet's hypernym chain makes: lose specificity,
+  // keep truth.
+  //
+  // Deliberately NOT a keyword table. The mapping from `flour` to `mass` is
+  // done by the model at plan time, which is the same argument that moved
+  // discovery off keywords — polysemy is not resolvable by a list, and a list
+  // of nouns is the thing this project has repeatedly concluded not to build.
+  //
+  // WHAT THIS DOES AND DOES NOT ESTABLISH. The representational ceiling
+  // imposed by CLOSED OBJECT IDENTITY is removed: a kitchen can now be drawn,
+  // and adding bucket, pitcher, teapot, vase or pot needs no renderer work at
+  // all because the renderer depends on forms rather than on nouns. Whether a
+  // producer reliably USES that space is a separate, empirical question, and
+  // the first evidence is not encouraging — llama-3.3-70b gave flour/bowl/oven
+  // on one sample and a classroom for photosynthesis on another. Ceiling and
+  // exploitation are different claims and the second is unmeasured.
+  const FORMS = {
+    // Open at the top: bowl, basket, pot, pan, cup, box of things.
+    vessel: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.beginPath();
+      g.moveTo(x - s * 0.40, y - s * 0.18);
+      g.bezierCurveTo(x - s * 0.34, y + s * 0.34, x + s * 0.34, y + s * 0.34,
+                      x + s * 0.40, y - s * 0.18);
+      g.stroke();
+      // The rim, drawn flat and wide — it is what stops a vessel reading as
+      // a ball, and what makes it read as something you put things IN.
+      g.beginPath();
+      g.moveTo(x - s * 0.46, y - s * 0.18);
+      g.lineTo(x + s * 0.46, y - s * 0.18);
+      g.stroke();
+    },
+    // A quantity with no edges: flour, dough, soil, snow, a heap of anything.
+    mass: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.beginPath();
+      g.moveTo(x - s * 0.44, y + s * 0.24);
+      g.bezierCurveTo(x - s * 0.30, y - s * 0.30, x - s * 0.02, y - s * 0.14,
+                      x + s * 0.06, y - s * 0.26);
+      g.bezierCurveTo(x + s * 0.26, y - s * 0.36, x + s * 0.42, y - s * 0.02,
+                      x + s * 0.44, y + s * 0.24);
+      g.closePath();
+      g.stroke();
+    },
+    // Flat and horizontal: counter, table top, board, tray, plank.
+    slab: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.06));
+      g.beginPath();
+      g.rect(x - s * 0.50, y - s * 0.10, s * 1.00, s * 0.20);
+      g.stroke();
+      // A near edge, so it reads as a surface seen slightly from above
+      // rather than as a closed box.
+      g.beginPath();
+      g.moveTo(x - s * 0.44, y + s * 0.10);
+      g.lineTo(x - s * 0.36, y + s * 0.24);
+      g.moveTo(x + s * 0.44, y + s * 0.10);
+      g.lineTo(x + s * 0.36, y + s * 0.24);
+      g.stroke();
+    },
+    // A handle and a working end: spoon, hammer, brush, knife, trowel.
+    tool: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.beginPath();
+      g.moveTo(x - s * 0.40, y + s * 0.26);
+      g.lineTo(x + s * 0.12, y - s * 0.10);
+      g.stroke();
+      g.beginPath();
+      g.ellipse(x + s * 0.26, y - s * 0.22, s * 0.20, s * 0.13, -0.6, 0, Math.PI * 2);
+      g.stroke();
+    },
+    // A box that does something: oven, machine, engine, cabinet, appliance.
+    apparatus: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.06));
+      g.beginPath();
+      g.rect(x - s * 0.42, y - s * 0.40, s * 0.84, s * 0.80);
+      g.stroke();
+      // A door and a dial. Without them this is `box`, which already exists.
+      g.beginPath();
+      g.rect(x - s * 0.30, y - s * 0.24, s * 0.60, s * 0.44);
+      g.stroke();
+      g.beginPath();
+      g.arc(x + s * 0.26, y - s * 0.30, s * 0.07, 0, Math.PI * 2);
+      g.stroke();
+    },
+    // Growing and organic: leaf, plant, tree, crop, flower.
+    //
+    // The first version drew both leaves curving back to nearly the same
+    // point, which closed them into one blob on a bare stem and read as a
+    // lollipop. The pixel check agreed before I did: tool/plant was the
+    // closest pair of the six, both being a stick with a lump on top.
+    // Leaves have to LEAVE the stem — separate heights, opposite sides,
+    // each returning to its own base — and the stem has to continue past
+    // them or the whole thing is a flower.
+    plant: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.06));
+      g.beginPath();
+      g.moveTo(x, y + s * 0.46);
+      g.lineTo(x, y - s * 0.44);
+      g.stroke();
+      // Three leaves, alternating sides, each an almond with its own base.
+      [[-1, 0.20], [1, -0.04], [-1, -0.28]].forEach(([d, h]) => {
+        const by = y + s * h;
+        g.beginPath();
+        g.moveTo(x, by);
+        g.quadraticCurveTo(x + d * s * 0.26, by - s * 0.20,
+                           x + d * s * 0.42, by - s * 0.06);
+        g.quadraticCurveTo(x + d * s * 0.24, by + s * 0.06, x, by);
+        g.stroke();
+      });
+    }
+  };
+
   const OBJECTS = {
     paper: (g, t, x, y, s) => {
       stroke(g, t, Math.max(2, s * 0.06));
@@ -141,6 +272,77 @@
       stroke(g, t, Math.max(2, s * 0.07));
       g.strokeRect(x - s * 0.16, y - s * 0.28, s * 0.32, s * 0.56);
     },
+    // --- nouns the battery asked for -------------------------------------
+    //
+    // Object INFERENCE was at ~40% and the object VOCABULARY at maybe 20%: the
+    // rules routing text to objects were adequate while the objects themselves
+    // barely existed. Two 25-scene failures were missing nouns rather than
+    // missing logic — a child at a window with no window, an escape from a
+    // fire with no fire.
+
+    // Carried, not worn. A case reads as leaving.
+    suitcase: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.strokeRect(x - s * 0.34, y - s * 0.22, s * 0.68, s * 0.46);
+      g.beginPath();
+      g.arc(x, y - s * 0.22, s * 0.13, Math.PI, 0);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x - s * 0.34, y - s * 0.02); g.lineTo(x + s * 0.34, y - s * 0.02);
+      g.stroke();
+    },
+    // A sealed box: the moving-out object, and the found-treasure one.
+    box: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.07));
+      g.strokeRect(x - s * 0.36, y - s * 0.26, s * 0.72, s * 0.52);
+      g.beginPath();
+      g.moveTo(x - s * 0.36, y - s * 0.08); g.lineTo(x + s * 0.36, y - s * 0.08);
+      g.moveTo(x, y - s * 0.26); g.lineTo(x, y - s * 0.08);
+      g.stroke();
+    },
+    // Cup on a stem on a base — the silhouette does all the work.
+    trophy: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.08));
+      g.beginPath();
+      g.moveTo(x - s * 0.24, y - s * 0.34);
+      g.lineTo(x - s * 0.16, y + s * 0.02);
+      g.lineTo(x + s * 0.16, y + s * 0.02);
+      g.lineTo(x + s * 0.24, y - s * 0.34);
+      g.closePath();
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x, y + s * 0.02); g.lineTo(x, y + s * 0.22);
+      g.moveTo(x - s * 0.20, y + s * 0.24); g.lineTo(x + s * 0.20, y + s * 0.24);
+      g.stroke();
+      // Handles — without them it is a plant pot.
+      [-1, 1].forEach((d) => {
+        g.beginPath();
+        g.arc(x + d * s * 0.24, y - s * 0.18, s * 0.11, -Math.PI / 2, Math.PI / 2, d < 0);
+        g.stroke();
+      });
+    },
+    mic: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.08));
+      g.beginPath();
+      g.ellipse(x, y - s * 0.22, s * 0.13, s * 0.19, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x, y - s * 0.03); g.lineTo(x, y + s * 0.30);
+      g.stroke();
+    },
+    // Flames, drawn as rising tongues rather than a blob.
+    fire: (g, t, x, y, s) => {
+      stroke(g, t, Math.max(2, s * 0.08));
+      [-1, 0, 1].forEach((d, i) => {
+        const h = s * (0.5 + (i === 1 ? 0.34 : 0));
+        const bx = x + d * s * 0.24;
+        g.beginPath();
+        g.moveTo(bx - s * 0.16, y + s * 0.26);
+        g.quadraticCurveTo(bx - s * 0.14, y - h * 0.4, bx, y - h);
+        g.quadraticCurveTo(bx + s * 0.14, y - h * 0.4, bx + s * 0.16, y + s * 0.26);
+        g.stroke();
+      });
+    },
     clock: (g, t, x, y, s) => {
       stroke(g, t, Math.max(2, s * 0.07));
       g.beginPath(); g.arc(x, y, s * 0.38, 0, Math.PI * 2); g.stroke();
@@ -158,11 +360,162 @@
 
   const SUPPORT = {
     ground: { seatY: null, sit: false },
+    // No furniture: kneeling needs the pose, not a prop. `clip` names which
+    // authored shape expresses this support state.
+    kneel: { seatY: 0.835, sit: true, back: false, furniture: false, clip: 'kneel' },
     chair: { seatY: GROUND - 0.11, sit: true, back: true },
     stool: { seatY: GROUND - 0.09, sit: true, back: false },
     bed: { seatY: GROUND - 0.07, sit: true, back: false, wide: true },
     floor: { seatY: GROUND + 0.01, sit: true, back: false }
   };
+
+  // --- arrangement anchors -------------------------------------------------
+  //
+  // Furniture positioned FROM the actors, which is what makes it arrangement
+  // rather than scenery. The office environment already draws a desk, and it
+  // never helped: it sits at a fixed place in the room while the figures stand
+  // wherever staging put them, so the two never form a workstation.
+  //
+  // The channel metric found this from a direction that knew nothing about
+  // furniture. `across_desk` sat two channels from three different patterns
+  // and could not be fixed from inside interaction, because its meaning lives
+  // in an object no system could place. An anchor is that object, placed
+  // relative to the people using it.
+
+  // ARCHITECTURE IS NOT ACTOR-SIZED.
+  //
+  // Every anchor sized itself from the unit of whoever was standing there, so
+  // a seated child shrank the window and a kneeling figure shrank the desk.
+  // Measured consequence: "the child waited at the window" and "she waited
+  // three days for the results" rendered as the same picture — a seated figure
+  // with a clock — because the window that should have separated them came out
+  // chest-high and box-sized.
+  //
+  // A window is the same window whether a child sits beneath it or an adult
+  // stands at it. So anchors size from the ROOM and take only their x position
+  // from the actor. The desk learned this first, from the opposite direction:
+  // fixed environment furniture that never met the figure.
+  const ARCH = H * 0.062;   // one architectural unit — a standing adult's scale
+
+  const ANCHORS = {
+    // A surface BETWEEN two figures, spanning the gap they leave.
+    desk(g, t, spots, unit) {
+      if (!spots || spots.length < 2) return null;
+      const a = Math.min(spots[0].x, spots[1].x);
+      const b = Math.max(spots[0].x, spots[1].x);
+      const mid = (a + b) / 2;
+      const half = Math.max(ARCH * 1.9, ((b - a) / 2 + 0.045) * W);
+      const top = py(GROUND) - ARCH * 2.3;
+      g.save();
+      g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
+      g.globalAlpha = 0.55;
+      g.fillRect(px(mid) - half, top, half * 2, unit * 0.32);
+      g.restore();
+      stroke(g, t, Math.max(3, unit * 0.10));
+      g.strokeRect(px(mid) - half, top, half * 2, unit * 0.32);
+      // A near leg only: a full box would fence the figures off.
+      g.beginPath();
+      g.moveTo(px(mid) - half * 0.85, top + unit * 0.32);
+      g.lineTo(px(mid) - half * 0.85, py(GROUND) + unit * 0.5);
+      g.moveTo(px(mid) + half * 0.85, top + unit * 0.32);
+      g.lineTo(px(mid) + half * 0.85, py(GROUND) + unit * 0.5);
+      g.stroke();
+      return { mid, top: top / H };
+    },
+
+    // A stand in front of the speaker, chest high, narrow.
+    podium(g, t, spots, unit) {
+      if (!spots || !spots.length) return null;
+      const x = spots[0].x + 0.03;
+      const top = py(GROUND) - ARCH * 2.6;
+      const half = ARCH * 0.85;
+      g.save();
+      g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
+      g.globalAlpha = 0.6;
+      g.fillRect(px(x) - half, top, half * 2, unit * 2.6);
+      g.restore();
+      stroke(g, t, Math.max(3, unit * 0.10));
+      g.strokeRect(px(x) - half, top, half * 2, unit * 2.6);
+      g.beginPath();
+      g.moveTo(px(x) - half * 1.25, top);
+      g.lineTo(px(x) + half * 1.25, top);
+      g.stroke();
+      return { x, top: top / H };
+    },
+
+    // A WINDOW the figure stands at. An anchor rather than an object, because
+    // it is architecture: you cannot hold it, and its whole meaning is that
+    // someone is positioned AT it looking out. "The child waited at the
+    // window" was one of the two battery scenes that failed outright, and it
+    // failed for want of this noun rather than for want of staging.
+    window(g, t, spots, unit) {
+      if (!spots || !spots.length) return null;
+      // BESIDE the figure, not on top of it. Sizing the window architecturally
+      // fixed its scale and immediately put it over the child's head, because
+      // x still sat at the actor. A window someone waits at is something they
+      // stand next to and look through; drawn through them it reads as a
+      // pattern on their face.
+      //
+      // Offset by the window's own half-width plus a body, so the two never
+      // overlap whatever the figure's scale.
+      //
+      // Clamped to the frame. Offsetting it sideways pushed it off the left
+      // edge — position fixed without a bound, which is the same mistake the
+      // actor made when sinking dropped its legs out of shot. When there is no
+      // room on the near side it goes to the other one.
+      const halfW = (ARCH * 2.0) / W;
+      const gap = halfW + (ARCH * 1.4) / W;
+      let x = spots[0].x - gap;
+      if (x - halfW < 0.03) x = spots[0].x + gap;
+      x = Math.max(halfW + 0.03, Math.min(1 - halfW - 0.03, x));
+      const top = py(GROUND) - ARCH * 5.6;
+      const w = ARCH * 2.0;
+      const h = ARCH * 2.9;
+      g.save();
+      // Daylight beyond, which is what the figure is looking at.
+      g.globalAlpha = 0.30;
+      g.fillStyle = (t && t.accent) || '#f5b301';
+      g.fillRect(px(x) - w, top, w * 2, h);
+      g.restore();
+      stroke(g, t, Math.max(3, unit * 0.11));
+      g.strokeRect(px(x) - w, top, w * 2, h);
+      g.beginPath();
+      g.moveTo(px(x), top); g.lineTo(px(x), top + h);
+      g.moveTo(px(x) - w, top + h / 2); g.lineTo(px(x) + w, top + h / 2);
+      g.stroke();
+      // Sill, so it sits in a wall rather than floating.
+      g.beginPath();
+      g.moveTo(px(x) - w * 1.15, top + h);
+      g.lineTo(px(x) + w * 1.15, top + h);
+      g.stroke();
+      return { x, top: top / H };
+    },
+
+    // A bed with someone beside it — the vigil shape.
+    bedside(g, t, spots, unit) {
+      if (!spots || !spots.length) return null;
+      const x = (spots[spots.length - 1].x) + 0.10;
+      const top = py(GROUND) - ARCH * 0.9;
+      const half = ARCH * 2.6;
+      g.save();
+      g.fillStyle = (t && t.dim) || 'rgba(150,165,190,0.35)';
+      g.globalAlpha = 0.5;
+      g.fillRect(px(x) - half, top, half * 2, unit * 0.55);
+      g.restore();
+      stroke(g, t, Math.max(3, unit * 0.10));
+      g.strokeRect(px(x) - half, top, half * 2, unit * 0.55);
+      // Raised head end, which is what says bed rather than table.
+      g.strokeRect(px(x) - half, top - unit * 0.9, unit * 0.3, unit * 0.9);
+      return { x, top: top / H };
+    }
+  };
+
+  /** Place an arrangement anchor relative to the actors using it. */
+  function drawAnchor(g, theme, name, spots, unit) {
+    const fn = ANCHORS[name];
+    if (!fn) return null;
+    return fn(g, theme || {}, spots, unit || 42);
+  }
 
   /**
    * Draw the thing being sat on.
@@ -177,6 +530,9 @@
   function drawSupport(g, t, name, x, unit) {
     const s = SUPPORT[name];
     if (!s || !s.sit || s.seatY == null) return null;
+    // Some support states are pure body: nothing to draw, but the compositor
+    // still needs the descriptor so it can mix the right clip.
+    if (s.furniture === false) return Object.assign({}, s);
     // PIXELS, not frame fractions. The first attempt normalised the seat width
     // by frame HEIGHT and then used it as an X width, so the chair came out
     // about 3.5x the figure and read as a fence. Furniture is sized against
@@ -260,7 +616,12 @@
     let floorIdx = 0;
 
     objects.forEach((o) => {
-      if (!OBJECTS[o.kind]) return;
+      // Must accept anything DRAWABLE, by glyph or by form. This filtered on
+      // the specific glyph alone, so an object with a valid form was
+      // discarded here and never reached drawPlan's fallback — the fallback
+      // would have been dead code, which is the dormancy pattern this
+      // codebase has produced more often than any other.
+      if (!OBJECTS[o.kind] && !FORMS[o.form] && !FORMS[o.kind]) return;
       const count = Math.max(1, Math.min(24, Number(o.count) || 1));
       for (let i = 0; i < count; i++) {
         let x;
@@ -284,9 +645,26 @@
             break;
           case 'surface': {
             const k = surfaceIdx++;
-            x = 0.62 + rnd(k, 7) * 0.26;
+            // ACTOR-RELATIVE, and clamped. This was absolute — 0.62 to 0.88 —
+            // so a bowl sat in the right of frame however far left the person
+            // was, and read as belonging to the room rather than to them.
+            // That is the identical mistake the `floor` case below documents
+            // fixing, for the identical reason; it was corrected there and
+            // never here, which is why a kitchen beat put the flour across
+            // the room from the hands mixing it.
+            //
+            // Placed just in front and slightly to one side, which is where a
+            // thing being worked on sits. The clamp is the containment rule
+            // this codebase expects beside every placement rule: an actor
+            // near the frame edge must not push the object out of shot.
+            const spread = (rnd(k, 7) - 0.5) * 0.13;
+            x = Math.max(0.10, Math.min(0.90, actorX + 0.19 + spread));
             y = (f.surfaceY == null ? GROUND - 0.10 : f.surfaceY) - 0.012;
-            size = unit * 1.0;
+            // Was unit * 1.0, the SMALLEST of any relation, though a surface
+            // object is usually what the beat is about — the bowl being mixed
+            // in, the laptop being typed on. Held is 1.7 and floor is 1.15 to
+            // 1.65; there was no reason for this to be the runt.
+            size = unit * 1.45;
             break;
           }
           case 'thought':
@@ -317,7 +695,15 @@
         }
         // Never draw over the face.
         if (o.rel === 'floor' && Math.abs(x - actorX) < 0.05) x += 0.09;
-        out.push({ kind: o.kind, rel: o.rel || 'floor',
+        // `form` and `residue` must survive the planner. It rebuilds each
+        // item from scratch rather than copying it, so a field added upstream
+        // is silently dropped here and the renderer never sees it — the plan
+        // listed bowl and flour, the frame contained neither, and the trace
+        // showed them present because the trace reads the plan. Two lines
+        // above, the filter was fixed for exactly this reason and this was
+        // missed in the same edit.
+        out.push({ kind: o.kind, form: o.form || null, residue: !!o.residue,
+                   rel: o.rel || 'floor',
                    x: +x.toFixed(4), y: +y.toFixed(4), size });
       }
     });
@@ -325,14 +711,59 @@
   }
 
   /** Draw a plan produced by plan(). */
-  function drawPlan(ctx, theme, planned, unit) {
+  /**
+   * The surface a `surface` object is resting on, when nothing else drew one.
+   *
+   * `surfaceY` is a constant the compositor passes — a notional counter
+   * height — and no line is drawn at it unless the beat happens to have an
+   * anchor like a desk. So a bowl on a surface hovered at chest height with
+   * nothing beneath it, which reads as a floating bowl rather than as a bowl
+   * on a counter. The objects were correct, placed correctly, and still
+   * wrong in the frame.
+   *
+   * Drawn under the objects' own extent rather than across the room, for the
+   * same reason floor litter is scattered around the actor: a full-width line
+   * belongs to the room, a short one belongs to the work.
+   */
+  function drawImpliedSurface(ctx, theme, planned, unit) {
+    const on = (planned || []).filter((o) => o.rel === 'surface');
+    if (!on.length) return;
+    const xs = on.map((o) => px(o.x));
+    const half = (on[0].size || unit) * 0.62;
+    const y = py(on[0].y) + (on[0].size || unit) * 0.46;
+    ctx.save();
+    ctx.globalAlpha = ctx.globalAlpha * 0.5;
+    stroke(ctx, theme, Math.max(1.5, unit * 0.05));
+    ctx.beginPath();
+    ctx.moveTo(Math.min.apply(null, xs) - half, y);
+    ctx.lineTo(Math.max.apply(null, xs) + half, y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPlan(ctx, theme, planned, unit, opts) {
+    // Suppressed when the scene already drew furniture, or the implied line
+    // would sit across a desk that is already there.
+    if (!(opts && opts.hasSurface)) drawImpliedSurface(ctx, theme, planned, unit);
     const t = theme || {};
     const u = unit || 42;
+    // COMPOSES with the caller's alpha rather than replacing it. This assigned
+    // absolutely, so a caller that wrapped the call in a globalAlpha to fade a
+    // whole group got no fade at all and never knew — the causal residue was
+    // drawn at 0.3 and came out fully opaque, indistinguishable from a prop
+    // that was actually there.
+    const base = ctx.globalAlpha;
     (planned || []).forEach((o) => {
-      const draw = OBJECTS[o.kind];
+      // Specific glyph first, then the general form. A named object the
+      // renderer has no drawing for used to vanish here — silently, with no
+      // trace and no metric able to see it — or, worse, never got named at
+      // all because the producer was handed a closed list and picked the
+      // nearest legal wrong answer. Falling back to the form loses
+      // specificity and keeps the frame true.
+      const draw = OBJECTS[o.kind] || FORMS[o.form] || FORMS[o.kind];
       if (!draw) return;
       ctx.save();
-      ctx.globalAlpha = o.rel === 'floor' ? 0.85 : 1;
+      ctx.globalAlpha = base * (o.rel === 'floor' ? 0.85 : 1);
       draw(ctx, t, px(o.x), py(o.y), o.size);
       ctx.restore();
     });
@@ -360,9 +791,129 @@
     return drawPlan(ctx, theme, planned, (frame || {}).unit);
   }
 
+  // --- object inference ----------------------------------------------------
+  //
+  // What is in frame, and in what relation. The producer previously took one
+  // prop from inferProp() and put it in a hand, which is why the Sprint 2
+  // battery lost the studying scene's papers and the waiting scene's phone:
+  // the interaction producer had grown to emit interaction, support and
+  // anchors while the object producer still emitted at most one thing.
+  //
+  // Each rule names what is PRESENT and how it relates, because relation is
+  // most of the meaning — a paper held is working, a paper on the floor is a
+  // discarded attempt, a clock in a thought is pressure. The old table could
+  // only say "held".
+  //
+  // Rules also carry `support`, because the objects and the posture come from
+  // the same fact: someone studying is at a desk, and saying so twice in two
+  // places is how they drift apart.
+  const OBJECT_RULES = [
+    [/\b(stud(?:y|ied|ying)|revis\w*|homework|essay|assignment|exam|coursework)\b/i,
+      { support: 'chair', objects: [
+        { kind: 'paper', rel: 'held' }, { kind: 'pencil', rel: 'surface' },
+        { kind: 'crumpled', rel: 'floor', count: 4 } ] }],
+    [/\b(wait\w*|deadline|results|verdict|news to come|any minute|hear back)\b/i,
+      { support: 'chair', objects: [
+        { kind: 'phone', rel: 'surface' }, { kind: 'clock', rel: 'thought' } ] }],
+    [/\b(wrote|writ\w*|letter|note|signed|drafted|application)\b/i,
+      { support: 'chair', objects: [
+        { kind: 'paper', rel: 'held' }, { kind: 'pencil', rel: 'surface' } ] }],
+    [/\b(read\w*|book|report|file|dossier|manuscript)\b/i,
+      { objects: [{ kind: 'book', rel: 'held' }] }],
+    [/\b(laptop|comput\w*|typ\w*|coding|software|email|online|spreadsheet)\b/i,
+      { support: 'chair', objects: [{ kind: 'laptop', rel: 'surface' }] }],
+    [/\b(called|phoned|rang|text\w*|message|mobile)\b/i,
+      { objects: [{ kind: 'phone', rel: 'held' }] }],
+    [/\b(coffee|tea|drink|breakfast|kitchen table|mug)\b/i,
+      { objects: [{ kind: 'cup', rel: 'surface' }] }],
+    // `late` alone matched "argued late into the night", which is a time of
+    // day rather than time pressure. Being late needs an object it is late
+    // FOR.
+    [/\b(late for|running late|hurry|hurried|rush\w*|out of time|running out|overdue|no time left)\b/i,
+      { objects: [{ kind: 'clock', rel: 'thought' }] }],
+    [/\b(paperwork|forms?|invoice|bills?|contract|documents?)\b/i,
+      { support: 'chair', objects: [
+        { kind: 'paper', rel: 'held' }, { kind: 'paper', rel: 'surface' } ] }],
+
+    // The nouns the battery asked for. Each fixes a specific scene that
+    // failed for want of the object rather than for want of staging.
+    [/\b(at the window|out the window|through the window|watching the street)\b/i,
+      { anchors: ['window'], objects: [] }],
+    [/\b(fire|burning|blaze|flames?|smoke|burned down)\b/i,
+      { objects: [{ kind: 'fire', rel: 'floor', count: 2 }] }],
+    // "packed" alone matched "played to a packed room". Packing needs an
+    // object it is packing, the same lesson `late` taught two rules up.
+    [/\b(packed (?:the|his|her|their|up)|packing|moved out|moving out|last box|suitcase|left the flat|left home)\b/i,
+      { objects: [{ kind: 'suitcase', rel: 'held' }, { kind: 'box', rel: 'floor', count: 2 }] }],
+    [/\b(trophy|medal|award|cup|champion|prize|won the)\b/i,
+      { objects: [{ kind: 'trophy', rel: 'held' }] }],
+    [/\b(stage|microphone|sang|sing|played to|performed|gig|concert)\b/i,
+      { objects: [{ kind: 'mic', rel: 'held' }] }],
+    [/\b(chest|buried|treasure|dug up|found under|hidden box)\b/i,
+      { support: 'kneel', objects: [{ kind: 'box', rel: 'floor' }] }]
+  ];
+
+  // How long it went on. Evidence accumulates with time, and this is the only
+  // channel that says a thing happened repeatedly before the frame began.
+  const DURATION = [
+    [/\b(all night|for weeks|for months|for years|night after night)\b/i, 3.0],
+    [/\b(for days|three days|for hours|all day|again and again|over and over)\b/i, 2.0],
+    [/\b(twice|a second time|once more)\b/i, 1.4]
+  ];
+
+  /**
+   * Objects and support a line of narration implies.
+   *
+   * Returns null when the line names nothing — silence rather than a guess, so
+   * a beat with no objects renders as a beat with no objects.
+   */
+  function inferObjects(text) {
+    const hay = String(text || '');
+    // EVERY matching rule contributes, not just the first.
+    //
+    // First-match-wins meant a sentence naming two things got one of them:
+    // "the child waited at the window" matched the waiting rule, took its
+    // phone and clock, and never reached the window rule — so the beat that
+    // failed for want of a window still had no window after the window was
+    // built. A beat can legitimately name several things.
+    const hits = OBJECT_RULES.filter(([re]) => re.test(hay));
+    if (!hits.length) return null;
+
+    let mult = 1;
+    DURATION.forEach(([re, m]) => { if (re.test(hay)) mult = Math.max(mult, m); });
+
+    const objects = [];
+    const seen = new Set();
+    let support = null;
+    const anchors = [];
+    hits.forEach(([, spec]) => {
+      (spec.objects || []).forEach((o) => {
+        const key = o.kind + '/' + o.rel;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const out = { kind: o.kind, rel: o.rel };
+        if (o.count) out.count = Math.min(12, Math.round(o.count * mult));
+        objects.push(out);
+      });
+      if (!support && spec.support) support = spec.support;
+      (spec.anchors || []).forEach((a) => { if (anchors.indexOf(a) === -1) anchors.push(a); });
+    });
+
+    // A frame with everything in it says nothing. Earlier rules are the more
+    // specific ones, so their objects survive the trim.
+    return { objects: objects.slice(0, 5), support,
+             anchors: anchors.length ? anchors : null,
+             duration: mult, rules: hits.length };
+  }
+
   window.BlvckObjects = {
-    OBJECTS, SUPPORT, place, plan, drawPlan, drawSupport, GROUND,
+    OBJECTS, FORMS, SUPPORT, ANCHORS, OBJECT_RULES, inferObjects,
+    place, plan, drawPlan, drawSupport, drawAnchor, GROUND,
     kinds: () => Object.keys(OBJECTS),
+    forms: () => Object.keys(FORMS),
+    // Can this be drawn at all, by glyph or by form? One answer, so the
+    // planner, the renderer and the prompt cannot disagree about it.
+    drawable: (o) => !!(o && (OBJECTS[o.kind] || FORMS[o.form] || FORMS[o.kind])),
     supports: () => Object.keys(SUPPORT)
   };
 })();
