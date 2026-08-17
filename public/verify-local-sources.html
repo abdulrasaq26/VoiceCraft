@@ -1,0 +1,167 @@
+<!doctype html><meta charset="utf-8"><title>local source gate</title>
+<body style="font:13px monospace;background:#0d0d0f;color:#e6e6ea;padding:12px">
+<pre id="out"></pre>
+<div id="stubs" hidden>
+  <div id="editor-card"></div><button id="ed-assemble"></button><div id="ed-summary"></div>
+  <div id="ed-status"></div><div id="ed-stage"></div><canvas id="ed-canvas"></canvas>
+  <button id="ed-play"></button><input id="ed-seek" type="range" /><span id="ed-time"></span>
+  <div id="ed-timeline"></div><select id="ed-sub-font"></select><input id="ed-sub-size" />
+  <span id="ed-sub-size-val"></span><select id="ed-sub-pos"></select><input id="ed-sub-color" />
+  <input id="ed-sub-on" type="checkbox" /><select id="ed-res"><option value="360">360</option></select>
+  <button id="ed-export-video"></button><button id="ed-export-package"></button>
+  <input id="title-input" value="t" /><input id="ed-up-images" type="file" />
+  <input id="ed-up-audio" type="file" /><input id="ed-up-subs" type="file" />
+  <button id="ed-build-manual"></button><button id="ed-manual-toggle"></button>
+  <div id="ed-manual"></div><input id="ed-crossfade" type="checkbox" />
+</div>
+<script src="/graphic-renderer.js"></script>
+<script src="/transcription/transcript.js"></script>
+<script src="/editor.js"></script>
+<script src="/adapters/stock-media.js"></script>
+<script>
+const out = document.getElementById('out');
+const fails = [];
+const say = (s) => { out.textContent += s + '\n'; };
+const check = (n, c, d) => {
+  say((c ? '  PASS  ' : '  FAIL  ') + n + (c ? '' : '  <- ' + JSON.stringify(d)));
+  if (!c) fails.push(n);
+};
+
+// A real recorded video, so duration and decodability are genuine rather than
+// asserted by a stub that cannot fail the way a truncated download does.
+function tinyVideoBlob() {
+  return new Promise((res) => {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 64;
+    const g = c.getContext('2d');
+    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+      ? 'video/webm;codecs=vp8' : 'video/webm';
+    const rec = new MediaRecorder(c.captureStream(20), { mimeType: mime });
+    const parts = [];
+    rec.ondataavailable = (e) => e.data.size && parts.push(e.data);
+    rec.onstop = () => res(new Blob(parts, { type: 'video/webm' }));
+    // Long enough to hold a seekable window: an excerpt test needs a file with
+    // a real duration, not a single cluster.
+    rec.start(200);
+    let n = 0;
+    const iv = setInterval(() => {
+      g.fillStyle = n % 2 ? '#f00' : '#0f0';
+      g.fillRect(0, 0, 64, 64);
+      if (++n > 40) { clearInterval(iv); rec.stop(); }
+    }, 50);
+  });
+}
+
+function loadV(src) {
+  return new Promise((res, rej) => {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.onloadeddata = () => res(v);
+    v.onerror = () => rej(new Error('decode failed'));
+    v.src = src;
+  });
+}
+
+(async () => {
+  const E = window.BlvckEditorTiming;
+  if (!E || !E.validateLocalSources) { say('MISSING SEAM'); window.__done = { fails: ['seam'] }; return; }
+
+  say('--- sourceIsLocal ---');
+  const blob = await tinyVideoBlob();
+  say('  fixture: ' + blob.size + ' bytes, ' + blob.type);
+  const localV = await loadV(URL.createObjectURL(blob));
+  // A webm from MediaRecorder often reports Infinity until it is forced to
+  // resolve; the gate treats a non-finite duration as unreadable, so resolve it
+  // the same way the editor does before asserting anything about the window.
+  if (!isFinite(localV.duration)) {
+    await new Promise((r2) => {
+      localV.addEventListener('seeked', r2, { once: true });
+      localV.currentTime = 1e6;
+      setTimeout(r2, 2000);
+    });
+    await new Promise((r2) => {
+      localV.addEventListener('seeked', r2, { once: true });
+      localV.currentTime = 0;
+      setTimeout(r2, 2000);
+    });
+  }
+  say('  fixture duration: ' + localV.duration);
+  check('a blob-backed element is local', E.sourceIsLocal(localV) === true, localV.src.slice(0, 20));
+  const remoteV = document.createElement('video');
+  remoteV.src = 'http://localhost:3480/api/proxy/archive/download/x/y.mp4';
+  check('an http-backed element is not local', E.sourceIsLocal(remoteV) === false, remoteV.src.slice(0, 30));
+  check('an element with no source is not local', E.sourceIsLocal(document.createElement('video')) === false);
+
+  const base = {
+    sceneIndex: 0, subtitle: '', durationSec: 5,
+    timelineStart: 0, timelineEnd: 5, effect: 'zoom-in', img: null
+  };
+  const setClips = (c) => E._setState({
+    clips: c, audio: { buffers: [], offsets: [], totalMs: 5000 }, timingSource: 'whisper'
+  });
+
+  say('--- a locally cached clip passes ---');
+  setClips([Object.assign({}, base, { video: localV })]);
+  let r = await E.validateLocalSources();
+  check('ok', r.ok === true, r.problems);
+  check('it is reported as checked', r.checked.length === 1 && r.checked[0].durationSec > 0, r.checked);
+  check('nothing was re-downloaded', r.checked[0].redownloaded === false, r.checked);
+
+  say('--- a still-streaming clip with no asset to recover from is blocked ---');
+  setClips([Object.assign({}, base, { video: remoteV, stockAsset: null })]);
+  r = await E.validateLocalSources();
+  check('blocked', r.ok === false, r);
+  check('the reason is the remote source', !!r.problems[0] && r.problems[0].code === 'remote_source', r.problems);
+
+  const dur = localV.duration;
+  say('--- an excerpt running past the end of the file is blocked (file is ' + dur.toFixed(2) + 's) ---');
+  setClips([Object.assign({}, base, {
+    video: localV, excerpt: { applied: true, sourceIn: 0.05, sourceOut: dur + 30 }
+  })]);
+  r = await E.validateLocalSources();
+  check('blocked', r.ok === false, r);
+  check('the reason names the overrun', !!r.problems[0] && r.problems[0].code === 'excerpt_past_end', r.problems);
+
+  say('--- a reversed excerpt window is blocked ---');
+  setClips([Object.assign({}, base, {
+    video: localV, excerpt: { applied: true, sourceIn: 2, sourceOut: 1 }
+  })]);
+  r = await E.validateLocalSources();
+  check('blocked for the right reason', !!r.problems[0] && r.problems[0].code === 'bad_excerpt', r.problems);
+
+  say('--- an in-range excerpt on a local file passes ---');
+  setClips([Object.assign({}, base, {
+    video: localV, excerpt: { applied: true, sourceIn: 0.05, sourceOut: Math.min(dur - 0.05, 0.4) }
+  })]);
+  r = await E.validateLocalSources();
+  check('ok', r.ok === true, r.problems);
+
+  say('--- stills-only projects are unaffected ---');
+  setClips([Object.assign({}, base, { video: null, img: document.createElement('canvas') })]);
+  r = await E.validateLocalSources();
+  check('ok with nothing to check', r.ok === true && r.checked.length === 0, r);
+
+  say('--- shot-entry diagnostics describe entry, not the moment of reading ---');
+  setClips([Object.assign({}, base, {
+    video: localV, excerpt: { applied: true, sourceIn: 0.05, sourceOut: Math.min(dur - 0.05, 0.4) }
+  })]);
+  await E.prepareClipsForExport();
+  E.ensureVideoReadyForShot(E._getState().clips[0]);
+  const t0 = E.shotDiagnostics()[0].shotEntrySourceTime;
+  localV.currentTime = Math.max(0, Math.min(dur - 0.05, 0.9));
+  await new Promise((r2) => setTimeout(r2, 400));
+  const d = E.shotDiagnostics()[0];
+  check('entry time did not drift when the element moved on', d.shotEntrySourceTime === t0, { t0: t0, now: d.shotEntrySourceTime });
+  check('the live position is reported separately', typeof d.currentSourceTime === 'number', d);
+  check('locality is reported', d.sourceIsLocal === true, d);
+  check('rebuffer count was reset for this pass', d.rebufferCount === 0, d);
+
+  say('');
+  say(fails.length ? 'FAILED (' + fails.length + '): ' + fails.join(', ') : 'LOCAL SOURCE GATE PASSES');
+  window.__done = { fails: fails };
+})().catch((e) => {
+  say('ERROR: ' + e.message);
+  say(e.stack || '');
+  window.__done = { fails: ['threw'] };
+});
+</script>

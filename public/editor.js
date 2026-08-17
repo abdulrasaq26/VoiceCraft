@@ -1142,6 +1142,97 @@
    * unavailable clip should still export via the fallback, with the
    * substitution recorded.
    */
+  // --- Export requires local media ----------------------------------------
+  //
+  // A video element pointed at an http URL streams while it records, and
+  // recording happens once, at wall-clock speed: a re-buffer is a hole in the
+  // finished file, not a stall the user can wait out. Measured against
+  // archive.org, readiness for the identical seek took 5.1s, 16.7s and over
+  // 20.3s across three runs of the same test. Nothing built on that is a
+  // production export path.
+  //
+  // So the bytes must be on this machine first. Preview may still stream —
+  // there, a stall is just a stall.
+
+  function sourceIsLocal(v) {
+    const s = (v && (v.currentSrc || v.src)) || '';
+    // blob: is the cache-backed case, file:/data: cover local uploads.
+    return /^(blob:|data:|file:)/.test(s);
+  }
+
+  // Re-acquisition deliberately stops at "download this asset again".
+  // Choosing a different file or a different candidate is acquisition policy
+  // and lives in stock-media.js with the rights gate; reimplementing a slice
+  // of it here would be a second acquisition pipeline that ages separately.
+  async function recoverToLocal(clip) {
+    const asset = clip.stockAsset;
+    if (!asset || !asset.provider || !asset.id || !window.StockMedia) return false;
+    try {
+      const blob = await window.StockMedia.downloadAsset(asset);
+      if (!blob || !blob.size) return false;
+      const v = await loadVideo(blob);
+      clip.video = v;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function validateLocalSources() {
+    const report = { ok: true, checked: [], problems: [] };
+
+    for (const clip of clips) {
+      if (!clip.video) continue;
+      const note = (code, detail) => {
+        report.ok = false;
+        report.problems.push({ scene: clip.sceneIndex, code, detail });
+      };
+
+      let recovered = false;
+      if (!sourceIsLocal(clip.video)) {
+        recovered = await recoverToLocal(clip);
+        if (!recovered) {
+          note('remote_source',
+            'still streaming from the network; open the scene in the storyboard and '
+            + 'let it finish caching, or replace the footage');
+          continue;
+        }
+      }
+
+      const dur = Number(clip.video.duration);
+      if (!Number.isFinite(dur) || dur <= 0) {
+        note('unreadable', 'the cached file decoded but reports no duration — it is probably truncated');
+        continue;
+      }
+
+      // An excerpt window that runs past the end of the file cannot be
+      // rendered, and the failure looks like a frozen frame rather than an
+      // error, so it is worth catching before recording rather than after.
+      const ex = clip.excerpt;
+      if (ex && ex.applied) {
+        const inP = Number(ex.sourceIn), outP = Number(ex.sourceOut);
+        if (!Number.isFinite(inP) || !Number.isFinite(outP) || outP <= inP) {
+          note('bad_excerpt', `sourceIn=${ex.sourceIn} sourceOut=${ex.sourceOut} is not a usable window`);
+          continue;
+        }
+        if (outP > dur + 0.25) {
+          note('excerpt_past_end',
+            `excerpt ends at ${outP.toFixed(1)}s but the file is only ${dur.toFixed(1)}s`);
+          continue;
+        }
+      }
+
+      report.checked.push({
+        scene: clip.sceneIndex,
+        durationSec: Math.round(dur * 100) / 100,
+        redownloaded: recovered,
+        provider: (clip.stockAsset && clip.stockAsset.provider) || 'local'
+      });
+    }
+
+    return report;
+  }
+
   async function prepareClipsForExport(opts) {
     const timeoutMs = (opts && opts.timeoutMs) || readinessTimeoutMs;
     renderErrors.length = 0;
@@ -1149,6 +1240,10 @@
 
     for (const clip of clips) {
       if (!clip.video) continue;
+      // Per-export state, so diagnostics describe this run and not the last one.
+      clip.entrySnapshot = null;
+      clip.rebufferCount = 0;
+      clip.rebufferFailed = false;
       const inPoint = (clip.excerpt && Number.isFinite(Number(clip.excerpt.sourceIn)))
         ? Number(clip.excerpt.sourceIn) : 0;
 
@@ -1245,6 +1340,19 @@
   function ensureVideoReadyForShot(clip) {
     const v = clip.video;
     if (!v) return false;
+
+    // The first call in an export pass IS shot entry — this runs per frame, so
+    // only the first observation describes entry. Recorded here because reading
+    // currentTime after the recording ends reports where the film stopped, which
+    // reads like entry evidence and is not.
+    if (!clip.entrySnapshot) {
+      clip.entrySnapshot = {
+        ready: videoDrawable(v),
+        readyState: v.readyState,
+        sourceTime: Math.round((v.currentTime || 0) * 100) / 100
+      };
+    }
+
     if (videoDrawable(v)) {
       clip.rebuffering = false;
       return true;
@@ -1293,9 +1401,14 @@
       timelineEnd: c.timelineEnd,
       sourceIn: c.excerpt ? c.excerpt.sourceIn : null,
       sourceOut: c.excerpt ? c.excerpt.sourceOut : null,
-      shotEntryReady: videoDrawable(c.video),
-      shotEntryReadyState: c.video.readyState,
-      shotEntrySourceTime: Math.round((c.video.currentTime || 0) * 100) / 100,
+      // Captured at the first render call of the shot, not read back now.
+      shotEntryReady: c.entrySnapshot ? c.entrySnapshot.ready : null,
+      shotEntryReadyState: c.entrySnapshot ? c.entrySnapshot.readyState : null,
+      shotEntrySourceTime: c.entrySnapshot ? c.entrySnapshot.sourceTime : null,
+      // Where the element sits now — useful, but a different claim.
+      currentReadyState: c.video.readyState,
+      currentSourceTime: Math.round((c.video.currentTime || 0) * 100) / 100,
+      sourceIsLocal: sourceIsLocal(c.video),
       rebufferCount: c.rebufferCount || 0,
       rebufferFailed: !!c.rebufferFailed,
       hasPreparedFrame: !!c.preparedFrame,
@@ -1984,9 +2097,27 @@
         };
       });
 
-      // Get every streamed source to its own in-point BEFORE the tape rolls.
-      // A film that has not buffered the region it is excerpting cannot be
-      // drawn, and once recording starts there is no time left to wait for it.
+      // Every source must be on this machine before the tape rolls. This is a
+      // hard gate, not a warning: a network stall during a real-time recording
+      // is baked into the file.
+      showStatus('Checking that every clip is cached locally…', 'info');
+      const local = await validateLocalSources();
+      if (!local.ok) {
+        const lines = local.problems
+          .map((p) => `scene ${String(p.scene).padStart(2, '0')}: ${p.detail}`);
+        showStatus(`Export needs every clip cached locally — ${local.problems.length} `
+          + `not ready. ${lines.join('; ')}.`, 'warn');
+        if (exportVideoBtn) exportVideoBtn.disabled = false;
+        return;
+      }
+      const redownloaded = local.checked.filter((c) => c.redownloaded).length;
+      if (redownloaded) {
+        showStatus(`Re-downloaded ${redownloaded} clip(s) that were not cached. Continuing…`, 'info');
+      }
+
+      // Get every source to its own in-point BEFORE the tape rolls. A file that
+      // has not decoded the region it is excerpting cannot be drawn, and once
+      // recording starts there is no time left to wait for it.
       showStatus('Preparing sources — seeking each clip to its in-point…', 'info');
       const readiness = await prepareClipsForExport();
       if (readiness.failed.length) {
@@ -2217,6 +2348,8 @@
     setReadinessTimeout,
     serialiseClip,
     exportRightsCheck,
+    validateLocalSources,
+    sourceIsLocal,
     driveRealtimeLoop,
     ensureVideoReadyForShot,
     shotDiagnostics,
