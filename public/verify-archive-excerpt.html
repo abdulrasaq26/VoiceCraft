@@ -85,7 +85,7 @@
   const SRC = `/api/proxy/archive/download/${ITEM}/${FILE}`;
 
   const SAMPLES = [
-    { timeline: 18.6,  source: 272.30 },
+    { timeline: 18.9,  source: 272.60 },
     { timeline: 20.0,  source: 273.70 },
     { timeline: 21.75, source: 275.45 },
     { timeline: 23.5,  source: 277.20 },
@@ -243,6 +243,20 @@
     say(`timeline ${E.totalMs()}ms, authoritative=${E.authoritative()}`);
     say(`excerpt ${SOURCE_IN}s -> ${SOURCE_OUT}s placed at ${SHOT_START}s -> ${SHOT_END}s`);
 
+    // Step 9: prepare sources BEFORE recording. The previous run recorded 390
+    // frames of this shot with zero drawable because it went straight to tape.
+    say(`preparing sources (readiness budget ${E.getReadinessTimeout()}ms)...`);
+    const prep = await E.prepareClipsForExport();
+    window.__prep = prep;
+    for (const p of prep.prepared) {
+      say(`  ready: scene ${p.scene} at source ${p.sourceTimeAtReady}s `
+        + `(readyState ${p.readyState}, waited ${p.waitedMs}ms, ${p.polls} checks)`);
+    }
+    for (const f of prep.failed) {
+      say(`  NOT READY: scene ${f.scene} at ${f.sourceIn}s after ${f.waitedMs}ms `
+        + `(readyState ${f.readyState}) -> ${f.fallback}`);
+    }
+
     // Record exactly the way exportVideo() does: real time, rAF-driven.
     const off = document.createElement('canvas');
     off.width = W; off.height = H;
@@ -278,6 +292,7 @@
 
     const blob = new Blob(chunks, { type: 'video/webm' });
     say(`recorded ${(blob.size / 1024).toFixed(0)} KB | shot B frames ${shotBFrames}, decodable ${shotBReady}`);
+    window.__capture = { shotBFrames, shotBReady };
 
     const out = await loadVideo(URL.createObjectURL(blob));
     if (!isFinite(out.duration) || out.duration === 0) { await seek(out, 1e6); await seek(out, 0); }
@@ -303,7 +318,11 @@
       const fromZero = signature(film);
       const dFromZero = distance(got, fromZero);
 
-      const closer = dExpected < dFromZero ? 'sourceIn' : 'zero';
+      // Within noise the two hypotheses are indistinguishable; report that
+      // rather than silently crediting or blaming one of them.
+      const closer = Math.abs(dExpected - dFromZero) < 0.02
+        ? 'tie'
+        : (dExpected < dFromZero ? 'sourceIn' : 'zero');
       if (closer === 'sourceIn') matches++;
       rows.push({ ...s, dExpected, dFromZero, closer });
     }
@@ -332,9 +351,10 @@
     const tb = document.createElement('tbody');
     for (const r of rows) {
       const tr = document.createElement('tr');
+      const cls = r.closer === 'sourceIn' ? 'ok' : (r.closer === 'tie' ? 'warn' : 'bad');
       tr.innerHTML = `<td>${r.timeline.toFixed(2)}s</td><td>${r.source.toFixed(2)}s</td>`
         + `<td>${r.dExpected.toFixed(3)}</td><td>${r.dFromZero.toFixed(3)}</td>`
-        + `<td class="${r.closer === 'sourceIn' ? 'ok' : 'bad'}">${r.closer}</td>`;
+        + `<td class="${cls}">${r.closer}</td>`;
       tb.appendChild(tr);
     }
     tbl.appendChild(tb);
@@ -365,8 +385,9 @@
     res.appendChild(strip);
 
     const started = rows[0].closer === 'sourceIn';
+    const anyContradiction = rows.some((r) => r.closer === 'zero');
     const stopped2 = dPastOut > dNext && dNext < 0.6;
-    const pass = matches >= 4 && started && stopped2;
+    const pass = matches >= 4 && started && stopped2 && !anyContradiction;
     const v = document.getElementById('verdict');
     v.className = pass ? 'ok' : 'bad';
     v.textContent = `Archive source offset export verification: ${pass ? 'PASS' : 'FAIL'}`

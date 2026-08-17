@@ -1092,6 +1092,32 @@
   // seconds later.
   const renderErrors = [];
 
+  // How long to wait for a streamed source to become drawable at its in-point.
+  //
+  // Not a magic number: archive.org serves byte ranges from storage nodes that
+  // have been measured intermittently answering 500, and seeking 272s into a
+  // film means fetching a range the browser has not touched. The first
+  // measurement of this path saw 390 frames with zero drawable inside a 6.5s
+  // shot, so the budget has to be generous relative to the shot, not to it.
+  //
+  // Overridable because the right value depends on the connection, not on the
+  // code: window.BlvckEditorTiming.setReadinessTimeout(ms), or
+  // localStorage 'blvck:source_readiness_ms'.
+  const DEFAULT_READINESS_MS = 20000;
+  let readinessTimeoutMs = (() => {
+    const stored = Number(localStorage.getItem('blvck:source_readiness_ms'));
+    return Number.isFinite(stored) && stored >= 1000 ? stored : DEFAULT_READINESS_MS;
+  })();
+
+  function setReadinessTimeout(ms) {
+    const n = Number(ms);
+    if (Number.isFinite(n) && n >= 1000) {
+      readinessTimeoutMs = n;
+      localStorage.setItem('blvck:source_readiness_ms', String(n));
+    }
+    return readinessTimeoutMs;
+  }
+
   function noteRenderError(clip, message) {
     // One entry per clip; a per-frame log would bury the useful line under
     // hundreds of copies of itself.
@@ -1117,7 +1143,7 @@
    * substitution recorded.
    */
   async function prepareClipsForExport(opts) {
-    const timeoutMs = (opts && opts.timeoutMs) || 15000;
+    const timeoutMs = (opts && opts.timeoutMs) || readinessTimeoutMs;
     renderErrors.length = 0;
     const report = { prepared: [], failed: [] };
 
@@ -1126,6 +1152,8 @@
       const inPoint = (clip.excerpt && Number.isFinite(Number(clip.excerpt.sourceIn)))
         ? Number(clip.excerpt.sourceIn) : 0;
 
+      const startedAt = performance.now();
+      let pollCount = 0;
       const ok = await new Promise((resolve) => {
         let settled = false;
         const finish = (value) => {
@@ -1136,7 +1164,7 @@
           clearInterval(poll);
           resolve(value);
         };
-        const onReady = () => { if (videoDrawable(clip.video)) finish(true); };
+        const onReady = () => { pollCount++; if (videoDrawable(clip.video)) finish(true); };
 
         clip.video.addEventListener('seeked', onReady);
         clip.video.addEventListener('canplay', onReady);
@@ -1155,7 +1183,16 @@
       });
 
       if (ok) {
-        report.prepared.push({ scene: clip.sceneIndex, sourceIn: inPoint });
+        report.prepared.push({
+          scene: clip.sceneIndex,
+          sourceIn: inPoint,
+          // Measured, so the timeout can be tuned from evidence rather than
+          // guessed at again.
+          waitedMs: Math.round(performance.now() - startedAt),
+          readyState: clip.video.readyState,
+          sourceTimeAtReady: Math.round(clip.video.currentTime * 100) / 100,
+          polls: pollCount
+        });
         continue;
       }
 
@@ -1170,6 +1207,8 @@
       }
       report.failed.push({
         scene: clip.sceneIndex, sourceIn: inPoint, readyState: clip.video.readyState,
+        waitedMs: Math.round(performance.now() - startedAt), polls: pollCount,
+        timeoutMs,
         fallback: clip.img ? 'still image' : (clip.fallbackImg ? 'editorial graphic' : 'none available')
       });
     }
@@ -1907,6 +1946,8 @@
     clipAt,
     videoDrawable,
     prepareClipsForExport,
+    setReadinessTimeout,
+    getReadinessTimeout: () => readinessTimeoutMs,
     renderErrors,
     noteRenderError,
     drawContain,
