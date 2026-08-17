@@ -77,8 +77,9 @@ class ChatRequest(BaseModel):
     temperature: float = 0.7
     # Generous, because on the fallback path the model reasons first and a
     # tight budget is spent entirely on deliberation, returning no answer.
-    max_tokens: int = 2048
-    thinking: bool = False
+    max_tokens: int = 4096
+    thinking: bool = True
+    reasoning_effort: str = "xhigh"
     stream: bool = False
 
 
@@ -86,7 +87,8 @@ class GenerateRequest(BaseModel):
     prompt: str
     temperature: float = 0.7
     max_tokens: int = 4096
-    thinking: bool = False
+    thinking: bool = True
+    reasoning_effort: str = "xhigh"
     response_format: Optional[Dict[str, Any]] = None
 
 
@@ -98,6 +100,10 @@ class DirectorRequest(BaseModel):
     cues: Optional[List[Dict[str, Any]]] = None
     brief: str = ""
     max_tokens: int = 6144
+    # The thinking pass. None skips it and goes straight to the grammar, which
+    # is faster and noticeably less considered.
+    reasoning_effort: Optional[str] = "xhigh"
+    plan_tokens: int = 4096
     no_cache: bool = False
 
 
@@ -139,6 +145,7 @@ def chat_endpoint(req: ChatRequest, _: str = Depends(check_token)):
                 temperature=req.temperature,
                 max_tokens=req.max_tokens,
                 thinking=req.thinking,
+                reasoning_effort=req.reasoning_effort,
             )
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(502, f"Model error: {exc}") from exc
@@ -150,6 +157,7 @@ def chat_endpoint(req: ChatRequest, _: str = Depends(check_token)):
             temperature=req.temperature,
             max_tokens=req.max_tokens,
             thinking=req.thinking,
+            reasoning_effort=req.reasoning_effort,
             stream=True,
         )
     except Exception as exc:  # noqa: BLE001
@@ -185,6 +193,7 @@ def generate_endpoint(req: GenerateRequest, _: str = Depends(check_token)) -> di
             temperature=req.temperature,
             max_tokens=req.max_tokens,
             thinking=req.thinking,
+            reasoning_effort=req.reasoning_effort,
             response_format=req.response_format,
         )
     except Exception as exc:  # noqa: BLE001
@@ -194,7 +203,7 @@ def generate_endpoint(req: GenerateRequest, _: str = Depends(check_token)) -> di
 
 @app.post("/director")
 def director_endpoint(req: DirectorRequest, _: str = Depends(check_token)) -> dict:
-    key = get_cache_key(req.script, req.style, MODEL_ID, SCHEMA_VERSION, f"{req.cues}|{req.brief}")
+    key = get_cache_key(req.script, req.style, MODEL_ID, SCHEMA_VERSION, f"{req.cues}|{req.brief}|{req.reasoning_effort}")
     if not req.no_cache:
         cached = get_cached_result(key)
         if cached is not None:
@@ -208,6 +217,8 @@ def director_endpoint(req: DirectorRequest, _: str = Depends(check_token)) -> di
             cues=req.cues,
             brief=req.brief,
             max_tokens=req.max_tokens,
+            reasoning_effort=req.reasoning_effort,
+            plan_tokens=req.plan_tokens,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"Director failed: {exc}") from exc

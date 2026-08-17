@@ -24,7 +24,11 @@ import threading
 import time
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-from .prompts import AETHER_SYSTEM_PROMPT, DIRECTOR_SYSTEM_PROMPT
+from .prompts import (
+    AETHER_SYSTEM_PROMPT,
+    DIRECTOR_SYSTEM_PROMPT,
+    PLANNING_SYSTEM_PROMPT,
+)
 from .schema import (
     NEEDS_GRAPHIC,
     NEEDS_STOCK,
@@ -173,7 +177,8 @@ class DirectorInference:
                   "reasoning cannot be disabled and replies will be slower.")
             return None
 
-    def _render(self, messages: List[Dict[str, str]], thinking: bool) -> Optional[str]:
+    def _render(self, messages: List[Dict[str, str]], thinking: bool,
+                effort: str = "xhigh") -> Optional[str]:
         """The prompt string, with reasoning explicitly on or off."""
         if self._formatter is None:
             return None
@@ -182,7 +187,9 @@ class DirectorInference:
                 llama=self.llm,
                 messages=messages,
                 enable_thinking=thinking,
-                reasoning_effort="low",
+                # The template raises on anything outside its own list, so
+                # never hand it a value straight from a request body.
+                reasoning_effort=effort if effort in self.EFFORTS else "xhigh",
             )
             return rendered.prompt
         except Exception:
@@ -199,23 +206,8 @@ class DirectorInference:
             return list(messages)
         return [{"role": "system", "content": system}, *messages]
 
-    @staticmethod
-    def _apply_thinking(messages: List[Dict[str, str]], thinking: bool) -> List[Dict[str, str]]:
-        """Qwen's soft switch for reasoning.
-
-        llama-cpp-python renders the chat template baked into the GGUF and does
-        not expose the template's own kwargs, so the switch has to travel in
-        the message text. An unsupported build simply ignores the token, and
-        strip_thinking() cleans up either way.
-        """
-        if thinking:
-            return messages
-        out = list(messages)
-        for i in range(len(out) - 1, -1, -1):
-            if out[i].get("role") == "user":
-                out[i] = {**out[i], "content": f"{out[i].get('content', '')} /no_think".strip()}
-                break
-        return out
+    #: The template validates this and raises on anything else.
+    EFFORTS = ("low", "medium", "xhigh")
 
     # -- conversational ---------------------------------------------------
 
@@ -223,16 +215,21 @@ class DirectorInference:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 2048,
-        thinking: bool = False,
+        max_tokens: int = 4096,
+        thinking: bool = True,
+        reasoning_effort: str = "xhigh",
         stream: bool = False,
         **kwargs: Any,
     ):
-        """A normal chat turn. Returns text, or a delta iterator when streaming."""
-        prepared = self._apply_thinking(
-            self._with_system(messages, AETHER_SYSTEM_PROMPT), thinking
-        )
-        prompt = self._render(prepared, thinking)
+        """A normal chat turn. Returns text, or a delta iterator when streaming.
+
+        Reasoning is ON. It costs tokens — at roughly 10 tokens/second a long
+        deliberation is minutes before the answer starts — but scriptwriting,
+        research and fact-checking are exactly the work it pays for. Callers
+        that want speed over depth pass thinking=False or a lower effort.
+        """
+        prepared = self._with_system(messages, AETHER_SYSTEM_PROMPT)
+        prompt = self._render(prepared, thinking, reasoning_effort)
 
         if not stream:
             with self._lock:
@@ -308,8 +305,9 @@ class DirectorInference:
         self,
         prompt: str,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
-        thinking: bool = False,
+        max_tokens: int = 4096,
+        thinking: bool = True,
+        reasoning_effort: str = "xhigh",
         response_format: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> str:
@@ -321,6 +319,7 @@ class DirectorInference:
             temperature=temperature,
             max_tokens=max_tokens,
             thinking=thinking,
+            reasoning_effort=reasoning_effort,
             **kwargs,
         )
 
@@ -387,12 +386,22 @@ class DirectorInference:
         cues: Optional[List[Dict[str, Any]]] = None,
         brief: str = "",
         max_tokens: int = 6144,
+        reasoning_effort: str = "xhigh",
+        plan_tokens: int = 4096,
     ) -> Tuple[dict, float]:
         """Produce a video plan in AETHER's `parseVideoPlan` shape.
 
-        The schema is compiled to a GBNF grammar, so the model physically
-        cannot emit a token that leaves the shape — including the `<think>`
-        block it would otherwise open with.
+        Done in two passes, because a grammar and a reasoning block cannot
+        share one call. The schema compiles to a GBNF grammar that forces the
+        very first token to be an opening brace, so a model that wants to
+        think first has nowhere to put the thought — a single constrained call
+        gets structure at the cost of any deliberation at all.
+
+        So the thinking happens first, unconstrained, where the model can
+        weigh what each beat is about and what treatment earns its place. The
+        second pass is transcription: the same decisions, now under the
+        grammar. Set reasoning_effort=None to skip the first pass when speed
+        matters more than the choice being any good.
         """
         beats = ""
         if cues:
@@ -410,24 +419,47 @@ class DirectorInference:
                 "reusing these index numbers exactly:\n" + "\n".join(lines)
             )
 
-        messages = [
-            {"role": "system", "content": DIRECTOR_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"Title: {title}\n"
-                    f"Visual style: {style}\n"
-                    + (f"\n{brief}\n" if brief else "")
-                    + f"\nScript:\n{script}"
-                    f"{beats}"
-                ),
-            },
-        ]
+        request = (
+            f"Title: {title}\n"
+            f"Visual style: {style}\n"
+            + (f"\n{brief}\n" if brief else "")
+            + f"\nScript:\n{script}"
+            f"{beats}"
+        )
 
         from .schema import VideoPlan
 
         started = time.time()
         plan: dict = {}
+
+        # Pass one: think. Unconstrained, so the reasoning block is allowed to
+        # exist at all.
+        reasoning = ""
+        if reasoning_effort:
+            reasoning = self.chat(
+                [{"role": "system", "content": PLANNING_SYSTEM_PROMPT},
+                 {"role": "user", "content": request}],
+                temperature=0.3,
+                max_tokens=plan_tokens,
+                thinking=True,
+                reasoning_effort=reasoning_effort,
+            )
+
+        messages = [
+            {"role": "system", "content": DIRECTOR_SYSTEM_PROMPT},
+            {"role": "user", "content": request},
+        ]
+        if reasoning:
+            # Pass two is transcription, not a second opinion. Handing the
+            # decisions back as the assistant's own words is what stops it
+            # re-deciding them under the grammar.
+            messages += [
+                {"role": "assistant", "content": reasoning},
+                {"role": "user", "content":
+                    "Now emit exactly that plan as JSON matching the schema. "
+                    "Keep every decision you just made — same treatments, same "
+                    "queries, same numbers, same wording. Change nothing."},
+            ]
 
         # The grammar guarantees the shape but not the sense: it cannot tie a
         # visualType to the payload that type needs, so the model can pick
@@ -496,5 +528,4 @@ class DirectorInference:
 
     # Older callers use this name.
     def generate_storyboard(self, script: str, style: str = "documentary", **kwargs):
-        kwargs.pop("reasoning_effort", None)  # retired
         return self.generate_plan(script=script, style=style, **kwargs)

@@ -12,6 +12,28 @@
     async director(payload) { throw new Error('Not implemented'); }
   }
 
+  // How hard Qwen should think, per kind of work. Reasoning is what this
+  // model is for, but it generates at roughly ten tokens a second, so an
+  // xhigh deliberation is minutes before the answer starts. Spend it where
+  // being right matters and skip it where it does not.
+  const REASONING_BY_TASK = {
+    storyboard: 'xhigh',   // every beat of the video hangs on these choices
+    research:   'xhigh',
+    factcheck:  'xhigh',
+    script:     'xhigh',
+    director:   'xhigh',
+    seo:        'medium',
+    thumbnail:  'medium',
+    titles:     'low',     // a headline is not worth two minutes of thought
+    chat:       'medium',
+    general:    'medium'
+  };
+
+  function effortFor(options) {
+    if (options && options.reasoningEffort) return options.reasoningEffort;
+    return REASONING_BY_TASK[String((options && options.task) || 'general')] || 'medium';
+  }
+
   class QwenProvider extends AIProvider {
     constructor() {
       super();
@@ -51,7 +73,8 @@
       const res = await this._fetch('/chat', {
         messages,
         temperature: options.temperature || 0.7,
-        max_tokens: options.max_tokens || 1024,
+        max_tokens: options.max_tokens || 4096,
+        reasoning_effort: effortFor(options),
         stream: false
       });
       const data = await res.json();
@@ -62,7 +85,8 @@
       const res = await this._fetch('/chat', {
         messages,
         temperature: options.temperature || 0.7,
-        max_tokens: options.max_tokens || 1024,
+        max_tokens: options.max_tokens || 4096,
+        reasoning_effort: effortFor(options),
         stream: true
       });
       
@@ -98,7 +122,8 @@
       const res = await this._fetch('/generate', {
         prompt,
         temperature: options.temperature || 0.7,
-        max_tokens: options.max_tokens || 1024
+        max_tokens: options.max_tokens || 4096,
+        reasoning_effort: effortFor(options)
       });
       const data = await res.json();
       return data.content;
@@ -161,7 +186,11 @@
         style: String(bible.visualStyle || bible.style || 'documentary'),
         cues,
         brief,
-        max_tokens: Math.min(16384, 1200 + cues.length * 320)
+        max_tokens: Math.min(16384, 1200 + cues.length * 320),
+        // The unconstrained thinking pass. The grammar forces the first token
+        // to be a brace, so this is the only place the director gets to reason
+        // about the video at all.
+        reasoning_effort: effortFor({ task: 'storyboard', ...payload })
       });
 
       const data = await res.json();
