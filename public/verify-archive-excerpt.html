@@ -32,6 +32,17 @@
   <code>requestAnimationFrame</code> and the video element cannot decode during capture.
 </p>
 
+<div id="protocol-warning" hidden>
+  <p class="bad" style="font-weight:600;margin:0 0 .4rem;">This page must be served over HTTP, not opened from disk.</p>
+  <p style="margin:0 0 .6rem;color:#9aa4b2;">
+    Two things need the server: the archival film streams through AETHER's own
+    <code>/api/proxy/archive</code> route, and <code>file://</code> blocks the
+    module loads this page depends on.
+  </p>
+  <p style="margin:0;color:#9aa4b2;">Run <code>node server.js</code> in the project root, then open
+    <a id="http-link" href="#" style="color:#8b93f8;">http://localhost:3000/verify-archive-excerpt.html</a>
+  </p>
+</div>
 <button id="run">Run verification</button>
 <div id="log"></div>
 <div id="results"></div>
@@ -81,6 +92,23 @@
     { timeline: 24.9,  source: 278.60 }
   ];
 
+  // Opened from disk nothing below can work, and saying which global is
+  // missing describes the symptom rather than the cause.
+  if (location.protocol === 'file:') {
+    document.getElementById('protocol-warning').hidden = false;
+    document.getElementById('run').disabled = true;
+    const a = document.getElementById('http-link');
+    a.href = 'http://localhost:3000/verify-archive-excerpt.html';
+  }
+
+  // Surface a script that failed to load, instead of leaving the first missing
+  // global to stand in for the explanation.
+  window.addEventListener('error', (e) => {
+    const el = document.getElementById('log');
+    if (el && e && e.message) el.textContent += 'SCRIPT ERROR: ' + e.message + chr10;
+  });
+
+  const chr10 = String.fromCharCode(10);
   const logEl = document.getElementById('log');
   const say = (m) => { logEl.textContent += m + '\n'; logEl.scrollTop = logEl.scrollHeight; };
 
@@ -97,10 +125,22 @@
   }
 
   function seek(v, t) {
+    const target = Math.max(0, Math.min(t, (v.duration || 1e9) - 0.05));
     return new Promise((res) => {
-      const done = () => { v.removeEventListener('seeked', done); res(); };
+      // Assigning currentTime a value it already holds fires no `seeked` event,
+      // so waiting for one hangs forever. The timeout is the second guard: a
+      // seek into a not-yet-buffered region of a streamed film can also stall.
+      if (Math.abs(v.currentTime - target) < 0.01 && v.readyState >= 2) return res();
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        v.removeEventListener('seeked', done);
+        res();
+      };
       v.addEventListener('seeked', done);
-      v.currentTime = Math.max(0, Math.min(t, (v.duration || 1e9) - 0.05));
+      setTimeout(done, 4000);
+      v.currentTime = target;
     });
   }
 
@@ -146,7 +186,13 @@
     btn.disabled = true;
     logEl.textContent = '';
     const E = window.BlvckEditorTiming;
-    if (!E) { say('BlvckEditorTiming missing — is editor.js loaded?'); return; }
+    if (!E) {
+      say(location.protocol === 'file:'
+        ? 'Cannot run from file:// — serve the project over HTTP and reload.'
+        : 'editor.js did not finish loading. Check the console for the failure above.');
+      btn.disabled = false;
+      return;
+    }
 
     say('loading the archival source through the AETHER proxy...');
     let film;
@@ -211,11 +257,16 @@
     say(`recording ${PROJECT_MS / 1000}s in real time — keep this tab focused...`);
     E._setState({ realtime: true });
     rec.start();
+    let shotBFrames = 0, shotBReady = 0;
     const t0 = performance.now();
     await new Promise((resolve) => {
       const step = () => {
         const ms = performance.now() - t0;
         if (ms >= PROJECT_MS) return resolve();
+        if (ms >= SHOT_START * 1000 && ms < SHOT_END * 1000) {
+          shotBFrames++;
+          if (film.readyState >= 2) shotBReady++;
+        }
         E.renderTo(g, W, H, ms);
         requestAnimationFrame(step);
       };
@@ -226,11 +277,14 @@
     E._setState({ realtime: false });
 
     const blob = new Blob(chunks, { type: 'video/webm' });
-    say(`recorded ${(blob.size / 1024).toFixed(0)} KB`);
+    say(`recorded ${(blob.size / 1024).toFixed(0)} KB | shot B frames ${shotBFrames}, decodable ${shotBReady}`);
 
     const out = await loadVideo(URL.createObjectURL(blob));
     if (!isFinite(out.duration) || out.duration === 0) { await seek(out, 1e6); await seek(out, 0); }
     say(`export decodes: ${out.videoWidth}x${out.videoHeight}, ${out.duration.toFixed(2)}s`);
+    // Kept for inspection: a degenerate comparison needs the frames themselves
+    // to explain itself, and these elements are never attached to the document.
+    window.__v = { film, out, blob };
 
     // ── Compare ─────────────────────────────────────────────────────────────
     const rows = [];
