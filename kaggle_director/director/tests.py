@@ -46,6 +46,11 @@ MINIMAL_PLAN = {
                 "fallbackQueries": ["grocery store aisle"],
                 "subjectCategory": "HUMAN",
                 "minimumDuration": 3.0,
+                # A present-day beat, so it names modern libraries. Required
+                # since 2.1: a stock beat with no source decision routes
+                # nowhere, and every library then gets the same generic search.
+                "sourceStrategy": "modern_stock",
+                "preferredSources": ["pexels", "pixabay"],
             },
             "shotType": "Medium",
             "cameraMovement": "Slow Push In",
@@ -188,8 +193,63 @@ class TestPayloadMatchesType(unittest.TestCase):
         self.assertTrue(any("graphic.items" in p for p in problems), problems)
 
     def test_stock_text_needs_both(self):
+        # Names the two things it means rather than counting problems. The count
+        # was a proxy that broke the moment the contract grew a third rule, and
+        # a test that fails when an unrelated rule is added is a test that will
+        # be edited to make it pass rather than read.
         problems = scene_violations(self._scene(visualType="stock_text"))
-        self.assertEqual(len(problems), 2, problems)
+        self.assertTrue(any("stockRequirements.queries" in p for p in problems), problems)
+        self.assertTrue(any("textOverlay.text" in p for p in problems), problems)
+
+    def test_stock_beat_without_a_source_decision_is_a_violation(self):
+        """Left optional, the model omits it and nothing routes the beat.
+
+        Measured against the live 27B: with these fields optional, every beat
+        came back with no preferred source at all — including one about the
+        Second World War — so the film archive was never reachable.
+        """
+        problems = scene_violations(self._scene(visualType="stock_video"))
+        self.assertTrue(any("preferredSources" in p for p in problems), problems)
+        self.assertTrue(any("sourceStrategy" in p for p in problems), problems)
+
+    def test_archive_beat_needs_archive_phrased_queries(self):
+        """An archive is catalogued by what a film IS, not by what it shows."""
+        problems = scene_violations(self._scene(
+            visualType="stock_video",
+            stockRequirements={
+                "concept": "wartime production",
+                "queries": ["factory workers"],
+                "sourceStrategy": "archival",
+                "preferredSources": ["archive_org"],
+                "archiveQueries": [],
+            },
+        ))
+        self.assertTrue(any("archiveQueries" in p for p in problems), problems)
+
+    def test_archive_beat_with_archive_queries_is_clean(self):
+        problems = scene_violations(self._scene(
+            visualType="stock_video",
+            stockRequirements={
+                "concept": "wartime production",
+                "queries": ["factory workers"],
+                "sourceStrategy": "archival",
+                "preferredSources": ["archive_org"],
+                "archiveQueries": ["1940s wartime factory newsreel"],
+            },
+        ))
+        self.assertEqual(problems, [])
+
+    def test_modern_beat_needs_no_archive_queries(self):
+        problems = scene_violations(self._scene(
+            visualType="stock_video",
+            stockRequirements={
+                "concept": "shopping today",
+                "queries": ["supermarket checkout"],
+                "sourceStrategy": "modern_stock",
+                "preferredSources": ["pexels", "pixabay"],
+            },
+        ))
+        self.assertEqual(problems, [])
 
     def test_types_needing_nothing_are_clean(self):
         for visual in ("t2v", "broll", "presenter"):
