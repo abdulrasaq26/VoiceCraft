@@ -1183,6 +1183,18 @@
       });
 
       if (ok) {
+        // Snapshot the frame we just proved we can draw. When the browser later
+        // evicts the buffered range — measured happening across an 18.5s idle
+        // gap — this is a held frame from the RIGHT source position, which is a
+        // far better failure than a marker and costs one canvas per clip.
+        try {
+          const snap = document.createElement('canvas');
+          snap.width = clip.video.videoWidth;
+          snap.height = clip.video.videoHeight;
+          snap.getContext('2d').drawImage(clip.video, 0, 0);
+          clip.preparedFrame = snap;
+        } catch (e) { clip.preparedFrame = null; }
+
         report.prepared.push({
           scene: clip.sceneIndex,
           sourceIn: inPoint,
@@ -1213,6 +1225,82 @@
       });
     }
     return report;
+  }
+
+  /**
+   * Make sure a shot's source is drawable now that the timeline has reached it.
+   *
+   * Deliberately NOT async. renderTo runs inside requestAnimationFrame during
+   * recording, so awaiting here would either stall the recorder or, worse, be
+   * a floating promise that does nothing. Instead this starts a rebuffer and
+   * returns immediately; the caller renders a fallback for the frames in
+   * between and the video resumes as soon as the seek lands.
+   *
+   * Preparation before recording is not enough on its own. Both real-stream
+   * runs reached readyState 4 at sourceIn, and one of them still collapsed to
+   * 41 drawable frames out of 391 — the archive shot does not begin until
+   * 18.5s, and the browser is free to evict the range it fetched while the
+   * element sits idle.
+   */
+  function ensureVideoReadyForShot(clip) {
+    const v = clip.video;
+    if (!v) return false;
+    if (videoDrawable(v)) {
+      clip.rebuffering = false;
+      return true;
+    }
+    if (clip.rebuffering) return false;      // one seek per episode, not per frame
+
+    const inPoint = (clip.excerpt && Number.isFinite(Number(clip.excerpt.sourceIn)))
+      ? Number(clip.excerpt.sourceIn) : 0;
+
+    clip.rebuffering = true;
+    clip.rebufferCount = (clip.rebufferCount || 0) + 1;
+    noteRenderError(clip, 'Scene ' + clip.sceneIndex + ': buffer lost before shot entry, '
+      + 're-seeking to ' + inPoint.toFixed(1) + 's (attempt ' + clip.rebufferCount + ')');
+
+    const settle = () => {
+      v.removeEventListener('canplay', settle);
+      v.removeEventListener('seeked', settle);
+      clearTimeout(clip._rebufferTimer);
+      clip.rebuffering = false;
+    };
+    v.addEventListener('canplay', settle);
+    v.addEventListener('seeked', settle);
+    // Uses the one configurable budget rather than introducing another number.
+    clip._rebufferTimer = setTimeout(() => {
+      settle();
+      clip.rebufferFailed = true;
+      noteRenderError(clip, 'Scene ' + clip.sceneIndex + ': still not drawable after '
+        + readinessTimeoutMs + 'ms — using fallback');
+    }, readinessTimeoutMs);
+
+    try {
+      // Back to the in-point, never to zero and never to wherever the element
+      // happens to sit.
+      v.currentTime = Math.max(0, Math.min(inPoint, (v.duration || 1e9) - 0.05));
+    } catch (e) {
+      settle();
+    }
+    return false;
+  }
+
+  /** Per-shot diagnostics, for tuning readiness against real streams. */
+  function shotDiagnostics() {
+    return clips.filter((c) => c.video).map((c) => ({
+      scene: c.sceneIndex,
+      timelineStart: c.timelineStart,
+      timelineEnd: c.timelineEnd,
+      sourceIn: c.excerpt ? c.excerpt.sourceIn : null,
+      sourceOut: c.excerpt ? c.excerpt.sourceOut : null,
+      shotEntryReady: videoDrawable(c.video),
+      shotEntryReadyState: c.video.readyState,
+      shotEntrySourceTime: Math.round((c.video.currentTime || 0) * 100) / 100,
+      rebufferCount: c.rebufferCount || 0,
+      rebufferFailed: !!c.rebufferFailed,
+      hasPreparedFrame: !!c.preparedFrame,
+      fallbackUsed: c.fallbackUsed || null
+    }));
   }
 
   function pauseInactiveVideos(activeClip) {
@@ -1318,23 +1406,32 @@
     // fallback is not just unnecessary — it fights the footage and reads as a
     // second, wrong camera move on top of the intended one.
     if (clip.video) {
-      driveVideo(clip.video, localMs, clip);
-      if (videoDrawable(clip.video)) {
-        const fit = fitFor(clip, clip.video);
-        (fit === 'contain' ? drawContain : drawCover)(g, clip.video, cw, ch, 1, 0, 0);
-        return;
+      // Checked as the shot becomes active, not only before recording: a range
+      // buffered during preparation can be gone by the time the timeline
+      // arrives. Non-blocking — it starts a rebuffer and we draw a fallback
+      // until the frame lands.
+      if (ensureVideoReadyForShot(clip)) {
+        driveVideo(clip.video, localMs, clip);
+        if (videoDrawable(clip.video)) {
+          clip.fallbackUsed = null;
+          const fit = fitFor(clip, clip.video);
+          (fit === 'contain' ? drawContain : drawCover)(g, clip.video, cw, ch, 1, 0, 0);
+          return;
+        }
       }
-      // The element exists but has no frame to give. Say so, then fall through
-      // to whatever still we have. Encoding black in silence is the one
-      // outcome that must not happen.
-      noteRenderError(clip, 'Scene ' + clip.sceneIndex
-        + ': no drawable frame (readyState ' + clip.video.readyState + ')');
     }
 
-    const still = clip.img || clip.fallbackImg;
+    // Prepared frame first: it is real footage from the correct source position,
+    // which a still from elsewhere in the project is not.
+    const still = clip.preparedFrame || clip.img || clip.fallbackImg;
+    if (clip.video && still) {
+      clip.fallbackUsed = clip.preparedFrame === still ? 'prepared frame'
+        : (clip.img === still ? 'still image' : 'editorial graphic');
+    }
     if (!still) {
       // Nothing at all to draw. A visible marker beats a black frame, because a
       // black frame looks like a rendering choice and this is a fault.
+      if (clip.video) clip.fallbackUsed = 'marker';
       drawUnavailable(g, cw, ch, clip);
       return;
     }
@@ -1947,6 +2044,8 @@
     videoDrawable,
     prepareClipsForExport,
     setReadinessTimeout,
+    ensureVideoReadyForShot,
+    shotDiagnostics,
     getReadinessTimeout: () => readinessTimeoutMs,
     renderErrors,
     noteRenderError,
