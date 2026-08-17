@@ -40,9 +40,25 @@
       this.baseUrl = '/api/proxy/qwen';
     }
 
+    // The endpoint and key configured in Settings, forwarded as headers the
+    // node proxy understands. An Authorization header would not survive the
+    // hop — the proxy rebuilds the outgoing headers and only carries these
+    // two — and the tunnel address changes every Kaggle session, so it cannot
+    // live in .env either.
+    _headers(extra) {
+      const pool = (window.ProviderManager && window.ProviderManager.getPoolState('qwen')) || {};
+      const headers = Object.assign({}, extra);
+      if (pool.endpoint) headers['x-qwen-endpoint'] = pool.endpoint;
+      if (pool.key) headers['x-qwen-key'] = pool.key;
+      return headers;
+    }
+
     async checkHealth() {
       try {
-        const res = await fetch(`${this.baseUrl}/health`, { method: 'GET' });
+        const res = await fetch(`${this.baseUrl}/health`, {
+          method: 'GET',
+          headers: this._headers()
+        });
         if (res.ok) {
           const data = await res.json();
           return data.status === 'ok';
@@ -56,10 +72,7 @@
     async _fetch(path, body) {
       const res = await fetch(`${this.baseUrl}${path}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + (window.ProviderManager?.getActiveKey('qwen') || '')
-        },
+        headers: this._headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body)
       });
       if (!res.ok) {

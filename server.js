@@ -49,8 +49,12 @@ const server = http.createServer((req, res) => {
   // Forwards /api/proxy/qwen/* → QWEN_API_URL/*
   // ──────────────────────────────────────────────────────────────────────────
   if (req.url.startsWith('/api/proxy/qwen')) {
-    const qwenUrl = process.env.QWEN_API_URL || req.headers['x-qwen-endpoint'];
-    const qwenKey = process.env.QWEN_API_KEY || req.headers['x-qwen-key'];
+    // Settings wins over .env, not the other way round. The Kaggle tunnel gets
+    // a new address every session, so the value someone just typed into the UI
+    // is newer than anything in a file — and with .env winning, editing the
+    // field appeared to do nothing at all.
+    const qwenUrl = req.headers['x-qwen-endpoint'] || process.env.QWEN_API_URL;
+    const qwenKey = req.headers['x-qwen-key'] || process.env.QWEN_API_KEY;
 
     if (!qwenUrl) {
       res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -65,7 +69,11 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    const subPath = req.url.replace('/api/proxy/qwen', '') || '/';
+    // Honour a path on the configured URL. Pasting ".../api" and having the
+    // "/api" silently dropped is the kind of thing that reads as the backend
+    // being down.
+    const basePath = targetUrl.pathname.replace(/\/+$/, '');
+    const subPath = basePath + (req.url.replace('/api/proxy/qwen', '') || '/');
     let body = [];
     // Planning a full storyboard is minutes of work on the GPU behind the
     // tunnel, not seconds. Two minutes cut the connection mid-generation and

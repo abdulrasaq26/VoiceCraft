@@ -6,6 +6,10 @@
   const STORAGE_KEYS_PREFIX = 'blvck:keys_';
 
   const pools = {
+    // The Qwen brain. Endpoint AND key, because the tunnel address changes
+    // every time the Kaggle session restarts — putting it in .env would mean
+    // editing a file and restarting the node server for every new session.
+    qwen: { endpoint: '', key: '', status: 'unknown' },
     nim: { keys: [], activeIndex: 0, exhausted: new Set(), status: 'healthy', logs: [] },
     openrouter: { keys: [], activeIndex: 0, exhausted: new Set(), status: 'healthy', logs: [] },
     ollama: { endpoint: 'http://localhost:11434', status: 'unknown' },
@@ -35,6 +39,10 @@
             pools[provider].keys = parsed;
           } else if (typeof parsed === 'string') {
             pools[provider].endpoint = parsed;
+          } else if (parsed && typeof parsed === 'object') {
+            // Providers that need an endpoint AND a key together.
+            if (typeof parsed.endpoint === 'string') pools[provider].endpoint = parsed.endpoint;
+            if (typeof parsed.key === 'string') pools[provider].key = parsed.key;
           }
         }
       } catch (e) {
@@ -49,6 +57,9 @@
       // If it's a provider that primarily relies on endpoints without keys arrays, force endpoint
       if (['fishaudio', 'kokoro', 'sd'].includes(provider)) {
          data = pools[provider].endpoint || '';
+      }
+      if (['qwen', 'cloudflare_worker'].includes(provider)) {
+        data = { endpoint: pools[provider].endpoint || '', key: pools[provider].key || '' };
       }
       localStorage.setItem(`${STORAGE_KEYS_PREFIX}${provider}`, JSON.stringify(data));
     } catch (e) {
@@ -128,9 +139,21 @@
 
   function setEndpoint(provider, endpointUrl) {
     if (pools[provider]) {
-      pools[provider].endpoint = endpointUrl.trim();
+      pools[provider].endpoint = String(endpointUrl || '').trim().replace(/\/+$/, '');
       saveKeys(provider);
     }
+  }
+
+  // For providers where the address and the secret travel together.
+  function setCredentials(provider, endpointUrl, key) {
+    if (!pools[provider]) return;
+    pools[provider].endpoint = String(endpointUrl || '').trim().replace(/\/+$/, '');
+    pools[provider].key = String(key || '').trim();
+    pools[provider].status = pools[provider].endpoint ? 'configured' : 'unconfigured';
+    saveKeys(provider);
+    window.dispatchEvent(new CustomEvent('blvck:provider-status-changed', {
+      detail: { provider, pool: pools[provider] }
+    }));
   }
 
   function handleKeyError(provider, errorMsg, failedKey = null) {
@@ -187,6 +210,7 @@
     getPoolKeyStates,
     setKeys,
     setEndpoint,
+    setCredentials,
     handleKeyError,
     getPoolState,
     getAllPools

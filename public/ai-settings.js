@@ -1,4 +1,9 @@
-// Categorized Multi-Provider AI Settings & Model Manager Modal for Blvck-TTS v5.1
+// Provider settings for AETHER.
+//
+// Only the five things this build actually uses: the Qwen brain, NVIDIA NIM as
+// its fallback, Fish Speech for voice, and Pixabay/Pexels for footage. The
+// other providers still exist in the adapters and keep working on their
+// defaults — they are just no longer worth a row in a dialog nobody reads.
 (() => {
   'use strict';
 
@@ -7,50 +12,56 @@
   const modal = $('ai-settings-modal');
   if (!openBtn || !modal) return;
 
-  const ttsProviderSel = $('set-tts-provider');
-  const imageProviderSel = $('set-image-provider');
-  const sdInput = $('set-sd-endpoint');
-  const cfWorkerEndpointInput = $('set-cf-worker-endpoint');
-  const cfWorkerKeyInput = $('set-cf-worker-key');
-  const openaiOauthInput = $('set-openai-oauth-endpoint');
-  const openaiEndpointInput = $('set-openai-endpoint');
-  const openaiInput = $('set-openai-keys');
+  const qwenEndpointInput = $('set-qwen-endpoint');
+  const qwenKeyInput = $('set-qwen-key');
+  const btnTestQwen = $('btn-test-qwen');
+  const qwenTestResult = $('qwen-test-result');
+  const nimInput = $('set-nim-keys');
   const chatModelSel = $('set-chat-model');
   const btnRefreshModels = $('btn-refresh-models');
-  const objectiveSel = $('set-objective');
-  const nimInput = $('set-nim-keys');
-  const elevenInput = $('set-elevenlabs-keys');
   const fishInput = $('set-fishaudio-endpoint');
-  const kokoroInput = $('set-kokoro-endpoint');
-  const falInput = $('set-fal-keys');
-  const replicateInput = $('set-replicate-keys');
-  const runwayInput = $('set-runway-keys');
-  const lumaInput = $('set-luma-keys');
   const pixabayInput = $('set-pixabay-keys');
   const pexelsInput = $('set-pexels-keys');
+  const objectiveSel = $('set-objective');
   const saveBtn = $('ai-settings-save');
 
   function populateModelDropdown() {
     if (!chatModelSel || !window.ModelRegistry) return;
+    const current = window.BlvckAI ? window.BlvckAI.chatModel() : 'auto';
+    const models = window.ModelRegistry.getDiscoveredModels() || [];
 
-    const currentSel = window.BlvckAI ? window.AIManager.chatModel() : 'auto';
-    const models = window.ModelRegistry.getDiscoveredModels();
-
-    let html = '<option value="auto">⚡ Auto (AI Director Recommendation)</option>';
-    models.forEach(m => {
-      html += `<option value="${m.id}" ${currentSel === m.id ? 'selected' : ''}>▼ ${m.name || m.id} (${m.type || 'general'})</option>`;
+    let html = '<option value="auto">⚡ Auto</option>';
+    models.forEach((m) => {
+      const sel = current === m.id ? ' selected' : '';
+      html += `<option value="${m.id}"${sel}>${m.name || m.id} (${m.type || 'general'})</option>`;
     });
-
     chatModelSel.innerHTML = html;
+  }
+
+  function populate() {
+    const PM = window.ProviderManager;
+    const AI = window.BlvckAI;
+    if (!PM) return;
+
+    const qwen = PM.getPoolState('qwen') || {};
+    if (qwenEndpointInput) qwenEndpointInput.value = qwen.endpoint || '';
+    if (qwenKeyInput) qwenKeyInput.value = qwen.key || '';
+    if (qwenTestResult) qwenTestResult.textContent = '';
+
+    if (nimInput) nimInput.value = (PM.getPoolState('nim')?.keys || []).join('\n');
+    if (fishInput) fishInput.value = PM.getPoolState('fishaudio')?.endpoint || '';
+    if (pixabayInput) pixabayInput.value = (PM.getPoolState('pixabay')?.keys || []).join('\n');
+    if (pexelsInput) pexelsInput.value = (PM.getPoolState('pexels')?.keys || []).join('\n');
+    if (objectiveSel && AI && AI.objective) objectiveSel.value = AI.objective();
+
+    populateModelDropdown();
   }
 
   async function openModal() {
     modal.hidden = false;
     document.body.classList.add('modal-open');
-
-    // Trigger dynamic discovery on open if NIM key exists
-    if (window.ModelRegistry) {
-      await window.ModelRegistry.syncAllGateways();
+    if (window.ModelRegistry && window.ModelRegistry.syncAllGateways) {
+      await window.ModelRegistry.syncAllGateways().catch(() => {});
     }
     populate();
   }
@@ -60,75 +71,78 @@
     document.body.classList.remove('modal-open');
   }
 
-  function populate() {
+  // Write the Qwen credentials before testing, so the proxy sees what is in the
+  // box rather than what was saved last time.
+  function stageQwen() {
     const PM = window.ProviderManager;
-    const AI = window.BlvckAI;
-    if (!PM || !AI) return;
-
-    if (ttsProviderSel) ttsProviderSel.value = AI.ttsProvider();
-    if (imageProviderSel && AI.imageProvider) imageProviderSel.value = AI.imageProvider();
-    if (objectiveSel) objectiveSel.value = AI.objective();
-
-    populateModelDropdown();
-
-    if (nimInput) nimInput.value = (PM.getPoolState('nim')?.keys || []).join('\n');
-    if (elevenInput) elevenInput.value = (PM.getPoolState('elevenlabs')?.keys || []).join('\n');
-    if (fishInput) fishInput.value = PM.getPoolState('fishaudio')?.endpoint || '';
-    if (kokoroInput) kokoroInput.value = PM.getPoolState('kokoro')?.endpoint || 'http://localhost:8880';
-    if (sdInput) sdInput.value = PM.getPoolState('sd')?.endpoint || 'http://localhost:1420';
-    if (cfWorkerEndpointInput) cfWorkerEndpointInput.value = PM.getPoolState('cloudflare_worker')?.endpoint || localStorage.getItem('blvck:cf_worker_endpoint') || '';
-    if (cfWorkerKeyInput) cfWorkerKeyInput.value = PM.getPoolState('cloudflare_worker')?.key || localStorage.getItem('blvck:cf_worker_key') || '';
-    const epVal = PM.getPoolState('openai_oauth')?.endpoint || 'http://127.0.0.1:10531/v1';
-    if (openaiOauthInput) openaiOauthInput.value = epVal;
-    if (openaiEndpointInput) openaiEndpointInput.value = epVal;
-    if (openaiInput) openaiInput.value = (PM.getPoolState('openai')?.keys || []).join('\n');
-    if (falInput) falInput.value = (PM.getPoolState('fal')?.keys || []).join('\n');
-    if (replicateInput) replicateInput.value = (PM.getPoolState('replicate')?.keys || []).join('\n');
-    if (runwayInput) runwayInput.value = (PM.getPoolState('runway')?.keys || []).join('\n');
-    if (lumaInput) lumaInput.value = (PM.getPoolState('luma')?.keys || []).join('\n');
-    if (pixabayInput) pixabayInput.value = (PM.getPoolState('pixabay')?.keys || []).join('\n');
-    if (pexelsInput) pexelsInput.value = (PM.getPoolState('pexels')?.keys || []).join('\n');
+    if (!PM || !qwenEndpointInput) return;
+    PM.setCredentials('qwen', qwenEndpointInput.value, qwenKeyInput ? qwenKeyInput.value : '');
   }
 
-  async function save() {
+  async function testQwen() {
+    if (!qwenTestResult) return;
+    stageQwen();
+
+    const endpoint = (qwenEndpointInput.value || '').trim();
+    if (!endpoint) {
+      qwenTestResult.textContent = 'Enter the endpoint first.';
+      return;
+    }
+
+    btnTestQwen.disabled = true;
+    qwenTestResult.textContent = 'Checking…';
+    try {
+      const res = await fetch('/api/proxy/qwen/health', {
+        method: 'GET',
+        headers: {
+          'x-qwen-endpoint': endpoint,
+          'x-qwen-key': (qwenKeyInput && qwenKeyInput.value.trim()) || ''
+        }
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+
+      // `loaded` is the difference between "the tunnel answers" and "the model
+      // is in VRAM" — a first request against an unloaded server takes minutes,
+      // and that is worth knowing here rather than discovering mid-generation.
+      const loaded = body.loaded === false ? ' — model not loaded yet' : '';
+      qwenTestResult.textContent = `🟢 ${body.model || 'connected'}${loaded}`;
+    } catch (err) {
+      qwenTestResult.textContent = `🔴 ${err.message}`;
+    } finally {
+      btnTestQwen.disabled = false;
+    }
+  }
+
+  function save() {
     const PM = window.ProviderManager;
     const AI = window.BlvckAI;
-    if (!PM || !AI) return;
+    if (!PM) return;
 
     try {
-      if (ttsProviderSel) AI.setTtsProvider(ttsProviderSel.value);
-      if (imageProviderSel && AI.setImageProvider) AI.setImageProvider(imageProviderSel.value);
-      if (chatModelSel) AI.setChatModel(chatModelSel.value);
-      if (objectiveSel) AI.setObjective(objectiveSel.value);
-
+      stageQwen();
       if (nimInput) PM.setKeys('nim', nimInput.value.split('\n'));
-      if (elevenInput) PM.setKeys('elevenlabs', elevenInput.value.split('\n'));
       if (fishInput) PM.setEndpoint('fishaudio', fishInput.value);
-      if (kokoroInput) PM.setEndpoint('kokoro', kokoroInput.value);
-      if (sdInput) PM.setEndpoint('sd', sdInput.value);
-      if (cfWorkerEndpointInput) {
-        PM.setEndpoint('cloudflare_worker', cfWorkerEndpointInput.value);
-        localStorage.setItem('blvck:cf_worker_endpoint', cfWorkerEndpointInput.value.trim());
-      }
-      if (cfWorkerKeyInput) {
-        if (PM.pools && PM.pools.cloudflare_worker) PM.pools.cloudflare_worker.key = cfWorkerKeyInput.value.trim();
-        localStorage.setItem('blvck:cf_worker_key', cfWorkerKeyInput.value.trim());
-      }
-      const saveEp = (openaiEndpointInput && openaiEndpointInput.value) || (openaiOauthInput && openaiOauthInput.value) || 'http://127.0.0.1:10531/v1';
-      PM.setEndpoint('openai_oauth', saveEp);
-      if (openaiInput) PM.setKeys('openai', openaiInput.value.split('\n'));
-      if (falInput) PM.setKeys('fal', falInput.value.split('\n'));
-      if (replicateInput) PM.setKeys('replicate', replicateInput.value.split('\n'));
-      if (runwayInput) PM.setKeys('runway', runwayInput.value.split('\n'));
-      if (lumaInput) PM.setKeys('luma', lumaInput.value.split('\n'));
       if (pixabayInput) PM.setKeys('pixabay', pixabayInput.value.split('\n'));
       if (pexelsInput) PM.setKeys('pexels', pexelsInput.value.split('\n'));
 
-      // Close modal & emit status update immediately (non-blocking)
+      if (AI) {
+        // Fish Speech is the only voice engine this build ships with, so the
+        // provider is set here rather than offered as a choice of one.
+        if (AI.setTtsProvider) AI.setTtsProvider('fishaudio');
+        if (chatModelSel && AI.setChatModel) AI.setChatModel(chatModelSel.value);
+        if (objectiveSel && AI.setObjective) AI.setObjective(objectiveSel.value);
+      }
+
       closeModal();
       window.dispatchEvent(new CustomEvent('blvck:provider-status-changed'));
 
-      // Non-blocking background gateway sync
+      if (window.AIManager && window.AIManager.checkHealth) {
+        // Re-probe now: a new endpoint should flip the status light without
+        // waiting for the next generation to fail.
+        window.AIManager.isQwenHealthy = null;
+        window.AIManager.checkHealth().catch(() => {});
+      }
       if (window.ModelRegistry && window.ModelRegistry.syncAllGateways) {
         window.ModelRegistry.syncAllGateways().catch(() => {});
       }
@@ -140,17 +154,16 @@
 
   if (btnRefreshModels) {
     btnRefreshModels.addEventListener('click', async () => {
-      btnRefreshModels.textContent = '⏳ Discovering...';
-      if (window.ModelRegistry) {
-        await window.ModelRegistry.syncAllGateways();
-      }
+      btnRefreshModels.textContent = '⏳ …';
+      if (window.ModelRegistry) await window.ModelRegistry.syncAllGateways().catch(() => {});
       populateModelDropdown();
-      btnRefreshModels.textContent = '↻ Refresh Models';
+      btnRefreshModels.textContent = '↻ Refresh';
     });
   }
 
+  if (btnTestQwen) btnTestQwen.addEventListener('click', testQwen);
   openBtn.addEventListener('click', openModal);
   if (saveBtn) saveBtn.addEventListener('click', save);
-  modal.querySelectorAll('.close-modal').forEach(b => b.addEventListener('click', closeModal));
+  modal.querySelectorAll('.close-modal, [data-close]').forEach((b) => b.addEventListener('click', closeModal));
   window.addEventListener('blvck:models-updated', populateModelDropdown);
 })();

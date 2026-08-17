@@ -1142,71 +1142,58 @@
         <h2>⚙ Provider &amp; Engine Settings</h2>
         <button class="modal-close" type="button" data-close aria-label="Close">×</button>
       </div>
-      <p class="field-note">Configure key pools and engine priorities categorized by capability.</p>
+      <p class="field-note">Only what this build actually uses. Qwen is the brain; NVIDIA NIM catches it when the tunnel is down.</p>
 
       <fieldset style="border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px; margin-bottom:15px;">
-        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🎙️ Text-to-Speech (TTS) Engine &amp; Keys</legend>
-        <label for="set-tts-provider">Main Active TTS Provider</label>
-        <select id="set-tts-provider" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2); margin-bottom:10px;">
-          <option value="kokoro">🔊 Kokoro Local TTS (http://localhost:8880 - Zero Cost)</option>
-          <option value="fishaudio">🐟 Fish Speech (Colab/API)</option>
-          <option value="elevenlabs">🎙️ ElevenLabs Direct API Key Pool</option>
-          <option value="openai">🌐 OpenAI Voice API</option>
-        </select>
-        <label for="set-kokoro-endpoint">🔊 Kokoro Local Endpoint</label>
-        <input id="set-kokoro-endpoint" type="text" value="http://localhost:8880" style="margin-bottom:10px;" />
-        <label for="set-fishaudio-endpoint">🐟 Fish Speech Endpoint (e.g. ngrok URL)</label>
-        <input id="set-fishaudio-endpoint" type="text" placeholder="https://..." style="margin-bottom:10px;" />
-        <label for="set-elevenlabs-keys">🎙️ ElevenLabs API Keys</label>
-        <textarea id="set-elevenlabs-keys" rows="2" placeholder="xi-api-key..."></textarea>
+        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🧠 Qwen Brain — Primary</legend>
+        <p class="field-note" style="margin-top:0;">The ngrok URL from Stage 10 of the Kaggle notebook. It changes every time that session restarts, which is why it lives here rather than in <code>.env</code>.</p>
+        <label for="set-qwen-endpoint">Endpoint URL</label>
+        <input id="set-qwen-endpoint" type="text" placeholder="https://something.ngrok-free.dev" style="margin-bottom:10px;" />
+        <label for="set-qwen-key">API Key <span class="field-note">(the notebook&rsquo;s DIRECTOR_API_KEY)</span></label>
+        <input id="set-qwen-key" type="password" placeholder="..." style="margin-bottom:10px;" />
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="btn-test-qwen" class="btn ghost small" type="button">Test connection</button>
+          <span id="qwen-test-result" class="field-note" style="margin:0;"></span>
+        </div>
       </fieldset>
 
       <fieldset style="border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px; margin-bottom:15px;">
-        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🧠 LLM &amp; Reasoning Engine (NVIDIA NIM Gateway)</legend>
+        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🚀 NVIDIA NIM — Fallback</legend>
+        <p class="field-note" style="margin-top:0;">Used only when Qwen is unreachable. One key per line.</p>
+        <label for="set-nim-keys">API Keys</label>
+        <textarea id="set-nim-keys" rows="2" placeholder="nvapi-..." style="margin-bottom:10px;"></textarea>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <label for="set-chat-model" style="margin:0;">Available Models</label>
+          <label for="set-chat-model" style="margin:0;">NIM model</label>
           <button id="btn-refresh-models" class="btn ghost small" type="button">↻ Refresh</button>
         </div>
-        <select id="set-chat-model" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2); margin-bottom:10px;">
-          <option value="auto">⚡ Auto (AI Director Recommendation)</option>
+        <select id="set-chat-model" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2);">
+          <option value="auto">⚡ Auto</option>
         </select>
-        <label for="set-nim-keys">🚀 NVIDIA NIM API Keys</label>
-        <textarea id="set-nim-keys" rows="2" placeholder="nvapi-..." style="margin-bottom:10px;"></textarea>
-        <label for="set-openai-oauth-endpoint">🔓 OpenAI OAuth Local Proxy Endpoint (ChatGPT Free/Plus Account)</label>
-        <input id="set-openai-oauth-endpoint" type="text" value="http://127.0.0.1:10531/v1" style="margin-bottom:10px;" placeholder="http://127.0.0.1:10531/v1" />
-      </fieldset>
-        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🎨 Image Generation Engine, Keys &amp; Endpoint</legend>
-        <label for="set-image-provider">Main Active Image Provider</label>
-        <select id="set-image-provider" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2); margin-bottom:10px;">
-          <option value="pollinations" selected>🌸 Pollinations.ai FLUX / SD (Free Public High-Res Engine)</option>
-          <option value="sd_local">🎨 Stable Diffusion Local (Uncensored Local Studio)</option>
-          <option value="cloudflare_worker">☁️ Cloudflare Worker AI (SDXL Base 1.0)</option>
-          <option value="openai_oauth">🤖 OpenAI ChatGPT Image Generator (gpt-image-2 / DALL-E 3)</option>
-          <option value="fal">⚡ Fal.ai (Cloud FLUX / SDXL)</option>
-          <option value="replicate">🌀 Replicate (Cloud FLUX / SDXL)</option>
-        </select>
-        <label for="set-cf-worker-endpoint">☁️ Cloudflare Worker Endpoint URL</label>
-        <input id="set-cf-worker-endpoint" type="text" value="" style="margin-bottom:10px;" placeholder="https://my-image-ai.my-name.workers.dev/" />
-        <label for="set-cf-worker-key">🔐 Cloudflare Worker API Key (Authorization: Bearer KEY)</label>
-        <input id="set-cf-worker-key" type="password" value="" style="margin-bottom:10px;" placeholder="Your secret API_KEY..." />
-        <label for="set-openai-endpoint">🔑 OpenAI / ChatGPT Local Proxy Endpoint</label>
-        <input id="set-openai-endpoint" type="text" value="http://127.0.0.1:10531/v1" style="margin-bottom:10px;" placeholder="http://127.0.0.1:10531/v1" />
-        <label for="set-openai-keys">⚡ OpenAI Direct API Key (sk-... for DALL-E 3)</label>
-        <textarea id="set-openai-keys" rows="1" placeholder="sk-proj-..." style="margin-bottom:10px;"></textarea>
-        <label for="set-sd-endpoint">🎨 Stable Diffusion Local Endpoint</label>
-        <input id="set-sd-endpoint" type="text" value="http://localhost:1420" style="margin-bottom:10px;" placeholder="http://localhost:1420 or http://localhost:8080" />
-        <label for="set-fal-keys">⚡ Fal.ai API Keys</label>
-        <textarea id="set-fal-keys" rows="1" placeholder="Key..." style="margin-bottom:10px;"></textarea>
-        <label for="set-replicate-keys">🌀 Replicate API Keys</label>
-        <textarea id="set-replicate-keys" rows="1" placeholder="r8_..."></textarea>
       </fieldset>
 
-      <fieldset style="border:1px solid rgba(255,255,255,0.2); padding:15px; border-radius:8px; margin-bottom:15px;">
-        <legend style="padding:0 8px; color:#11998e; font-weight:700;">Stock Media Providers</legend>
-        <label for="set-pixabay-keys">📷 Pixabay API Keys</label>
-        <textarea id="set-pixabay-keys" rows="1" placeholder="Pixabay Key..." style="margin-bottom:10px;"></textarea>
-        <label for="set-pexels-keys">📷 Pexels API Keys</label>
-        <textarea id="set-pexels-keys" rows="1" placeholder="Pexels Key..."></textarea>
+      <fieldset style="border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px; margin-bottom:15px;">
+        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🐟 Fish Speech — Voice</legend>
+        <label for="set-fishaudio-endpoint">Endpoint (Colab / ngrok URL)</label>
+        <input id="set-fishaudio-endpoint" type="text" placeholder="https://..." />
+      </fieldset>
+
+      <fieldset style="border:1px solid rgba(255,255,255,0.2); padding:12px; border-radius:8px; margin-bottom:15px;">
+        <legend style="padding:0 8px; color:#11998e; font-weight:700;">📷 Stock Footage</legend>
+        <p class="field-note" style="margin-top:0;">Where the stock_video, stock_photo and stock_text beats get their footage. One key per line.</p>
+        <label for="set-pixabay-keys">Pixabay API Keys</label>
+        <textarea id="set-pixabay-keys" rows="1" placeholder="Pixabay key..." style="margin-bottom:10px;"></textarea>
+        <label for="set-pexels-keys">Pexels API Keys</label>
+        <textarea id="set-pexels-keys" rows="1" placeholder="Pexels key..."></textarea>
+      </fieldset>
+
+      <fieldset style="border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px; margin-bottom:15px;">
+        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">Behaviour</legend>
+        <label for="set-objective">Objective</label>
+        <select id="set-objective" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2);">
+          <option value="quality">Quality</option>
+          <option value="speed">Speed</option>
+          <option value="cost">Cost</option>
+        </select>
       </fieldset>
 
       <div class="actions" style="margin-top:15px;">
