@@ -26,16 +26,22 @@
 
 <h1>Archive excerpt export verification</h1>
 <p class="sub">
-  Records a real export through <code>MediaRecorder</code>, then decodes the produced file and
-  compares its pixels against the source film seeked to the expected position.
+  Downloads the archival film into AETHER's local asset cache, then records a real export through
+  <code>MediaRecorder</code> reading from that cached blob — the production path. Decodes the
+  produced file and compares its pixels against the source seeked to the expected position.
   Run this in a normal, visible tab — a background tab suspends
   <code>requestAnimationFrame</code> and the video element cannot decode during capture.
+</p>
+<p class="sub">
+  The first run downloads ~89&nbsp;MB; later runs are served from IndexedDB. Nothing here streams
+  from archive.org during recording, which is the whole point — a remote stream re-buffers
+  unpredictably mid-export and cannot be relied on for a finished video.
 </p>
 
 <div id="protocol-warning" hidden>
   <p class="bad" style="font-weight:600;margin:0 0 .4rem;">This page must be served over HTTP, not opened from disk.</p>
   <p style="margin:0 0 .6rem;color:#9aa4b2;">
-    Two things need the server: the archival film streams through AETHER's own
+    Two things need the server: the archival film is downloaded through AETHER's own
     <code>/api/proxy/archive</code> route, and <code>file://</code> blocks the
     module loads this page depends on.
   </p>
@@ -66,6 +72,9 @@
 <script src="graphic-renderer.js"></script>
 <script src="transcription/transcript.js"></script>
 <script src="editor.js"></script>
+<!-- The real acquisition/caching layer, so this measures the shipped download
+     and cache-read path rather than a fetch written for the test. -->
+<script src="adapters/stock-media.js"></script>
 <script>
 (() => {
   'use strict';
@@ -77,12 +86,25 @@
   const SHOT_END = 25.0;
   const PROJECT_MS = 30000;                 // a third shot follows, to 30s
 
-  // A real archival film, streamed through AETHER's own proxy. 1015s long, so
-  // 272.2s is genuinely deep inside it — playing from zero would look nothing
-  // like the expected frame.
+  // A real archival film. 1015s long, so 272.2s is genuinely deep inside it —
+  // playing from zero would look nothing like the expected frame.
   const ITEM = '203969_Home_Movie_097405';
   const FILE = '203969_Home_Movie_097405_master.intros.mp4';
   const SRC = `/api/proxy/archive/download/${ITEM}/${FILE}`;
+
+  // Shaped like a normalized StockAsset so downloadAsset() treats it exactly as
+  // it treats an asset chosen by the Director. The id is what the cache is keyed
+  // on, so a rerun hits the cache instead of pulling 89 MB again.
+  const ASSET = {
+    provider: 'archive_org',
+    id: ITEM,
+    type: 'video',
+    downloadUrl: SRC,
+    orientation: 'landscape',
+    duration: 1015.6,
+    width: 640,
+    height: 480
+  };
 
   const SAMPLES = [
     { timeline: 19.2,  source: 272.90 },
@@ -194,16 +216,47 @@
       return;
     }
 
-    say('loading the archival source through the AETHER proxy...');
-    let film;
+    if (!window.StockMedia) {
+      say('stock-media.js did not load — the cache path cannot be exercised.');
+      btn.disabled = false;
+      return;
+    }
+
+    // Acquire through the production cache. The distinction this whole test
+    // exists to make: the bytes must be on this machine before recording
+    // starts, so no frame depends on archive.org answering in time.
+    const cacheKey = `${ASSET.provider}:${ASSET.id}`;
+    const wasCached = !!window.StockMedia.getCacheMeta()[cacheKey];
+    say(wasCached
+      ? `cache already holds ${cacheKey} — reading locally`
+      : `downloading ${cacheKey} into the local cache (~89 MB, first run only)...`);
+
+    let film, blob0;
+    const tAcquire = performance.now();
     try {
-      film = await loadVideo(SRC);
+      blob0 = await window.StockMedia.downloadAsset(ASSET);
     } catch (e) {
-      say('FAILED: ' + e.message);
+      say('FAILED to acquire: ' + e.message);
       say('archive.org storage nodes are intermittently unavailable; try again in a minute.');
       btn.disabled = false;
       return;
     }
+    const acquireMs = Math.round(performance.now() - tAcquire);
+    say(`  ${wasCached ? 'cache HIT' : 'downloaded'}: `
+      + `${(blob0.size / 1048576).toFixed(1)} MB in ${acquireMs}ms, type ${blob0.type || '(none)'}`);
+    window.__cache = { cacheKey, wasCached, bytes: blob0.size, acquireMs };
+
+    // From here on the source is a blob URL — same as assemble() builds from the
+    // cached clip. Recording cannot touch the network even if it wanted to.
+    const localUrl = URL.createObjectURL(blob0);
+    try {
+      film = await loadVideo(localUrl);
+    } catch (e) {
+      say('FAILED: the cached blob did not decode: ' + e.message);
+      btn.disabled = false;
+      return;
+    }
+    say(`source is local: ${localUrl.slice(0, 5)}... (no archive.org during recording)`);
     if (!isFinite(film.duration) || film.duration === 0) {
       await seek(film, 1e6); await seek(film, 0);
     }
@@ -299,7 +352,6 @@
         + `preparedFrame=${d.hasPreparedFrame} fallback=${d.fallbackUsed || 'none'}`);
     }
     window.__capture = { shotBFrames, shotBReady };
-    window.__capture = { shotBFrames, shotBReady };
 
     const out = await loadVideo(URL.createObjectURL(blob));
     if (!isFinite(out.duration) || out.duration === 0) { await seek(out, 1e6); await seek(out, 0); }
@@ -394,12 +446,22 @@
     const started = rows[0].closer === 'sourceIn';
     const anyContradiction = rows.some((r) => r.closer === 'zero');
     const stopped2 = dPastOut > dNext && dNext < 0.6;
-    const pass = matches >= 4 && started && stopped2 && !anyContradiction;
+
+    // Reading a local file, every frame of the shot should be decodable. This is
+    // the criterion the remote stream kept failing — one run recorded 390 frames
+    // with 41 drawable because the browser evicted the buffered range. Against a
+    // blob there is no network to blame, so anything short of ~all frames means
+    // the defect is in the renderer and must not be signed off.
+    const drawRate = shotBFrames ? shotBReady / shotBFrames : 0;
+    const allDrawable = drawRate >= 0.98;
+
+    const pass = matches >= 4 && started && stopped2 && !anyContradiction && allDrawable;
     const v = document.getElementById('verdict');
     v.className = pass ? 'ok' : 'bad';
-    v.textContent = `Archive source offset export verification: ${pass ? 'PASS' : 'FAIL'}`
+    v.textContent = `Archive excerpt export from LOCAL CACHE: ${pass ? 'PASS' : 'FAIL'}`
       + `  (${matches}/${SAMPLES.length} samples matched sourceIn; `
-      + `starts at sourceIn: ${started ? 'yes' : 'no'}; stops at sourceOut: ${stopped2 ? 'yes' : 'no'})`;
+      + `starts at sourceIn: ${started ? 'yes' : 'no'}; stops at sourceOut: ${stopped2 ? 'yes' : 'no'}; `
+      + `decodable ${shotBReady}/${shotBFrames} = ${(drawRate * 100).toFixed(1)}%)`;
 
     say('done — copy the tables above.');
     btn.disabled = false;
