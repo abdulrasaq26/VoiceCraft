@@ -80,6 +80,24 @@ class TimePeriod(BaseModel):
     label: str = Field(default="", description="How the script says it: '1960s', 'the Cold War'.")
 
 
+class Excerpt(BaseModel):
+    """Which slice of a long archive item this beat wants.
+
+    Archive items are whole films, so a beat needs a window rather than the
+    whole reel. `selectionIntent` says what should be on screen; AETHER finds
+    the window and flags it for checking, because choosing the right moment
+    inside an eleven-minute film means watching it.
+    """
+
+    required: bool = Field(default=False, description="True when the source is a long-form film.")
+    targetDuration: float = Field(default=6.0, ge=1, le=60,
+                                  description="Seconds of it to use.")
+    selectionIntent: str = Field(
+        default="",
+        description="What should be visible in the excerpt: 'workers operating wartime machinery'.",
+    )
+
+
 class StockRequirements(BaseModel):
     """What to search the stock libraries for. Required for the stock_* types."""
 
@@ -152,6 +170,20 @@ class StockRequirements(BaseModel):
     timePeriod: Optional[TimePeriod] = Field(
         default=None,
         description="Only when the script establishes a date. Never guessed.",
+    )
+    excerpt: Optional[Excerpt] = Field(
+        default=None,
+        description="Set for archive sources, which are whole films rather than clips.",
+    )
+    editorialPurpose: str = Field(
+        default="",
+        description=(
+            "Why this footage serves the story editorially — 'historical "
+            "context for the wartime production figures'. A production note, "
+            "not a legal claim: never assert that a use is fair, permitted or "
+            "safe. Whether uncleared material may be published is decided by "
+            "a person, not here."
+        ),
     )
 
 

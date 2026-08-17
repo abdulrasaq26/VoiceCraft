@@ -259,7 +259,21 @@
     return localStorage.getItem('blvck:archive_enabled') !== 'false';   // on by default
   }
 
+  function projectRightsPolicy() {
+    return localStorage.getItem('blvck:rights_policy')
+        || (window.ArchiveLicense && window.ArchiveLicense.DEFAULT_POLICY)
+        || 'cleared_plus_by';
+  }
+
   function archivePolicy() {
+    const p = window.ArchiveLicense ? window.ArchiveLicense.policy(projectRightsPolicy()) : {};
+    return {
+      allowAttribution: !!p.allowAttribution,
+      allowTrustedCollections: localStorage.getItem('blvck:archive_trusted_collections') !== 'false'
+    };
+  }
+
+  function _legacyArchivePolicy() {
     return {
       // CC-BY is monetisable but demands a credit, so it stays off until the
       // user accepts that. Restricted and unknown are never opened.
@@ -656,7 +670,10 @@
     if (results.length) {
       const ranked = rank(results, rankOpts, usedIds);
       for (const asset of ranked) {
+        if (!clearForProduction(asset, scene)) continue;
         try {
+          const excerpt = req.excerpt || scene.excerpt || {};
+          asset.excerpt = planExcerpt(asset, excerpt.targetDuration || targetDuration, excerpt.selectionIntent);
           const blob = await downloadAsset(asset);
           markUsed(asset);
           _attachStockMeta(scene, asset, directorQueries, 'primary');
@@ -717,6 +734,84 @@
     return null;
   }
 
+  // Whether this asset may be placed on the timeline without a human first
+  // looking at it. Decided here, in code — the Director judges whether footage
+  // serves the story, never whether it may lawfully be published.
+  function clearForProduction(asset, scene) {
+    if (asset.provider !== 'archive_org') return true;      // catalogue-licensed
+    if (!window.ArchiveLicense) return false;
+
+    const verdict = window.ArchiveLicense.evaluate(asset.license, projectRightsPolicy());
+    asset.rightsStatus = verdict;
+
+    if (verdict.usable) return true;
+
+    // An editorial candidate is recorded against the scene so the storyboard
+    // can offer it for review, but it is not placed. "Might be arguable" is
+    // not a decision software gets to make on someone's behalf.
+    if (verdict.humanReviewRequired && scene) {
+      scene.editorialCandidates = scene.editorialCandidates || [];
+      if (!scene.editorialCandidates.some((c) => c.id === asset.id)) {
+        scene.editorialCandidates.push({
+          id: asset.id,
+          provider: asset.provider,
+          title: (asset.archive && asset.archive.title) || asset.id,
+          sourceUrl: asset.sourceUrl,
+          license: asset.license,
+          rightsStatus: verdict,
+          humanReviewRequired: true
+        });
+      }
+    }
+    return false;
+  }
+
+  // ── Excerpt planning ──────────────────────────────────────────────────────
+  //
+  // A Pexels clip is a shot. An archive item is a whole film — eleven minutes
+  // of newsreel for a six-second beat. Dropping the whole thing on the
+  // timeline gives the scene an arbitrary opening title card instead of the
+  // footage it asked for.
+  //
+  // What this does NOT do is find the semantically right moment. Locating
+  // "workers operating wartime machinery" inside an 11-minute reel needs
+  // vision analysis that is not built here, and pretending otherwise would be
+  // worse than admitting it. So the window is a heuristic starting point,
+  // flagged for review, and the user can move it.
+  function planExcerpt(asset, targetDuration, intent) {
+    const full = Number(asset.duration || 0);
+    const want = Math.max(2, Number(targetDuration) || 6);
+    if (!full || full <= want * 1.5) return null;   // already about the right length
+
+    // Skip the opening: archival films almost always start on titles, a
+    // countdown or a logo, none of which is the footage anyone wants.
+    const lead = Math.min(Math.max(full * 0.12, 8), 90);
+    const usable = Math.max(0, full - lead - Math.min(full * 0.08, 30));
+    const start = usable > want ? lead + (usable - want) * 0.25 : lead;
+
+    return {
+      required: true,
+      applied: true,
+      start: Math.round(start * 10) / 10,
+      end: Math.round((start + want) * 10) / 10,
+      duration: want,
+      sourceDuration: full,
+      selectionIntent: String(intent || ''),
+      // Said plainly, because the alternative is the user assuming the system
+      // watched the film and chose this moment on purpose.
+      method: 'heuristic_window',
+      reviewSuggested: true,
+      note: 'Start point estimated, not chosen by watching the footage. Check it covers the moment you want.'
+    };
+  }
+
+  function formatTimecode(seconds) {
+    const s = Math.max(0, Number(seconds) || 0);
+    const m = Math.floor(s / 60);
+    const rest = (s - m * 60).toFixed(1).padStart(4, '0');
+    return `${String(m).padStart(2, '0')}:${rest}`;
+  }
+
   // The credit line for a clip that requires one. Public-domain material needs
   // no attribution, so returning null here is meaningful rather than missing.
   function buildAttribution(asset) {
@@ -749,7 +844,11 @@
       // one thing you cannot reconstruct after the fact.
       license:      asset.license || null,
       archive:      asset.archive || null,
-      attribution:  buildAttribution(asset)
+      attribution:  buildAttribution(asset),
+      excerpt:      asset.excerpt || null,
+      // Set by code, never by the model. An uncleared clip is not placed into
+      // production by an AI deciding it looks defensible.
+      rightsStatus: asset.rightsStatus || null
     };
   }
 
@@ -805,6 +904,10 @@
     searchForBrowse,
     // State
     isConfigured,
+    planExcerpt,
+    formatTimecode,
+    clearForProduction,
+    projectRightsPolicy,
     providersStatus,
     legacyAIEnabled,
     projectOrientation,

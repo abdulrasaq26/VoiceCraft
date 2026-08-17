@@ -156,6 +156,110 @@
     }, extra);
   }
 
+  // ── Project rights policy ─────────────────────────────────────────────────
+  //
+  // Three settings, and the third is not "turn the safety off". It surfaces
+  // material that is NOT cleared so a human can decide about it — the clip
+  // still cannot reach an export without someone approving it by hand.
+  const POLICIES = {
+    cleared_only: {
+      label: 'Cleared media only',
+      note: 'Public domain and CC0. Nothing that carries an obligation.',
+      allowAttribution: false,
+      allowEditorialCandidates: false
+    },
+    cleared_plus_by: {
+      label: 'Cleared media + CC-BY',
+      note: 'Adds CC-BY, which permits commercial use provided the creator is credited. AETHER writes the credit for you.',
+      allowAttribution: true,
+      allowEditorialCandidates: false
+    },
+    editorial_review: {
+      label: 'Allow editorial candidates (review required)',
+      note: 'Also surfaces uncleared material for possible editorial use. AETHER does not determine fair use — every such clip needs your own review, and legal advice if you are unsure.',
+      allowAttribution: true,
+      allowEditorialCandidates: true
+    }
+  };
+
+  const DEFAULT_POLICY = 'cleared_plus_by';
+
+  function policy(name) {
+    return POLICIES[name] || POLICIES[DEFAULT_POLICY];
+  }
+
+  /**
+   * What may be done with this item under this project's policy.
+   *
+   * Deliberately not a boolean. "No" and "not without a human looking at it"
+   * are different answers, and collapsing them is how uncleared footage ends
+   * up in a published video.
+   *
+   * Nothing here decides fair use. Fair use is a fact-specific legal judgement
+   * about purpose, the nature of the work, how much is taken and what it does
+   * to the market for the original — it is not a property of metadata, and no
+   * amount of trimming, crediting or narrating converts a restricted clip into
+   * a cleared one. All this can say is "not cleared; a person must decide".
+   */
+  function evaluate(verdictObj, policyName) {
+    const p = policy(policyName);
+    const v = verdictObj || classify({});
+
+    if (v.tier === 'public_domain') {
+      return {
+        status: 'cleared',
+        usable: true,
+        humanReviewRequired: false,
+        requiresAttribution: false,
+        headline: '✓ Cleared',
+        detail: v.detail
+      };
+    }
+
+    if (v.tier === 'attribution') {
+      if (!p.allowAttribution) {
+        return {
+          status: 'not_cleared',
+          usable: false,
+          humanReviewRequired: false,
+          requiresAttribution: true,
+          headline: '✕ Not cleared under this policy',
+          detail: 'CC-BY permits commercial use but requires a credit. Switch the project policy to "Cleared media + CC-BY" to use it.'
+        };
+      }
+      return {
+        status: 'attribution_required',
+        usable: true,
+        humanReviewRequired: false,
+        requiresAttribution: true,
+        headline: '✓ Commercial use permitted · ⚠ Attribution required',
+        detail: v.detail
+      };
+    }
+
+    // Restricted and unknown are the same answer to the production pipeline:
+    // not cleared. They differ only in what a reviewer would be looking at.
+    if (p.allowEditorialCandidates) {
+      return {
+        status: 'editorial_candidate',
+        usable: false,               // never auto-placed, whatever the policy
+        humanReviewRequired: true,   // set here, in code, never by the model
+        requiresAttribution: true,
+        headline: '⚠ Editorial candidate — human review required',
+        detail: v.detail + ' AETHER does not determine fair use; this clip cannot be exported until you approve it.'
+      };
+    }
+
+    return {
+      status: 'not_cleared',
+      usable: false,
+      humanReviewRequired: false,
+      requiresAttribution: false,
+      headline: '✕ Not cleared',
+      detail: v.detail
+    };
+  }
+
   /**
    * Is this item allowed under the current policy?
    *
@@ -195,8 +299,12 @@
 
   window.ArchiveLicense = {
     classify,
+    evaluate,
     isUsable,
     searchFilter,
+    policy,
+    POLICIES,
+    DEFAULT_POLICY,
     TRUSTED_PD_COLLECTIONS,
     // exported for tests
     _patterns: { BLOCKED, PUBLIC_DOMAIN, ATTRIBUTION }
