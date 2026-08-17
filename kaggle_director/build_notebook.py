@@ -542,11 +542,11 @@ assert requests.post(f'http://localhost:{API_PORT}/generate',
 
 chat = requests.post(f'http://localhost:{API_PORT}/chat', headers=AUTH,
                      json={'messages': [{'role': 'user', 'content': 'Reply with one word: ready'}],
-                           'max_tokens': 32}, timeout=300)
+                           'max_tokens': 512}, timeout=600)
 print('/chat     ', chat.status_code, chat.json()['choices'][0]['message']['content'][:60] if chat.ok else chat.text[:200])
 
 gen = requests.post(f'http://localhost:{API_PORT}/generate', headers=AUTH,
-                    json={'prompt': 'Give one YouTube title about inflation.', 'max_tokens': 64}, timeout=300)
+                    json={'prompt': 'Give one YouTube title about inflation.', 'max_tokens': 1024}, timeout=600)
 print('/generate ', gen.status_code, gen.json()['content'][:60] if gen.ok else gen.text[:200])
 
 plan = requests.post(f'http://localhost:{API_PORT}/director', headers=AUTH,

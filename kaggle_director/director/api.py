@@ -75,7 +75,9 @@ def check_token(creds: HTTPAuthorizationCredentials = Depends(security)) -> str:
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
     temperature: float = 0.7
-    max_tokens: int = 1024
+    # Generous, because on the fallback path the model reasons first and a
+    # tight budget is spent entirely on deliberation, returning no answer.
+    max_tokens: int = 2048
     thinking: bool = False
     stream: bool = False
 
@@ -83,7 +85,7 @@ class ChatRequest(BaseModel):
 class GenerateRequest(BaseModel):
     prompt: str
     temperature: float = 0.7
-    max_tokens: int = 2048
+    max_tokens: int = 4096
     thinking: bool = False
     response_format: Optional[Dict[str, Any]] = None
 

@@ -14,6 +14,7 @@ import json
 import unittest
 
 from .cache import get_cache_key
+from .inference import strip_thinking
 from .schema import VideoPlan, get_json_schema, plan_violations, scene_violations
 
 # Mirrors the vocabularies in public/prompts.js. If a test here fails after you
@@ -262,6 +263,46 @@ class TestRepair(unittest.TestCase):
         plan["scenes"][1]["graphic"] = None
         self.repair(plan, [{"index": 0, "text": "a"}, {"index": 1, "text": "b"}])
         VideoPlan(**plan)
+
+
+class TestStripThinking(unittest.TestCase):
+    """Recovering the answer from a reply that begins mid-thought.
+
+    This model's chat template ends the prompt with a bare `<think>\\n`, so
+    generation starts already inside the block and only the CLOSING tag is ever
+    generated. A regex looking for a matched pair matches nothing, and /generate
+    returned several hundred tokens of deliberation where a title was expected.
+    """
+
+    def test_closing_tag_with_no_opener(self):
+        raw = "1. Analyse the request\n2. Draft options\n</think>\n\nWhy Your Money Buys Less"
+        self.assertEqual(strip_thinking(raw), "Why Your Money Buys Less")
+
+    def test_matched_pair_still_works(self):
+        self.assertEqual(strip_thinking("<think>hmm</think>\n\nAnswer"), "Answer")
+
+    def test_last_closing_tag_wins(self):
+        raw = "think a</think>mid</think>\n\nFinal"
+        self.assertEqual(strip_thinking(raw), "Final")
+
+    def test_plain_text_is_untouched(self):
+        self.assertEqual(strip_thinking("Just an answer."), "Just an answer.")
+
+    def test_truncated_thought_yields_nothing(self):
+        """No closing tag means generation stopped mid-thought — there is no answer."""
+        self.assertEqual(strip_thinking("<think>still reasoning and then it stopped"), "")
+
+    def test_answer_containing_the_word_think_survives(self):
+        raw = "</think>\n\nI think inflation is the answer."
+        self.assertEqual(strip_thinking(raw), "I think inflation is the answer.")
+
+    def test_empty_and_none(self):
+        self.assertEqual(strip_thinking(""), "")
+        self.assertEqual(strip_thinking(None), "")
+
+    def test_json_after_a_thought_is_preserved(self):
+        raw = '</think>\n\n{"scenes": []}'
+        self.assertEqual(strip_thinking(raw), '{"scenes": []}')
 
 
 class TestCache(unittest.TestCase):

@@ -37,10 +37,24 @@ _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 def strip_thinking(text: str) -> str:
-    """Drop a Qwen reasoning block, including the truncated unclosed case."""
-    text = _THINK_BLOCK.sub("", text or "")
+    """Drop the reasoning and return the answer.
+
+    The opening <think> usually is NOT in the output. This model's chat
+    template ends the prompt with a bare `<think>\\n`, so generation begins
+    already inside the block and only the closing tag is ever generated. A
+    regex looking for a matched pair therefore finds nothing and the caller
+    gets several hundred tokens of deliberation where it expected a title.
+
+    Everything up to the last closing tag is deliberation; what follows is the
+    answer. An unclosed block means generation stopped mid-thought, and there
+    is no answer in it at all — an empty string is the honest result.
+    """
+    text = text or ""
+    if "</think>" in text:
+        return text.rsplit("</think>", 1)[-1].strip()
+    text = _THINK_BLOCK.sub("", text)
     if "<think>" in text:
-        text = text.split("</think>")[-1] if "</think>" in text else text.split("<think>")[-1]
+        return text.split("<think>", 1)[0].strip()
     return text.strip()
 
 
@@ -126,6 +140,55 @@ class DirectorInference:
         # One model, one process, no batching. Without this, two concurrent
         # requests interleave into the same context and corrupt each other.
         self._lock = threading.Lock()
+        self._formatter = self._build_formatter()
+
+    def _build_formatter(self):
+        """A renderer for the model's own chat template that we can pass flags to.
+
+        This model reasons by default, at the template's 'xhigh' effort, and
+        the only way to turn that off is the `enable_thinking` template
+        variable. create_chat_completion() does not forward unknown keywords to
+        the template — it passes a fixed argument list — so the flag cannot get
+        there through the normal API. Rendering the prompt ourselves and
+        calling create_completion() is the way in.
+
+        Returns None if this llama-cpp-python does not expose what we need, in
+        which case everything still works through the chat API; the model just
+        deliberates first and pays for it in tokens.
+        """
+        try:
+            from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+
+            template = (self.llm.metadata or {}).get("tokenizer.chat_template")
+            if not template:
+                return None
+            return Jinja2ChatFormatter(
+                template=template,
+                eos_token=self.llm._model.token_get_text(self.llm.token_eos()),
+                bos_token=self.llm._model.token_get_text(self.llm.token_bos()),
+                add_generation_prompt=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[director] chat template not renderable directly ({exc}); "
+                  "reasoning cannot be disabled and replies will be slower.")
+            return None
+
+    def _render(self, messages: List[Dict[str, str]], thinking: bool) -> Optional[str]:
+        """The prompt string, with reasoning explicitly on or off."""
+        if self._formatter is None:
+            return None
+        try:
+            rendered = self._formatter(
+                llama=self.llm,
+                messages=messages,
+                enable_thinking=thinking,
+                reasoning_effort="low",
+            )
+            return rendered.prompt
+        except Exception:
+            # A template that rejects our flags is not worth failing over.
+            self._formatter = None
+            return None
 
     # -- helpers ----------------------------------------------------------
 
@@ -160,7 +223,7 @@ class DirectorInference:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 1024,
+        max_tokens: int = 2048,
         thinking: bool = False,
         stream: bool = False,
         **kwargs: Any,
@@ -169,34 +232,65 @@ class DirectorInference:
         prepared = self._apply_thinking(
             self._with_system(messages, AETHER_SYSTEM_PROMPT), thinking
         )
+        prompt = self._render(prepared, thinking)
 
         if not stream:
             with self._lock:
-                result = self.llm.create_chat_completion(
-                    messages=prepared,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    **kwargs,
+                if prompt is not None:
+                    result = self.llm.create_completion(
+                        prompt=prompt, temperature=temperature,
+                        max_tokens=max_tokens, **kwargs,
+                    )
+                    raw = result["choices"][0]["text"] or ""
+                else:
+                    result = self.llm.create_chat_completion(
+                        messages=prepared, temperature=temperature,
+                        max_tokens=max_tokens, **kwargs,
+                    )
+                    raw = result["choices"][0]["message"]["content"] or ""
+
+            answer = strip_thinking(raw)
+            if not answer and raw.strip():
+                # Everything generated was deliberation that never closed, so
+                # there is no answer to return. Saying so beats an empty string
+                # that looks like the model had nothing to say.
+                raise ValueError(
+                    f"The model spent all {max_tokens} tokens reasoning and never "
+                    "reached an answer. Raise max_tokens, or disable reasoning."
                 )
-            return strip_thinking(result["choices"][0]["message"]["content"] or "")
+            return answer
 
-        return self._stream(prepared, temperature, max_tokens, kwargs)
+        return self._stream(prepared, prompt, temperature, max_tokens, kwargs)
 
-    def _stream(self, messages, temperature, max_tokens, kwargs) -> Iterator[str]:
+    def _stream(self, messages, prompt, temperature, max_tokens, kwargs) -> Iterator[str]:
         """Yield content deltas, holding the model lock for the whole stream."""
         with self._lock:
-            chunks = self.llm.create_chat_completion(
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-                **kwargs,
-            )
+            if prompt is not None:
+                chunks = self.llm.create_completion(
+                    prompt=prompt, temperature=temperature,
+                    max_tokens=max_tokens, stream=True, **kwargs,
+                )
+                deltas = (c["choices"][0].get("text") or "" for c in chunks)
+            else:
+                chunks = self.llm.create_chat_completion(
+                    messages=messages, temperature=temperature,
+                    max_tokens=max_tokens, stream=True, **kwargs,
+                )
+                deltas = (c["choices"][0].get("delta", {}).get("content") or "" for c in chunks)
+
+            # Generation may begin already inside a reasoning block opened by
+            # the prompt, so assume we are in one until proven otherwise.
             in_thought = False
-            for chunk in chunks:
-                delta = chunk["choices"][0].get("delta", {}).get("content") or ""
+            seen_close = False
+            for delta in deltas:
                 if not delta:
                     continue
+                if not seen_close and "</think>" in delta:
+                    seen_close = True
+                    in_thought = False
+                    delta = delta.split("</think>", 1)[-1]
+                    if not delta:
+                        continue
                 # Reasoning arrives token by token, so it cannot be regexed out
                 # after the fact — it has to be gated as it goes past.
                 if "<think>" in delta:
