@@ -661,8 +661,18 @@
         }
         const blob = await window.StockMedia.acquire(scene);
         if (!blob) throw new Error('Stock generation returned nothing');
-        
-        await idbPut(String(scene.index), blob);
+
+        // Video goes under the clip key, stills under the scene key.
+        //
+        // This was writing footage to the scene key regardless of type, where
+        // the editor loads it with loadImage() — so a video blob handed to an
+        // <img> threw, the beat fell through to a graphic card, and the clip
+        // key the editor actually reads for video was never written at all.
+        // Acquired stock and archive footage therefore never reached the
+        // timeline as video, however well it had been chosen or cached.
+        const isVideo = /^video\//.test(blob.type || '')
+          || String(scene.visualType || '').indexOf('photo') === -1;
+        await idbPut(isVideo ? clipKey(scene.index) : String(scene.index), blob);
         try {
           window.dispatchEvent(new CustomEvent('blvck:clip-rendered', {
             detail: { index: scene.index, kind: 'video' }
