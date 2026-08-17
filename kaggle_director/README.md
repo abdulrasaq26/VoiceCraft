@@ -1,6 +1,6 @@
 # AETHER Qwen Brain (Kaggle)
 
-Serves one Qwen model behind three endpoints and exposes it to AETHER over an
+Runs **Qwen3.8-27B** under llama.cpp and exposes it to AETHER over an
 ngrok tunnel.
 
 | Endpoint | Auth | Used for |
@@ -70,30 +70,60 @@ Run it after touching either file. It needs only pydantic — no GPU, no model.
    Restart the AETHER node server afterwards. The UI status should read
    **🟢 Qwen — Primary**.
 
-## Which model
+## Which model, and why llama.cpp
 
-Kaggle GPUs are Turing (T4, compute capability 7.5), and that rules out more
-than it first appears:
+The model is **Qwen3.8-27B** as a GGUF quantization from
+`unsloth/Qwen3.8-27B-GGUF`.
 
-* **bfloat16** does not exist on Turing. The notebook detects this and passes
-  `--dtype float16`.
-* **compressed-tensors / `pack-quantized` 4-bit** checkpoints decode through
-  Marlin kernels that require compute capability 8.0. They cannot load on a T4
-  at any setting.
+Kaggle's GPUs are Turing (T4, compute capability 7.5). The obvious 4-bit build
+of this model, `cyankiwi/Qwen3.8-27B-AWQ-INT4`, is **not AWQ** despite the name
+— its `quantization_config.quant_method` is `compressed-tensors`, which decodes
+through Marlin kernels that require compute capability 8.0. Under vLLM it
+cannot load on a T4 at any setting.
 
-That second point rules out `cyankiwi/Qwen3.8-27B-AWQ-INT4` despite the name —
-its `quantization_config.quant_method` is `compressed-tensors`, not AWQ. It is
-also a hybrid linear-attention VLM, needing newer kernels again. There is no
-flag that makes it run on Kaggle.
+llama.cpp is a different stack: its CUDA kernels run on Turing, and GGUF is an
+unrelated quantization format. So the model that vLLM cannot serve here runs
+fine under llama.cpp.
 
-The working options are genuine AWQ checkpoints, which vLLM has a Turing path
-for. Set `MODEL_CHOICE` in the config cell:
+Two consequences of that choice, both worth knowing before you tune anything:
 
-| Model | Weights | GPUs | Notes |
-| :-- | :-- | :-- | :-- |
-| `Qwen/Qwen3-32B-AWQ` | ~19 GB | 2 | strongest, slowest |
-| `Qwen/Qwen3-14B-AWQ` | ~9 GB | 1-2 | **default** — ~2.5x faster |
-| `Qwen/Qwen3-8B-AWQ` | ~5.5 GB | 1 | fastest, weakest |
+* llama.cpp splits a model across GPUs **by layer, not tensor-parallel**. The
+  second T4 buys capacity, not speed — the cards take turns.
+* The model lives **in the process that loaded it** and is not thread-safe.
+  Requests are serialized behind a lock rather than batched, and the notebook
+  runs uvicorn in a background thread rather than as a subprocess — a
+  subprocess would load a second 20 GB copy and OOM immediately.
 
-Reasoning is switched off for `/director`: the grammar forces the first token
-to be `{`, so a model that wants to emit `<think>` first has nowhere to put it.
+### Quantizations
+
+| Quant | Size | Kaggle 2x T4 (~30 GB) | Colab 1x T4 (~15 GB) |
+| :-- | --: | :-- | :-- |
+| Q3_K_M | 13.8 GB | lots of headroom | just fits |
+| Q4_K_M | 17.1 GB | comfortable | spills to CPU |
+| Q5_K_M | 19.8 GB | **default** | spills badly |
+| Q8_0 | 29.0 GB | no room for the KV cache | no |
+
+Q5_K_M is less tight than the numbers suggest. This is a hybrid model: only
+about a quarter of its 64 layers use full attention and the rest are
+linear-attention layers with a fixed-size state, so the KV cache costs roughly
+32 KB per token rather than 128 KB. A 16k context is about half a gigabyte,
+which is why `N_CTX` defaults to 16384 rather than 4096.
+
+Change `QUANT` in the Stage 3 config cell to move up or down the table.
+
+## Structured output
+
+`/director` constrains generation with a GBNF grammar compiled from
+`schema.py`, so the model cannot emit a token that leaves the shape — including
+the `<think>` block Qwen would otherwise open with.
+
+`get_json_schema(inline=True)` prepares that grammar copy: it resolves `$defs`
+into the tree, which llama.cpp's compiler needs, and strips validator-only
+annotations (`description`, `default`, `minimum`) that it compiles
+inconsistently or ignores. The full-strength schema is still applied as a
+Pydantic validation pass on the result, so nothing is lost — the bounds are
+just enforced after generation rather than during it.
+
+Because llama.cpp never shows the schema to the model, the field descriptions
+in `schema.py` do not steer anything. Field guidance lives in
+`DIRECTOR_SYSTEM_PROMPT`.

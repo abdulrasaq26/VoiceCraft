@@ -52,27 +52,30 @@ CELLS = [
         """
 # AETHER Qwen Brain — Kaggle Deployment
 
-Serves one Qwen model behind three endpoints (`/chat`, `/generate`, `/director`)
-and exposes it to AETHER over an ngrok tunnel.
+Runs **Qwen3.8-27B** and serves it to AETHER behind three endpoints
+(`/chat`, `/generate`, `/director`) over an ngrok tunnel.
 
 **Before you run anything:** set the accelerator to **GPU T4 x2**
 (Settings → Accelerator), and add `NGROK_AUTHTOKEN` and `DIRECTOR_API_KEY`
 under Add-ons → Secrets.
 
-### A note on the model
+### Why llama.cpp and not vLLM
 
-Kaggle's GPUs are Turing (T4, compute capability 7.5). That rules out two
-things people reach for first:
+Kaggle's GPUs are Turing (T4, compute capability 7.5), and this model's
+compressed-tensors 4-bit build — `cyankiwi/Qwen3.8-27B-AWQ-INT4`, which is not
+AWQ despite the name — decodes through Marlin kernels that require sm_80. It
+cannot load on a T4 under vLLM at any setting.
 
-* **bfloat16** does not exist on Turing, so the server runs in `float16`.
-* **compressed-tensors / `pack-quantized` 4-bit** checkpoints — including
-  `cyankiwi/Qwen3.8-27B-AWQ-INT4`, despite the name — decode through Marlin
-  kernels that require compute capability 8.0. They cannot load on a T4 at any
-  setting. That model is also a hybrid linear-attention VLM, which needs newer
-  kernels still.
+llama.cpp is a different stack: its CUDA kernels run on Turing, and GGUF is an
+unrelated quantization format. So the model runs here as a GGUF quantization
+from `unsloth/Qwen3.8-27B-GGUF`.
 
-So this notebook runs a genuine **AWQ** checkpoint, which vLLM has a Turing
-code path for. Pick your size in the config cell below.
+Two things follow from that choice:
+
+* llama.cpp splits a model across GPUs **by layer, not tensor-parallel**. The
+  second T4 buys capacity, not speed — the cards take turns.
+* There is one model in one process and it is not thread-safe, so requests are
+  serialized behind a lock rather than batched.
 """
     ),
     md("## Stage 1 — Hardware"),
@@ -86,50 +89,54 @@ GPU_COUNT = torch.cuda.device_count()
 if GPU_COUNT == 0:
     raise RuntimeError('No GPU. Settings -> Accelerator -> GPU T4 x2.')
 
-caps = []
 for i in range(GPU_COUNT):
     p = torch.cuda.get_device_properties(i)
-    caps.append(p.major * 10 + p.minor)
     print(f'  GPU {i}: {p.name}  {p.total_memory/1024**3:.1f} GB  sm_{p.major}{p.minor}')
 
-MIN_CAP = min(caps)
-# bfloat16 needs sm_80. Everything below it has to be told to use float16, or
-# vLLM aborts on the model's own torch_dtype.
-DTYPE = 'bfloat16' if MIN_CAP >= 80 else 'float16'
-TOTAL_VRAM = sum(torch.cuda.get_device_properties(i).total_memory for i in range(GPU_COUNT)) / 1024**3
+TOTAL_VRAM = sum(torch.cuda.get_device_properties(i).total_memory
+                 for i in range(GPU_COUNT)) / 1024**3
 
 print(f'\\nCUDA {torch.version.cuda} | torch {torch.__version__}')
-print(f'GPUs {GPU_COUNT} | min sm_{MIN_CAP} | dtype -> {DTYPE} | total VRAM {TOTAL_VRAM:.1f} GB')
+print(f'GPUs {GPU_COUNT} | total VRAM {TOTAL_VRAM:.1f} GB')
 if GPU_COUNT < 2:
-    print('\\n[WARN] Only 1 GPU. A 32B model will not fit — pick a smaller one below.')
+    print('\\n[WARN] One GPU only. Q5_K_M (19.8 GB) will spill to CPU and crawl.')
+    print('       This is what a Colab free session looks like; Kaggle gives 2x T4.')
+    print('       Drop to Q3_K_M in Stage 3 if you are staying here.')
 print('\\nStage 1 PASSED')
 """
     ),
-    md("## Stage 2 — Dependencies (~5-10 min)"),
+    md("## Stage 2 — Dependencies (~5 min; the CUDA wheel is 1.9 GB)"),
     code(
         """
 import subprocess, sys
 
-# Pinned on purpose. Installing bleeding-edge transformers from git alongside
-# vLLM breaks vLLM: it pins the transformers it was built against, and pip will
-# happily satisfy the git URL by replacing it.
-PACKAGES = [
-    'vllm==0.27.1',
-    'fastapi',
-    'uvicorn[standard]',
-    'pyngrok',
-    'openai',
-]
+# The prebuilt wheel links against libcudart.so.12, so the matching CUDA
+# runtime packages have to be present or importing llama_cpp dies with
+# "libcudart.so.12: cannot open shared object file" — even though the GPU is
+# fine and nvidia-smi works.
+subprocess.check_call([
+    sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q',
+    'nvidia-cuda-runtime-cu12', 'nvidia-cublas-cu12',
+])
 
-subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q', *PACKAGES])
+subprocess.check_call([
+    sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q',
+    '--upgrade', '--force-reinstall', 'llama-cpp-python',
+    '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/cu124',
+])
+
+subprocess.check_call([
+    sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q',
+    'fastapi', 'uvicorn[standard]', 'pyngrok', 'huggingface_hub', 'pydantic',
+])
 
 import importlib.metadata as md
-for pkg in ('vllm', 'transformers', 'torch', 'pydantic'):
+for pkg in ('llama_cpp_python', 'fastapi', 'pydantic', 'huggingface_hub'):
     try:
-        print(f'  {pkg:14} {md.version(pkg)}')
+        print(f'  {pkg:22} {md.version(pkg)}')
     except Exception:
-        print(f'  {pkg:14} (not installed)')
-print('\\nStage 2 PASSED')
+        print(f'  {pkg:22} (not installed)')
+print('\\nStage 2 PASSED — restart is NOT needed; Stage 4 preloads the CUDA libs.')
 """
     ),
     md("## Stage 3 — Configuration"),
@@ -137,24 +144,24 @@ print('\\nStage 2 PASSED')
         """
 import os
 
-# Every option here is a real AWQ checkpoint (quant_method 'awq'), which is the
-# only 4-bit format with a Turing kernel in vLLM.
+# Sizes are the download, and roughly the VRAM the weights occupy.
 #
-#   name                    weights   needs        speed on 2x T4
-#   Qwen/Qwen3-32B-AWQ      ~19 GB    2 GPUs       slowest, strongest
-#   Qwen/Qwen3-14B-AWQ      ~9 GB     1-2 GPUs     ~2.5x faster  <- good default
-#   Qwen/Qwen3-8B-AWQ       ~5.5 GB   1 GPU        fastest, weakest
-MODEL_CHOICE = 'Qwen/Qwen3-14B-AWQ'
+#   quant      size     2x T4 (30 GB)              1x T4 (15 GB)
+#   Q3_K_M     13.8 GB  lots of headroom           just fits
+#   Q4_K_M     17.1 GB  comfortable                spills to CPU
+#   Q5_K_M     19.8 GB  fits  <- default           spills badly
+#   Q8_0       29.0 GB  no room for the KV cache   no
+MODEL_REPO = 'unsloth/Qwen3.8-27B-GGUF'
+QUANT      = 'Q5_K_M'
+MODEL_FILE = f'Qwen3.8-27B-{QUANT}.gguf'
+MODEL_DIR  = '/tmp/qwen38'
 
-DIRECTOR_MODEL = MODEL_CHOICE
-# 8B fits on one card, so sharding it only adds communication overhead.
-# Anything larger uses every GPU there is.
-DIRECTOR_TP_SIZE = 1 if '8B' in MODEL_CHOICE else min(GPU_COUNT, 2)
-DIRECTOR_MAX_LEN = 8192
-GPU_MEM_UTIL     = 0.90
-MAX_NUM_SEQS     = 4
-VLLM_PORT        = 8000
-API_PORT         = 8001
+# This model is hybrid: only about a quarter of its 64 layers use full
+# attention, and the rest are linear-attention layers with a fixed-size state.
+# So the KV cache costs roughly 32 KB per token rather than 128 KB, and 16k of
+# context is about half a gigabyte. Raising this is cheaper than it looks.
+N_CTX    = 16384
+API_PORT = 8001
 
 try:
     from kaggle_secrets import UserSecretsClient
@@ -165,14 +172,12 @@ except Exception:
     NGROK_AUTHTOKEN  = os.environ.get('NGROK_AUTHTOKEN', '')
     DIRECTOR_API_KEY = os.environ.get('DIRECTOR_API_KEY', 'test-key-change-me')
 
-os.environ['DIRECTOR_MODEL']   = DIRECTOR_MODEL
+os.environ['DIRECTOR_MODEL']   = f'{MODEL_REPO}:{QUANT}'
 os.environ['DIRECTOR_API_KEY'] = DIRECTOR_API_KEY
-os.environ['VLLM_PORT']        = str(VLLM_PORT)
+os.environ['DIRECTOR_N_CTX']   = str(N_CTX)
 
-print('Model   :', DIRECTOR_MODEL)
-print('TP size :', DIRECTOR_TP_SIZE)
-print('dtype   :', DTYPE)
-print('Max len :', DIRECTOR_MAX_LEN)
+print('Model   :', MODEL_REPO, QUANT)
+print('Context :', f'{N_CTX:,} tokens')
 print('API key :', (DIRECTOR_API_KEY[:4] + '****') if DIRECTOR_API_KEY else 'NOT SET')
 print('Ngrok   :', 'configured' if NGROK_AUTHTOKEN else 'NOT SET (localhost only)')
 """
@@ -209,110 +214,88 @@ if result.returncode != 0:
 print('Stage 5 PASSED')
 """
     ),
-    md("## Stage 6 — Boot vLLM\n\nFirst run downloads the weights, so allow 10-25 minutes. A heartbeat prints every 60s."),
+    md("## Stage 6 — Download the GGUF (~20 GB, once per session)"),
     code(
         """
-import os, subprocess, sys, threading, time
-import requests, torch
+import os, time
+from huggingface_hub import hf_hub_download
 
-env = os.environ.copy()
-# FlashInfer JIT-compiles kernels that Turing cannot use; turning it off avoids
-# a long build that ends in an unsupported-arch error.
-env['VLLM_USE_FLASHINFER_SAMPLER'] = '0'
+t0 = time.time()
+MODEL_PATH = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE, local_dir=MODEL_DIR)
+os.environ['DIRECTOR_MODEL_PATH'] = MODEL_PATH
 
-cmd = [
-    sys.executable, '-m', 'vllm.entrypoints.openai.api_server',
-    '--model',                  DIRECTOR_MODEL,
-    '--tensor-parallel-size',   str(DIRECTOR_TP_SIZE),
-    '--max-model-len',          str(DIRECTOR_MAX_LEN),
-    '--dtype',                  DTYPE,
-    '--gpu-memory-utilization', str(GPU_MEM_UTIL),
-    '--max-num-seqs',           str(MAX_NUM_SEQS),
-    '--enforce-eager',
-    '--port',                   str(VLLM_PORT),
-]
-print(' '.join(cmd), '\\n')
-
-vllm_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             text=True, bufsize=1, env=env)
-
-def _drain():
-    for line in iter(vllm_proc.stdout.readline, ''):
-        print('  [vLLM]', line, end='', flush=True)
-
-threading.Thread(target=_drain, daemon=True).start()
-
-DEADLINE = time.time() + 1800   # 30 min: a cold 19 GB download is not quick
-started, last_beat, booted = time.time(), time.time(), False
-
-while time.time() < DEADLINE:
-    time.sleep(5)
-
-    if vllm_proc.poll() is not None:
-        raise RuntimeError(
-            f'vLLM exited with code {vllm_proc.returncode} before serving. '
-            'Read the [vLLM] lines above — an unsupported-quantization or '
-            'out-of-memory error will be near the end.'
-        )
-
-    try:
-        if requests.get(f'http://localhost:{VLLM_PORT}/health', timeout=3).status_code == 200:
-            booted = True
-            break
-    except Exception:
-        pass
-
-    if time.time() - last_beat >= 60:
-        elapsed = int(time.time() - started)
-        print(f'  [heartbeat] {elapsed//60}m{elapsed%60:02d}s — still loading...', flush=True)
-        last_beat = time.time()
-
-if not booted:
-    vllm_proc.terminate()
-    raise RuntimeError('vLLM did not become healthy within 30 minutes.')
-
-print(f'\\nvLLM healthy after {int(time.time()-started)}s')
-for i in range(torch.cuda.device_count()):
-    free, total = torch.cuda.mem_get_info(i)
-    print(f'  GPU {i}: {(total-free)/1024**3:.1f}/{total/1024**3:.1f} GB used')
-print('Stage 6 PASSED')
+size = os.path.getsize(MODEL_PATH) / 1024**3
+print(f'Path : {MODEL_PATH}')
+print(f'Size : {size:.1f} GB   ({time.time()-t0:.0f}s)')
+print('\\nStage 6 PASSED')
 """
     ),
-    md("## Stage 7 — Smoke test"),
+    md("## Stage 7 — Load the model and smoke test\n\nThe CUDA runtime is preloaded first; without it `import llama_cpp` fails with `libcudart.so.12: cannot open shared object file`."),
     code(
         """
 import time
-from openai import OpenAI
+from director.inference import DirectorInference, preload_cuda_libraries
 
-client = OpenAI(base_url=f'http://localhost:{VLLM_PORT}/v1', api_key='sk-no-key', timeout=600)
+loaded = preload_cuda_libraries()
+print('preloaded CUDA libs:')
+for lib in loaded:
+    print('  ', lib)
+if not loaded:
+    print('   (none needed — already on the loader path)')
 
 t0 = time.time()
-resp = client.chat.completions.create(
-    model=DIRECTOR_MODEL,
-    messages=[{'role': 'user', 'content': 'Say exactly: INFERENCE OK'}],
-    max_tokens=64,
-    temperature=0.0,
-    # Qwen3 opens with a <think> block unless told not to. With a small
-    # max_tokens the reply would be all reasoning and no content, which reads
-    # as an empty response rather than as the truncation it is.
-    extra_body={'chat_template_kwargs': {'enable_thinking': False}},
-)
-text = (resp.choices[0].message.content or '').strip()
-print(f'Response: {text!r}')
+engine = DirectorInference(model_path=MODEL_PATH, n_ctx=N_CTX, n_gpu_layers=-1, verbose=True)
+print(f'\\nLoaded in {time.time()-t0:.0f}s')
+
+import torch
+for i in range(torch.cuda.device_count()):
+    free, total = torch.cuda.mem_get_info(i)
+    print(f'  GPU {i}: {(total-free)/1024**3:.1f}/{total/1024**3:.1f} GB used')
+
+t0 = time.time()
+text = engine.chat([{'role': 'user', 'content': 'Say exactly: INFERENCE OK'}], max_tokens=64)
+print(f'\\nResponse: {text!r}')
 print(f'Latency : {time.time()-t0:.1f}s')
-if not text:
-    raise RuntimeError(f'Empty response (finish_reason={resp.choices[0].finish_reason}).')
-print('Stage 7 PASSED')
+if not text.strip():
+    raise RuntimeError('Empty response — the model loaded but generated nothing.')
+print('\\nStage 7 PASSED')
+"""
+    ),
+    md("## Stage 7b — Generation speed\n\nWorth knowing before you wait on a storyboard: everything downstream scales off this number."),
+    code(
+        """
+import time
+
+t0 = time.time()
+first = None
+count = 0
+for delta in engine.chat(
+    [{'role': 'user', 'content': 'Explain what inflation is, in about 150 words.'}],
+    max_tokens=256, stream=True,
+):
+    if first is None:
+        first = time.time()
+    print(delta, end='', flush=True)
+    count += 1
+
+if first is None:
+    raise RuntimeError('Stream produced nothing.')
+gen = time.time() - first
+print(f'\\n\\nTTFT   : {first-t0:.2f}s')
+print(f'Chunks : {count}')
+print(f'Speed  : {count/gen:.1f} chunks/s over {gen:.1f}s')
+print('\\nA storyboard is a few thousand tokens, so budget accordingly.')
 """
     ),
     md("## Stage 8 — Structured plan against the AETHER grammar"),
     code(
         """
 import json
-from director.inference import DirectorInference
 from director.schema import VideoPlan
 
-engine = DirectorInference(model_id=DIRECTOR_MODEL, port=VLLM_PORT)
+# `engine` is the one loaded in Stage 7. Constructing a second
+# DirectorInference would load another ~20 GB copy of the weights, which is
+# more VRAM than the machine has.
 
 TEST_SCRIPT = (
     'Inflation quietly reduces what your paycheck can buy over time. '
@@ -399,17 +382,40 @@ if issues:
 print('\\nStage 9 PASSED — plan is AETHER-compatible')
 """
     ),
-    md("## Stage 10 — FastAPI + ngrok"),
+    md(
+        """
+## Stage 10 — FastAPI + ngrok
+
+The server runs **inside this notebook**, in a background thread, reusing the
+model already in VRAM. Launching uvicorn as a subprocess the way a vLLM setup
+would is not an option here: llama.cpp holds the model in the process that
+loaded it, so a second process means a second 20 GB copy and an immediate OOM.
+
+Leave this cell's kernel running for as long as you want AETHER to reach the
+tunnel.
+"""
+    ),
     code(
         """
-import subprocess, sys, time
+import threading, time
 import requests
+import uvicorn
+import director.api as api
 
-api_log = open('/tmp/api.log', 'w')
-api_proc = subprocess.Popen(
-    [sys.executable, '-m', 'uvicorn', 'director.api:app', '--host', '0.0.0.0', '--port', str(API_PORT)],
-    stdout=api_log, stderr=subprocess.STDOUT,
-)
+# Hand the API the model that is already loaded, and the settings Stage 3 chose.
+api._engine   = engine
+api.MODEL_PATH = MODEL_PATH
+api.N_CTX      = N_CTX
+api.API_KEY    = DIRECTOR_API_KEY
+api.MODEL_ID   = f'{MODEL_REPO}:{QUANT}'
+
+server = uvicorn.Server(uvicorn.Config(
+    api.app, host='0.0.0.0', port=API_PORT, log_level='warning',
+    # A storyboard can hold a connection for minutes; the default keep-alive
+    # would drop it mid-generation.
+    timeout_keep_alive=1800,
+))
+threading.Thread(target=server.run, daemon=True).start()
 
 health = None
 for _ in range(30):
@@ -418,13 +424,12 @@ for _ in range(30):
         health = requests.get(f'http://localhost:{API_PORT}/health', timeout=5).json()
         break
     except Exception:
-        if api_proc.poll() is not None:
-            print(open('/tmp/api.log').read()[-3000:])
-            raise RuntimeError('uvicorn exited — see log above.')
+        pass
 if health is None:
-    print(open('/tmp/api.log').read()[-3000:])
     raise RuntimeError('FastAPI never became healthy.')
 print('health:', health)
+if not health.get('loaded'):
+    raise RuntimeError('API is up but has no model — engine handoff failed.')
 
 AUTH = {'Authorization': f'Bearer {DIRECTOR_API_KEY}'}
 
@@ -462,7 +467,7 @@ else:
 print('\\nStage 10 PASSED')
 """
     ),
-    md("## Stage 11 — Multi-domain benchmark\n\nOptional, and slow on a T4. Raise `N_DOMAINS` once you know the timings."),
+    md("## Stage 11 — Multi-domain benchmark\n\nOptional, and slow: each plan is a few thousand grammar-constrained tokens, and llama.cpp answers one request at a time. Raise `N_DOMAINS` once Stage 7b has told you the rate."),
     code(
         """
 import time

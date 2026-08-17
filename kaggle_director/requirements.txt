@@ -1,13 +1,20 @@
 # The notebook installs these itself; this file is for running the package
-# locally (the contract tests need only pydantic).
+# locally. The contract tests need only pydantic.
 #
-# vLLM is pinned because it is the one dependency where "latest" is a real
-# risk: the structured-output API has been renamed twice, and installing a
-# newer transformers alongside it will replace the version it was built
-# against and break the server.
-vllm==0.27.1
+# llama-cpp-python must come from the CUDA wheel index, not PyPI, or you get a
+# CPU-only build:
+#
+#   pip install llama-cpp-python \
+#     --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+#
+# and the CUDA runtime packages below have to be present, or importing it
+# fails with "libcudart.so.12: cannot open shared object file" even on a
+# working GPU. director.inference.preload_cuda_libraries() handles the rest.
+llama-cpp-python
+nvidia-cuda-runtime-cu12
+nvidia-cublas-cu12
 fastapi
 uvicorn[standard]
 pydantic>=2.0
-openai
+huggingface_hub
 pyngrok

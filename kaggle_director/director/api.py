@@ -21,20 +21,28 @@ from .cache import get_cache_key, get_cached_result, init_cache, set_cached_resu
 from .inference import DirectorInference
 
 API_KEY = os.environ.get("DIRECTOR_API_KEY", "test-key-change-me")
-# Only a fallback: the notebook exports DIRECTOR_MODEL before uvicorn starts,
-# so this is what you get running the API standalone. Kept in step with
-# MODEL_CHOICE in build_notebook.py, or /health reports a model that is not loaded.
-MODEL_ID = os.environ.get("DIRECTOR_MODEL", "Qwen/Qwen3-14B-AWQ")
-VLLM_PORT = int(os.environ.get("VLLM_PORT", "8000"))
+# The notebook exports all of these before uvicorn starts. The defaults only
+# matter when running the API standalone.
+MODEL_ID = os.environ.get("DIRECTOR_MODEL", "unsloth/Qwen3.8-27B-GGUF:Q5_K_M")
+MODEL_PATH = os.environ.get("DIRECTOR_MODEL_PATH", "")
+N_CTX = int(os.environ.get("DIRECTOR_N_CTX", "16384"))
 SCHEMA_VERSION = "2.0-aether"
 
 _engine: Optional[DirectorInference] = None
 
 
 def get_engine() -> DirectorInference:
+    """Load on first use.
+
+    Loading is minutes of work and gigabytes of VRAM, so it must not happen
+    during import — uvicorn would appear to hang, and /health would be
+    unreachable exactly when someone is trying to find out what is wrong.
+    """
     global _engine
     if _engine is None:
-        _engine = DirectorInference(model_id=MODEL_ID, port=VLLM_PORT)
+        if not MODEL_PATH:
+            raise HTTPException(503, "DIRECTOR_MODEL_PATH is not set — no GGUF to load.")
+        _engine = DirectorInference(model_path=MODEL_PATH, n_ctx=N_CTX)
     return _engine
 
 
@@ -96,12 +104,26 @@ class DirectorRequest(BaseModel):
 # report the model down whenever the key is merely misconfigured.
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "model": MODEL_ID, "schema_version": SCHEMA_VERSION}
+    # `loaded` distinguishes "the server is up" from "the model is in VRAM".
+    # AETHER only needs the former to stop falling back to NIM, but the
+    # difference is the whole answer when a first request seems to hang.
+    return {
+        "status": "ok",
+        "model": MODEL_ID,
+        "loaded": _engine is not None,
+        "schema_version": SCHEMA_VERSION,
+    }
 
 
 @app.get("/model")
 def model_info() -> dict:
-    return {"model": MODEL_ID, "schema_version": SCHEMA_VERSION}
+    return {
+        "model": MODEL_ID,
+        "path": MODEL_PATH,
+        "n_ctx": N_CTX,
+        "loaded": _engine is not None,
+        "schema_version": SCHEMA_VERSION,
+    }
 
 
 @app.post("/chat")
@@ -133,10 +155,9 @@ def chat_endpoint(req: ChatRequest, _: str = Depends(check_token)):
 
     def sse():
         try:
-            for chunk in chunks:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta.content or ""
+            # DirectorInference._stream yields content deltas as plain strings,
+            # with any reasoning already gated out.
+            for delta in chunks:
                 if not delta:
                     continue
                 payload = {"choices": [{"delta": {"content": delta}}]}

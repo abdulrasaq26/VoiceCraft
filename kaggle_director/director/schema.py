@@ -11,11 +11,16 @@ in a way that produces no error message:
     unrecognised falling back to 'stock_video' — an invented type is not an
     error, it is a wrong answer that looks like a right one.
 
-Because these models are handed to vLLM as a JSON schema for guided decoding,
-the grammar itself is what keeps the model inside the vocabulary. Widening a
-Literal here widens what the model may emit, so the lists below must stay in
-step with VISUAL_TYPES / SHOT_TYPES / CAMERA_MOVES / HOST_OVERLAYS in
-public/prompts.js.
+These models are compiled into a GBNF grammar by llama.cpp, so the grammar
+itself is what keeps the model inside the vocabulary — it cannot emit a token
+that leaves the shape. Widening a Literal here widens what the model may say,
+so the lists below must stay in step with VISUAL_TYPES / SHOT_TYPES /
+CAMERA_MOVES / HOST_OVERLAYS in public/prompts.js.
+
+Note that llama.cpp builds the grammar and never shows the schema to the
+model, so the Field descriptions here do not steer generation. Field guidance
+belongs in DIRECTOR_SYSTEM_PROMPT; the descriptions are for whoever reads
+this file next.
 """
 
 from __future__ import annotations
@@ -191,6 +196,63 @@ def _tighten(node: object) -> object:
     return node
 
 
-def get_json_schema() -> dict:
-    """The JSON schema handed to vLLM for structured output."""
-    return _tighten(VideoPlan.model_json_schema())
+def _inline_refs(node: object, defs: dict, depth: int = 0) -> object:
+    """Replace every $ref with the definition it points at.
+
+    llama.cpp compiles the schema into a GBNF grammar, and its converter is
+    far less tolerant of `$ref`/`$defs` indirection than a validator is. The
+    models here are a plain tree with no recursion, so inlining is safe and
+    costs only a slightly larger schema.
+    """
+    if depth > 32:  # a cycle would otherwise expand forever
+        raise ValueError("schema nests deeper than expected — is a model recursive?")
+
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            target = dict(defs[ref.split("/")[-1]])
+            # Keep any siblings of the $ref (a description, usually).
+            merged = {k: v for k, v in node.items() if k != "$ref"}
+            target.update(merged)
+            return _inline_refs(target, defs, depth + 1)
+        return {k: _inline_refs(v, defs, depth + 1) for k, v in node.items() if k != "$defs"}
+
+    if isinstance(node, list):
+        return [_inline_refs(v, defs, depth + 1) for v in node]
+
+    return node
+
+
+# Annotations that mean something to a validator but nothing to a grammar.
+# `minimum` in particular is compiled inconsistently across llama.cpp versions,
+# and a numeric bound is not worth risking the whole grammar over — the
+# Pydantic model still enforces it on the way back out.
+_GRAMMAR_NOISE = ("description", "title", "default", "minimum", "maximum",
+                  "exclusiveMinimum", "exclusiveMaximum")
+
+
+def _grammar_safe(node: object) -> object:
+    """Strip keywords the grammar compiler cannot use.
+
+    llama.cpp builds a GBNF grammar from this and never shows it to the model,
+    so descriptions here do not steer anything — the field guidance has to live
+    in DIRECTOR_SYSTEM_PROMPT instead. Dropping them keeps the grammar inside
+    the subset llama.cpp compiles reliably, and roughly halves its size.
+    """
+    if isinstance(node, dict):
+        return {k: _grammar_safe(v) for k, v in node.items() if k not in _GRAMMAR_NOISE}
+    if isinstance(node, list):
+        return [_grammar_safe(v) for v in node]
+    return node
+
+
+def get_json_schema(inline: bool = False) -> dict:
+    """The JSON schema used to constrain generation.
+
+    `inline=True` resolves $defs into the tree and drops validator-only
+    annotations — the form llama.cpp's grammar compiler needs.
+    """
+    schema = _tighten(VideoPlan.model_json_schema())
+    if not inline:
+        return schema
+    return _grammar_safe(_inline_refs(schema, schema.get("$defs", {})))

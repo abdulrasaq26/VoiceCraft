@@ -87,6 +87,31 @@ class TestSchemaShape(unittest.TestCase):
 
         walk(get_json_schema())
 
+    def test_inlined_schema_has_no_refs(self):
+        """llama.cpp compiles the schema to a grammar and chokes on $ref."""
+        blob = json.dumps(get_json_schema(inline=True))
+        self.assertNotIn("$ref", blob)
+        self.assertNotIn("$defs", blob)
+
+    def test_inlined_schema_keeps_the_vocabulary(self):
+        """Inlining must not lose the enums that keep the model in bounds."""
+        scene = get_json_schema(inline=True)["properties"]["scenes"]["items"]
+        self.assertEqual(set(scene["properties"]["visualType"]["enum"]), AETHER_VISUAL_TYPES)
+        self.assertEqual(set(scene["properties"]), AETHER_SCENE_FIELDS)
+
+    def test_inlined_schema_still_forbids_extra_keys(self):
+        def walk(node):
+            if isinstance(node, dict):
+                if node.get("type") == "object":
+                    self.assertIs(node.get("additionalProperties"), False)
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(get_json_schema(inline=True))
+
     def test_scene_fields_match_aether_parser(self):
         fields = set(VideoPlan.model_json_schema()["$defs"]["Scene"]["properties"])
         self.assertEqual(
