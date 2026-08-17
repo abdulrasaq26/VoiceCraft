@@ -130,11 +130,53 @@
       throw new Error('Failed parsing JSON from Qwen output.');
     }
 
+    // The /director endpoint speaks a narrower language than the app does: a
+    // script, a style, and the beats to plan against. Posting the raw
+    // storyboard payload here used to fail schema validation before the model
+    // was ever reached, so translate it first.
     async director(payload) {
-      const res = await this._fetch('/director', payload);
+      const scenes = Array.isArray(payload && payload.scenes) ? payload.scenes : [];
+      const bible  = (payload && payload.bible) || {};
+
+      const cues = scenes.map((s, i) => ({
+        index: Number.isFinite(s && s.index) ? s.index : i,
+        start: s && s.timestamp,
+        text:  String((s && (s.subtitle || s.sceneSummary)) || '')
+      }));
+
+      const script = cues.map((c) => c.text).filter(Boolean).join('\n');
+      if (!script) throw new Error('Director: no narration to plan against.');
+
+      // Visual Intelligence and the channel mode each decide part of the look.
+      // They travel as a brief rather than as a style word because the model
+      // needs the reasoning, not just the label.
+      const brief = [payload && payload.strategyBrief, payload && payload.modeBrief]
+        .map((b) => String(b || '').trim())
+        .filter(Boolean)
+        .join('\n\n');
+
+      const res = await this._fetch('/director', {
+        script,
+        title: String(bible.title || 'Untitled'),
+        style: String(bible.visualStyle || bible.style || 'documentary'),
+        cues,
+        brief,
+        max_tokens: Math.min(16384, 1200 + cues.length * 320)
+      });
+
       const data = await res.json();
-      if (!data.success) throw new Error('Director failed: ' + JSON.stringify(data));
-      return data.storyboard;
+      if (!data || data.success === false) {
+        throw new Error('Director failed: ' + JSON.stringify(data).slice(0, 300));
+      }
+
+      // Hand the answer to the same parser the fallback path uses. The grammar
+      // already constrains the model to this shape, but routing both paths
+      // through parseVideoPlan means one definition of a valid plan, not two.
+      const plan = data.plan || data;
+      if (window.BlvckPrompts && window.BlvckPrompts.parse) {
+        return window.BlvckPrompts.parse('/api/video/plan', payload, JSON.stringify(plan));
+      }
+      return plan;
     }
   }
 

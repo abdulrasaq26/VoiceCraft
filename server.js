@@ -67,8 +67,13 @@ const server = http.createServer((req, res) => {
 
     const subPath = req.url.replace('/api/proxy/qwen', '') || '/';
     let body = [];
-    req.setTimeout(120000);
-    res.setTimeout(120000);
+    // Planning a full storyboard is minutes of work on the GPU behind the
+    // tunnel, not seconds. Two minutes cut the connection mid-generation and
+    // surfaced as "Qwen unavailable", which sent the app to the NIM fallback
+    // for a request Qwen was still busy answering correctly.
+    const QWEN_TIMEOUT_MS = 1800000; // 30 min
+    req.setTimeout(QWEN_TIMEOUT_MS);
+    res.setTimeout(QWEN_TIMEOUT_MS);
 
     req.on('data', chunk => body.push(chunk));
     req.on('end', () => {
@@ -92,11 +97,19 @@ const server = http.createServer((req, res) => {
       const proxyReq = transport.request(proxyOptions, (proxyRes) => {
         if (res.headersSent) return;
         res.writeHead(proxyRes.statusCode, {
+          // Streamed replies must not be buffered on the way back, or a
+          // token-by-token response arrives as one block at the end.
+          'Cache-Control': 'no-cache',
+          'X-Accel-Buffering': 'no',
           'Content-Type': proxyRes.headers['content-type'] || 'application/json',
           'Access-Control-Allow-Origin': '*'
         });
         proxyRes.pipe(res);
       });
+
+      // Without this the socket to a hung tunnel is held until the OS gives
+      // up, and the browser sees no answer and no error either.
+      proxyReq.setTimeout(QWEN_TIMEOUT_MS, () => proxyReq.destroy(new Error('Qwen backend timed out')));
 
       proxyReq.on('error', (err) => {
         console.warn(`⚠️  Qwen Proxy Error: ${err.message}`);
