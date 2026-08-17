@@ -110,33 +110,34 @@ print('\\nStage 1 PASSED')
         """
 import subprocess, sys
 
+def pip(*args):
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q', *args])
+
 # The prebuilt wheel links against libcudart.so.12, so the matching CUDA
 # runtime packages have to be present or importing llama_cpp dies with
 # "libcudart.so.12: cannot open shared object file" — even though the GPU is
 # fine and nvidia-smi works.
-subprocess.check_call([
-    sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q',
-    'nvidia-cuda-runtime-cu12', 'nvidia-cublas-cu12',
-])
+pip('nvidia-cuda-runtime-cu12', 'nvidia-cublas-cu12')
 
-subprocess.check_call([
-    sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q',
-    '--upgrade', '--force-reinstall', 'llama-cpp-python',
-    '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/cu124',
-])
+# --no-deps matters more than it looks. A plain --force-reinstall drags every
+# dependency with it, which on this image means swapping numpy out from under
+# a kernel that already imported torch in Stage 1 — and that kills the kernel
+# later, at a random cell, with no error pointing back here.
+pip('--force-reinstall', '--no-deps', 'llama-cpp-python',
+    '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/cu124')
 
-subprocess.check_call([
-    sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q',
-    'fastapi', 'uvicorn[standard]', 'pyngrok', 'huggingface_hub', 'pydantic',
-])
+# Its actual dependencies, installed normally so anything already satisfied is
+# left alone.
+pip('diskcache', 'jinja2', 'typing-extensions',
+    'fastapi', 'uvicorn[standard]', 'pyngrok', 'huggingface_hub', 'pydantic')
 
 import importlib.metadata as md
-for pkg in ('llama_cpp_python', 'fastapi', 'pydantic', 'huggingface_hub'):
+for pkg in ('llama-cpp-python', 'fastapi', 'pydantic', 'huggingface_hub', 'numpy'):
     try:
         print(f'  {pkg:22} {md.version(pkg)}')
     except Exception:
         print(f'  {pkg:22} (not installed)')
-print('\\nStage 2 PASSED — restart is NOT needed; Stage 4 preloads the CUDA libs.')
+print('\\nStage 2 PASSED')
 """
     ),
     md("## Stage 3 — Configuration"),
@@ -212,6 +213,60 @@ print(result.stderr[-3000:])
 if result.returncode != 0:
     raise RuntimeError('Contract tests failed — the schema no longer matches AETHER.')
 print('Stage 5 PASSED')
+"""
+    ),
+    md(
+        """
+## Stage 5b — Prove llama.cpp can reach the GPU
+
+Fail here, not after a 20 GB download. This is the cell that catches the
+`libcudart.so.12` import error and, more quietly, a CPU-only wheel — which
+installs and imports perfectly and then runs the model at about one token per
+second with no warning that anything is wrong.
+"""
+    ),
+    code(
+        """
+import sys
+
+sys.path.insert(0, '.')
+from director.inference import preload_cuda_libraries   # noqa: E402
+
+loaded = preload_cuda_libraries()
+print('preloaded CUDA libraries:')
+for lib in loaded:
+    print('   ', lib)
+if not loaded:
+    print('    (none needed — already on the loader path)')
+
+try:
+    import llama_cpp
+except Exception as exc:
+    raise RuntimeError(
+        f'llama_cpp will not import: {exc}\\n'
+        'The CUDA runtime is missing or the wheel does not match it. '
+        'Re-run Stage 2, and check the wheel index matches this image\\'s CUDA.'
+    ) from exc
+
+print(f'\\nllama_cpp {llama_cpp.__version__}')
+
+# supports_gpu_offload() is the honest test. A CPU-only build imports fine and
+# silently ignores n_gpu_layers, so without this you find out from the token
+# rate an hour later.
+gpu_ok = False
+try:
+    gpu_ok = bool(llama_cpp.llama_supports_gpu_offload())
+except Exception as exc:
+    print('could not query GPU offload support:', exc)
+
+print('GPU offload supported:', gpu_ok)
+if not gpu_ok:
+    raise RuntimeError(
+        'This llama-cpp-python build cannot offload to the GPU — it is a '
+        'CPU-only wheel. A 27B model will be unusably slow. Reinstall from '
+        'the cu124 index in Stage 2.'
+    )
+print('\\nStage 5b PASSED')
 """
     ),
     md("## Stage 6 — Download the GGUF (~20 GB, once per session)"),
