@@ -196,7 +196,59 @@
     };
   }
 
+  /**
+   * The record kept for a clip that is not cleared (spec section 3).
+   *
+   * Qwen supplies the editorial rationale — why this footage serves the story.
+   * The fields that matter legally are set here, in code: status is always
+   * review_required and humanReviewRequired is always true, because a model
+   * must not be able to talk its way past them.
+   */
+  function editorialUseRecord(candidate, scene) {
+    if (!candidate) return null;
+    const req = (scene && scene.stockRequirements) || {};
+    return {
+      status: 'review_required',        // never anything else, by construction
+      humanReviewRequired: true,        // set by code, not by the Director
+      purpose: String(req.editorialPurpose || '').trim(),
+      selectionReason: String(req.sourceReason || '').trim(),
+      targetExcerptDuration: Number((req.excerpt && req.excerpt.targetDuration) || 0) || null,
+      identifier: candidate.id,
+      title: candidate.title || '',
+      sourceUrl: candidate.sourceUrl || '',
+      license: candidate.license || null,
+      // Deliberately not a conclusion. It records what the producer said the
+      // footage is for, so a reviewer has the context — it does not assert
+      // that the use is fair, and nothing downstream may read it that way.
+      note: 'Editorial rationale recorded for review. This is not a legal '
+          + 'determination: AETHER does not decide fair use.'
+    };
+  }
+
+  /**
+   * A consolidated end-credits panel (spec section 10).
+   *
+   * Same records as the description block, laid out for burning onto the end
+   * of the video rather than pasting into a text box.
+   */
+  function endCredits(scenes, { heading = 'FOOTAGE CREDITS' } = {}) {
+    const credits = forProject(scenes);
+    if (!credits.length) return null;
+    return {
+      heading,
+      entries: credits.map((c) => ({
+        line1: [c.title, c.creator].filter(Boolean).join(' — ') || c.identifier,
+        line2: [c.provider === 'archive_org' ? 'Internet Archive' : c.provider, c.license]
+          .filter(Boolean).join(' · '),
+        line3: c.sourceUrl,
+        scenes: c.scenes
+      }))
+    };
+  }
+
   window.AttributionManager = {
+    editorialUseRecord,
+    endCredits,
     forAsset,
     forProject,
     youtubeDescription,

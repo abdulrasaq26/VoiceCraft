@@ -3032,3 +3032,73 @@ body.sidebar-collapsed .brand-name {
   flex-shrink: 0;
 }
 
+
+/* ── Rights & Editorial Review ─────────────────────────────────────────────
+   Colour carries meaning here, so it is never the only signal: every state
+   also states itself in words. Green is "the licence permits this", amber is
+   "there is an obligation or an open question", red is "not cleared". None of
+   them means safe, and none of them means fair use. */
+.scene-rights {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--card-border);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.scene-rights.rights-ok   { border-left-color: #10b981; }
+.scene-rights.rights-warn { border-left-color: #fbbf24; }
+.scene-rights.rights-bad  { border-left-color: #ef4444; }
+.scene-rights.rights-none { border-left-color: var(--card-border); }
+
+.rights-head {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 0.4rem;
+}
+.rights-row {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+  padding: 0.1rem 0;
+}
+.rights-row > span { color: var(--text-dim); flex: 0 0 5.5rem; }
+.rights-row > b, .rights-row > a { text-align: right; word-break: break-word; min-width: 0; }
+.rights-note {
+  margin-top: 0.4rem;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+.rights-status { margin-top: 0.45rem; font-weight: 600; }
+.rights-actions { display: flex; gap: 0.4rem; margin-top: 0.5rem; flex-wrap: wrap; }
+
+.rights-policy-option {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  padding: 0.5rem 0;
+  cursor: pointer;
+}
+.rights-policy-option input { margin-top: 0.25rem; flex: 0 0 auto; }
+
+.rights-audit-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.rights-audit-table th,
+.rights-audit-table td {
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--card-border);
+  vertical-align: top;
+}
+.rights-audit-table tr.rights-bad  td:last-child { color: #ef4444; }
+.rights-audit-table tr.rights-warn td:last-child { color: #fbbf24; }
+.rights-audit-table tr.rights-ok   td:last-child { color: #10b981; }
+
+.rights-credits {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0.4rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+}

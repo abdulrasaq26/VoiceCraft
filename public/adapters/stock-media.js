@@ -674,6 +674,7 @@
         try {
           const excerpt = req.excerpt || scene.excerpt || {};
           asset.excerpt = planExcerpt(asset, excerpt.targetDuration || targetDuration, excerpt.selectionIntent);
+          asset.treatment = planTreatment(asset);
           const blob = await downloadAsset(asset);
           markUsed(asset);
           _attachStockMeta(scene, asset, directorQueries, 'primary');
@@ -805,6 +806,42 @@
     };
   }
 
+  // How to fit a 4:3 archival frame into a 16:9 timeline (spec section 6).
+  //
+  // Cropping a 4:3 newsreel to fill 16:9 throws away a third of the picture,
+  // and in archival footage that third is often the point — the crowd at the
+  // edge, the sign above the door, the machine being operated. So the default
+  // is to keep the whole frame and letterbox it, and cropping is only offered
+  // where the aspect difference is small enough to be harmless.
+  //
+  // Upscaling is presentation only. It does not recover detail that was never
+  // filmed, and nothing here should suggest it does.
+  function planTreatment(asset, projectAspect) {
+    const w = Number(asset.width || 0);
+    const h = Number(asset.height || 0);
+    if (!w || !h) return null;
+
+    const target = Number(projectAspect) || (16 / 9);
+    const source = w / h;
+    const drift = Math.abs(source - target) / target;
+
+    if (drift < 0.05) return { fit: 'fill', reframed: false, upscaled: false, note: '' };
+
+    const narrower = source < target;
+    return {
+      fit: drift > 0.15 ? (narrower ? 'pillarbox' : 'letterbox') : 'crop',
+      reframed: drift <= 0.15,
+      // Below 720p in a 1080p timeline the renderer will scale it up. Said
+      // plainly so nobody reads it as restoration.
+      upscaled: h < 720,
+      sourceAspect: Math.round(source * 100) / 100,
+      note: drift > 0.15
+        ? 'Whole frame kept and padded. Cropping this to fill the frame would '
+          + 'cut away a third of the picture, which in archival footage is often the subject.'
+        : 'Cropped slightly to fit.'
+    };
+  }
+
   function formatTimecode(seconds) {
     const s = Math.max(0, Number(seconds) || 0);
     const m = Math.floor(s / 60);
@@ -905,6 +942,7 @@
     // State
     isConfigured,
     planExcerpt,
+    planTreatment,
     formatTimecode,
     clearForProduction,
     projectRightsPolicy,
