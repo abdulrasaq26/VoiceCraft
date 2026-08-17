@@ -220,6 +220,24 @@ class Graphic(BaseModel):
 class Scene(BaseModel):
     """One beat. AETHER calls these scenes and they map 1:1 onto storyboard rows."""
 
+    # -- timing ---------------------------------------------------------------
+    # Present only when the narration has been transcribed. These are seconds
+    # on the FINISHED video's clock, and they must come from the supplied
+    # transcript rather than being estimated from sentence length: application
+    # code validates them against the audio duration and rejects a shot that
+    # starts before zero, ends after the narration, or overlaps its neighbour.
+    #
+    # Not to be confused with an archival excerpt's sourceIn/sourceOut, which
+    # are positions inside the source film. Two clocks, never interchangeable.
+    timelineStart: Optional[float] = Field(
+        default=None, ge=0,
+        description="When this beat appears, in seconds of the finished video.",
+    )
+    timelineEnd: Optional[float] = Field(
+        default=None, ge=0,
+        description="When it leaves. Must be greater than timelineStart.",
+    )
+
     index: int = Field(
         ge=0,
         description=(

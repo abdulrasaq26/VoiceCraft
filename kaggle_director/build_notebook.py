@@ -294,6 +294,95 @@ if not gpu_ok:
 print('\\nStage 5b PASSED')
 """
     ),
+    md(
+        """
+## Stage 5c — Transcribe the narration (optional, runs BEFORE Qwen)
+
+Whisper answers "when was this actually said?". Qwen answers "what should the
+viewer see then?". Keeping those separate is the point — but on 2x T4 they
+cannot both be resident, so transcription happens here and the model is
+unloaded before Stage 6 brings in the 20 GB director.
+
+Skip this cell if you have no narration audio yet; nothing downstream requires
+it, and the storyboard falls back to estimated timing (and says so).
+"""
+    ),
+    code(
+        """
+AUDIO_PATH = ''          # e.g. '/kaggle/input/my-narration/voiceover.wav'
+WHISPER_SIZE = 'large-v3'  # 'medium' is ~2x faster and usually enough for timing
+
+TRANSCRIPT = None
+if not AUDIO_PATH:
+    print('No AUDIO_PATH set — skipping transcription.')
+    print('The storyboard will use estimated timing, and will be labelled as such.')
+else:
+    import gc, json, os, time
+    import subprocess, sys
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q',
+                           'faster-whisper'])
+    import torch
+    from faster_whisper import WhisperModel
+
+    def vram():
+        if not torch.cuda.is_available():
+            return 0.0
+        return sum((torch.cuda.get_device_properties(i).total_memory
+                    - torch.cuda.mem_get_info(i)[0]) for i in range(torch.cuda.device_count())) / 1024**3
+
+    before = vram()
+    t0 = time.time()
+    # int8_float16 roughly halves the weights against float16 for a difference
+    # that does not show up in word timings — and this has to fit alongside
+    # nothing, then get out of the way entirely.
+    model = WhisperModel(WHISPER_SIZE, device='cuda', compute_type='int8_float16')
+    print(f'loaded {WHISPER_SIZE} in {time.time()-t0:.0f}s | VRAM +{vram()-before:.1f} GB', flush=True)
+
+    t0 = time.time()
+    segments, info = model.transcribe(AUDIO_PATH, word_timestamps=True, vad_filter=True)
+
+    out = {'duration': float(info.duration), 'language': info.language,
+           'model': WHISPER_SIZE, 'segments': []}
+    for seg in segments:      # a generator: transcription happens here
+        out['segments'].append({
+            'id': seg.id, 'start': round(seg.start, 3), 'end': round(seg.end, 3),
+            'text': seg.text.strip(),
+            'words': [{'word': w.word.strip(), 'start': round(w.start, 3), 'end': round(w.end, 3)}
+                      for w in (seg.words or [])]
+        })
+    elapsed = time.time() - t0
+    words = sum(len(s['words']) for s in out['segments'])
+    print(f"transcribed {out['duration']:.1f}s of audio in {elapsed:.0f}s "
+          f"({out['duration']/max(elapsed,0.1):.1f}x realtime)")
+    print(f"{len(out['segments'])} segments, {words} words with timings")
+
+    with open('/kaggle/working/transcript.json', 'w', encoding='utf-8') as f:
+        json.dump(out, f, indent=1)
+
+    # Real SRT, from measured timings.
+    def tc(t):
+        ms = int(round((t - int(t)) * 1000)); w = int(t)
+        return f'{w//3600:02d}:{(w%3600)//60:02d}:{w%60:02d},{ms:03d}'
+    with open('/kaggle/working/subtitles.srt', 'w', encoding='utf-8') as f:
+        for i, seg in enumerate(out['segments'], 1):
+            # Concatenated on purpose: a newline escape in this string has
+            # to survive the notebook generator, and it does not.
+            nl = chr(10)
+            f.write(str(i) + nl + tc(seg['start']) + ' --> ' + tc(seg['end'])
+                    + nl + seg['text'] + nl + nl)
+
+    TRANSCRIPT = out
+    print(chr(10) + 'wrote /kaggle/working/transcript.json and subtitles.srt')
+
+    # Hand the VRAM back before Stage 6 asks for 20 GB of it.
+    held = vram()
+    del model
+    gc.collect()
+    torch.cuda.empty_cache()
+    print(f'unloaded Whisper: VRAM {held:.1f} GB -> {vram():.1f} GB')
+    print(chr(10) + 'Stage 5c PASSED')
+"""
+    ),
     md("## Stage 6 — Download the GGUF (~20 GB, once per session)"),
     code(
         """

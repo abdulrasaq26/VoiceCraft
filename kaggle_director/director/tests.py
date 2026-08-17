@@ -28,6 +28,9 @@ AETHER_SCENE_FIELDS = {
     "index", "visualType", "stockRequirements", "textOverlay", "graphic",
     "hostOverlay", "shotType", "cameraMovement", "motion", "emotion",
     "transition", "note",
+    # Present only when the narration has been transcribed. Validated against
+    # the audio duration by public/transcription/timing.js, never trusted raw.
+    "timelineStart", "timelineEnd",
 }
 
 MINIMAL_PLAN = {
