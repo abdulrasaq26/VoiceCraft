@@ -1082,6 +1082,100 @@
     }
   }
 
+  // -- Source readiness -----------------------------------------------------
+  //
+  // A streamed film that has not buffered the region around its in-point cannot
+  // be drawn, and the old code then fell through to clip.img -- null for a
+  // video-only clip -- and drew nothing. The export encoded black footage and
+  // said nothing about it. Measured on a real archive item: 390 frames of a
+  // 6.5s shot, zero of them drawable, while the element itself was healthy
+  // seconds later.
+  const renderErrors = [];
+
+  function noteRenderError(clip, message) {
+    // One entry per clip; a per-frame log would bury the useful line under
+    // hundreds of copies of itself.
+    const key = String(clip.sceneIndex);
+    if (renderErrors.some((e) => e.key === key)) return;
+    renderErrors.push({ key, scene: clip.sceneIndex, message, at: Date.now() });
+    console.warn('[Editor] ' + message);
+  }
+
+  // `loadedmetadata` only means the duration is known. HAVE_CURRENT_DATA (2) is
+  // the first state where the frame at currentTime can actually be drawn.
+  function videoDrawable(v) {
+    return !!v && v.readyState >= 2 && !!v.videoWidth;
+  }
+
+  /**
+   * Get every video clip ready before recording starts.
+   *
+   * Seeks each element to its own in-point, not to zero: a shot excerpting
+   * 272.2s needs 272.2s buffered, and having the opening buffered is no use to
+   * it. Returns a report rather than throwing, because a project with one
+   * unavailable clip should still export via the fallback, with the
+   * substitution recorded.
+   */
+  async function prepareClipsForExport(opts) {
+    const timeoutMs = (opts && opts.timeoutMs) || 15000;
+    renderErrors.length = 0;
+    const report = { prepared: [], failed: [] };
+
+    for (const clip of clips) {
+      if (!clip.video) continue;
+      const inPoint = (clip.excerpt && Number.isFinite(Number(clip.excerpt.sourceIn)))
+        ? Number(clip.excerpt.sourceIn) : 0;
+
+      const ok = await new Promise((resolve) => {
+        let settled = false;
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          clip.video.removeEventListener('seeked', onReady);
+          clip.video.removeEventListener('canplay', onReady);
+          clearInterval(poll);
+          resolve(value);
+        };
+        const onReady = () => { if (videoDrawable(clip.video)) finish(true); };
+
+        clip.video.addEventListener('seeked', onReady);
+        clip.video.addEventListener('canplay', onReady);
+        // Buffering a remote byte range emits no single reliable event, so poll
+        // as well as listen; whichever notices first wins.
+        const poll = setInterval(onReady, 150);
+        setTimeout(() => finish(videoDrawable(clip.video)), timeoutMs);
+
+        try {
+          const target = Math.max(0, Math.min(inPoint, (clip.video.duration || 1e9) - 0.05));
+          if (Math.abs(clip.video.currentTime - target) < 0.01) onReady();
+          clip.video.currentTime = target;
+        } catch (e) {
+          finish(false);
+        }
+      });
+
+      if (ok) {
+        report.prepared.push({ scene: clip.sceneIndex, sourceIn: inPoint });
+        continue;
+      }
+
+      // Not ready in time. Build the fallback now rather than discovering the
+      // hole mid-recording, where there is no time left to render anything.
+      noteRenderError(clip,
+        'Scene ' + clip.sceneIndex + ': video unavailable at sourceIn=' + inPoint.toFixed(1));
+      if (!clip.img) {
+        clip.fallbackImg = await fallbackCard({
+          index: clip.sceneIndex, subtitle: clip.subtitle, visualType: 'editorial_text'
+        });
+      }
+      report.failed.push({
+        scene: clip.sceneIndex, sourceIn: inPoint, readyState: clip.video.readyState,
+        fallback: clip.img ? 'still image' : (clip.fallbackImg ? 'editorial graphic' : 'none available')
+      });
+    }
+    return report;
+  }
+
   function pauseInactiveVideos(activeClip) {
     for (const c of clips) {
       if (c.video && c !== activeClip && !c.video.paused) c.video.pause();
@@ -1163,25 +1257,55 @@
     return true;
   }
 
+  // Drawn only when a shot has no usable visual at all. Deliberately legible
+  // rather than tasteful: this frame is a bug report, and it should be obvious
+  // in a preview long before anyone publishes it.
+  function drawUnavailable(g, cw, ch, clip) {
+    g.save();
+    g.fillStyle = '#2a1416';
+    g.fillRect(0, 0, cw, ch);
+    g.fillStyle = '#ef4444';
+    g.font = '600 ' + Math.round(ch * 0.045) + 'px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.fillText('Visual unavailable', cw / 2, ch * 0.48);
+    g.fillStyle = '#9aa4b2';
+    g.font = '400 ' + Math.round(ch * 0.032) + 'px system-ui, sans-serif';
+    g.fillText('scene ' + clip.sceneIndex, cw / 2, ch * 0.56);
+    g.restore();
+  }
+
   function renderClipVisual(g, cw, ch, clip, localMs) {
     // An LTX clip already contains real camera motion, so the Ken Burns
     // fallback is not just unnecessary — it fights the footage and reads as a
     // second, wrong camera move on top of the intended one.
     if (clip.video) {
       driveVideo(clip.video, localMs, clip);
-      if (clip.video.readyState >= 2) {
+      if (videoDrawable(clip.video)) {
         const fit = fitFor(clip, clip.video);
         (fit === 'contain' ? drawContain : drawCover)(g, clip.video, cw, ch, 1, 0, 0);
         return;
       }
+      // The element exists but has no frame to give. Say so, then fall through
+      // to whatever still we have. Encoding black in silence is the one
+      // outcome that must not happen.
+      noteRenderError(clip, 'Scene ' + clip.sceneIndex
+        + ': no drawable frame (readyState ' + clip.video.readyState + ')');
+    }
+
+    const still = clip.img || clip.fallbackImg;
+    if (!still) {
+      // Nothing at all to draw. A visible marker beats a black frame, because a
+      // black frame looks like a rendering choice and this is a fault.
+      drawUnavailable(g, cw, ch, clip);
+      return;
     }
     const p = Math.max(0, Math.min(1, localMs / (clip.durationSec * 1000)));
     const t = effectTransform(clip.effect, p);
     // A contained frame is not panned or zoomed: a Ken Burns move on a
     // pillarboxed archival still slides the picture out of its own letterbox.
-    const fit = fitFor(clip, clip.img);
-    if (fit === 'contain') drawContain(g, clip.img, cw, ch, 1, 0, 0);
-    else drawCover(g, clip.img, cw, ch, t.scale, t.tx, t.ty);
+    const fit = fitFor(clip, still);
+    if (fit === 'contain') drawContain(g, still, cw, ch, 1, 0, 0);
+    else drawCover(g, still, cw, ch, t.scale, t.tx, t.ty);
   }
 
   function renderTo(g, cw, ch, ms) {
@@ -1556,6 +1680,18 @@
         };
       });
 
+      // Get every streamed source to its own in-point BEFORE the tape rolls.
+      // A film that has not buffered the region it is excerpting cannot be
+      // drawn, and once recording starts there is no time left to wait for it.
+      showStatus('Preparing sources — seeking each clip to its in-point…', 'info');
+      const readiness = await prepareClipsForExport();
+      if (readiness.failed.length) {
+        const lines = readiness.failed
+          .map((f) => `scene ${f.scene}: unavailable at ${f.sourceIn.toFixed(1)}s → ${f.fallback}`);
+        showStatus(`${readiness.failed.length} clip(s) could not be prepared. `
+          + `Exporting with fallbacks: ${lines.join('; ')}`, 'warn');
+      }
+
       if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
       rec.start();
       if (recDest) activeSources = scheduleAudio(0, recDest);
@@ -1769,6 +1905,10 @@
   // set up the state they read.
   window.BlvckEditorTiming = {
     clipAt,
+    videoDrawable,
+    prepareClipsForExport,
+    renderErrors,
+    noteRenderError,
     drawContain,
     fitFor,
     overlayActiveAt,
