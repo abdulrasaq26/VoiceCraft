@@ -637,8 +637,23 @@ gen = requests.post(f'http://localhost:{API_PORT}/generate', headers=AUTH,
                     json={'prompt': 'Give one YouTube title about inflation.', 'max_tokens': 1024}, timeout=600)
 print('/generate ', gen.status_code, gen.json()['content'][:60] if gen.ok else gen.text[:200])
 
-plan = requests.post(f'http://localhost:{API_PORT}/director', headers=AUTH,
-                     json={'script': TEST_SCRIPT, 'style': 'finance'}, timeout=1800)
+# The slowest probe by a wide margin, and the tunnel is not created until it
+# returns — so a silent wait here reads as a dead stage right at the point where
+# everything else has already worked. Stages 7 and 8 tick; this one did not.
+import threading as _th
+
+_probing = _th.Event()
+_p0 = time.time()
+def _probe_beat():
+    while not _probing.wait(20):
+        print(f'  [/director] {int(time.time()-_p0)}s elapsed — a grammar-constrained '
+              'plan is thousands of tokens', flush=True)
+_th.Thread(target=_probe_beat, daemon=True).start()
+try:
+    plan = requests.post(f'http://localhost:{API_PORT}/director', headers=AUTH,
+                         json={'script': TEST_SCRIPT, 'style': 'finance'}, timeout=1800)
+finally:
+    _probing.set()
 print('/director ', plan.status_code, f"{len(plan.json().get('scenes', []))} scenes" if plan.ok else plan.text[:200])
 if not (chat.ok and gen.ok and plan.ok):
     raise RuntimeError('An endpoint failed — see the statuses above.')
