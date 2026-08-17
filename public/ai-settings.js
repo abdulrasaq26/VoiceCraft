@@ -99,8 +99,27 @@
           'x-qwen-key': (qwenKeyInput && qwenKeyInput.value.trim()) || ''
         }
       });
-      const body = await res.json();
+
+      // Read as text first. A dead tunnel answers with ngrok's own HTML error
+      // page, and calling res.json() on that throws "unexpected character at
+      // line 1 column 1" — which says nothing about the tunnel being down.
+      const raw = await res.text();
+      let body = null;
+      try { body = JSON.parse(raw); } catch (_) { /* handled below */ }
+
+      if (body === null) {
+        const looksLikeHtml = /^\s*<(!doctype|html)/i.test(raw);
+        throw new Error(
+          looksLikeHtml
+            ? `HTTP ${res.status} — that address served a web page, not the Qwen API. `
+              + 'The Kaggle session has probably ended and the tunnel is gone.'
+            : `HTTP ${res.status} — unreadable reply: ${raw.slice(0, 80)}`
+        );
+      }
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      if (body.status !== 'ok') {
+        throw new Error(`Reachable, but not the director API: ${JSON.stringify(body).slice(0, 100)}`);
+      }
 
       // `loaded` is the difference between "the tunnel answers" and "the model
       // is in VRAM" — a first request against an unloaded server takes minutes,

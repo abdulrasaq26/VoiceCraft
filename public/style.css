@@ -339,7 +339,8 @@ textarea:focus {
 
 select,
 input[type="text"],
-input[type="search"] {
+input[type="search"],
+input[type="password"] {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--card-border);
@@ -354,8 +355,60 @@ select {
 }
 
 select:focus,
+/* Settings dialog: a label followed by its field, one per line.
+   Nothing here sets `display` on a label, and an inline label lets the next
+   field ride up alongside it — which is how "Endpoint URL [box] API Key"
+   ended up on a single row. */
+#ai-settings-modal label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+#ai-settings-modal input[type="text"],
+#ai-settings-modal input[type="password"],
+#ai-settings-modal textarea,
+#ai-settings-modal select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#ai-settings-modal .field-note {
+  display: block;
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* The hint sitting inside a label is part of that label, not a new line. */
+#ai-settings-modal label .field-note {
+  display: inline;
+  margin: 0;
+}
+
+#ai-settings-modal fieldset {
+  min-width: 0;   /* or a wide field stretches the fieldset past the panel */
+}
+
+.qwen-test-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;   /* a failure explains itself in a sentence, not a word */
+}
+
+#ai-settings-modal .qwen-test-row .field-note {
+  margin: 0;
+  flex: 1 1 14rem;
+  min-width: 0;
+  line-height: 1.4;
+}
+
 input[type="text"]:focus,
-input[type="search"]:focus {
+input[type="search"]:focus,
+input[type="password"]:focus {
   outline: none;
   border-color: var(--accent);
 }
