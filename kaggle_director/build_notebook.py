@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import List
 
 HERE = Path(__file__).parent
 NOTEBOOK = HERE / "Kaggle_Director_Qwen.ipynb"
@@ -174,8 +175,8 @@ except RuntimeError as exc:
     # No wheel matched. Almost always the manylinux_2_35 tag against an older
     # glibc; fall back to the last release tagged plain linux_x86_64, which
     # installs regardless.
-    print(f'\n  no compatible wheel for the newest release ({exc})')
-    print('  falling back to 0.3.19, the last release tagged linux_x86_64\n', flush=True)
+    print(f'\\n  no compatible wheel for the newest release ({exc})')
+    print('  falling back to 0.3.19, the last release tagged linux_x86_64\\n', flush=True)
     pip('--force-reinstall', '--no-deps', '--only-binary=:all:', 'llama-cpp-python==0.3.19',
         '--index-url', CUDA_WHEEL_INDEX,
         label='llama-cpp-python 0.3.19 CUDA wheel')
@@ -714,6 +715,41 @@ def build() -> dict:
     }
 
 
+def check_cells_compile(notebook: dict) -> List[str]:
+    """Every code cell must be valid Python before this file is written.
+
+    The cells are Python source inside Python strings, so an escape that is
+    correct in the generator can still be wrong in the output: a lone newline
+    escape in a generated print() is consumed here and arrives there as a real
+    line break, splitting the string in two. That produced a SyntaxError on
+    Kaggle, minutes into a session, in a stage that had nothing to do with the
+    change — and this generator had already reported success.
+
+    Compiling costs milliseconds and moves that failure back to the machine
+    that caused it.
+    """
+    problems: List[str] = []
+    for position, cell in enumerate(notebook["cells"]):
+        if cell.get("cell_type") != "code":
+            continue
+        source = "".join(cell["source"])
+        try:
+            compile(source, f"<cell {position}>", "exec")
+        except SyntaxError as exc:
+            lines = source.splitlines() or [""]
+            line = lines[min(len(lines) - 1, max(0, (exc.lineno or 1) - 1))]
+            problems.append(f"cell {position}, line {exc.lineno}: {exc.msg}\n    {line.strip()}")
+    return problems
+
+
 if __name__ == "__main__":
-    NOTEBOOK.write_text(json.dumps(build(), indent=1, ensure_ascii=False), encoding="utf-8")
-    print(f"wrote {NOTEBOOK.name}: {len(CELLS)} cells")
+    notebook = build()
+    broken = check_cells_compile(notebook)
+    if broken:
+        print(f"NOT written — {len(broken)} cell(s) do not compile:\n")
+        for problem in broken:
+            print(f"  {problem}\n")
+        raise SystemExit(1)
+
+    NOTEBOOK.write_text(json.dumps(notebook, indent=1, ensure_ascii=False), encoding="utf-8")
+    print(f"wrote {NOTEBOOK.name}: {len(CELLS)} cells, all compile")
