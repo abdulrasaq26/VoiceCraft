@@ -21,7 +21,10 @@ from .cache import get_cache_key, get_cached_result, init_cache, set_cached_resu
 from .inference import DirectorInference
 
 API_KEY = os.environ.get("DIRECTOR_API_KEY", "test-key-change-me")
-MODEL_ID = os.environ.get("DIRECTOR_MODEL", "Qwen/Qwen3-32B-AWQ")
+# Only a fallback: the notebook exports DIRECTOR_MODEL before uvicorn starts,
+# so this is what you get running the API standalone. Kept in step with
+# MODEL_CHOICE in build_notebook.py, or /health reports a model that is not loaded.
+MODEL_ID = os.environ.get("DIRECTOR_MODEL", "Qwen/Qwen3-14B-AWQ")
 VLLM_PORT = int(os.environ.get("VLLM_PORT", "8000"))
 SCHEMA_VERSION = "2.0-aether"
 
