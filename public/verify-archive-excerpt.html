@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Archive excerpt export verification</title>
+<style>
+  body { background:#0d0d0f; color:#e8eaed; font:14px/1.5 system-ui, sans-serif; margin:0; padding:24px 28px; }
+  h1 { font-size:1.15rem; margin:0 0 .2rem; }
+  .sub { color:#9aa4b2; margin:0 0 1.4rem; }
+  button { background:#6366f1; color:#fff; border:0; border-radius:8px; padding:.7rem 1.3rem;
+           font:600 .95rem system-ui; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  #log { margin-top:1rem; font:12px/1.6 ui-monospace, Menlo, monospace; white-space:pre-wrap;
+         color:#9aa4b2; max-height:150px; overflow:auto; }
+  table { border-collapse:collapse; width:100%; margin-top:1.2rem; font-size:.86rem; }
+  th,td { text-align:left; padding:.4rem .6rem; border-bottom:1px solid #23262e; vertical-align:top; }
+  th { color:#9aa4b2; font-weight:600; }
+  .ok { color:#10b981; } .bad { color:#ef4444; } .warn { color:#fbbf24; }
+  #verdict { margin-top:1.4rem; font:700 1.05rem system-ui; }
+  canvas.thumb { width:150px; height:auto; border:1px solid #23262e; border-radius:4px; background:#000; }
+  /* editor.js queries these at load; they must exist but need not be visible. */
+  #stubs { position:absolute; left:-9999px; top:-9999px; width:1px; height:1px; overflow:hidden; }
+</style>
+</head>
+<body>
+
+<h1>Archive excerpt export verification</h1>
+<p class="sub">
+  Records a real export through <code>MediaRecorder</code>, then decodes the produced file and
+  compares its pixels against the source film seeked to the expected position.
+  Run this in a normal, visible tab — a background tab suspends
+  <code>requestAnimationFrame</code> and the video element cannot decode during capture.
+</p>
+
+<button id="run">Run verification</button>
+<div id="log"></div>
+<div id="results"></div>
+<div id="verdict"></div>
+
+<!-- editor.js reads these ids on load. Hidden, and never interacted with. -->
+<div id="stubs">
+  <div id="editor-card"></div><button id="ed-assemble"></button><div id="ed-summary"></div>
+  <div id="ed-status"></div><div id="ed-stage"></div><canvas id="ed-canvas"></canvas>
+  <button id="ed-play"></button><input id="ed-seek" type="range" /><span id="ed-time"></span>
+  <div id="ed-timeline"></div><select id="ed-sub-font"></select><input id="ed-sub-size" />
+  <span id="ed-sub-size-val"></span><select id="ed-sub-pos"></select><input id="ed-sub-color" />
+  <input id="ed-sub-on" type="checkbox" /><select id="ed-res"><option value="360">360</option></select>
+  <button id="ed-export-video"></button><button id="ed-export-package"></button>
+  <input id="title-input" value="verify" /><input id="ed-up-images" type="file" />
+  <input id="ed-up-audio" type="file" /><input id="ed-up-subs" type="file" />
+  <button id="ed-build-manual"></button><button id="ed-manual-toggle"></button>
+  <div id="ed-manual"></div><input id="ed-crossfade" type="checkbox" />
+</div>
+
+<script src="graphic-renderer.js"></script>
+<script src="transcription/transcript.js"></script>
+<script src="editor.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  // The spec's case, unchanged.
+  const SOURCE_IN = 272.2;
+  const SOURCE_OUT = 278.7;
+  const SHOT_START = 18.5;
+  const SHOT_END = 25.0;
+  const PROJECT_MS = 30000;                 // a third shot follows, to 30s
+
+  // A real archival film, streamed through AETHER's own proxy. 1015s long, so
+  // 272.2s is genuinely deep inside it — playing from zero would look nothing
+  // like the expected frame.
+  const ITEM = '203969_Home_Movie_097405';
+  const FILE = '203969_Home_Movie_097405_master.intros.mp4';
+  const SRC = `/api/proxy/archive/download/${ITEM}/${FILE}`;
+
+  const SAMPLES = [
+    { timeline: 18.6,  source: 272.30 },
+    { timeline: 20.0,  source: 273.70 },
+    { timeline: 21.75, source: 275.45 },
+    { timeline: 23.5,  source: 277.20 },
+    { timeline: 24.9,  source: 278.60 }
+  ];
+
+  const logEl = document.getElementById('log');
+  const say = (m) => { logEl.textContent += m + '\n'; logEl.scrollTop = logEl.scrollHeight; };
+
+  const W = 640, H = 360;
+
+  function loadVideo(src) {
+    return new Promise((res, rej) => {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
+      v.onloadeddata = () => res(v);
+      v.onerror = () => rej(new Error('could not load ' + src));
+      v.src = src;
+    });
+  }
+
+  function seek(v, t) {
+    return new Promise((res) => {
+      const done = () => { v.removeEventListener('seeked', done); res(); };
+      v.addEventListener('seeked', done);
+      v.currentTime = Math.max(0, Math.min(t, (v.duration || 1e9) - 0.05));
+    });
+  }
+
+  /**
+   * A small grayscale signature of a frame.
+   *
+   * Downscaled to 16x9 and normalised, so it survives the encoder's colour
+   * shifts and blocking while still distinguishing one moment of a film from
+   * another. Exact pixel equality would fail for reasons that have nothing to
+   * do with whether the right frame was used.
+   */
+  function signature(source) {
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 9;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(source, 0, 0, 16, 9);
+    const d = g.getImageData(0, 0, 16, 9).data;
+    const out = [];
+    for (let i = 0; i < d.length; i += 4) {
+      out.push(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+    }
+    const mean = out.reduce((a, b) => a + b, 0) / out.length;
+    const sd = Math.sqrt(out.reduce((a, b) => a + (b - mean) ** 2, 0) / out.length) || 1;
+    return out.map((v) => (v - mean) / sd);
+  }
+
+  const distance = (a, b) => {
+    let s = 0;
+    for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]);
+    return s / a.length;
+  };
+
+  function thumb(source, label) {
+    const c = document.createElement('canvas');
+    c.className = 'thumb'; c.width = 160; c.height = 90;
+    c.getContext('2d').drawImage(source, 0, 0, 160, 90);
+    c.title = label;
+    return c;
+  }
+
+  async function run() {
+    const btn = document.getElementById('run');
+    btn.disabled = true;
+    logEl.textContent = '';
+    const E = window.BlvckEditorTiming;
+    if (!E) { say('BlvckEditorTiming missing — is editor.js loaded?'); return; }
+
+    say('loading the archival source through the AETHER proxy...');
+    let film;
+    try {
+      film = await loadVideo(SRC);
+    } catch (e) {
+      say('FAILED: ' + e.message);
+      say('archive.org storage nodes are intermittently unavailable; try again in a minute.');
+      btn.disabled = false;
+      return;
+    }
+    if (!isFinite(film.duration) || film.duration === 0) {
+      await seek(film, 1e6); await seek(film, 0);
+    }
+    say(`source: ${film.videoWidth}x${film.videoHeight}, ${film.duration.toFixed(1)}s`);
+    if (film.duration < SOURCE_OUT + 1) {
+      say(`FAILED: source is only ${film.duration.toFixed(1)}s; need > ${SOURCE_OUT}s`);
+      btn.disabled = false; return;
+    }
+
+    // Two bracketing shots so the excerpt is not at either end of the export,
+    // and so "does the next shot start correctly" is answerable.
+    const before = document.createElement('canvas');
+    before.width = 320; before.height = 180;
+    { const g = before.getContext('2d'); g.fillStyle = '#1050d0'; g.fillRect(0, 0, 320, 180); }
+    const after = document.createElement('canvas');
+    after.width = 320; after.height = 180;
+    { const g = after.getContext('2d'); g.fillStyle = '#00b060'; g.fillRect(0, 0, 320, 180); }
+
+    E._setState({
+      clips: [
+        { sceneIndex: 0, subtitle: '', durationSec: SHOT_START, timelineStart: 0, timelineEnd: SHOT_START,
+          effect: 'zoom-in', img: before, video: null, treatment: { fit: 'cover' },
+          stockAsset: { provider: 'pexels' } },
+        { sceneIndex: 1, subtitle: '', durationSec: SHOT_END - SHOT_START,
+          timelineStart: SHOT_START, timelineEnd: SHOT_END,
+          effect: 'zoom-in', img: null, video: film,
+          excerpt: { applied: true, sourceIn: SOURCE_IN, sourceOut: SOURCE_OUT,
+                     sourceDuration: film.duration },
+          treatment: { fit: 'contain' }, stockAsset: { provider: 'archive_org' } },
+        { sceneIndex: 2, subtitle: '', durationSec: 5, timelineStart: SHOT_END, timelineEnd: 30,
+          effect: 'zoom-in', img: after, video: null, treatment: { fit: 'cover' },
+          stockAsset: { provider: 'pexels' } }
+      ],
+      audio: { buffers: [], offsets: [], totalMs: PROJECT_MS },
+      timingSource: 'whisper'
+    });
+    say(`timeline ${E.totalMs()}ms, authoritative=${E.authoritative()}`);
+    say(`excerpt ${SOURCE_IN}s -> ${SOURCE_OUT}s placed at ${SHOT_START}s -> ${SHOT_END}s`);
+
+    // Record exactly the way exportVideo() does: real time, rAF-driven.
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const g = off.getContext('2d');
+    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9' : 'video/webm;codecs=vp8';
+    const rec = new MediaRecorder(off.captureStream(30), { mimeType: mime });
+    const chunks = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    const stopped = new Promise((r) => { rec.onstop = r; });
+
+    say(`recording ${PROJECT_MS / 1000}s in real time — keep this tab focused...`);
+    E._setState({ realtime: true });
+    rec.start();
+    const t0 = performance.now();
+    await new Promise((resolve) => {
+      const step = () => {
+        const ms = performance.now() - t0;
+        if (ms >= PROJECT_MS) return resolve();
+        E.renderTo(g, W, H, ms);
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+    rec.stop();
+    await stopped;
+    E._setState({ realtime: false });
+
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    say(`recorded ${(blob.size / 1024).toFixed(0)} KB`);
+
+    const out = await loadVideo(URL.createObjectURL(blob));
+    if (!isFinite(out.duration) || out.duration === 0) { await seek(out, 1e6); await seek(out, 0); }
+    say(`export decodes: ${out.videoWidth}x${out.videoHeight}, ${out.duration.toFixed(2)}s`);
+
+    // ── Compare ─────────────────────────────────────────────────────────────
+    const rows = [];
+    let matches = 0;
+    for (const s of SAMPLES) {
+      await seek(out, s.timeline);
+      const got = signature(out);
+
+      await seek(film, s.source);
+      const expected = signature(film);
+      const dExpected = distance(got, expected);
+
+      // The competing hypothesis: the source was played from zero, so this
+      // moment of the timeline would show source time (timeline - SHOT_START).
+      await seek(film, s.timeline - SHOT_START);
+      const fromZero = signature(film);
+      const dFromZero = distance(got, fromZero);
+
+      const closer = dExpected < dFromZero ? 'sourceIn' : 'zero';
+      if (closer === 'sourceIn') matches++;
+      rows.push({ ...s, dExpected, dFromZero, closer });
+    }
+
+    // End boundary: after SHOT_END the next shot must take over.
+    await seek(out, 26.5);
+    const afterShot = signature(out);
+    await seek(out, 27.5);
+    const afterShot2 = signature(out);
+    const nextC = document.createElement('canvas');
+    nextC.width = 16; nextC.height = 9;
+    nextC.getContext('2d').drawImage(after, 0, 0, 16, 9);
+    const nextSig = signature(nextC);
+    const dNext = Math.min(distance(afterShot, nextSig), distance(afterShot2, nextSig));
+
+    // And it must not be showing film past sourceOut.
+    await seek(film, SOURCE_OUT + 2.0);
+    const pastOut = signature(film);
+    const dPastOut = Math.min(distance(afterShot, pastOut), distance(afterShot2, pastOut));
+
+    // ── Report ──────────────────────────────────────────────────────────────
+    const res = document.getElementById('results');
+    const tbl = document.createElement('table');
+    tbl.innerHTML = '<thead><tr><th>timeline</th><th>expected source</th>'
+      + '<th>dist to expected</th><th>dist if played from 0</th><th>closer match</th></tr></thead>';
+    const tb = document.createElement('tbody');
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${r.timeline.toFixed(2)}s</td><td>${r.source.toFixed(2)}s</td>`
+        + `<td>${r.dExpected.toFixed(3)}</td><td>${r.dFromZero.toFixed(3)}</td>`
+        + `<td class="${r.closer === 'sourceIn' ? 'ok' : 'bad'}">${r.closer}</td>`;
+      tb.appendChild(tr);
+    }
+    tbl.appendChild(tb);
+    res.innerHTML = '';
+    res.appendChild(tbl);
+
+    const boundary = document.createElement('table');
+    boundary.innerHTML = '<thead><tr><th>end boundary check</th><th>distance</th><th>result</th></tr></thead>'
+      + `<tbody>
+        <tr><td>frame after 25.0s matches the NEXT shot</td><td>${dNext.toFixed(3)}</td>
+            <td class="${dNext < 0.6 ? 'ok' : 'bad'}">${dNext < 0.6 ? 'yes' : 'no'}</td></tr>
+        <tr><td>frame after 25.0s is film past sourceOut</td><td>${dPastOut.toFixed(3)}</td>
+            <td class="${dPastOut > dNext ? 'ok' : 'bad'}">${dPastOut > dNext ? 'no (correct)' : 'yes (wrong)'}</td></tr>
+        <tr><td>exported duration</td><td>${out.duration.toFixed(2)}s</td>
+            <td class="${Math.abs(out.duration - PROJECT_MS / 1000) < 1 ? 'ok' : 'warn'}">vs ${PROJECT_MS / 1000}s narration</td></tr>
+      </tbody>`;
+    res.appendChild(boundary);
+
+    // Visual side-by-side for the first sample, so a human can sanity-check it.
+    await seek(out, SAMPLES[0].timeline);
+    await seek(film, SAMPLES[0].source);
+    const strip = document.createElement('div');
+    strip.style.cssText = 'display:flex;gap:10px;margin-top:12px;align-items:center;flex-wrap:wrap';
+    const lab = (t) => { const s = document.createElement('span');
+      s.style.cssText = 'color:#9aa4b2;font-size:.8rem'; s.textContent = t; return s; };
+    strip.append(lab(`export @${SAMPLES[0].timeline}s`), thumb(out, 'export'),
+                 lab(`source @${SAMPLES[0].source}s`), thumb(film, 'source'));
+    res.appendChild(strip);
+
+    const started = rows[0].closer === 'sourceIn';
+    const stopped2 = dPastOut > dNext && dNext < 0.6;
+    const pass = matches >= 4 && started && stopped2;
+    const v = document.getElementById('verdict');
+    v.className = pass ? 'ok' : 'bad';
+    v.textContent = `Archive source offset export verification: ${pass ? 'PASS' : 'FAIL'}`
+      + `  (${matches}/${SAMPLES.length} samples matched sourceIn; `
+      + `starts at sourceIn: ${started ? 'yes' : 'no'}; stops at sourceOut: ${stopped2 ? 'yes' : 'no'})`;
+
+    say('done — copy the tables above.');
+    btn.disabled = false;
+  }
+
+  document.getElementById('run').addEventListener('click', () => {
+    run().catch((e) => { say('ERROR: ' + (e && e.message)); document.getElementById('run').disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>
