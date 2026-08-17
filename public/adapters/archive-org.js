@@ -56,6 +56,37 @@
     return Number.isFinite(n) ? n : 0;
   }
 
+  // ── Rate limiting ─────────────────────────────────────────────────────────
+  //
+  // archive.org is a donated-funds library, not a commercial API, and planning
+  // one storyboard can mean dozens of calls: a search per query, then a
+  // metadata fetch per candidate. Left alone those fan out in parallel and
+  // arrive as a burst.
+  //
+  // These numbers are a deliberately cautious guess, not a quote from the
+  // published policy — archive.org's developer docs were unreachable (502)
+  // when this was written, so nothing here should be read as "the documented
+  // limit". Being slower than required costs a few seconds per storyboard;
+  // being faster than allowed costs the service, and eventually our access.
+  const MIN_INTERVAL_MS = 350;   // one request at a time, spaced out
+  let chain = Promise.resolve();
+  let lastStart = 0;
+
+  function schedule(task) {
+    // A promise chain rather than a counter: it serialises every caller,
+    // including the parallel search fan-out in stock-media.js.
+    const run = chain.then(async () => {
+      const wait = Math.max(0, MIN_INTERVAL_MS - (Date.now() - lastStart));
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      lastStart = Date.now();
+      return task();
+    });
+    // Keep the chain alive after a failure, or one error stalls every
+    // subsequent request forever.
+    chain = run.then(() => {}, () => {});
+    return run;
+  }
+
   // ── Transport ─────────────────────────────────────────────────────────────
   // archive.org answers 502 under load often enough that a single failure
   // means nothing. Retry briefly before giving up on an item.
@@ -63,7 +94,20 @@
     let lastErr;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const res = await fetch(`${PROXY}${path}`);
+        const res = await schedule(() => fetch(`${PROXY}${path}`));
+
+        // Being told to slow down is an instruction, not an error to retry
+        // through at the same pace.
+        if (res.status === 429 || res.status === 503) {
+          const after = Number(res.headers && res.headers.get && res.headers.get('retry-after'));
+          const backoff = Number.isFinite(after) && after > 0
+            ? Math.min(after * 1000, 30000)
+            : 2000 * (attempt + 1);
+          lastErr = new Error(`archive.org asked us to slow down (HTTP ${res.status})`);
+          if (attempt < retries) { await new Promise((r) => setTimeout(r, backoff)); continue; }
+          throw lastErr;
+        }
+
         const text = await res.text();
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
         if (!text.trim()) throw new Error('empty response');
@@ -291,6 +335,6 @@
     search,
     isReachable,
     // exported for tests
-    _internal: { pickFile, scoreFile, parseLength, buildQuery, escapeQuery, toAsset }
+    _internal: { pickFile, scoreFile, parseLength, buildQuery, escapeQuery, toAsset, schedule, MIN_INTERVAL_MS }
   };
 })();
