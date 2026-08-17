@@ -534,16 +534,44 @@ class DirectorInference:
     #: How many times to ask before repairing the answer ourselves.
     PLAN_ATTEMPTS = 2
 
+    def _plan_grammar(self):
+        """The compiled GBNF grammar, built once per process.
+
+        Passing `response_format` makes llama-cpp-python compile the schema to a
+        grammar on every single call, and for this schema that dominates the
+        request: a one-beat plan with the reasoning pass disabled took 286s
+        against roughly 30s of actual generation. Compiling once turns a
+        per-request cost into a one-off, which is the difference between fitting
+        inside a 300s gateway timeout and never fitting.
+
+        Falls back to response_format if this build of llama-cpp-python does not
+        expose LlamaGrammar — slow beats broken.
+        """
+        if getattr(self, "_grammar_cache", None) is not None:
+            return self._grammar_cache
+        try:
+            from llama_cpp import LlamaGrammar
+
+            self._grammar_cache = LlamaGrammar.from_json_schema(
+                json.dumps(get_json_schema(inline=True)), verbose=False
+            )
+        except Exception:  # noqa: BLE001
+            self._grammar_cache = False
+        return self._grammar_cache
+
     def _plan_once(self, messages, max_tokens: int, started: float) -> dict:
+        grammar = self._plan_grammar()
+        constraint = (
+            {"grammar": grammar}
+            if grammar
+            else {"response_format": {"type": "json_object", "schema": get_json_schema(inline=True)}}
+        )
         with self._lock:
             result = self.llm.create_chat_completion(
                 messages=messages,
                 temperature=0.0,
                 max_tokens=max_tokens,
-                response_format={
-                    "type": "json_object",
-                    "schema": get_json_schema(inline=True),
-                },
+                **constraint,
             )
 
         raw = result["choices"][0]["message"]["content"] or ""

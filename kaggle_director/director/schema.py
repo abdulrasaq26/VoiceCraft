@@ -25,6 +25,8 @@ this file next.
 
 from __future__ import annotations
 
+import json
+from functools import lru_cache
 from typing import Any, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field, model_validator
@@ -451,13 +453,28 @@ def _grammar_safe(node: object) -> object:
     return node
 
 
+@lru_cache(maxsize=2)
+def _build_json_schema(inline: bool) -> str:
+    schema = _tighten(VideoPlan.model_json_schema())
+    if inline:
+        schema = _grammar_safe(_inline_refs(schema, schema.get("$defs", {})))
+    # Cached as text, so a caller mutating the returned dict cannot poison the
+    # next caller's copy.
+    return json.dumps(schema)
+
+
 def get_json_schema(inline: bool = False) -> dict:
     """The JSON schema used to constrain generation.
 
     `inline=True` resolves $defs into the tree and drops validator-only
     annotations — the form llama.cpp's grammar compiler needs.
+
+    Memoised because it cannot change between calls in a running process, so
+    rebuilding it was the same answer computed again. Measured at 26ms per
+    build, which is small — the expensive part is downstream, where the schema
+    is compiled into a GBNF grammar, and that is cached on the engine.
+
+    Returned as a fresh dict each time so a caller mutating it cannot poison
+    the cache.
     """
-    schema = _tighten(VideoPlan.model_json_schema())
-    if not inline:
-        return schema
-    return _grammar_safe(_inline_refs(schema, schema.get("$defs", {})))
+    return json.loads(_build_json_schema(inline))
