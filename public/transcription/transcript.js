@@ -70,6 +70,68 @@
     };
   }
 
+  /**
+   * Build a transcript from BlvckSync's aligned timeline.
+   *
+   * This is the path that actually runs in production. Fish Speech generates
+   * the narration, and the Fish backend already has faster_whisper resident
+   * for voice cloning — so sync-engine.js asks it for forced alignment over
+   * /v1/align and gets real word timings back. There is no second Whisper to
+   * deploy and nothing competing with the Director for VRAM, because the model
+   * is already loaded on the machine that made the audio.
+   *
+   * The tier is carried through honestly: only sync-engine's 'aligned' source
+   * becomes a measured transcript. 'measured' means per-chunk durations with
+   * words distributed inside them by syllable weight, and 'estimated' means
+   * nothing but the text — neither is something to hang an edit on, so both
+   * stay unmeasured and every guard downstream keeps refusing them.
+   */
+  function fromSyncTimeline(timeline, { script = '', audioFingerprint = '', model = '' } = {}) {
+    if (!timeline || !Array.isArray(timeline.words)) return null;
+
+    const words = timeline.words
+      .map((w) => ({
+        word: String(w.text == null ? w.word : w.text || '').trim(),
+        start: num(w.start),
+        end: num(w.end)
+      }))
+      .filter((w) => w.word && w.end >= w.start);
+    if (!words.length) return null;
+
+    // sync-engine already groups words into sentences; use its grouping rather
+    // than re-splitting the text, so the segment boundaries match the audio.
+    const sentences = Array.isArray(timeline.sentences) && timeline.sentences.length
+      ? timeline.sentences
+      : [{ start: words[0].start, end: words[words.length - 1].end }];
+
+    const segments = sentences.map((sen, i) => {
+      const from = num(sen.start), to = num(sen.end);
+      const mine = words.filter((w) => w.start >= from - 0.01 && w.end <= to + 0.01);
+      return {
+        id: `seg_${String(i + 1).padStart(3, '0')}`,
+        start: from,
+        end: to,
+        text: String(sen.text || mine.map((w) => w.word).join(' ')).trim(),
+        words: mine
+      };
+    }).filter((s) => s.text && s.end > s.start);
+
+    return {
+      transcriptVersion: SCHEMA_VERSION,
+      // Only real forced alignment counts as measured.
+      source: timeline.source === 'aligned' ? 'whisper' : 'estimated',
+      model: String(model || timeline.provider || ''),
+      language: '',
+      audioDuration: num(timeline.duration, words[words.length - 1].end),
+      audioFingerprint: String(audioFingerprint || ''),
+      createdAt: Date.now(),
+      alignmentTier: timeline.source || 'estimated',
+      script: String(script || ''),
+      segments,
+      wordCount: words.length
+    };
+  }
+
   /** Does this transcript carry real word timings, or only segment ones? */
   function hasWordTimings(transcript) {
     if (!transcript || !Array.isArray(transcript.segments)) return false;
@@ -222,6 +284,7 @@
   window.Transcript = {
     SCHEMA_VERSION,
     fromWhisper,
+    fromSyncTimeline,
     hasWordTimings,
     isMeasured,
     words,
