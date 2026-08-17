@@ -1383,6 +1383,13 @@
 
   window.BlvckGraphic = {
     render, renderThumbnail, compositeOverlay, looksLikeGraphic, paletteFor, THEMES, SUBJECT_PALETTES,
+    // Per-frame overlay primitives. compositeOverlay() bakes a Blob, which is
+    // the wrong shape for a renderer drawing one frame at a time onto its own
+    // canvas — the editor needs to call these directly. They are written
+    // against a 1280x720 stage, so a caller on a different canvas size must
+    // scale the context first (see OVERLAY_STAGE).
+    OVERLAY_STAGE: { w: W, h: H },
+    drawStatOverlay, drawQuoteOverlay, drawEditorialBar, drawTitle,
     // presenter cut-out
     prepareFace, saveFace, getFace, clearFace, drawFace, stripBackground,
     // typography

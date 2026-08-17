@@ -697,6 +697,14 @@
           // inside a long archival source. Carried per clip because a replaced
           // clip must not inherit the previous one's in-point.
           excerpt: (s.stockAsset && s.stockAsset.excerpt) || s.excerpt || null,
+          // How to fit the frame. From the asset's own treatment when the
+          // acquisition layer chose one; otherwise fitFor() falls back to the
+          // aspect, so archival material is never cropped by default.
+          treatment: (s.stockAsset && s.stockAsset.treatment) || s.treatment || null,
+          stockAsset: s.stockAsset || null,
+          // Only the first part of a split beat carries the overlay: repeating
+          // a statistic card on every cut of the same beat would flash it.
+          editorialOverlay: part === 0 ? (s.editorialOverlay || null) : null,
           img: part === 0 ? img : null,
           video: videos[part] || null
         });
@@ -764,6 +772,62 @@
       default:
         return { scale: 1.05 + 0.08 * p, tx: 0, ty: 0 };
     }
+  }
+
+  /**
+   * Fit the whole frame inside the canvas, padding the remainder.
+   *
+   * The counterpart to drawCover, which fills the frame by cropping whatever
+   * does not fit. For modern stock that is the right trade — a stock clip is
+   * shot with room to spare and losing its edges costs nothing. For archival
+   * footage it is the wrong trade: a 4:3 newsreel in a 16:9 timeline loses a
+   * third of its height to a crop, and in historical material the edges are
+   * routinely the subject — the crowd at the margin, the sign above the door,
+   * the machine being operated at the bottom of frame.
+   *
+   * So this preserves the complete historical frame and pads the sides. The
+   * padding is black rather than a blurred fill: a period frame surrounded by
+   * a smeared copy of itself reads as a mistake.
+   */
+  function drawContain(g, img, cw, ch, scale, txF, tyF) {
+    if (!img) return;
+    const iw = img.naturalWidth || img.videoWidth || img.width;
+    const ih = img.naturalHeight || img.videoHeight || img.height;
+    if (!iw || !ih) return;
+
+    const s = Math.min(cw / iw, ch / ih) * (scale || 1);
+    const dw = iw * s;
+    const dh = ih * s;
+    const x = (cw - dw) / 2 + (txF || 0) * cw;
+    const y = (ch - dh) / 2 + (tyF || 0) * ch;
+    g.drawImage(img, x, y, dw, dh);
+  }
+
+  /**
+   * Which fit this clip gets.
+   *
+   * Explicit rather than inferred wherever possible: the Director's or the
+   * asset's own treatment wins. The aspect fallback exists because an archival
+   * clip that arrived without a treatment is still 4:3, and cropping it by
+   * default is the failure this whole change is about.
+   */
+  function fitFor(clip, img) {
+    const declared = clip && clip.treatment && clip.treatment.fit;
+    if (declared === 'contain' || declared === 'pillarbox' || declared === 'letterbox') return 'contain';
+    if (declared === 'cover' || declared === 'crop' || declared === 'fill') return 'cover';
+
+    // Archival material with a materially different aspect: preserve it.
+    const isArchive = !!(clip && ((clip.stockAsset && clip.stockAsset.provider === 'archive_org')
+                                   || (clip.excerpt && clip.excerpt.sourceIn != null)));
+    if (isArchive && img) {
+      const iw = img.naturalWidth || img.videoWidth || img.width;
+      const ih = img.naturalHeight || img.videoHeight || img.height;
+      if (iw && ih) {
+        const drift = Math.abs((iw / ih) - (16 / 9)) / (16 / 9);
+        if (drift > 0.05) return 'contain';
+      }
+    }
+    return 'cover';
   }
 
   function drawCover(g, img, cw, ch, scale, txF, tyF) {
@@ -1024,6 +1088,81 @@
     }
   }
 
+  // ── Editorial overlays ────────────────────────────────────────────────────
+  //
+  // Distinct from captions, and deliberately so. drawSubs renders what was
+  // SAID; this renders what the beat MEANS — a statistic, a pulled quote, a
+  // headline bar. Burning the narration twice, once as a caption and once as
+  // giant type, is the failure mode to avoid.
+  //
+  // Timing is the overlay's own. It is anchored to the moment a phrase is
+  // spoken, which is usually not the start of its shot: on the measured
+  // narration, "forty percent" lands at 3.18s of a 4.55s clip, so a card
+  // placed at the top of the beat would appear three seconds before the words.
+  const OVERLAY_KIND = {
+    statistic: 'stat_overlay',
+    stat: 'stat_overlay',
+    number: 'stat_overlay',
+    quote: 'quote_overlay',
+    headline: 'editorial_bar',
+    editorial_bar: 'editorial_bar',
+    label: 'title',
+    emphasis: 'title',
+    title: 'title'
+  };
+
+  function overlayActiveAt(clip, ms) {
+    const ov = clip && clip.editorialOverlay;
+    if (!ov || !ov.enabled) return null;
+    const start = Number(ov.start);
+    const end = Number(ov.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    const t = ms / 1000;
+    return (t >= start && t < end) ? ov : null;
+  }
+
+  function drawEditorialOverlay(g, cw, ch, clip, ms) {
+    const ov = overlayActiveAt(clip, ms);
+    if (!ov) return false;
+
+    const G = window.BlvckGraphic;
+    if (!G || !G.drawStatOverlay) return false;   // primitives unavailable
+
+    const kind = OVERLAY_KIND[String(ov.style || 'emphasis').toLowerCase()] || 'title';
+    const theme = (G.THEMES && G.THEMES.dark) || {};
+    const spec = {
+      value: ov.text || '',
+      title: ov.text || '',
+      label: ov.emphasis || '',
+      subtitle: ''
+    };
+
+    // A short fade so the card arrives rather than snapping in. Kept inside the
+    // overlay's own window so it cannot bleed past `end`.
+    const span = Number(ov.end) - Number(ov.start);
+    const into = ms / 1000 - Number(ov.start);
+    const fade = Math.min(0.25, span / 4);
+    const alpha = fade > 0
+      ? Math.min(1, Math.min(into / fade, (span - into) / fade))
+      : 1;
+
+    g.save();
+    g.globalAlpha = Math.max(0, Math.min(1, alpha));
+    // The primitives are written against a fixed 1280x720 stage; scale rather
+    // than duplicate them for every export resolution.
+    const stage = G.OVERLAY_STAGE || { w: 1280, h: 720 };
+    g.scale(cw / stage.w, ch / stage.h);
+    try {
+      if (kind === 'stat_overlay') G.drawStatOverlay(g, theme, spec);
+      else if (kind === 'quote_overlay') G.drawQuoteOverlay(g, theme, spec);
+      else if (kind === 'editorial_bar') G.drawEditorialBar(g, theme, spec);
+      else G.drawTitle(g, theme, spec);
+    } finally {
+      g.restore();
+    }
+    return true;
+  }
+
   function renderClipVisual(g, cw, ch, clip, localMs) {
     // An LTX clip already contains real camera motion, so the Ken Burns
     // fallback is not just unnecessary — it fights the footage and reads as a
@@ -1031,13 +1170,18 @@
     if (clip.video) {
       driveVideo(clip.video, localMs, clip);
       if (clip.video.readyState >= 2) {
-        drawCover(g, clip.video, cw, ch, 1, 0, 0);
+        const fit = fitFor(clip, clip.video);
+        (fit === 'contain' ? drawContain : drawCover)(g, clip.video, cw, ch, 1, 0, 0);
         return;
       }
     }
     const p = Math.max(0, Math.min(1, localMs / (clip.durationSec * 1000)));
     const t = effectTransform(clip.effect, p);
-    drawCover(g, clip.img, cw, ch, t.scale, t.tx, t.ty);
+    // A contained frame is not panned or zoomed: a Ken Burns move on a
+    // pillarboxed archival still slides the picture out of its own letterbox.
+    const fit = fitFor(clip, clip.img);
+    if (fit === 'contain') drawContain(g, clip.img, cw, ch, 1, 0, 0);
+    else drawCover(g, clip.img, cw, ch, t.scale, t.tx, t.ty);
   }
 
   function renderTo(g, cw, ch, ms) {
@@ -1066,6 +1210,13 @@
     // layout (the Director decides when the presenter is on screen), falling
     // back to the channel default.
     drawHostOverlay(g, cw, ch, at.clip.hostLayout);
+
+    // Editorial overlay above the footage and the host, below the captions —
+    // it is a graphic element, so it may cover the picture, but it must never
+    // cover the words being spoken. Timed on the absolute clock rather than the
+    // clip's local one: the overlay was anchored to a moment in the narration,
+    // not to an offset within its shot.
+    drawEditorialOverlay(g, cw, ch, at.clip, ms);
 
     drawSubs(g, cw, ch, at.clip.subtitle);
   }
@@ -1618,6 +1769,11 @@
   // set up the state they read.
   window.BlvckEditorTiming = {
     clipAt,
+    drawContain,
+    fitFor,
+    overlayActiveAt,
+    drawEditorialOverlay,
+    renderTo,
     totalMs,
     rescaleClipsToAudio,
     driveVideo,
