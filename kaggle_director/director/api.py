@@ -26,7 +26,16 @@ API_KEY = os.environ.get("DIRECTOR_API_KEY", "test-key-change-me")
 MODEL_ID = os.environ.get("DIRECTOR_MODEL", "unsloth/Qwen3.8-27B-GGUF:Q5_K_M")
 MODEL_PATH = os.environ.get("DIRECTOR_MODEL_PATH", "")
 N_CTX = int(os.environ.get("DIRECTOR_N_CTX", "16384"))
-SCHEMA_VERSION = "2.0-aether"
+# Bumped when the schema changes shape in a way a caller can observe. 2.1 made
+# sourceStrategy and preferredSources required, so a plan produced under 2.0 has
+# neither and is not interchangeable.
+#
+# This is also part of the plan cache key, which matters more than it looks: a
+# session still serving 2.0 would otherwise hand back cached plans missing the
+# very fields the new schema exists to force. And /health reports it, so a
+# caller can tell which generation it is actually talking to instead of assuming
+# the redeploy landed.
+SCHEMA_VERSION = "2.1-aether"
 
 _engine: Optional[DirectorInference] = None
 
