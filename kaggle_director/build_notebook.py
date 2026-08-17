@@ -382,58 +382,34 @@ print('\\nStage 8 PASSED')
     md("## Stage 9 — AETHER compatibility\n\nRe-implements what `parseVideoPlan()` does, so a plan that would arrive empty in the app fails here instead."),
     code(
         """
-VISUAL_TYPES = {
-    'stock_video', 'stock_photo', 'stock_text', 'editorial_text',
-    't2v', 'broll', 'presenter',
-    'stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram',
-}
-NEEDS_STOCK   = {'stock_video', 'stock_photo', 'stock_text'}
-NEEDS_TEXT    = {'stock_text', 'editorial_text'}
-NEEDS_GRAPHIC = {'stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram'}
+from director.schema import plan_violations
 
-issues, warnings = [], []
+# Uses the same check the director itself runs, rather than a second copy that
+# can drift from it. If this fails, the retry-and-repair path inside
+# generate_plan did not save the plan — which is worth knowing loudly.
+problems = plan_violations(director_plan)
 scenes = director_plan.get('scenes', [])
 
-if not scenes:
-    issues.append('no scenes — AETHER would show an empty storyboard')
-
-seen = set()
+print(f'{len(scenes)} scenes, '
+      f'{len(set(s.get("visualType") for s in scenes))} distinct visual types')
 for s in scenes:
-    idx = s.get('index')
-    tag = f'scene[{idx}]'
-    # AETHER drops any scene whose index is not a finite number.
-    if not isinstance(idx, (int, float)) or isinstance(idx, bool):
-        issues.append(f'{tag}: index missing or not numeric — this beat would be dropped')
-    elif idx in seen:
-        issues.append(f'{tag}: duplicate index')
-    else:
-        seen.add(idx)
+    detail = ''
+    if (s.get('stockRequirements') or {}).get('queries'):
+        detail = ' | '.join(s['stockRequirements']['queries'][:2])
+    elif (s.get('graphic') or {}).get('items'):
+        detail = ', '.join(s['graphic']['items'][:3])
+    elif (s.get('textOverlay') or {}).get('text'):
+        detail = s['textOverlay']['text']
+    print(f'  [{s.get("index")}] {s.get("visualType"):15} {detail[:60]}')
 
-    vt = s.get('visualType')
-    if vt not in VISUAL_TYPES:
-        issues.append(f'{tag}: unknown visualType {vt!r} — would silently become stock_video')
+for w in director_plan.get('warnings', []):
+    print('  note:', w)
 
-    queries = ((s.get('stockRequirements') or {}).get('queries')) or []
-    if vt in NEEDS_STOCK and not queries:
-        issues.append(f'{tag}: {vt} with no stock queries — nothing to search for')
-    for q in queries:
-        if len(str(q).split()) < 2:
-            warnings.append(f'{tag}: one-word query {q!r} will match almost anything')
-
-    if vt in NEEDS_TEXT and not ((s.get('textOverlay') or {}).get('text')):
-        issues.append(f'{tag}: {vt} with no textOverlay.text — renders a blank card')
-
-    if vt in NEEDS_GRAPHIC and not ((s.get('graphic') or {}).get('items')):
-        issues.append(f'{tag}: {vt} with no graphic.items — renders a blank card')
-
-print(f'{len(scenes)} scenes, {len(set(s.get("visualType") for s in scenes))} distinct visual types')
-for w in warnings:
-    print('  warn:', w)
-if issues:
+if problems:
     print()
-    for i in issues:
-        print('  FAIL:', i)
-    raise RuntimeError(f'{len(issues)} compatibility issue(s) — AETHER could not use this plan.')
+    for i, msg in problems:
+        print(f'  FAIL: scene {i}: {msg}')
+    raise RuntimeError(f'{len(problems)} compatibility issue(s) — AETHER could not use this plan.')
 print('\\nStage 9 PASSED — plan is AETHER-compatible')
 """
     ),

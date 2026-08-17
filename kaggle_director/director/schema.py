@@ -25,9 +25,19 @@ this file next.
 
 from __future__ import annotations
 
-from typing import List, Optional, Literal
+from typing import Any, List, Literal, Optional, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+# Which payload each visual type cannot render without. A grammar cannot say
+# "if visualType is stock_video then stockRequirements is required" — JSON
+# Schema has no way to express a dependency between a value and another
+# field's presence — so the model is free to pick a type and then leave its
+# payload null. It does exactly that when given the chance, and the beat
+# renders as a blank card. This table is where the rule actually lives.
+NEEDS_STOCK = frozenset({"stock_video", "stock_photo", "stock_text"})
+NEEDS_TEXT = frozenset({"stock_text", "editorial_text"})
+NEEDS_GRAPHIC = frozenset({"stickman", "whiteboard", "chart", "map", "timeline", "diagram"})
 
 # Kept in the same order as public/prompts.js so the two can be diffed by eye.
 VisualType = Literal[
@@ -158,6 +168,13 @@ class Scene(BaseModel):
         description="Continuity warnings, or why this visual choice was made. Keep it short.",
     )
 
+    @model_validator(mode="after")
+    def _payload_matches_type(self) -> "Scene":
+        problems = scene_violations(self.model_dump())
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
 
 class VideoPlan(BaseModel):
     """The whole director answer. Top-level shape read by parseVideoPlan()."""
@@ -175,6 +192,46 @@ class VideoPlan(BaseModel):
 
 # Retained so `from .schema import Storyboard` keeps working in older notebooks.
 Storyboard = VideoPlan
+
+
+def scene_violations(scene: dict) -> List[str]:
+    """What is wrong with one scene, in words a model can act on.
+
+    Takes a plain dict so it can run on raw model output before Pydantic gets
+    a chance to reject it — the repair path needs to see the damage to fix it.
+    """
+    problems: List[str] = []
+    visual = scene.get("visualType")
+
+    index = scene.get("index")
+    if not isinstance(index, int) or isinstance(index, bool):
+        # AETHER silently drops a scene with no numeric index, so this is the
+        # difference between a beat and no beat at all.
+        problems.append("index is missing or not a whole number")
+
+    queries = ((scene.get("stockRequirements") or {}).get("queries")) or []
+    if visual in NEEDS_STOCK and not queries:
+        problems.append(f"{visual} needs stockRequirements.queries — there is nothing to search for")
+
+    if visual in NEEDS_TEXT and not ((scene.get("textOverlay") or {}).get("text") or "").strip():
+        problems.append(f"{visual} needs textOverlay.text — it would render as a blank card")
+
+    if visual in NEEDS_GRAPHIC and not ((scene.get("graphic") or {}).get("items")):
+        problems.append(f"{visual} needs graphic.items — it would render as a blank card")
+
+    return problems
+
+
+def plan_violations(plan: dict) -> List[Tuple[Any, str]]:
+    """Every problem across a plan, as (index, message) pairs."""
+    found: List[Tuple[Any, str]] = []
+    for position, scene in enumerate(plan.get("scenes") or []):
+        if not isinstance(scene, dict):
+            found.append((position, "scene is not an object"))
+            continue
+        for problem in scene_violations(scene):
+            found.append((scene.get("index", position), problem))
+    return found
 
 
 def _tighten(node: object) -> object:

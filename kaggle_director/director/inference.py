@@ -25,7 +25,13 @@ import time
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from .prompts import AETHER_SYSTEM_PROMPT, DIRECTOR_SYSTEM_PROMPT
-from .schema import get_json_schema
+from .schema import (
+    NEEDS_GRAPHIC,
+    NEEDS_STOCK,
+    NEEDS_TEXT,
+    get_json_schema,
+    plan_violations,
+)
 
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
@@ -226,6 +232,59 @@ class DirectorInference:
 
     # -- storyboard -------------------------------------------------------
 
+    @staticmethod
+    def _repair(plan: dict, cues: Optional[List[Dict[str, Any]]]) -> List[str]:
+        """Last resort: make each broken beat renderable, in place.
+
+        Only runs when the model has already been asked to fix its own work and
+        did not. Rather than fail the whole storyboard over one beat, downgrade
+        the beat to something the data it *did* supply can actually render —
+        and where nothing was supplied, fall back to the narration itself.
+        """
+        narration = {}
+        for position, cue in enumerate(cues or []):
+            key = cue.get("index", position)
+            narration[key] = str(cue.get("text") or cue.get("subtitle") or "").strip()
+
+        notes: List[str] = []
+        for position, scene in enumerate(plan.get("scenes") or []):
+            # Read without a default: scene.get("index", position) would hand
+            # back a perfectly valid int for a key that is not there, and the
+            # check below would then decide nothing was wrong.
+            index = scene.get("index")
+            if not isinstance(index, int) or isinstance(index, bool):
+                scene["index"] = index = position
+                notes.append(f"scene {position}: supplied a missing index")
+
+            visual = scene.get("visualType")
+            line = narration.get(index, "")
+
+            if visual in NEEDS_TEXT and not ((scene.get("textOverlay") or {}).get("text") or "").strip():
+                words = line.split()
+                if words:
+                    scene["textOverlay"] = {
+                        "text": " ".join(words[:12]),
+                        "emphasis": "",
+                        "style": "emphasis",
+                    }
+                    notes.append(f"scene {index}: captioned {visual} from its own narration")
+                else:
+                    scene["visualType"] = "broll"
+                    notes.append(f"scene {index}: {visual} had no text and no narration, demoted to broll")
+
+            if visual in NEEDS_GRAPHIC and not ((scene.get("graphic") or {}).get("items")):
+                # A blank chart is worse than honest footage.
+                scene["visualType"] = "broll"
+                notes.append(f"scene {index}: {visual} had no items to draw, demoted to broll")
+
+            if visual in NEEDS_STOCK and not ((scene.get("stockRequirements") or {}).get("queries")):
+                scene["visualType"] = "broll"
+                notes.append(f"scene {index}: {visual} had no queries, demoted to broll")
+
+        if notes:
+            plan.setdefault("warnings", []).extend(notes)
+        return notes
+
     def generate_plan(
         self,
         script: str,
@@ -271,7 +330,52 @@ class DirectorInference:
             },
         ]
 
+        from .schema import VideoPlan
+
         started = time.time()
+        plan: dict = {}
+
+        # The grammar guarantees the shape but not the sense: it cannot tie a
+        # visualType to the payload that type needs, so the model can pick
+        # 'editorial_text' and leave textOverlay null. Showing it the specific
+        # broken beats and asking again fixes this far more often than not.
+        for attempt in range(self.PLAN_ATTEMPTS):
+            plan = self._plan_once(messages, max_tokens, started)
+            problems = plan_violations(plan)
+            if not problems:
+                VideoPlan(**plan)
+                return plan, time.time() - started
+
+            if attempt == self.PLAN_ATTEMPTS - 1:
+                break
+
+            listing = "\n".join(f"  - scene index {i}: {msg}" for i, msg in problems)
+            messages = messages + [
+                {"role": "assistant", "content": json.dumps(plan)},
+                {
+                    "role": "user",
+                    "content": (
+                        "That plan is not renderable. Every one of these beats "
+                        "chose a visual type without supplying what that type "
+                        "needs to draw:\n" + listing + "\n\n"
+                        "Return the whole plan again with those beats fixed. "
+                        "Either fill in the missing payload, or change the beat "
+                        "to a visual type whose payload you actually have. "
+                        "Leave every other beat as it was."
+                    ),
+                },
+            ]
+
+        # Still broken after asking. Repair rather than lose the storyboard —
+        # one blank beat is not worth failing the other thirty.
+        self._repair(plan, cues)
+        VideoPlan(**plan)
+        return plan, time.time() - started
+
+    #: How many times to ask before repairing the answer ourselves.
+    PLAN_ATTEMPTS = 2
+
+    def _plan_once(self, messages, max_tokens: int, started: float) -> dict:
         with self._lock:
             result = self.llm.create_chat_completion(
                 messages=messages,
@@ -282,29 +386,19 @@ class DirectorInference:
                     "schema": get_json_schema(inline=True),
                 },
             )
-        latency = time.time() - started
 
         raw = result["choices"][0]["message"]["content"] or ""
         cleaned = strip_thinking(raw)
         try:
-            plan = json.loads(cleaned)
+            return json.loads(cleaned)
         except json.JSONDecodeError as exc:
             # The grammar should make this unreachable; hitting max_tokens
             # mid-object is the one way it happens.
             raise ValueError(
-                f"Model returned invalid JSON after {latency:.1f}s ({exc}). "
+                f"Model returned invalid JSON after {time.time()-started:.1f}s ({exc}). "
                 f"Finish reason: {result['choices'][0].get('finish_reason')}. "
                 f"Tail: ...{cleaned[-400:]!r}"
             ) from exc
-
-        # Validate here rather than trusting the grammar. The grammar is built
-        # from a schema stripped of numeric bounds, and AETHER's parser fails
-        # silently — it drops a bad scene instead of complaining — so this is
-        # the last place a malformed plan can still be noticed.
-        from .schema import VideoPlan
-
-        VideoPlan(**plan)
-        return plan, latency
 
     # Older callers use this name.
     def generate_storyboard(self, script: str, style: str = "documentary", **kwargs):

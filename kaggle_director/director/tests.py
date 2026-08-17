@@ -14,7 +14,7 @@ import json
 import unittest
 
 from .cache import get_cache_key
-from .schema import VideoPlan, get_json_schema
+from .schema import VideoPlan, get_json_schema, plan_violations, scene_violations
 
 # Mirrors the vocabularies in public/prompts.js. If a test here fails after you
 # edit that file, the fix is to change both, not to loosen the test.
@@ -156,6 +156,112 @@ class TestValidation(unittest.TestCase):
     def test_empty_scenes_rejected(self):
         with self.assertRaises(Exception):
             VideoPlan(strategy="", warnings=[], scenes=[])
+
+
+class TestPayloadMatchesType(unittest.TestCase):
+    """The failure seen on Kaggle: a type chosen without the payload it draws from.
+
+    The grammar cannot express this rule — JSON Schema has no way to make one
+    field's presence depend on another field's value — so it has to be caught
+    after generation and either re-asked or repaired.
+    """
+
+    def _scene(self, **over):
+        base = {"index": 0, "visualType": "broll"}
+        base.update(over)
+        return base
+
+    def test_editorial_text_without_overlay_is_a_violation(self):
+        problems = scene_violations(self._scene(visualType="editorial_text"))
+        self.assertTrue(any("textOverlay.text" in p for p in problems), problems)
+
+    def test_stock_video_without_queries_is_a_violation(self):
+        problems = scene_violations(self._scene(visualType="stock_video"))
+        self.assertTrue(any("stockRequirements.queries" in p for p in problems), problems)
+
+    def test_chart_without_items_is_a_violation(self):
+        problems = scene_violations(self._scene(visualType="chart"))
+        self.assertTrue(any("graphic.items" in p for p in problems), problems)
+
+    def test_stock_text_needs_both(self):
+        problems = scene_violations(self._scene(visualType="stock_text"))
+        self.assertEqual(len(problems), 2, problems)
+
+    def test_types_needing_nothing_are_clean(self):
+        for visual in ("t2v", "broll", "presenter"):
+            self.assertEqual(scene_violations(self._scene(visualType=visual)), [])
+
+    def test_missing_index_is_a_violation(self):
+        scene = self._scene()
+        del scene["index"]
+        self.assertTrue(any("index" in p for p in scene_violations(scene)))
+
+    def test_a_good_plan_has_no_violations(self):
+        self.assertEqual(plan_violations(MINIMAL_PLAN), [])
+
+    def test_plan_violations_reports_the_scene_index(self):
+        broken = json.loads(json.dumps(MINIMAL_PLAN))
+        broken["scenes"][1]["graphic"] = None
+        found = plan_violations(broken)
+        self.assertEqual([i for i, _ in found], [1])
+
+    def test_model_rejects_a_mismatched_scene(self):
+        """Pydantic must refuse it too, or a bad plan reaches AETHER anyway."""
+        broken = json.loads(json.dumps(MINIMAL_PLAN))
+        broken["scenes"][0]["stockRequirements"] = None
+        with self.assertRaises(Exception):
+            VideoPlan(**broken)
+
+
+class TestRepair(unittest.TestCase):
+    """The fallback when the model will not fix its own work."""
+
+    def setUp(self):
+        from .inference import DirectorInference
+
+        self.repair = DirectorInference._repair
+
+    def test_caption_is_taken_from_the_narration(self):
+        plan = {"scenes": [{"index": 0, "visualType": "editorial_text"}]}
+        self.repair(plan, [{"index": 0, "text": "Inflation quietly reduces what your paycheck can buy."}])
+        self.assertEqual(plan["scenes"][0]["visualType"], "editorial_text")
+        self.assertIn("Inflation", plan["scenes"][0]["textOverlay"]["text"])
+        self.assertEqual(plan_violations(plan), [])
+
+    def test_caption_is_capped_at_twelve_words(self):
+        plan = {"scenes": [{"index": 0, "visualType": "editorial_text"}]}
+        self.repair(plan, [{"index": 0, "text": " ".join(f"w{i}" for i in range(40))}])
+        self.assertEqual(len(plan["scenes"][0]["textOverlay"]["text"].split()), 12)
+
+    def test_stock_without_queries_is_demoted(self):
+        plan = {"scenes": [{"index": 0, "visualType": "stock_video"}]}
+        self.repair(plan, [{"index": 0, "text": "some narration"}])
+        self.assertEqual(plan["scenes"][0]["visualType"], "broll")
+        self.assertEqual(plan_violations(plan), [])
+
+    def test_empty_chart_is_demoted_rather_than_drawn_blank(self):
+        plan = {"scenes": [{"index": 0, "visualType": "chart"}]}
+        self.repair(plan, [{"index": 0, "text": "no numbers here"}])
+        self.assertEqual(plan["scenes"][0]["visualType"], "broll")
+
+    def test_missing_index_is_supplied(self):
+        plan = {"scenes": [{"visualType": "broll"}]}
+        self.repair(plan, [])
+        self.assertEqual(plan["scenes"][0]["index"], 0)
+        self.assertEqual(plan_violations(plan), [])
+
+    def test_every_repair_is_recorded_as_a_warning(self):
+        plan = {"scenes": [{"index": 0, "visualType": "chart"}]}
+        notes = self.repair(plan, [])
+        self.assertTrue(notes)
+        self.assertEqual(plan["warnings"], notes)
+
+    def test_repaired_plan_validates(self):
+        plan = json.loads(json.dumps(MINIMAL_PLAN))
+        plan["scenes"][0]["stockRequirements"] = None
+        plan["scenes"][1]["graphic"] = None
+        self.repair(plan, [{"index": 0, "text": "a"}, {"index": 1, "text": "b"}])
+        VideoPlan(**plan)
 
 
 class TestCache(unittest.TestCase):
