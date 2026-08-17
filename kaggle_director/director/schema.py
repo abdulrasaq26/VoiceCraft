@@ -61,6 +61,25 @@ TextStyle = Literal["stat", "quote", "title", "emphasis", "callout"]
 Transition = Literal["cut", "dissolve"]
 
 
+SourceStrategy = Literal["auto", "modern_stock", "archival", "mixed"]
+MediaSource = Literal["pexels", "pixabay", "archive_org"]
+
+
+class TimePeriod(BaseModel):
+    """When the beat is set, when the script actually says so.
+
+    Only fill this in from something the narration establishes. A guessed date
+    narrows the archive search onto the wrong decade, which is worse than not
+    narrowing it at all.
+    """
+
+    from_year: Optional[int] = Field(default=None, ge=1800, le=2100,
+                                     description="Earliest year this beat depicts.")
+    to_year: Optional[int] = Field(default=None, ge=1800, le=2100,
+                                   description="Latest year this beat depicts.")
+    label: str = Field(default="", description="How the script says it: '1960s', 'the Cold War'.")
+
+
 class StockRequirements(BaseModel):
     """What to search the stock libraries for. Required for the stock_* types."""
 
@@ -90,6 +109,49 @@ class StockRequirements(BaseModel):
         default=0,
         ge=0,
         description="Seconds the clip must run at minimum. 0 means half the scene duration.",
+    )
+
+    # -- source intelligence ------------------------------------------------
+    sourceStrategy: SourceStrategy = Field(
+        default="auto",
+        description=(
+            "Which kind of footage this beat wants. 'archival' for anything "
+            "historical, where authentic period film says more than a modern "
+            "restaging; 'modern_stock' for present-day life; 'auto' when "
+            "either would serve."
+        ),
+    )
+    preferredSources: List[MediaSource] = Field(
+        default_factory=list,
+        max_length=3,
+        description=(
+            "Libraries to search, best first. archive_org for historical, "
+            "documentary, newsreel, government and period material; pexels and "
+            "pixabay for modern footage. Leave empty to let AETHER choose."
+        ),
+    )
+    archiveQueries: List[str] = Field(
+        default_factory=list,
+        max_length=3,
+        description=(
+            "Searches phrased for a film archive rather than a stock library. "
+            "An archive is catalogued by what a film IS, not by what it shows: "
+            "'1940s wartime factory newsreel' finds something, 'happy worker "
+            "in factory' does not. Only fill this in when archive_org is in "
+            "preferredSources."
+        ),
+    )
+    sourceReason: str = Field(
+        default="",
+        description=(
+            "One line on why this source suits the beat, for the producer to "
+            "read. 'Authentic 1969 launch footage carries this better than a "
+            "modern re-creation.' Not your reasoning — the production rationale."
+        ),
+    )
+    timePeriod: Optional[TimePeriod] = Field(
+        default=None,
+        description="Only when the script establishes a date. Never guessed.",
     )
 
 

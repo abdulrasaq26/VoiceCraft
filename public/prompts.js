@@ -277,6 +277,11 @@ Respond ONLY with JSON:
   ];
   const HOST_OVERLAYS = ['none', 'circle', 'rect', 'corner', 'full'];
 
+  // Where a beat's footage should come from. Modern stock libraries hold what
+  // the world looks like now; a film archive holds what it looked like then.
+  // Asking the wrong one is not a quality problem, it is a wrong answer.
+  const SOURCE_STRATEGIES = ['auto', 'modern_stock', 'archival', 'mixed'];
+
   // Snap a model's answer onto the vocabulary. Case-insensitive, and tolerates
   // near misses ("closeup", "push in") so a good answer is not thrown away on
   // punctuation, but anything genuinely unrecognised falls back rather than
@@ -1289,12 +1294,43 @@ Respond ONLY with JSON:
           const queries         = arr(r.queries).map(String).filter(Boolean).slice(0, 6);
           const fallbackQueries = arr(r.fallbackQueries).map(String).filter(Boolean).slice(0, 4);
           if (!queries.length) return null;
+
+          // ── Source intelligence ────────────────────────────────────────
+          // Which library to ask is a directing decision, not a lookup: a
+          // 1969 launch wants the archive, a modern coffee shop does not.
+          // Dropping these fields here would silently discard that decision
+          // and send every beat to the same two stock libraries.
+          const SOURCES = ['pexels', 'pixabay', 'archive_org'];
+          const preferredSources = arr(r.preferredSources)
+            .map((s) => String(s || '').toLowerCase().trim())
+            .filter((s) => SOURCES.indexOf(s) > -1);
+
+          const timePeriod = (() => {
+            const t = r.timePeriod;
+            if (!t || typeof t !== 'object') return null;
+            const from = Number(t.from_year != null ? t.from_year : t.from);
+            const to   = Number(t.to_year   != null ? t.to_year   : t.to);
+            const label = str(t.label);
+            // A period with neither a year nor a label narrows nothing.
+            if (!Number.isFinite(from) && !Number.isFinite(to) && !label) return null;
+            return {
+              from:  Number.isFinite(from) ? from : null,
+              to:    Number.isFinite(to)   ? to   : null,
+              label
+            };
+          })();
+
           return {
             concept:          str(r.concept),
             queries,
             fallbackQueries,
             subjectCategory:  str(r.subjectCategory),
-            minimumDuration:  Number(r.minimumDuration) || 0
+            minimumDuration:  Number(r.minimumDuration) || 0,
+            sourceStrategy:   oneOf(r.sourceStrategy, SOURCE_STRATEGIES, 'auto'),
+            preferredSources,
+            archiveQueries:   arr(r.archiveQueries).map(String).filter(Boolean).slice(0, 3),
+            sourceReason:     str(r.sourceReason),
+            timePeriod
           };
         })();
 

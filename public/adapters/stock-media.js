@@ -249,6 +249,35 @@
   // ── Orientation mapping ───────────────────────────────────────────────────
   // Different providers use different vocabulary; translate once here.
 
+  // ── ArchiveProvider ────────────────────────────────────────────────────────
+  // Delegates to the archive adapter, which does its own rights filtering.
+  // Kept behind the same search() interface as the other two so acquire() has
+  // one pipeline rather than a special case.
+
+  function archiveEnabled() {
+    if (!window.ArchiveOrg || !window.ArchiveLicense) return false;
+    return localStorage.getItem('blvck:archive_enabled') !== 'false';   // on by default
+  }
+
+  function archivePolicy() {
+    return {
+      // CC-BY is monetisable but demands a credit, so it stays off until the
+      // user accepts that. Restricted and unknown are never opened.
+      allowAttribution: localStorage.getItem('blvck:archive_allow_attribution') === 'true',
+      allowTrustedCollections: localStorage.getItem('blvck:archive_trusted_collections') !== 'false'
+    };
+  }
+
+  async function archiveSearch({ query, mediaType = 'video', timePeriod = null, perPage = 6 }) {
+    return window.ArchiveOrg.search({
+      query,
+      mediaType,
+      timePeriod,
+      maxItems: Math.min(perPage, 6),
+      licensePolicy: archivePolicy()
+    });
+  }
+
   function toPixabayOrientation(o) {
     if (o === 'portrait') return 'vertical';
     if (o === 'square')   return 'any';
@@ -264,15 +293,42 @@
   // ── StockMediaSearch ──────────────────────────────────────────────────────
   // Fans out all queries across all configured providers concurrently.
 
-  async function search({ queries = [], orientation = 'landscape', mediaType = 'video', minimumDuration = 3, perPage = 8, provider = 'all' } = {}) {
-    if (!queries.length) return [];
+  async function search({
+    queries = [], orientation = 'landscape', mediaType = 'video',
+    minimumDuration = 3, perPage = 8, provider = 'all',
+    // The Director decides which sources suit the beat. `sources` is the
+    // allow-list for this search; archiveQueries are separate because the
+    // phrasing that finds a newsreel is not the phrasing that finds b-roll.
+    sources = null, archiveQueries = [], timePeriod = null
+  } = {}) {
+    if (!queries.length && !archiveQueries.length) return [];
 
     const pixabayOrientation = toPixabayOrientation(orientation);
     const pexelsOrientation  = toPexelsOrientation(orientation);
 
+    const allowed = (name) => {
+      if (provider !== 'all' && provider !== name) return false;
+      if (Array.isArray(sources) && sources.length) return sources.includes(name);
+      return true;
+    };
+
     const tasks = [];
-    const hasPixabay = !!getPixabayKey() && (provider === 'all' || provider === 'pixabay');
-    const hasPexels  = !!getPexelsKey() && (provider === 'all' || provider === 'pexels');
+    const hasPixabay = !!getPixabayKey() && allowed('pixabay');
+    const hasPexels  = !!getPexelsKey() && allowed('pexels');
+    const hasArchive = archiveEnabled() && allowed('archive_org');
+
+    if (hasArchive) {
+      // Archive searches are expensive — a metadata round trip per candidate —
+      // so only the archive-specific queries run, and only a couple of them.
+      const aq = (archiveQueries.length ? archiveQueries : queries).slice(0, 3);
+      for (const query of aq) {
+        if (!String(query || '').trim()) continue;
+        tasks.push(
+          archiveSearch({ query: String(query).trim(), mediaType, timePeriod, perPage })
+            .catch(err => { console.warn(`[StockMedia] Archive "${query}": ${err.message}`); return []; })
+        );
+      }
+    }
 
     for (const query of queries) {
       if (!String(query || '').trim()) continue;
@@ -329,8 +385,35 @@
 
   // ── StockMediaRanker ──────────────────────────────────────────────────────
 
-  function scoreAsset(asset, { orientation = 'landscape', mediaType = 'video', minimumDuration = 3, targetDuration = 8 } = {}, usedIds) {
+  function scoreAsset(asset, {
+    orientation = 'landscape', mediaType = 'video',
+    minimumDuration = 3, targetDuration = 8,
+    // How much the beat wants authenticity over polish.
+    strategy = 'auto', preferredSources = null
+  } = {}, usedIds) {
     let score = 100;
+
+    // ── Source intent ───────────────────────────────────────────────────────
+    // A 1940s newsreel is grainy, 640x480 and badly lit. Judged on resolution
+    // alone it loses to any modern clip — so for a beat that asked for
+    // archival material, authenticity has to outweigh the picture quality it
+    // costs. And for a beat about a modern coffee shop, archive footage is
+    // simply the wrong answer however good it looks.
+    const isArchive = asset.provider === 'archive_org';
+    if (Array.isArray(preferredSources) && preferredSources.length) {
+      const rank = preferredSources.indexOf(asset.provider);
+      if (rank === 0) score += 45;
+      else if (rank > 0) score += 20;
+      else score -= 30;
+    }
+    if (isArchive) {
+      if (strategy === 'archival' || strategy === 'archive_preferred') score += 60;
+      else if (strategy === 'modern_stock') score -= 70;
+    }
+
+    // Attribution-required material is usable but costs the creator a credit,
+    // so a public-domain clip of equal merit should win.
+    if (asset.license && asset.license.requiresAttribution) score -= 8;
 
     // Already-used penalty — avoid identical clips within one video.
     if (usedIds && usedIds.has(`${asset.provider}:${asset.id}`)) score -= 80;
@@ -356,11 +439,19 @@
       }
     }
 
-    // Resolution quality.
+    // Resolution quality. Archive material is judged on a different curve:
+    // period footage is 640x480 because that is what survives, and penalising
+    // it for that would mean never choosing the authentic clip.
     const px = asset.width * asset.height;
-    if (px >= 1920 * 1080) score += 12;
-    else if (px >= 1280 * 720) score += 6;
-    else if (px < 640 * 480)   score -= 20;
+    if (isArchive) {
+      if (px >= 1280 * 720) score += 8;
+      else if (px >= 640 * 480) score += 4;
+      else if (px > 0 && px < 320 * 240) score -= 10;
+    } else {
+      if (px >= 1920 * 1080) score += 12;
+      else if (px >= 1280 * 720) score += 6;
+      else if (px < 640 * 480)   score -= 20;
+    }
 
     return score;
   }
@@ -401,11 +492,19 @@
       if (blob && blob.size > 0) return blob;
     }
 
-    const res = await fetch('/api/proxy/stock-download', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ url: asset.downloadUrl })
-    });
+    // An asset whose URL is already one of our own proxy paths is same-origin
+    // and needs no second hop. Archive downloads arrive this way, and sending
+    // a relative path to the stock-download proxy — which expects an absolute
+    // URL to fetch server-side — would fail every time.
+    const isLocalProxy = asset.downloadUrl.startsWith('/');
+
+    const res = isLocalProxy
+      ? await fetch(asset.downloadUrl)
+      : await fetch('/api/proxy/stock-download', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ url: asset.downloadUrl })
+        });
 
     if (!res.ok) {
       throw new Error(`Stock download failed for ${cacheKey} (${res.status}): ${await res.text().catch(() => '')}`);
@@ -526,21 +625,36 @@
     const provider       = opts.provider || 'all';
     const strategy       = opts.strategy || 'auto';
 
+    // The Director's source decision for this beat. Everything below passes it
+    // to both search (which sources to ask) and rank (how to weigh what comes
+    // back), so a beat asking for archival material is not quietly handed a
+    // sharper modern clip instead.
+    const sourceStrategy   = req.sourceStrategy || scene.sourceStrategy || 'auto';
+    const preferredSources = Array.isArray(req.preferredSources) ? req.preferredSources
+                           : (Array.isArray(scene.preferredSources) ? scene.preferredSources : null);
+    const archiveQueries   = Array.isArray(req.archiveQueries) ? req.archiveQueries : [];
+    const timePeriod       = req.timePeriod || scene.timePeriod || null;
+
     // Determine media type from visual type + strategy.
     let isPhotoScene  = scene.visualType === 'stock_photo';
     if (strategy === 'video') isPhotoScene = false;
     if (strategy === 'photo') isPhotoScene = true;
     let mediaType = isPhotoScene ? 'photo' : 'video';
 
+    // Built after mediaType exists — it reads it.
+    const rankOpts = { orientation, mediaType, minimumDuration, targetDuration,
+                       strategy: sourceStrategy, preferredSources };
+
     // ── Level 1: Director-provided queries ──────────────────────────────────
     const directorQueries = Array.isArray(req.queries) && req.queries.length
       ? req.queries
       : buildQueriesFromScene(scene);
 
-    let results = await search({ queries: directorQueries, orientation, mediaType, minimumDuration, provider });
+    let results = await search({ queries: directorQueries, orientation, mediaType, minimumDuration, provider,
+                                 sources: preferredSources, archiveQueries, timePeriod });
 
     if (results.length) {
-      const ranked = rank(results, { orientation, mediaType, minimumDuration, targetDuration }, usedIds);
+      const ranked = rank(results, rankOpts, usedIds);
       for (const asset of ranked) {
         try {
           const blob = await downloadAsset(asset);
@@ -558,9 +672,14 @@
     const fallbackQueries = Array.isArray(req.fallbackQueries) ? req.fallbackQueries : [];
     const broaderQueries  = [concept, ...fallbackQueries].filter(Boolean);
     if (broaderQueries.length) {
-      const broader = await search({ queries: broaderQueries, orientation, mediaType, minimumDuration: Math.max(2, minimumDuration - 1), provider });
+      // Widen the sources too, not just the words. An archival beat that found
+      // nothing in the archive is better served by modern footage than by a
+      // blank card — but only after the archive has genuinely been tried.
+      const broader = await search({ queries: broaderQueries, orientation, mediaType,
+                                     minimumDuration: Math.max(2, minimumDuration - 1), provider,
+                                     archiveQueries, timePeriod });
       if (broader.length) {
-        const ranked = rank(broader, { orientation, mediaType, minimumDuration, targetDuration }, usedIds);
+        const ranked = rank(broader, Object.assign({}, rankOpts, { preferredSources: null }), usedIds);
         for (const asset of ranked) {
           try {
             const blob = await downloadAsset(asset);
@@ -598,6 +717,18 @@
     return null;
   }
 
+  // The credit line for a clip that requires one. Public-domain material needs
+  // no attribution, so returning null here is meaningful rather than missing.
+  function buildAttribution(asset) {
+    if (!asset.license || !asset.license.requiresAttribution) return null;
+    const a = asset.archive || {};
+    const parts = [a.title || asset.id];
+    if (a.creator) parts.push(`by ${a.creator}`);
+    parts.push(`— ${asset.sourceUrl}`);
+    if (asset.license.licenseUrl) parts.push(`(${asset.license.licenseUrl})`);
+    return parts.join(' ');
+  }
+
   function _attachStockMeta(scene, asset, queries, fallback) {
     scene.stockAsset = {
       provider:     asset.provider,
@@ -611,7 +742,14 @@
       sourceUrl:    asset.sourceUrl,
       queriesUsed:  queries,
       fallback:     fallback === 'primary' ? null : fallback,
-      acquiredAt:   Date.now()
+      acquiredAt:   Date.now(),
+
+      // Provenance travels with the clip. Without it a finished video has no
+      // record of where its footage came from or on what terms, which is the
+      // one thing you cannot reconstruct after the fact.
+      license:      asset.license || null,
+      archive:      asset.archive || null,
+      attribution:  buildAttribution(asset)
     };
   }
 

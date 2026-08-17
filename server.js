@@ -626,6 +626,139 @@ const server = http.createServer((req, res) => {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────────────────
+  // Internet Archive Proxy
+  // GET /api/proxy/archive/advancedsearch.php?...  → search
+  // GET /api/proxy/archive/metadata/{id}           → item metadata
+  // GET /api/proxy/archive/download/{id}/{file}    → the media itself
+  // GET /api/proxy/archive/services/img/{id}       → thumbnail
+  //
+  // No API key: archive.org is open. This exists for CORS, and because
+  // downloads redirect to a per-item storage host (dnNNNNNN.us.archive.org)
+  // that the browser cannot follow cross-origin.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (req.url.startsWith('/api/proxy/archive')) {
+    const subPath = req.url.replace('/api/proxy/archive', '') || '/';
+
+    // Only the read-only endpoints this app uses. An open relay to any
+    // archive.org path is a bigger surface than the feature needs.
+    const ALLOWED = [/^\/advancedsearch\.php/, /^\/metadata\//, /^\/download\//, /^\/services\/img\//];
+    if (!ALLOWED.some((re) => re.test(subPath))) {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: `Path not permitted through the archive proxy: ${subPath}` }));
+      return;
+    }
+
+    const MAX_REDIRECTS = 5;
+    // archive.org's storage nodes intermittently answer 500/502/503 for a file
+    // that serves fine seconds later. Measured, not assumed — the same URL
+    // alternates between 206 and 500 within one minute. A single attempt
+    // therefore says nothing about whether the footage is available.
+    const MAX_ATTEMPTS = 3;
+    const TRANSIENT = [500, 502, 503, 504];
+
+    const forward = (targetUrl, redirectsLeft, attempt = 1) => {
+      const retry = (why) => {
+        if (attempt >= MAX_ATTEMPTS || res.headersSent) return false;
+        const wait = 500 * attempt;
+        console.warn(`⚠️  Archive ${why}; retry ${attempt + 1}/${MAX_ATTEMPTS} in ${wait}ms`);
+        setTimeout(() => forward(targetUrl, redirectsLeft, attempt + 1), wait);
+        return true;
+      };
+      return sendOnce(targetUrl, redirectsLeft, attempt, retry);
+    };
+
+    const sendOnce = (targetUrl, redirectsLeft, attempt, retry) => {
+      const opts = {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || 443,
+        path: targetUrl.pathname + targetUrl.search,
+        method: 'GET',
+        headers: {
+          // archive.org asks that clients identify themselves.
+          'User-Agent': 'AETHER-Studio/1.0 (+https://github.com/abdulrasaq26/AUTHER-AI-STUDIO)',
+          'Accept': req.headers['accept'] || '*/*',
+          // Ask for the bytes as they are. Node sends no Accept-Encoding by
+          // default, and the storage nodes then answer a media request with
+          // something this proxy cannot stream through — the symptom is an
+          // ECONNRESET partway into the file rather than an error status.
+          'Accept-Encoding': 'identity'
+        }
+      };
+      // Pass a Range header through so the player can seek without pulling a
+      // 300 MB film in one piece.
+      if (req.headers['range']) opts.headers['Range'] = req.headers['range'];
+
+      const proxyReq = https.request(opts, (proxyRes) => {
+        const status = proxyRes.statusCode;
+
+        // Downloads redirect to the storage node holding the item.
+        if ([301, 302, 303, 307, 308].includes(status) && proxyRes.headers.location) {
+          proxyRes.resume();
+          if (redirectsLeft <= 0) {
+            if (!res.headersSent) {
+              res.writeHead(508, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+              res.end(JSON.stringify({ error: 'Too many redirects from archive.org' }));
+            }
+            return;
+          }
+          let next;
+          try {
+            next = new URL(proxyRes.headers.location, `https://${targetUrl.hostname}`);
+          } catch (e) {
+            if (!res.headersSent) {
+              res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+              res.end(JSON.stringify({ error: `Bad redirect from archive.org: ${proxyRes.headers.location}` }));
+            }
+            return;
+          }
+          return forward(next, redirectsLeft - 1);
+        }
+
+        // A transient upstream failure is not an answer about the footage.
+        if (TRANSIENT.includes(status) && retry(`upstream ${status}`)) {
+          proxyRes.resume();
+          return;
+        }
+
+        if (res.headersSent) return;
+        const headers = {
+          'Content-Type': proxyRes.headers['content-type'] || 'application/octet-stream',
+          'Access-Control-Allow-Origin': '*'
+        };
+        ['content-length', 'content-range', 'accept-ranges'].forEach((h) => {
+          if (proxyRes.headers[h]) headers[h.replace(/(^|-)([a-z])/g, (m) => m.toUpperCase())] = proxyRes.headers[h];
+        });
+        res.writeHead(status, headers);
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.on('error', (err) => {
+        if (retry(`connection error ${err.code || err.message}`)) return;
+        console.warn(`⚠️  Archive Proxy Error: ${err.message}`);
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: `archive.org unreachable after ${MAX_ATTEMPTS} attempts: ${err.message}` }));
+        }
+      });
+
+      // A large archival film is slow to start; the default would abort it.
+      proxyReq.setTimeout(300000, () => proxyReq.destroy(new Error('archive.org timed out')));
+      proxyReq.end();
+    };
+
+    let target;
+    try {
+      target = new URL(`https://archive.org${subPath}`);
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: `Invalid archive path: ${subPath}` }));
+      return;
+    }
+    forward(target, MAX_REDIRECTS);
+    return;
+  }
+
   // Pixabay Stock Media Proxy
   // POST /api/proxy/pixabay/videos → https://pixabay.com/api/videos/
   // POST /api/proxy/pixabay/photos → https://pixabay.com/api/
