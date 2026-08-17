@@ -85,7 +85,7 @@
   const SRC = `/api/proxy/archive/download/${ITEM}/${FILE}`;
 
   const SAMPLES = [
-    { timeline: 18.9,  source: 272.60 },
+    { timeline: 19.2,  source: 272.90 },
     { timeline: 20.0,  source: 273.70 },
     { timeline: 21.75, source: 275.45 },
     { timeline: 23.5,  source: 277.20 },
@@ -273,25 +273,32 @@
     rec.start();
     let shotBFrames = 0, shotBReady = 0;
     const t0 = performance.now();
-    await new Promise((resolve) => {
-      const step = () => {
-        const ms = performance.now() - t0;
-        if (ms >= PROJECT_MS) return resolve();
-        if (ms >= SHOT_START * 1000 && ms < SHOT_END * 1000) {
-          shotBFrames++;
-          if (film.readyState >= 2) shotBReady++;
-        }
-        E.renderTo(g, W, H, ms);
-        requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
+    // Same loop the real export uses, including the timer fallback — so this
+    // measures the shipped path rather than a fair-weather version of it.
+    const loop = await E.driveRealtimeLoop(PROJECT_MS, (ms) => {
+      if (ms >= SHOT_START * 1000 && ms < SHOT_END * 1000) {
+        shotBFrames++;
+        if (film.readyState >= 2) shotBReady++;
+      }
+      E.renderTo(g, W, H, ms);
     });
+    window.__loop = loop;
     rec.stop();
     await stopped;
     E._setState({ realtime: false });
 
     const blob = new Blob(chunks, { type: 'video/webm' });
     say(`recorded ${(blob.size / 1024).toFixed(0)} KB | shot B frames ${shotBFrames}, decodable ${shotBReady}`);
+    say(`loop: ${loop.usedFallback ? 'TIMER FALLBACK (tab hidden — low frame rate)' : 'rAF (foreground)'}`
+      + `, ${loop.elapsedMs}ms elapsed`);
+    const diag = E.shotDiagnostics ? E.shotDiagnostics() : [];
+    window.__diag = diag;
+    for (const d of diag) {
+      say(`  shot ${d.scene}: entryReady=${d.shotEntryReady} rs=${d.shotEntryReadyState} `
+        + `sourceTime=${d.shotEntrySourceTime}s rebuffers=${d.rebufferCount} `
+        + `preparedFrame=${d.hasPreparedFrame} fallback=${d.fallbackUsed || 'none'}`);
+    }
+    window.__capture = { shotBFrames, shotBReady };
     window.__capture = { shotBFrames, shotBReady };
 
     const out = await loadVideo(URL.createObjectURL(blob));

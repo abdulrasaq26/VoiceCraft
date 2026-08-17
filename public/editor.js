@@ -1303,6 +1303,52 @@
     }));
   }
 
+  /**
+   * Drive a real-time render loop to completion.
+   *
+   * requestAnimationFrame is the right clock while the tab is visible — it is
+   * paced to the compositor, which is what MediaRecorder is capturing. But a
+   * backgrounded tab suspends it entirely, and the old loop then waited forever
+   * on a callback that would never arrive: the recorder kept running, the
+   * canvas stopped changing, and the export produced a file that ends wherever
+   * the user happened to switch away.
+   *
+   * So rAF leads and a timer follows. If no frame arrives within a beat, the
+   * timer takes over — throttled to roughly one tick a second in a hidden tab,
+   * which is a poor frame rate but a finished video rather than a hung one.
+   * When the tab comes back rAF resumes and the timer stands down.
+   */
+  function driveRealtimeLoop(totalMs, onFrame) {
+    return new Promise((resolve) => {
+      const started = performance.now();
+      let done = false;
+      let usedFallback = false;
+      let watchdog = 0;
+
+      const tick = (viaFallback) => {
+        if (done) return;
+        if (viaFallback) usedFallback = true;
+        const ms = performance.now() - started;
+        onFrame(Math.min(ms, totalMs));
+        if (ms >= totalMs) {
+          done = true;
+          clearTimeout(watchdog);
+          return resolve({ usedFallback, elapsedMs: Math.round(ms) });
+        }
+        schedule();
+      };
+
+      const schedule = () => {
+        clearTimeout(watchdog);
+        requestAnimationFrame(() => tick(false));
+        // If the compositor has not called us back in ~250ms, the tab is very
+        // likely hidden. Keep going rather than stalling.
+        watchdog = setTimeout(() => tick(true), 250);
+      };
+      schedule();
+    });
+  }
+
   function pauseInactiveVideos(activeClip) {
     for (const c of clips) {
       if (c.video && c !== activeClip && !c.video.paused) c.video.pause();
@@ -1928,7 +1974,8 @@
 
       const total = totalMs();
       if (exportVideoBtn) exportVideoBtn.disabled = true;
-      showStatus('Recording video in real time — please keep this tab open…', 'info');
+      showStatus('Recording in real time — keep this tab visible and in the foreground. '
+        + 'A backgrounded tab drops to a much lower frame rate.', 'info');
 
       const finished = new Promise((resolve) => {
         rec.onstop = () => {
@@ -1956,15 +2003,11 @@
       // The recording runs at wall-clock speed, so video clips must play rather
       // than be seeked frame by frame.
       realtime = true;
-      await new Promise((resolve) => {
-        const step = () => {
-          const ms = performance.now() - start;
-          renderTo(g, w, h, Math.min(ms, total));
-          if (ms >= total) return resolve();
-          requestAnimationFrame(step);
-        };
-        step();
-      });
+      const loop = await driveRealtimeLoop(total, (ms) => renderTo(g, w, h, ms));
+      if (loop.usedFallback) {
+        console.warn('[Editor] export ran partly on the timer fallback — the tab '
+          + 'was backgrounded, so the frame rate will be uneven.');
+      }
       realtime = false;
       for (const c of clips) if (c.video && !c.video.paused) c.video.pause();
       stopAudio();
@@ -2174,6 +2217,7 @@
     setReadinessTimeout,
     serialiseClip,
     exportRightsCheck,
+    driveRealtimeLoop,
     ensureVideoReadyForShot,
     shotDiagnostics,
     getReadinessTimeout: () => readinessTimeoutMs,
