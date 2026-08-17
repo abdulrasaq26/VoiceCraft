@@ -672,8 +672,12 @@
       for (const asset of ranked) {
         if (!clearForProduction(asset, scene)) continue;
         try {
+          // Rights were settled by clearForProduction above. Only now does it
+          // make sense to spend anything on choosing WHERE in the film to cut:
+          // a good-looking segment inside an uncleared item is still uncleared.
           const excerpt = req.excerpt || scene.excerpt || {};
-          asset.excerpt = planExcerpt(asset, excerpt.targetDuration || targetDuration, excerpt.selectionIntent);
+          const wantSeconds = excerpt.targetDuration || targetDuration;
+          asset.excerpt = await chooseExcerpt(asset, wantSeconds, excerpt.selectionIntent);
           asset.treatment = planTreatment(asset);
           const blob = await downloadAsset(asset);
           markUsed(asset);
@@ -804,6 +808,31 @@
       reviewSuggested: true,
       note: 'Start point estimated, not chosen by watching the footage. Check it covers the moment you want.'
     };
+  }
+
+  // Pick the excerpt window. Prefers real analysis of the archive item's own
+  // sampled frames, and falls back to the blind heuristic only when that is
+  // unavailable — so the result always reports which one actually decided.
+  async function chooseExcerpt(asset, wantSeconds, selectionIntent) {
+    const analyzable = asset.provider === 'archive_org'
+      && window.ArchiveExcerpt
+      && asset.archive && asset.archive.identifier;
+
+    if (analyzable) {
+      try {
+        const meta = await window.ArchiveOrg.itemMetadata(asset.archive.identifier);
+        const chosen = await window.ArchiveExcerpt.selectExcerpt({
+          metadata: meta,
+          sourceDuration: asset.duration,
+          targetDuration: wantSeconds,
+          selectionIntent: selectionIntent || ''
+        });
+        if (chosen) return chosen;
+      } catch (err) {
+        console.warn(`[StockMedia] excerpt analysis failed for ${asset.id}: ${err.message}`);
+      }
+    }
+    return planExcerpt(asset, wantSeconds, selectionIntent);
   }
 
   // How to fit a 4:3 archival frame into a 16:9 timeline (spec section 6).
@@ -942,6 +971,7 @@
     // State
     isConfigured,
     planExcerpt,
+    chooseExcerpt,
     planTreatment,
     formatTimecode,
     clearForProduction,

@@ -322,6 +322,20 @@
     return assets;
   }
 
+  // Metadata, memoised for the session. The excerpt analyser needs the same
+  // payload the search already fetched, and re-requesting it would double our
+  // traffic against a service we are deliberately being gentle with.
+  const metaCache = new Map();
+
+  async function itemMetadata(identifier) {
+    const key = String(identifier || '');
+    if (!key) throw new Error('no identifier');
+    if (metaCache.has(key)) return metaCache.get(key);
+    const meta = await fetchJson(`/metadata/${encodeURIComponent(key)}`);
+    metaCache.set(key, meta);
+    return meta;
+  }
+
   async function isReachable() {
     try {
       await fetchJson('/advancedsearch.php?q=identifier:(nasa)&rows=0&output=json', { retries: 0 });
@@ -333,6 +347,7 @@
 
   window.ArchiveOrg = {
     search,
+    itemMetadata,
     isReachable,
     // exported for tests
     _internal: { pickFile, scoreFile, parseLength, buildQuery, escapeQuery, toAsset, schedule, MIN_INTERVAL_MS }
