@@ -108,28 +108,53 @@ print('\\nStage 1 PASSED')
     md("## Stage 2 — Dependencies (~5 min; the CUDA wheel is 1.9 GB)"),
     code(
         """
-import subprocess, sys
+import subprocess, sys, threading, time
 
-def pip(*args):
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q', *args])
+# Run pip and keep talking while it works. -q with no heartbeat is why this
+# cell looks hung: pulling a 1.9 GB wheel takes minutes and prints nothing,
+# which is indistinguishable from a dead kernel. Anything here that can run
+# longer than a few seconds says so.
+def pip(*args, label=''):
+    print(f'  [pip] {label or args[0]} ...', flush=True)
+    started = time.time()
+    done = threading.Event()
+
+    def beat():
+        while not done.wait(20):
+            print(f'        still working ({int(time.time()-started)}s)', flush=True)
+
+    threading.Thread(target=beat, daemon=True).start()
+    proc = subprocess.run(
+        [sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-q', *args],
+        capture_output=True, text=True,
+    )
+    done.set()
+
+    if proc.returncode != 0:
+        print(proc.stdout[-3000:])
+        print(proc.stderr[-3000:])
+        raise RuntimeError(f'pip failed for {label or args[0]} (exit {proc.returncode})')
+    print(f'        done in {int(time.time()-started)}s', flush=True)
 
 # The prebuilt wheel links against libcudart.so.12, so the matching CUDA
 # runtime packages have to be present or importing llama_cpp dies with
 # "libcudart.so.12: cannot open shared object file" — even though the GPU is
 # fine and nvidia-smi works.
-pip('nvidia-cuda-runtime-cu12', 'nvidia-cublas-cu12')
+pip('nvidia-cuda-runtime-cu12', 'nvidia-cublas-cu12', label='CUDA runtime')
 
 # --no-deps matters more than it looks. A plain --force-reinstall drags every
 # dependency with it, which on this image means swapping numpy out from under
 # a kernel that already imported torch in Stage 1 — and that kills the kernel
 # later, at a random cell, with no error pointing back here.
 pip('--force-reinstall', '--no-deps', 'llama-cpp-python',
-    '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/cu124')
+    '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/cu124',
+    label='llama-cpp-python CUDA wheel (1.9 GB — the slow one, 3-8 min)')
 
 # Its actual dependencies, installed normally so anything already satisfied is
 # left alone.
 pip('diskcache', 'jinja2', 'typing-extensions',
-    'fastapi', 'uvicorn[standard]', 'pyngrok', 'huggingface_hub', 'pydantic')
+    'fastapi', 'uvicorn[standard]', 'pyngrok', 'huggingface_hub', 'pydantic',
+    label='supporting packages')
 
 import importlib.metadata as md
 for pkg in ('llama-cpp-python', 'fastapi', 'pydantic', 'huggingface_hub', 'numpy'):
@@ -272,16 +297,53 @@ print('\\nStage 5b PASSED')
     md("## Stage 6 — Download the GGUF (~20 GB, once per session)"),
     code(
         """
-import os, time
+import os, shutil, threading, time
 from huggingface_hub import hf_hub_download
 
-t0 = time.time()
-MODEL_PATH = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE, local_dir=MODEL_DIR)
-os.environ['DIRECTOR_MODEL_PATH'] = MODEL_PATH
+EXPECTED_GB = {'Q3_K_M': 13.8, 'Q4_K_M': 17.1, 'Q5_K_M': 19.8, 'Q8_0': 29.0}.get(QUANT, 20.0)
 
-size = os.path.getsize(MODEL_PATH) / 1024**3
-print(f'Path : {MODEL_PATH}')
-print(f'Size : {size:.1f} GB   ({time.time()-t0:.0f}s)')
+os.makedirs(MODEL_DIR, exist_ok=True)
+free_gb = shutil.disk_usage(MODEL_DIR).free / 1024**3
+print(f'Free on {MODEL_DIR}: {free_gb:.1f} GB   |   need ~{EXPECTED_GB:.1f} GB')
+if free_gb < EXPECTED_GB * 1.15:
+    raise RuntimeError(
+        f'Not enough disk: {free_gb:.1f} GB free, {QUANT} needs about '
+        f'{EXPECTED_GB:.1f} GB. Drop to a smaller quant in Stage 3.'
+    )
+
+# Downloading straight into local_dir avoids the older two-step behaviour that
+# also filled the HF cache — which is the same 20 GB again, on a disk that
+# does not have it.
+os.environ.setdefault('HF_HUB_ENABLE_HF_TRANSFER', '0')
+
+t0 = time.time()
+done = threading.Event()
+target = os.path.join(MODEL_DIR, MODEL_FILE)
+
+def _beat():
+    # hf_hub_download's progress bar does not always survive Kaggle's output
+    # handling, and twenty silent minutes looks exactly like a dead kernel.
+    while not done.wait(30):
+        got = 0
+        for root, _dirs, files in os.walk(MODEL_DIR):
+            for f in files:
+                try:
+                    got += os.path.getsize(os.path.join(root, f))
+                except OSError:
+                    pass
+        got_gb = got / 1024**3
+        print(f'  [download] {got_gb:5.1f} / ~{EXPECTED_GB:.1f} GB   '
+              f'({int(time.time()-t0)}s elapsed)', flush=True)
+
+threading.Thread(target=_beat, daemon=True).start()
+try:
+    MODEL_PATH = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE, local_dir=MODEL_DIR)
+finally:
+    done.set()
+
+os.environ['DIRECTOR_MODEL_PATH'] = MODEL_PATH
+print(f'\\nPath : {MODEL_PATH}')
+print(f'Size : {os.path.getsize(MODEL_PATH)/1024**3:.1f} GB   ({int(time.time()-t0)}s)')
 print('\\nStage 6 PASSED')
 """
     ),
@@ -298,8 +360,18 @@ for lib in loaded:
 if not loaded:
     print('   (none needed — already on the loader path)')
 
+import threading
+print('\\nLoading 20 GB across the GPUs — 2-5 min, and llama.cpp logs as it goes.', flush=True)
 t0 = time.time()
-engine = DirectorInference(model_path=MODEL_PATH, n_ctx=N_CTX, n_gpu_layers=-1, verbose=True)
+_done = threading.Event()
+def _beat():
+    while not _done.wait(30):
+        print(f'  [loading] {int(time.time()-t0)}s elapsed...', flush=True)
+threading.Thread(target=_beat, daemon=True).start()
+try:
+    engine = DirectorInference(model_path=MODEL_PATH, n_ctx=N_CTX, n_gpu_layers=-1, verbose=True)
+finally:
+    _done.set()
 print(f'\\nLoaded in {time.time()-t0:.0f}s')
 
 import torch
