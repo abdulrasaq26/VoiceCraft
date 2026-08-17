@@ -180,12 +180,20 @@ window.fetch = async function (input, init) {
   const t0 = performance.now();
   let plan;
   try {
+    // Effort is overridable from the query string, and reported, because the
+    // production setting for this task is xhigh and xhigh currently does not
+    // fit inside ngrok's 300s per-request ceiling — measured at 300.8s for a
+    // three-beat plan. Running lower answers what Qwen DECIDES; it does not
+    // answer whether the production effort is deliverable, and the two must
+    // not be reported as the same thing.
+    const effort = new URLSearchParams(location.search).get('effort') || 'medium';
+    say(`  reasoning_effort: ${effort}${effort === 'xhigh' ? '' : '  (production uses xhigh for this task)'}`);
     plan = await window.AIManager.generateJSON('/api/video/plan', {
       scenes,
       bible: { title: 'Then and now', visualStyle: 'documentary' },
       characters: [], strategyBrief: '', modeBrief: '', host: '',
       timing: handed
-    }, { task: 'storyboard' });
+    }, { task: 'storyboard', reasoningEffort: effort });
   } catch (e) {
     check('the Director answered', false, e.message);
     window.__done = { fails }; return;

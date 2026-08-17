@@ -172,7 +172,7 @@
     // script, a style, and the beats to plan against. Posting the raw
     // storyboard payload here used to fail schema validation before the model
     // was ever reached, so translate it first.
-    async director(payload) {
+    async director(payload, options = {}) {
       const scenes = Array.isArray(payload && payload.scenes) ? payload.scenes : [];
       const bible  = (payload && payload.bible) || {};
 
@@ -203,7 +203,7 @@
         // The unconstrained thinking pass. The grammar forces the first token
         // to be a brace, so this is the only place the director gets to reason
         // about the video at all.
-        reasoning_effort: effortFor({ task: 'storyboard', ...payload })
+        reasoning_effort: effortFor(Object.assign({ task: 'storyboard' }, options))
       });
 
       const data = await res.json();
@@ -391,8 +391,11 @@
       // Optimization: if it's the director endpoint and Qwen is available, use /director natively
       if (endpoint === '/api/video/plan' && provider === this.qwen) {
         try {
-          // Direct structured schema call
-          const res = await provider.director(payload);
+          // Options travel with it. They were dropped here, so every caller got
+          // the task default no matter what it asked for — and reasoning effort
+          // is the single biggest lever on how long a plan takes, which matters
+          // because the tunnel cuts any request at 300s.
+          const res = await provider.director(payload, options);
           return res;
         } catch (e) {
           console.warn('[AIProviderManager] Qwen /director failed, falling back to /generate', e);
