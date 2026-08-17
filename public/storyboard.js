@@ -18,39 +18,20 @@
   const resumeBtn = $('sb-resume');
   const cancelBtn = $('sb-cancel');
   const bibleEl = $('sb-bible');
-  const castEl = $('sb-cast');
-  const castListEl = $('sb-cast-list');
-  const useRefsEl = $('sb-use-refs');
-  const exportsEl = $('sb-exports');
-  const scenesEl = $('sb-scenes');
-  const assetModeEl = $('sb-asset-mode');
+  const stockStrategyEl = $('sb-stock-strategy');
+  const stockProviderEl = $('sb-stock-provider');
+  const formatDisplayEl = $('sb-format-display');
   const styleEl = $('sb-style');
-  const presetEl = $('sb-preset');
-  const modeEl = $('sb-mode');
-  const densityEl = $('sb-density');
   const styleNotesEl = $('sb-style-notes');
-  const presetSaveBtn = $('sb-preset-save');
+  const presetEl = $('sb-style-preset');
+  const presetSaveBtn = $('sb-save-preset');
+  const densityEl = $('sb-density');
+  const assetModeEl = $('sb-asset-mode');
   const generateAllBtn = $('sb-generate-all');
+  const scenesEl = $('sb-scenes');
+  const exportsEl = $('sb-exports');
   const rawBtn = $('sb-raw');
-  const titleInput = $('title-input');
-
-  const STYLE_KEY = 'blvck-tts:sb-style';
-  const PRESETS_KEY = 'blvck-tts:sb-presets';
-  let lastRaw = ''; // raw model response from the last analyze (for "View raw")
-
-  // Built-in visual presets: a style id + extra notes, reusable across projects.
-  const BUILTIN_PRESETS = [
-    { name: 'Born Back Then (historical)', style: 'historical-illustration', notes: 'Warm atmospheric lighting, realistic period architecture, consistent color grading, faceless framing.' },
-    { name: 'Modern Documentary', style: 'documentary', notes: 'Photoreal, natural lighting, candid documentary framing.' },
-    { name: 'Business Explainer', style: 'modern-explainer', notes: 'Clean flat vector shapes, bright friendly colors, generous negative space.' },
-    { name: 'Finance Explainer', style: 'infographic', notes: 'Charts, icons, bold flat colors, clear visual hierarchy.' },
-    { name: 'Tech Explainer', style: 'tech-ui', notes: 'Sleek UI-inspired shapes, cool gradients, modern product-design look.' },
-    { name: 'Self-help / Lifestyle', style: 'lifestyle', notes: 'Bright natural light, relatable modern settings, aspirational but authentic.' },
-    { name: 'Animated Explainer', style: '2d-animation', notes: 'Clean vector style, bright colors, simple iconography.' },
-    { name: 'Cinematic Realism', style: 'cinematic', notes: 'Dramatic lighting, filmic grade, shallow depth of field.' },
-    { name: 'Anime Storytelling', style: 'anime', notes: 'Dramatic anime key-art, expressive characters, detailed backgrounds.' },
-    { name: "Children's Educational", style: 'childrens-book', notes: 'Friendly rounded shapes, cheerful colors, simple clear scenes.' }
-  ];
+  const useRefsEl = $('sb-use-refs');
 
   // Project-level asset mode: 'image' | 'video' | 'mixed'. In mixed mode each
   // scene carries its own assetType (default 'image', togglable per scene).
@@ -97,27 +78,7 @@
   const memBlobs = new Map(); // index -> Blob
   const urls = new Map(); // index -> object URL
 
-  // Character reference images (for cross-scene consistency).
-  const refBlobs = new Map(); // name -> Blob
-  const refUrls = new Map(); // name -> object URL
-  const refDataUrls = new Map(); // name -> data: URL (passed to txt2img image_url)
-  const refKey = (name) => `ref:${name}`;
 
-  function blobToDataUrl(blob) {
-    return new Promise((resolve) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result || ''));
-      r.onerror = () => resolve('');
-      r.readAsDataURL(blob);
-    });
-  }
-  async function setReference(name, blob) {
-    refBlobs.set(name, blob);
-    if (refUrls.has(name)) URL.revokeObjectURL(refUrls.get(name));
-    refUrls.set(name, URL.createObjectURL(blob));
-    refDataUrls.set(name, await blobToDataUrl(blob));
-    await idbPut(refKey(name), blob);
-  }
 
   function idbOpen() {
     return new Promise((resolve, reject) => {
@@ -463,7 +424,7 @@
     const onAttempt = (n, max) => { if (n > 1) setAnalyzing(true, `Reformatting response (attempt ${n} of ${max})…`); };
     try {
       // 1. Project profile (story + inferred/selected visual style)
-      const bibleRes = await window.BlvckAI.generateJSON('/api/storyboard/bible', { context: ctx }, { onAttempt, task: 'bible' });
+      const bibleRes = await window.AIManager.generateJSON('/api/storyboard/bible', { context: ctx }, { onAttempt, task: 'bible' });
       bible = bibleRes.bible;
       syncBibleToConsistency();
       renderBible();
@@ -479,7 +440,7 @@
       for (let i = 0; i < cues.length; i += SCENE_BATCH) {
         const batch = cues.slice(i, i + SCENE_BATCH);
         const prior = scenes.slice(-3).map((s) => `${s.camera}: ${s.sceneSummary}`);
-        const res = await window.BlvckAI.generateJSON('/api/storyboard/scenes', {
+        const res = await window.AIManager.generateJSON('/api/storyboard/scenes', {
           bible,
           cues: batch,
           style: ctx.style,
@@ -489,39 +450,22 @@
         (res.scenes || []).forEach((s) => scenes.push({ ...s, status: 'pending', error: null }));
         renderScenes();
       }
-      // Continuity across batch boundaries. parseScenes already carried
-      // environment/time/weather/lighting forward WITHIN each batch, but the
-      // model never sees earlier batches, so the first scene of batch 2 usually
-      // comes back blank. One pass over the finished list closes those seams.
+      // Continuity across batch boundaries.
       if (window.BlvckPrompts && window.BlvckPrompts.applyContinuity) {
         scenes = window.BlvckPrompts.applyContinuity(scenes);
         renderScenes();
       }
-      // Seed the character library from the bible so every recurring person has
-      // a profile to attach a portrait (and later an LTX subject reference) to.
-      if (window.BlvckCast) window.BlvckCast.importFromBible(bible);
       saveProject();
-      // Build reference portraits for anyone who actually recurs, before the
-      // scene queue runs, so the cast is locked in first.
-      await autoBuildRecurringReferences();
     } catch (err) {
-      lastRaw = (err && err.raw) || (window.BlvckAI.lastRawResponse && window.BlvckAI.lastRawResponse()) || '';
-      if (rawBtn) rawBtn.hidden = !lastRaw;
+      lastRaw = (err && err.raw) || (window.AIManager.lastRawResponse && window.AIManager.lastRawResponse()) || '';
       const cat = err && err.category ? ` [${err.category}]` : '';
-      showStatus(`${err.message}${cat}${lastRaw ? ' — click “View raw response” to inspect.' : ''}`);
+      showStatus(`${err.message}${cat}${lastRaw ? ' — check console for details.' : ''}`);
       setAnalyzing(false);
       return;
     }
     exportsEl.hidden = false;
 
-    // 3. Plan the shots BEFORE generating anything.
-    //
-    // This used to jump straight into rendering a still for every scene, which
-    // is work decided before anyone knew what the scenes were for. Planning is
-    // one cheap LLM call and it determines what each beat actually needs: a
-    // chart or map is drawn on canvas and needs no image at all, and a filmed
-    // beat is rendered from text and needs no image either. Generating first
-    // meant paying for pictures the video would never use.
+    // 3. Plan the shots using the Director (previously LTX planner)
     let planned = null;
     if (window.BlvckLTX && window.BlvckLTX.planWithDirector) {
       try {
@@ -529,7 +473,6 @@
         planned = await window.BlvckLTX.planWithDirector();
         renderScenes();
       } catch (err) {
-        // A failed plan is not fatal; the scenes are still usable by hand.
         console.warn('[Storyboard] Shot planning failed:', err.message);
       }
     }
@@ -547,32 +490,14 @@
         ? ` 📉 ${planned.retention.issues.slice(0, 2).map((i) => `[${i.where}] ${i.message}`).join(' ')}`
         : '';
       showStatus(
-        `${scenes.length} beat(s) planned as ${planned.mode || 'default'} — ${mix}. ` +
-        `Review below, then click “Generate all scene clips”.${warn}${ret}`,
+        `${scenes.length} beat(s) planned as ${planned.mode || 'default'} — ${mix}. Fetching stock media...${warn}${ret}`,
         'info'
       );
-      if (generateAllBtn) generateAllBtn.hidden = false;
-      return;
-    }
-
-    // No planner available — fall back to the original still-image behaviour.
-    if (modeEl && modeEl.value === 'review') {
-      if (generateAllBtn) generateAllBtn.hidden = false;
-      showStatus(`${scenes.length} scene prompt(s) ready. Review or edit them, then click “Generate all images”.`, 'info');
     } else {
-      runImageQueue();
+      showStatus(`${scenes.length} scenes planned. Fetching stock media...`, 'info');
     }
-  }
 
-  // Pick a reference image for a scene: the first character present in the
-  // scene that has a reference portrait. Returns a data URL or null.
-  function sceneReference(scene) {
-    if (!useRefsEl || !useRefsEl.checked) return null;
-    const names = Array.isArray(scene.characters) ? scene.characters : [];
-    for (const n of names) {
-      if (refDataUrls.has(n)) return refDataUrls.get(n);
-    }
-    return null;
+    runStockQueue();
   }
 
   // bible.visualStyle is an OBJECT ({name, description, lighting, colorGrading,
@@ -683,28 +608,19 @@
     return String(vs.negative || '').trim();
   }
 
-  async function generateSceneAsset(scene) {
-    // Frames that are really about words are typeset, not generated. Diffusion
-    // models cannot spell, so a checklist or a big number rendered on the GPU
-    // comes back as pseudo-lettering; drawn here it is correct every time, on
-    // brand, and returns in milliseconds without touching the queue's GPU time.
-    // Two ways a beat qualifies as typeset: the storyboard model gave it a
-    // graphic spec, or the Director planned it as one of the data types
-    // (chart/map/timeline/whiteboard). The second case is why this check can
-    // no longer rely on looksLikeGraphic alone — a beat planned as "chart"
-    // carries no `graphic` from the storyboard pass, so it used to fall
-    // through and be rendered PHOTOGRAPHICALLY, which is precisely the
-    // scrambled-lettering failure the canvas renderer exists to avoid.
+  async function acquireSceneVisual(scene) {
+    // ── 1. Canvas/graphic types ─────────────────────────────────────────────
+    // Frames that are really about words are typeset on canvas — diffusion
+    // models cannot spell, but the canvas renderer draws real text every time,
+    // on brand, in milliseconds. Two ways a beat qualifies: the Director
+    // planned it as a data visual (chart/map/timeline/whiteboard), or the
+    // storyboard model itself gave it a graphic spec.
     const plannedCanvas = !!(window.BlvckLTX && window.BlvckLTX.rendersOnCanvas(scene));
     if (window.BlvckGraphic && (plannedCanvas || window.BlvckGraphic.looksLikeGraphic(scene))) {
       const spec = Object.assign(
-        // The Director's visualType is the card kind; the storyboard's own
-        // spec (checklist/stat/title) wins when it supplied one.
         { kind: plannedCanvas ? scene.visualType : 'title' },
         scene.graphic || { title: scene.sceneSummary || scene.subtitle || '' }
       );
-      // Palette comes from the project's own subject, so a safety video's cards
-      // read as safety and a finance video's do not look identical to them.
       return window.BlvckGraphic.render({
         ...spec,
         theme: graphicTheme(),
@@ -712,69 +628,79 @@
       });
     }
 
-    // Build from the Director's structured decisions when it has planned this
-    // beat, not from scene.prompt — that string was written during the
-    // storyboard pass, BEFORE the Director ran, so shot scale, place, time of
-    // day, weather, light, props and mood were reaching video prompts and
-    // silently missing image prompts. Same intelligence, both paths.
-    let finalPrompt = scene.prompt || '';
-    if (scene.visualType && window.BlvckLTX && window.BlvckLTX.stillPromptFor) {
-      const chosenStyle = styleEl && styleEl.value && styleEl.value !== 'auto' ? styleEl.value : '';
-      const planned = window.BlvckLTX.stillPromptFor(scene, bible, chosenStyle);
-      if (planned) finalPrompt = planned;
-    } else if (scene.visualType === 'presenter' && window.BlvckHost && window.BlvckHost.isConfigured()) {
-      // No planner available: keep the host rule at minimum.
-      finalPrompt = [
-        `${window.BlvckHost.descriptor()}, speaking directly to camera`,
-        window.BlvckHost.backgroundText(),
-        scene.detectedAction || scene.sceneSummary || ''
-      ].filter(Boolean).join('. ');
+    // ── 2. Editorial text (pure text card, no background footage) ───────────
+    // Used when no stock footage can honestly illustrate the concept, or when
+    // the beat is a pull quote / section title / abstract transition.
+    if (scene.visualType === 'editorial_text') {
+      const spec = scene.graphic || {};
+      const ov   = scene.textOverlay || {};
+      return window.BlvckGraphic.render({
+        kind:     spec.kind     || 'title',
+        title:    spec.title    || ov.text || scene.sceneSummary || scene.subtitle || '',
+        subtitle: spec.subtitle || (ov.text && scene.detectedAction) || '',
+        items:    spec.items    || [],
+        value:    spec.value    || '',
+        label:    spec.label    || '',
+        theme:    graphicTheme(),
+        palette:  window.BlvckGraphic.paletteFor(bible)
+      });
     }
 
-    // Append the master visual style so every scene shares one look.
-    const styled = styleText(bible && bible.visualStyle);
-    if (styled) {
-      if (!finalPrompt.toLowerCase().includes(styled.slice(0, 24).toLowerCase())) {
-        finalPrompt = `${finalPrompt}. Visual style: ${styled}`;
+    // ── 3. Stock footage (primary production path) ──────────────────────────
+    // Handles stock_video, stock_photo, stock_text, and the legacy t2v/broll
+    // types which are now routed to the stock layer when StockMedia is
+    // configured. No AI image/video generation API is called here.
+    const isStockType  = ['stock_video', 'stock_photo', 'stock_text'].includes(scene.visualType);
+    const isLegacyType = scene.visualType === 't2v' || scene.visualType === 'broll' || !scene.visualType;
+    if (window.StockMedia && window.StockMedia.isConfigured() && (isStockType || isLegacyType)) {
+      try {
+        const provider = stockProviderEl ? stockProviderEl.value : 'all';
+        const strategy = stockStrategyEl ? stockStrategyEl.value : 'auto';
+        const blob = await window.StockMedia.acquire(scene, { provider, strategy });
+        if (blob) {
+          // If the scene calls for text OVER stock footage, composite it into a final image.
+          if (scene.visualType === 'stock_text' && window.BlvckGraphic && window.BlvckGraphic.compositeOverlay) {
+            const spec = scene.textOverlay || scene.graphic || {};
+            if (!spec.kind) spec.kind = 'stat_overlay';
+            spec.theme = graphicTheme();
+            spec.palette = window.BlvckGraphic.paletteFor(bible);
+            const compBlob = await window.BlvckGraphic.compositeOverlay(blob, spec);
+            scene.assetType = 'image'; // The compositor produces a static PNG
+            return compBlob;
+          }
+          return blob;
+        }
+      } catch (stockErr) {
+        console.warn('[Storyboard] Stock acquire failed for scene ' + scene.index + ':', stockErr.message);
       }
-    } else if (styleEl && styleEl.value && styleEl.value !== 'auto') {
-      finalPrompt = `${finalPrompt}. Visual style: ${styleEl.value}`;
+      // Stock returned nothing or failed → fall to text+graphic (NOT AI gen).
+      const ov  = scene.textOverlay || {};
+      const gfx = scene.graphic     || {};
+      return window.BlvckGraphic.render({
+        kind:     gfx.kind     || 'title',
+        title:    ov.text      || gfx.title    || scene.sceneSummary || scene.subtitle || 'Scene ' + scene.index,
+        subtitle: gfx.subtitle || scene.detectedAction || '',
+        items:    gfx.items    || [],
+        theme:    graphicTheme(),
+        palette:  window.BlvckGraphic.paletteFor(bible)
+      });
     }
-    // The style's negatives go to the engine's own negative_prompt where one
-    // exists (Stable Diffusion, SDXL). They must NOT be appended to the
-    // positive prompt: writing "avoid sepia, film grain" there describes those
-    // things to the sampler and makes them MORE likely, not less.
-    const styleNeg = window.BlvckLTX && window.BlvckLTX.stillNegativeFor
-      ? window.BlvckLTX.stillNegativeFor(bible, styleEl && styleEl.value !== 'auto' ? styleEl.value : '')
-      : '';
-    const negative = [styleNeg, styleNegative(bible && bible.visualStyle)].filter(Boolean).join(', ');
 
-    if (sceneAssetType(scene) === 'video') {
-      return window.BlvckAI.generateVideo(finalPrompt, { seconds: 5, size: '1280x720' });
-    }
-    const imageUrl = sceneReference(scene);
-    // characters/location were never passed, so the consistency engine always
-    // received empty arrays and could not emit the per-character or
-    // per-location rules that keep a cast and a world looking the same.
-    return window.BlvckAI.generateImage(finalPrompt, ASPECT, {
-      ...(imageUrl ? { imageUrl } : {}),
-      seed: sceneSeed(scene),
-      // Tell the backend which style LoRA to apply. The prompt alone cannot
-      // move a checkpoint off what it was fine-tuned for.
-      style: chosenStyle || '',
-      negative_prompt: negative || undefined,
-      // Character continuity holds a SEQUENCE together. For a single still
-      // generated from text with no init image, it only spends prompt weight
-      // that composition needs more.
-      characters: imageUrl ? (Array.isArray(scene.characters) ? scene.characters : []) : [],
-      location: sceneLocation(scene)
+    // ── 4. Absolute text-only fallback ──────────────────────────────────────
+    // Reached only when StockMedia is not configured
+    return window.BlvckGraphic.render({
+      kind:     'title',
+      title:    scene.sceneSummary || scene.subtitle || 'Scene ' + scene.index,
+      subtitle: scene.detectedAction || '',
+      theme:    graphicTheme(),
+      palette:  window.BlvckGraphic.paletteFor(bible)
     });
   }
 
-  // Video generation is far slower than images; pace the queue accordingly.
+  // Stock acquisition pacing
   const THROTTLE_MS = 600;
 
-  async function runImageQueue() {
+  async function runStockQueue() {
     if (running) return;
     running = true;
     paused = false;
@@ -785,12 +711,10 @@
     let quotaHit = false;
     for (const scene of scenes) {
       if (cancelRequested) break;
-      // Skip only when this scene already has a STILL. A scene marked 'done'
-      // because the LTX pipeline rendered it a video clip has no image yet, and
-      // the two tracks are deliberately independent: clips live under
-      // clip:<index>, stills under <index>, so generating one never destroys
-      // the other and either can be produced first.
-      if (scene.status === 'done' && scene.assetType !== 'video') continue;
+      
+      // Skip if already done
+      if (scene.status === 'done' && !scene.stockLocked) continue;
+      
       while (paused && !cancelRequested) await sleep(200);
       if (cancelRequested) break;
 
@@ -798,15 +722,14 @@
       renderScenes();
       const t0 = performance.now();
       try {
-        const blob = await generateSceneAsset(scene);
-        storeAsset(scene.index, blob);
+        const blob = await acquireSceneVisual(scene);
+        if (blob) {
+            storeAsset(scene.index, blob);
+        }
         scene.status = 'done';
         durations.push(performance.now() - t0);
       } catch (err) {
         if (err.quota) {
-          // Don't burn through the rest of the batch — stop and let the user
-          // resume once the quota resets or billing is enabled. Keep the
-          // scene queued (not failed) so "Continue" picks up where it left off.
           scene.status = 'pending';
           quotaHit = true;
           saveProject();
@@ -825,20 +748,20 @@
     running = false;
     updateControls();
     updateProgress();
-    renderScenes(); // re-render so run-gated controls (mixed toggles) reappear
+    renderScenes();
     const done = scenes.filter((s) => s.status === 'done').length;
     const remaining = scenes.filter((s) => s.status !== 'done').length;
     if (quotaHit) {
       showStatus(
-        `Generation limit reached. ${done} of ${scenes.length} scenes generated. ` +
+        `API rate limit reached. ${done} of ${scenes.length} scenes fetched. ` +
           'Wait a moment for the rate limit to clear, then click “Continue”.'
       );
     } else if (cancelRequested) {
       showStatus('Cancelled. Completed scenes are saved.', 'info');
     } else if (remaining) {
-      showStatus(`${remaining} scene(s) failed. Regenerate them individually.`);
+      showStatus(`${remaining} scene(s) failed. Retry them individually.`);
     } else {
-      showStatus(`Storyboard complete — ${scenes.length} scenes generated.`, 'info');
+      showStatus(`Storyboard complete — ${scenes.length} scenes fetched.`, 'info');
     }
   }
 
@@ -847,8 +770,6 @@
     if (urls.has(index)) URL.revokeObjectURL(urls.get(index));
     urls.set(index, URL.createObjectURL(blob));
     idbPut(String(index), blob);
-    // Remember what kind of asset this scene ended up with, so the render
-    // path and downloads work correctly after a reload.
     const scene = scenes.find((s) => s.index === index);
     if (scene) scene.assetType = isVideoBlob(blob) ? 'video' : 'image';
   }
@@ -861,8 +782,10 @@
     scene.status = 'generating';
     renderScenes();
     try {
-      const blob = await generateSceneAsset(scene);
-      storeAsset(scene.index, blob);
+      const blob = await acquireSceneVisual(scene);
+      if (blob) {
+        storeAsset(scene.index, blob);
+      }
       scene.status = 'done';
       scene.error = null;
     } catch (err) {
@@ -1255,49 +1178,91 @@
 
       // Prompt transparency: show the detected action + visual goal, and let
       // the user edit the actual image prompt before generating.
-      let insight = null;
+      const details = document.createElement('div');
+      details.className = 'sb-scene-insight';
+      details.style.display = 'flex';
+      details.style.flexDirection = 'column';
+      details.style.gap = '4px';
+
+      if (scene.subtitle) {
+        const span = document.createElement('span');
+        span.innerHTML = `<strong>Narration:</strong> ${esc(scene.subtitle)}`;
+        details.appendChild(span);
+      }
       if (scene.detectedAction || scene.visualGoal) {
-        insight = document.createElement('div');
-        insight.className = 'sb-scene-insight';
-        insight.innerHTML =
-          (scene.detectedAction ? `<span><strong>Action:</strong> ${esc(scene.detectedAction)}</span>` : '') +
-          (scene.visualGoal ? `<span><strong>Goal:</strong> ${esc(scene.visualGoal)}</span>` : '');
+        const span = document.createElement('span');
+        span.innerHTML = `<strong>Visual Intent:</strong> ${esc(scene.detectedAction || scene.visualGoal)}`;
+        details.appendChild(span);
+      }
+      if (scene.visualType) {
+        const span = document.createElement('span');
+        span.innerHTML = `<strong>Strategy:</strong> ${esc(scene.visualType)}`;
+        details.appendChild(span);
+      }
+      if (scene.stockRequirements && scene.stockRequirements.queries && scene.stockRequirements.queries.length) {
+        const span = document.createElement('span');
+        span.innerHTML = `<strong>Search Queries:</strong> ${esc(scene.stockRequirements.queries.join(', '))}`;
+        details.appendChild(span);
       }
 
-      const prompt = document.createElement('textarea');
-      prompt.className = 'sb-scene-prompt';
-      prompt.value = scene.prompt;
-      prompt.rows = 2;
-      prompt.spellcheck = false;
-      prompt.title = 'Edit the image prompt before generating';
-      prompt.addEventListener('change', () => {
-        scene.prompt = prompt.value.trim();
-        saveProject();
-      });
+      let stockInfo = null;
+      if (scene.stockAsset) {
+        stockInfo = document.createElement('div');
+        stockInfo.className = 'sb-scene-insight';
+        const sa = scene.stockAsset;
+        stockInfo.innerHTML = `<span><strong>Stock:</strong> ${sa.provider} ${sa.type} (${sa.id})</span>` +
+          (sa.fallback ? ` <span style="color:var(--warning)">[Fallback: ${sa.fallback}]</span>` : '');
+      }
 
       const actions = document.createElement('div');
       actions.className = 'sb-scene-actions';
       const regen = document.createElement('button');
       regen.type = 'button';
-      regen.textContent = scene.status === 'error' ? 'Retry' : 'Regenerate';
+      regen.textContent = scene.status === 'error' ? 'Retry Fetch' : 'Fetch Again';
+      regen.disabled = running;
       regen.addEventListener('click', () => regenerateScene(scene));
       actions.appendChild(regen);
 
-      // In mixed mode, let each scene switch between image and video. Changing
-      // the type then Regenerate picks up the new asset kind.
-      if (assetMode === 'mixed') {
-        const toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.textContent = isVideo ? '→ Make image' : '→ Make video';
-        toggle.title = 'Switch this scene’s asset type, then Regenerate';
-        toggle.disabled = running;
-        toggle.addEventListener('click', () => {
-          scene.assetType = isVideo ? 'image' : 'video';
+      // Stock replacement control
+      if (window.StockMedia && window.StockMedia.isConfigured() && ['stock_video', 'stock_photo', 'stock_text', 't2v', 'broll'].includes(scene.visualType)) {
+        const replaceBtn = document.createElement('button');
+        replaceBtn.type = 'button';
+        replaceBtn.textContent = 'Replace Manually';
+        replaceBtn.title = 'Search and replace this scene with a specific stock clip';
+        replaceBtn.disabled = running;
+        replaceBtn.addEventListener('click', async () => {
+          const q = prompt('Search query for replacement clip:');
+          if (!q) return;
+          scene.status = 'generating';
+          renderScenes();
+          try {
+            const blob = await window.StockMedia.replaceClip(scene, q);
+            if (blob) storeAsset(scene.index, blob);
+            scene.status = 'done';
+            scene.error = null;
+          } catch (err) {
+            scene.status = 'error';
+            scene.error = err.message;
+          }
           saveProject();
           renderScenes();
         });
-        actions.appendChild(toggle);
+        actions.appendChild(replaceBtn);
       }
+
+      // Lock toggle
+      const lockLabel = document.createElement('label');
+      lockLabel.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;color:#9aa4b2;cursor:pointer;margin-left:auto';
+      const lockCheck = document.createElement('input');
+      lockCheck.type = 'checkbox';
+      lockCheck.checked = !!scene.stockLocked;
+      lockCheck.disabled = running || (!scene.stockAsset && scene.status !== 'done');
+      lockCheck.addEventListener('change', () => {
+        scene.stockLocked = lockCheck.checked;
+        saveProject();
+      });
+      lockLabel.append(lockCheck, 'Lock Clip');
+      actions.appendChild(lockLabel);
 
       if (scene.status === 'done' && url) {
         const ext = isVideo ? videoExt(memBlobs.get(scene.index)) : 'png';
@@ -1315,9 +1280,11 @@
         actions.appendChild(err);
       }
 
-      body.append(head, subtitle);
-      if (insight) body.appendChild(insight);
-      body.append(prompt, actions);
+      body.appendChild(head);
+      if (subtitle.textContent) body.appendChild(subtitle);
+      body.appendChild(details);
+      if (stockInfo) body.appendChild(stockInfo);
+      body.appendChild(actions);
       row.append(thumb, body);
       scenesEl.appendChild(row);
     });
@@ -1713,7 +1680,6 @@
     generateAllBtn.addEventListener('click', () => {
       generateAllBtn.hidden = true;
       clearStatus();
-      runImageQueue();
     });
   }
   if (rawBtn) {
@@ -1800,13 +1766,10 @@
   }
   if (resumeBtn) {
     resumeBtn.addEventListener('click', () => {
-      if (running) {
-        paused = false;
-        updateControls();
-        clearStatus();
-      } else {
-        clearStatus();
-        runImageQueue();
+      // 3. Kick off the stock acquisition queue immediately.
+      // (The user can replace or search again later).
+      if (!cancelRequested) {
+        runStockQueue();
       }
     });
   }

@@ -93,7 +93,7 @@
       try {
         const workspace = window.AetherRouter ? window.AetherRouter.currentWorkspace : 'dashboard';
         const fullPrompt = `[Workspace Context: ${workspace.toUpperCase()}] ${userMsg}`;
-        const response = await window.BlvckAI.chat(fullPrompt);
+        const response = await window.AIManager.chat(fullPrompt);
         botEl.innerHTML = (window.marked ? window.marked.parse(response) : response);
       } catch (err) {
         botEl.className = 'dock-msg error';

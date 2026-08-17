@@ -90,7 +90,7 @@
 
     try {
       const systemPrompt = `You are the Executive AI Production Director for Blvck-TTS. Provide actionable, concise advice on scripting, narration, asset consistency, historical accuracy, and YouTube CTR optimization. Input: ${userMsg}`;
-      const reply = await window.BlvckAI.chat(systemPrompt, { task });
+      const reply = await window.AIManager.chat(systemPrompt, { task });
 
       if (directorChat) {
         const aiBubble = document.createElement('div');
@@ -139,7 +139,7 @@
 
     try {
       const systemPrompt = `You are an expert AI Coding Agent for Blvck-TTS. Write clean, bug-free HTML/CSS/JS code snippets to answer the request. Input: ${userMsg}`;
-      const reply = await window.BlvckAI.chat(systemPrompt, { task: 'code' });
+      const reply = await window.AIManager.chat(systemPrompt, { task: 'code' });
 
       if (agentMessages) {
         const aiBubble = document.createElement('div');

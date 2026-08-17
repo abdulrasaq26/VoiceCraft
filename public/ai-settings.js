@@ -26,12 +26,14 @@
   const replicateInput = $('set-replicate-keys');
   const runwayInput = $('set-runway-keys');
   const lumaInput = $('set-luma-keys');
+  const pixabayInput = $('set-pixabay-keys');
+  const pexelsInput = $('set-pexels-keys');
   const saveBtn = $('ai-settings-save');
 
   function populateModelDropdown() {
     if (!chatModelSel || !window.ModelRegistry) return;
 
-    const currentSel = window.BlvckAI ? window.BlvckAI.chatModel() : 'auto';
+    const currentSel = window.BlvckAI ? window.AIManager.chatModel() : 'auto';
     const models = window.ModelRegistry.getDiscoveredModels();
 
     let html = '<option value="auto">⚡ Auto (AI Director Recommendation)</option>';
@@ -84,6 +86,8 @@
     if (replicateInput) replicateInput.value = (PM.getPoolState('replicate')?.keys || []).join('\n');
     if (runwayInput) runwayInput.value = (PM.getPoolState('runway')?.keys || []).join('\n');
     if (lumaInput) lumaInput.value = (PM.getPoolState('luma')?.keys || []).join('\n');
+    if (pixabayInput) pixabayInput.value = (PM.getPoolState('pixabay')?.keys || []).join('\n');
+    if (pexelsInput) pexelsInput.value = (PM.getPoolState('pexels')?.keys || []).join('\n');
   }
 
   async function save() {
@@ -117,6 +121,8 @@
       if (replicateInput) PM.setKeys('replicate', replicateInput.value.split('\n'));
       if (runwayInput) PM.setKeys('runway', runwayInput.value.split('\n'));
       if (lumaInput) PM.setKeys('luma', lumaInput.value.split('\n'));
+      if (pixabayInput) PM.setKeys('pixabay', pixabayInput.value.split('\n'));
+      if (pexelsInput) PM.setKeys('pexels', pexelsInput.value.split('\n'));
 
       // Close modal & emit status update immediately (non-blocking)
       closeModal();

@@ -1,0 +1,6 @@
+vllm==0.15.0
+fastapi
+uvicorn
+pydantic
+openai
+pyngrok

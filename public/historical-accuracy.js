@@ -63,7 +63,7 @@
 
   // LLM-based deep audit for complex historical nuances
   async function deepAuditScript(scriptText, era = '14th Century Europe') {
-    if (!window.BlvckAI || !window.BlvckAI.chat) {
+    if (!window.BlvckAI || !window.AIManager.chat) {
       return auditText(scriptText); // Fallback to rule audit
     }
 
@@ -83,7 +83,7 @@ Return JSON ONLY in format:
 }`;
 
     try {
-      const respText = await window.BlvckAI.chat(prompt);
+      const respText = await window.AIManager.chat(prompt);
       const jsonMatch = respText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);

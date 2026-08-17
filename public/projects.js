@@ -16,6 +16,9 @@
   // storyboard, editor timeline, project title). Presets/favorites/recents
   // stay global.
   const WORKING_LS = [
+    'blvck-tts:research',
+    'blvck-tts:script-last',
+    'blvck-tts:subtitles',
     'blvck-tts:settings',
     'blvck-tts:narration',
     'blvck-tts:batch',

@@ -182,6 +182,61 @@
     ctx.fillRect(110, (H - blockH) / 2 - 34, 96, 8);
   }
 
+  function drawStatOverlay(ctx, t, spec) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = t.text || t.ink || '#ffffff';
+    ctx.font = '900 240px "Arial Black", Impact, sans-serif';
+    ctx.fillText(spec.value || '0', W / 2, H * 0.45);
+    ctx.font = '700 80px Inter, sans-serif';
+    ctx.fillStyle = t.accent || '#11998e';
+    ctx.fillText(spec.label || spec.title || '', W / 2, H * 0.65);
+    if (spec.subtitle) {
+      ctx.font = '400 50px Inter, sans-serif';
+      ctx.fillStyle = t.text || t.ink || '#ffffff';
+      ctx.fillText(spec.subtitle, W / 2, H * 0.75);
+    }
+  }
+
+  function drawQuoteOverlay(ctx, t, spec) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = t.accent || '#11998e';
+    ctx.font = '900 200px serif';
+    ctx.fillText('“', W / 2, H * 0.25);
+    ctx.fillStyle = t.text || t.ink || '#ffffff';
+    ctx.font = 'italic 700 80px Georgia, serif';
+    
+    // wrapText implementation since we use it below
+    const words = (spec.title || '').split(' ');
+    let line = '';
+    let y = H * 0.4;
+    for (let n = 0; n < words.length; n++) {
+      const testLine = line + words[n] + ' ';
+      const metrics = ctx.measureText(testLine);
+      const testWidth = metrics.width;
+      if (testWidth > W * 0.8 && n > 0) {
+        ctx.fillText(line, W / 2, y);
+        line = words[n] + ' ';
+        y += 100;
+      } else {
+        line = testLine;
+      }
+    }
+    ctx.fillText(line, W / 2, y);
+
+    ctx.font = '400 50px Inter, sans-serif';
+    ctx.fillStyle = t.subtext || '#aaaaaa';
+    ctx.fillText(spec.label || spec.subtitle || '', W / 2, y + 100);
+  }
+
+  function drawEditorialBar(ctx, t, spec) {
+    ctx.fillStyle = t.accent || '#11998e';
+    ctx.fillRect(W * 0.05, H * 0.75, W * 0.9, H * 0.2);
+    ctx.fillStyle = t.bg || '#000000';
+    ctx.textAlign = 'left';
+    ctx.font = '900 80px "Arial Black", Impact, sans-serif';
+    ctx.fillText(spec.title || '', W * 0.08, H * 0.88);
+  }
+
   function drawChecklist(ctx, t, spec) {
     const items = (spec.items || []).slice(0, 7);
 
@@ -966,6 +1021,64 @@
 
   // spec: { kind: 'title'|'checklist'|'stat'|'chart'|'timeline'|'whiteboard'|'map',
   //         title, subtitle, items[], value, label, theme: 'dark'|'light' }
+  async function compositeOverlay(stockBlob, spec = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    const t = theme(spec.theme, spec.palette);
+
+    // Load stock asset
+    const url = URL.createObjectURL(stockBlob);
+    try {
+      const isVideo = stockBlob.type.startsWith('video/');
+      if (isVideo) {
+        const vid = document.createElement('video');
+        vid.muted = true;
+        vid.playsInline = true;
+        await new Promise((resolve, reject) => {
+          vid.onloadeddata = () => {
+            vid.currentTime = 0.1;
+          };
+          vid.onseeked = resolve;
+          vid.onerror = reject;
+          vid.src = url;
+        });
+        const scale = Math.max(W / vid.videoWidth, H / vid.videoHeight);
+        const nw = vid.videoWidth * scale;
+        const nh = vid.videoHeight * scale;
+        ctx.drawImage(vid, (W - nw) / 2, (H - nh) / 2, nw, nh);
+      } else {
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = url;
+        });
+        const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+        const nw = img.naturalWidth * scale;
+        const nh = img.naturalHeight * scale;
+        ctx.drawImage(img, (W - nw) / 2, (H - nh) / 2, nw, nh);
+      }
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+
+    // Apply dark scrim for text readability
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textBaseline = 'alphabetic';
+    const kind = String(spec.kind || 'stat_overlay').toLowerCase();
+
+    if (kind === 'stat_overlay' || kind === 'stat' || kind === 'number') drawStatOverlay(ctx, t, spec);
+    else if (kind === 'quote_overlay') drawQuoteOverlay(ctx, t, spec);
+    else if (kind === 'editorial_bar' || kind === 'title') drawEditorialBar(ctx, t, spec);
+    else drawTitle(ctx, t, spec); // Fallback
+
+    return canvasToBlob(canvas);
+  }
+
   async function render(spec = {}) {
     const canvas = document.createElement('canvas');
     canvas.width = W;
@@ -1269,7 +1382,7 @@
   }
 
   window.BlvckGraphic = {
-    render, renderThumbnail, looksLikeGraphic, paletteFor, THEMES, SUBJECT_PALETTES,
+    render, renderThumbnail, compositeOverlay, looksLikeGraphic, paletteFor, THEMES, SUBJECT_PALETTES,
     // presenter cut-out
     prepareFace, saveFace, getFace, clearFace, drawFace, stripBackground,
     // typography

@@ -90,9 +90,9 @@
       return window.ModelRegistry.getDiscoveredModels();
     }
     return [
-      { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B' },
+      { provider: 'nim', id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B' },
       { id: 'deepseek-ai/deepseek-r1', name: 'DeepSeek R1' },
-      { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B' }
+      { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B' }
     ];
   }
 
@@ -108,297 +108,24 @@
   }
 
   // Primary Chat Router
+
+
+
+
   async function chat(promptOrMessages, options = {}) {
-    const objective = options.objective || getObjective();
-    const taskType = options.task || 'general';
-
-    // Normalize messages argument to a guaranteed valid Array of message objects
-    let messages;
-    if (typeof promptOrMessages === 'string') {
-      messages = [{ role: 'user', content: promptOrMessages }];
-    } else if (Array.isArray(promptOrMessages)) {
-      messages = promptOrMessages;
-    } else if (promptOrMessages && typeof promptOrMessages === 'object'
-               && !promptOrMessages.role
-               && (promptOrMessages.system != null || promptOrMessages.user != null)) {
-      // THE SHAPE BlvckPrompts.build() RETURNS. Without this branch a
-      // {system, user} pair fell through to the generic object handler below,
-      // which has no `role` or `content` to find and therefore sent
-      // JSON.stringify({system, user}) as a single user message.
-      //
-      // Every generateJSON call in this app went out that way: the model
-      // received a JSON blob and had to dig its instructions out of an
-      // escaped string rather than being given a system prompt. Some models
-      // coped, some returned `book` and `pencil` for a photosynthesis story
-      // and put `thought` — a rel value — in the kind field.
-      //
-      // It is why removing the glyph list from the prompt changed nothing,
-      // why raising the token budget changed nothing, and why the same story
-      // gave different answers on different runs. The prompt was never the
-      // problem; the prompt was never being sent as a prompt. Calling
-      // chat(system + '\n\n' + user) by hand produced correct output all
-      // along, which is what finally separated the two paths.
-      //
-      // SCOPE — this was not a scene-plan bug. All nine builders in
-      // prompts.js return {system, user}, so every LLM feature in the product
-      // went out this way: script, SEO, research, audit, storyboard bible,
-      // storyboard scenes, story state, scene plan and video plan. Anything
-      // downstream of them was working from a model that had to dig its
-      // instructions out of an escaped JSON string, and only the scene-plan
-      // path was ever measured closely enough to notice.
-      //
-      // The correct status for all of them: PROMPT DELIVERY HAS BEEN
-      // CORRECTED GLOBALLY, AND THE QUALITY OF EVERY PROMPT-BASED FEATURE IS
-      // UNREVALIDATED — not degraded, not improved, until individually
-      // sampled. They will not have moved by the same amount. Structured
-      // planning is acutely prompt-sensitive and shifted a long way on
-      // replication; open tasks like SEO suggestions, summaries and
-      // brainstorming are naturally robust to bad prompting and may be
-      // unchanged. Assuming a uniform gain would be the same error as
-      // assuming a uniform loss.
-      messages = [];
-      if (promptOrMessages.system) {
-        messages.push({ role: 'system', content: String(promptOrMessages.system) });
-      }
-      messages.push({ role: 'user', content: String(promptOrMessages.user || '') });
-    } else if (promptOrMessages && typeof promptOrMessages === 'object') {
-      messages = [promptOrMessages];
-    } else {
-      messages = [{ role: 'user', content: String(promptOrMessages || '') }];
-    }
-
-    messages = messages.map(m => {
-      if (typeof m === 'string') return { role: 'user', content: m };
-      if (m && typeof m === 'object' && m.role && m.content) return m;
-      if (m && typeof m === 'object') return { role: 'user', content: JSON.stringify(m) };
-      return { role: 'user', content: String(m || '') };
-    });
-
-    // 1. Local-Only Mode
-    if (objective === 'local_only' && window.LLMAdapters) {
-      const localModel = options.model || 'qwen2.5';
-      const text = await window.LLMAdapters.ollamaChat({ model: localModel, messages });
-      recordModelUsed(taskType, localModel);
-      return text;
-    }
-
-    const decision = await resolveChatModel(taskType);
-    const userSel = getChatModel();
-    let targetModel = options.model || decision.selectedModel;
-    let fallbackModel = decision.fallbackModel;
-    let lastNimError = null;
-
-    const isOaActive = window.LLMAdapters && window.LLMAdapters.openaiOauthChat;
-    const isOaTarget = options.provider === 'openai_oauth' ||
-                       (userSel && (userSel.includes('chatgpt') || userSel.startsWith('gpt-') || userSel === 'openai_oauth')) ||
-                       (targetModel && (targetModel.includes('chatgpt') || targetModel.startsWith('gpt-')));
-
-    // 1.5 OpenAI OAuth Primary Execution (ChatGPT Account for ALL tasks across app)
-    //
-    // CIRCUIT BREAKER. When the ChatGPT account hits its usage limit this
-    // route fails after three internal retries, roughly ten seconds, and then
-    // falls through to NIM anyway. Every generation in a production run pays
-    // that ten seconds for an answer that was never coming — on a fifty-beat
-    // video that is eight minutes of waiting to be told no fifty times.
-    //
-    // Chosen over pinning the model because pinning is a setting someone
-    // changes back, and this recovers on its own: after the cooldown the next
-    // call tries again, so quota returning needs no intervention.
-    if (isOaActive && (isOaTarget || !window.ProviderManager?.getActiveKey('nim'))
-        && !oaBreakerOpen()) {
-      try {
-        const oaModel = (targetModel && targetModel.startsWith('gpt-')) ? targetModel : 'gpt-5.4-mini';
-        console.log(`[BlvckAI] Routing task [${taskType}] via OpenAI OAuth (ChatGPT Account) using [${oaModel}]`);
-        const text = await window.LLMAdapters.openaiOauthChat({
-          model: oaModel,
-          messages,
-          temperature: options.temperature || 0.7,
-          max_tokens: options.max_tokens || 1024,
-          onChunk: options.onChunk
-        });
-        lastRawResponseStr = text;
-        recordModelUsed(taskType, oaModel);
-        return text;
-      } catch (oaErr) {
-        // Only quota trips the breaker. A one-off network blip or a bad
-        // request should not disable a working provider for a quarter of an
-        // hour — those fall through and are retried next call as before.
-        if (/usage limit|quota|rate.?limit|insufficient|429/i.test(String(oaErr && oaErr.message))) {
-          oaBreakerTrip();
-          console.warn(`[BlvckAI] OpenAI OAuth is out of quota. Skipping it for `
-            + `${Math.round(OA_COOLDOWN_MS / 60000)} minutes so every generation `
-            + `stops paying its timeout. It retries automatically after that.`);
-        } else {
-          console.warn(`[BlvckAI] OpenAI OAuth task [${taskType}] failed, attempting fallback:`, oaErr.message);
-        }
-      }
-    }
-
-    // 2. NVIDIA NIM Gateway Execution
-    if (window.LLMAdapters && window.ProviderManager && window.ProviderManager.getActiveKey('nim')) {
-      try {
-        console.log(`[BlvckAI] Routing task [${taskType}] via NVIDIA NIM Free Gateway using model [${targetModel}]`);
-        const text = await window.LLMAdapters.nvidiaNimChat({
-          model: targetModel,
-          messages,
-          temperature: options.temperature || 0.7,
-          max_tokens: options.max_tokens || 1024,
-          onChunk: options.onChunk
-        });
-        lastRawResponseStr = text;
-        recordModelUsed(taskType, targetModel);
-        return text;
-      } catch (e) {
-        lastNimError = e.message;
-        console.warn(`[BlvckAI] Model [${targetModel}] failed on NVIDIA NIM:`, e);
-
-        // Fail over to OpenAI OAuth if available
-        if (isOaActive) {
-          try {
-            console.warn('[BlvckAI] Failing over from NVIDIA NIM to OpenAI OAuth...');
-            const text = await window.LLMAdapters.openaiOauthChat({
-              model: 'gpt-5.4-mini',
-              messages,
-              temperature: options.temperature || 0.7,
-              max_tokens: options.max_tokens || 1024,
-              onChunk: options.onChunk
-            });
-            lastRawResponseStr = text;
-            recordModelUsed(taskType, 'gpt-5.4-mini');
-            return text;
-          } catch (_) {}
-        }
-        // Automatic Failover to Free Fallback Model
-        if (fallbackModel && fallbackModel !== targetModel) {
-          try {
-            console.warn(`[BlvckAI] ⚠ Automatically failing over to free model [${fallbackModel}] on NVIDIA NIM...`);
-            window.dispatchEvent(new CustomEvent('blvck:model-failover', {
-              detail: { failedModel: targetModel, activeModel: fallbackModel, reason: e.message }
-            }));
-
-            const text = await window.LLMAdapters.nvidiaNimChat({
-              model: fallbackModel,
-              messages,
-              temperature: options.temperature || 0.7,
-              max_tokens: options.max_tokens || 1024,
-              onChunk: options.onChunk
-            });
-            lastRawResponseStr = text;
-            recordModelUsed(taskType, fallbackModel);
-            return text;
-          } catch (err2) {
-            lastNimError = err2.message;
-            console.warn(`[BlvckAI] Fallback model [${fallbackModel}] also failed:`, err2);
-          }
-        }
-      }
-    }
-
-    // 3. OpenRouter Fallback
-    if (window.LLMAdapters && window.ProviderManager && window.ProviderManager.getActiveKey('openrouter')) {
-      try {
-        const text = await window.LLMAdapters.openRouterChat({ model: 'openai/gpt-4o-mini', messages });
-        lastRawResponseStr = text;
-        recordModelUsed(taskType, 'openai/gpt-4o-mini');
-        return text;
-      } catch (e) {}
-    }
-
-    // 4. Local Ollama Fallback
-    if (window.LLMAdapters) {
-      try {
-        const text = await window.LLMAdapters.ollamaChat({ model: 'qwen2.5', messages });
-        recordModelUsed(taskType, 'qwen2.5');
-        return text;
-      } catch (e) {}
-    }
-
-    // 5. Puter.js Free AI Fallback (Zero Config, No API Key Required)
-    if (window.puter && window.puter.ai && typeof window.puter.ai.chat === 'function') {
-      try {
-        console.log('[BlvckAI] Routing chat request through Puter AI fallback...');
-        const promptText = typeof promptOrMessages === 'string' ? promptOrMessages : (messages[messages.length - 1]?.content || '');
-        const res = await window.puter.ai.chat(promptText);
-        const replyText = typeof res === 'string' ? res : (res?.message?.content || res?.text || String(res));
-        if (replyText) {
-          lastRawResponseStr = replyText;
-          recordModelUsed(taskType, 'puter-auto');
-          return replyText;
-        }
-      } catch (puterErr) {
-        console.warn('[BlvckAI] Puter AI fallback failed:', puterErr);
-      }
-    }
-
-    throw new Error(lastNimError || 'AI Gateway request failed. Please check your API key in Settings or sign in to Puter.');
+    return await window.AIManager.chat(promptOrMessages, options);
   }
 
-  // Streaming Chat Wrapper
   async function chatStream(promptOrMessages, options = {}, onChunkCb = null) {
     const opts = typeof options === 'function' ? { onChunk: options } : (options || {});
-    if (onChunkCb && typeof onChunkCb === 'function') {
-      opts.onChunk = onChunkCb;
-    }
-    return await chat(promptOrMessages, opts);
+    if (onChunkCb && typeof onChunkCb === 'function') opts.onChunk = onChunkCb;
+    return await window.AIManager.chatStream(promptOrMessages, opts, opts.onChunk);
   }
 
-  // Generate JSON helper
   async function generateJSON(endpoint, payload, options = {}) {
-    const prompt = typeof window.BlvckPrompts !== 'undefined' && window.BlvckPrompts.build
-      ? window.BlvckPrompts.build(endpoint, payload)
-      : `Return a valid JSON object for ${endpoint} given input: ${JSON.stringify(payload)}. Respond with pure JSON ONLY.`;
-
-    // PROMPT-SHAPE INVARIANT. Every builder in prompts.js returns
-    // {system, user}; a builder that starts returning something else, or a
-    // typo'd endpoint falling through to the generic string above, is the
-    // failure this catches. It is the same class as the blank-narration
-    // guard one stage down: confirm what goes IN, because nothing downstream
-    // can tell a well-formed answer to the wrong question from a good one.
-    if (prompt && typeof prompt === 'object' && !prompt.system && !prompt.user) {
-      console.error('[AI] Prompt for ' + endpoint + ' has neither `system` nor '
-        + '`user`. It will be stringified and sent as raw text — the model '
-        + 'will answer something, and that answer will be untrustworthy.');
-    }
-
-    const text = await chat(prompt, options);
-    lastRawResponseStr = text;
-
-    if (typeof window.BlvckPrompts !== 'undefined' && window.BlvckPrompts.parse) {
-      try {
-        // parse(endpoint, payload, rawText) — the PAYLOAD matters. Route
-        // parsers need it to rejoin the model's answer to the input: a scene's
-        // timestamp and subtitle come from payload.cues, not from anything the
-        // model says.
-        //
-        // This was called as parse(endpoint, text), so payload received the raw
-        // string and rawText was undefined. Every route parser then threw, the
-        // empty catch swallowed it, and the generic JSON fallback below returned
-        // unnormalised model output — silently, for every endpoint in the app.
-        return window.BlvckPrompts.parse(endpoint, payload, text);
-      } catch (err) {
-        // Still fall back, but never in silence: losing normalisation is a
-        // correctness failure, not a cosmetic one.
-        console.warn(`[AI] Route parser for ${endpoint} failed; using raw JSON instead:`, err && err.message);
-      }
-    }
-
-    const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-    let jsonMatch = cleaned.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch (_) {
-        try {
-          // Fix trailing commas and raw newlines
-          let repaired = jsonMatch[0]
-            .replace(/,\s*([\}\]])/g, '$1')
-            .replace(/\r?\n/g, ' ');
-          return JSON.parse(repaired);
-        } catch (_) {}
-      }
-    }
-    throw new Error('Failed parsing JSON from model output.');
+    return await window.AIManager.generateJSON(endpoint, payload, options);
   }
+
 
   // Multi-Provider TTS Router
   async function speak(text, voiceOrOptions = {}, extraOpts = {}) {
@@ -746,6 +473,11 @@
     setImageModel,
     objective: getObjective,
     setObjective,
-    lastRawResponse: () => lastRawResponseStr
+    // Routing moved to AIManager, and so did the raw text it last saw. Reading
+    // the local copy here would always answer '' — nothing assigns it any more.
+    lastRawResponse: () => (
+      (window.AIManager && window.AIManager.lastRawResponse && window.AIManager.lastRawResponse())
+      || lastRawResponseStr
+    )
   };
 })();

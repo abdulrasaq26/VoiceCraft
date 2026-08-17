@@ -105,7 +105,7 @@ Return ONLY valid JSON array, no markdown:
 
     let concepts = [];
     try {
-      const rawText = await window.BlvckAI.chat(systemPrompt, { temperature: 0.7 });
+      const rawText = await window.AIManager.chat(systemPrompt, { temperature: 0.7 });
       const jsonMatch = rawText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         let parsed = JSON.parse(jsonMatch[0]);

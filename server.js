@@ -44,9 +44,78 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Qwen Primary AI Brain Proxy (Kaggle FastAPI via ngrok)
+  // Forwards /api/proxy/qwen/* → QWEN_API_URL/*
+  // ──────────────────────────────────────────────────────────────────────────
+  if (req.url.startsWith('/api/proxy/qwen')) {
+    const qwenUrl = process.env.QWEN_API_URL || req.headers['x-qwen-endpoint'];
+    const qwenKey = process.env.QWEN_API_KEY || req.headers['x-qwen-key'];
+
+    if (!qwenUrl) {
+      res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: 'Missing Qwen API URL. Configure QWEN_API_URL in .env' }));
+      return;
+    }
+
+    let targetUrl;
+    try { targetUrl = new URL(qwenUrl); } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: `Invalid Qwen endpoint URL: ${qwenUrl}` }));
+      return;
+    }
+
+    const subPath = req.url.replace('/api/proxy/qwen', '') || '/';
+    let body = [];
+    req.setTimeout(120000);
+    res.setTimeout(120000);
+
+    req.on('data', chunk => body.push(chunk));
+    req.on('end', () => {
+      const buffer = Buffer.concat(body);
+      const isHttps = targetUrl.protocol === 'https:';
+      const transport = isHttps ? https : http;
+
+      const proxyOptions = {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || (isHttps ? 443 : 80),
+        path: subPath,
+        method: req.method,
+        headers: {
+          'Content-Type': req.headers['content-type'] || 'application/json',
+          'Content-Length': buffer.length,
+          'ngrok-skip-browser-warning': 'true'
+        }
+      };
+      if (qwenKey) proxyOptions.headers['Authorization'] = `Bearer ${qwenKey}`;
+
+      const proxyReq = transport.request(proxyOptions, (proxyRes) => {
+        if (res.headersSent) return;
+        res.writeHead(proxyRes.statusCode, {
+          'Content-Type': proxyRes.headers['content-type'] || 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        });
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.on('error', (err) => {
+        console.warn(`⚠️  Qwen Proxy Error: ${err.message}`);
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: `Qwen backend unavailable: ${err.message}` }));
+        }
+      });
+
+      if (buffer.length > 0) proxyReq.write(buffer);
+      proxyReq.end();
+    });
+    return;
+  }
+
   // CORS & TLS SNI Proxy for NVIDIA NIM Gateway (Fixes ECONNRESET & CORS NetworkError)
   if (req.url.startsWith('/api/proxy/nvidia')) {
     const targetPath = req.url.replace('/api/proxy/nvidia', '') || '/v1/chat/completions';
+    console.log('NVIDIA PROXY TARGET PATH:', targetPath);
     let body = [];
 
     req.on('data', chunk => body.push(chunk));
@@ -66,13 +135,14 @@ const server = http.createServer((req, res) => {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'application/json',
             'Content-Type': req.headers['content-type'] || 'application/json',
-            'Authorization': req.headers['authorization'] || '',
+            'Authorization': (process.env.NVIDIA_NIM_API ? `Bearer ${process.env.NVIDIA_NIM_API}` : req.headers['authorization']) || '',
             'Content-Length': buffer.length,
             'Connection': 'close'
           },
           servername: 'integrate.api.nvidia.com',
           agent: false
         };
+        console.log('NVIDIA PROXY OPTIONS.PATH:', options.path);
 
         const proxyReq = https.request(options, (proxyRes) => {
           if (res.headersSent) return;
@@ -529,6 +599,227 @@ const server = http.createServer((req, res) => {
       });
 
       if (buffer.length > 0) proxyReq.write(buffer);
+      proxyReq.end();
+    });
+    return;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Pixabay Stock Media Proxy
+  // POST /api/proxy/pixabay/videos → https://pixabay.com/api/videos/
+  // POST /api/proxy/pixabay/photos → https://pixabay.com/api/
+  // Key is passed via x-pixabay-key header and injected into query-string
+  // server-side so it is never visible in client-side JavaScript.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (req.url.startsWith('/api/proxy/pixabay')) {
+    const pixabayKey = process.env.PIXABAY_API_KEY || req.headers['x-pixabay-key'];
+    if (!pixabayKey) {
+      res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: 'Missing x-pixabay-key header. Configure your Pixabay API key in AI Settings.' }));
+      return;
+    }
+
+    const isPhoto = req.url.includes('/photos');
+    const apiPath = isPhoto ? '/api/' : '/api/videos/';
+
+    let body = [];
+    req.on('data', chunk => body.push(chunk));
+    req.on('end', () => {
+      let params = {};
+      try {
+        if (body.length > 0) params = JSON.parse(Buffer.concat(body).toString());
+      } catch (_) {}
+
+      // Inject the API key server-side — never expose it in client code.
+      const qs = new URLSearchParams({ key: pixabayKey, ...params }).toString();
+      const targetPath = `${apiPath}?${qs}`;
+
+      const options = {
+        hostname: 'pixabay.com',
+        port: 443,
+        path: targetPath,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+          'Connection': 'close'
+        },
+        servername: 'pixabay.com',
+        agent: false
+      };
+
+      const proxyReq = https.request(options, (proxyRes) => {
+        if (res.headersSent) return;
+        res.writeHead(proxyRes.statusCode, {
+          'Content-Type': proxyRes.headers['content-type'] || 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache'
+        });
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.on('error', (err) => {
+        console.warn(`⚠️  Pixabay Proxy Error: ${err.message}`);
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: `Pixabay proxy error: ${err.message}` }));
+        }
+      });
+
+      proxyReq.end();
+    });
+    return;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Pexels Stock Media Proxy
+  // POST /api/proxy/pexels/videos → https://api.pexels.com/videos/search
+  // POST /api/proxy/pexels/photos → https://api.pexels.com/v1/search
+  // Key is passed via x-pexels-key header → Authorization header upstream.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (req.url.startsWith('/api/proxy/pexels')) {
+    const pexelsKey = process.env.PEXELS_API_KEY || req.headers['x-pexels-key'];
+    if (!pexelsKey) {
+      res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: 'Missing x-pexels-key header. Configure your Pexels API key in AI Settings.' }));
+      return;
+    }
+
+    const isPhoto = req.url.includes('/photos');
+    const apiBase = isPhoto ? '/v1/search' : '/videos/search';
+
+    let body = [];
+    req.on('data', chunk => body.push(chunk));
+    req.on('end', () => {
+      let params = {};
+      try {
+        if (body.length > 0) params = JSON.parse(Buffer.concat(body).toString());
+      } catch (_) {}
+
+      const qs = new URLSearchParams(params).toString();
+      const targetPath = `${apiBase}${qs ? '?' + qs : ''}`;
+
+      const options = {
+        hostname: 'api.pexels.com',
+        port: 443,
+        path: targetPath,
+        method: 'GET',
+        headers: {
+          'Authorization': pexelsKey,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+          'Connection': 'close'
+        },
+        servername: 'api.pexels.com',
+        agent: false
+      };
+
+      const proxyReq = https.request(options, (proxyRes) => {
+        if (res.headersSent) return;
+        res.writeHead(proxyRes.statusCode, {
+          'Content-Type': proxyRes.headers['content-type'] || 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache'
+        });
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.on('error', (err) => {
+        console.warn(`⚠️  Pexels Proxy Error: ${err.message}`);
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: `Pexels proxy error: ${err.message}` }));
+        }
+      });
+
+      proxyReq.end();
+    });
+    return;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Stock CDN Download Proxy
+  // POST /api/proxy/stock-download  body: { url: "https://cdn.pixabay.com/..." }
+  // Downloads the actual video/photo file from a stock CDN, bypassing CORS.
+  // Only allows known stock CDN domains (allowlist enforced server-side).
+  // ──────────────────────────────────────────────────────────────────────────
+  if (req.url.startsWith('/api/proxy/stock-download')) {
+    let body = [];
+    req.on('data', chunk => body.push(chunk));
+    req.on('end', () => {
+      let targetUrl = '';
+      try {
+        const parsed = JSON.parse(Buffer.concat(body).toString());
+        targetUrl = String(parsed.url || '');
+      } catch (_) {}
+
+      if (!targetUrl || !targetUrl.startsWith('https://')) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: 'Invalid or missing download URL in request body.' }));
+        return;
+      }
+
+      let parsedUrl;
+      try { parsedUrl = new URL(targetUrl); } catch (_) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: 'Malformed download URL.' }));
+        return;
+      }
+
+      // Strict domain allowlist — prevents this proxy from being used as an
+      // arbitrary open proxy for non-stock resources.
+      const ALLOWED_DOMAINS = [
+        'cdn.pixabay.com', 'pixabay.com',
+        'videos.pexels.com', 'images.pexels.com',
+        'player.vimeo.com', 'vimeo.com'
+      ];
+      if (!ALLOWED_DOMAINS.some(d => parsedUrl.hostname === d || parsedUrl.hostname.endsWith('.' + d))) {
+        res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: `Domain not in stock-CDN allowlist: ${parsedUrl.hostname}` }));
+        return;
+      }
+
+      const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for large HD video files
+      req.setTimeout(DOWNLOAD_TIMEOUT_MS);
+      res.setTimeout(DOWNLOAD_TIMEOUT_MS);
+
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: Number(parsedUrl.port) || 443,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': '*/*',
+          'Connection': 'close'
+        },
+        servername: parsedUrl.hostname,
+        agent: false
+      };
+
+      const proxyReq = https.request(options, (proxyRes) => {
+        if (res.headersSent) return;
+        const ct = proxyRes.headers['content-type'] || 'video/mp4';
+        res.writeHead(proxyRes.statusCode, {
+          'Content-Type': ct,
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=86400'
+        });
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.setTimeout(DOWNLOAD_TIMEOUT_MS, () => {
+        proxyReq.destroy(new Error('Stock download proxy timed out'));
+      });
+
+      proxyReq.on('error', (err) => {
+        console.warn(`⚠️  Stock Download Proxy Error: ${err.message}`);
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: `Stock download error: ${err.message}` }));
+        }
+      });
+
       proxyReq.end();
     });
     return;

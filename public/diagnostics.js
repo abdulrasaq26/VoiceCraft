@@ -83,7 +83,7 @@
     copyBtn.hidden = true;
     results.innerHTML = '<div class="diag-detail">Running live checks against Puter…</div>';
     try {
-      lastReport = await window.BlvckAI.diagnose({ image: imageChk.checked });
+      lastReport = await window.AIManager.chat({ image: imageChk.checked });
       render(lastReport);
       copyBtn.hidden = false;
     } catch (e) {

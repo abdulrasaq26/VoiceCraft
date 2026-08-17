@@ -2,7 +2,7 @@
 // models. Conversation history, project/file context, code blocks with copy,
 // and a "task" mode that asks the model to reason step by step.
 //
-// Everything runs in the browser through window.BlvckAI.chat (Puter). No
+// Everything runs in the browser through window.AIManager.chat (Puter). No
 // server round-trip and no API keys.
 (() => {
   'use strict';
@@ -215,7 +215,7 @@
     renderMessages();
 
     try {
-      await window.BlvckAI.chatStream(requestMessages, {
+      await window.AIManager.chatStream(requestMessages, {
         task: 'code',
         model: state.model || undefined,
         onToken: (_d, full) => { assistant.content = full; updateLastBubble(full); },

@@ -417,13 +417,20 @@
       return { ok: true };
     }
 
+    if (vt === 'stock_video' || vt === 'stock_photo' || vt === 'stock_text') {
+      if (!(window.StockMedia && window.StockMedia.isConfigured())) {
+        return { ok: false, reason: 'stock media providers not configured', reroute: 't2v' };
+      }
+      return { ok: true };
+    }
+
     return { ok: true };
   }
 
   // Beats that are TYPESET, not generated. Charts, maps, timelines and
   // whiteboards are made of text and precise shapes — exactly what diffusion
   // models cannot draw. They go to the canvas renderer, never to the GPU.
-  const CANVAS_TYPES = ['stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram'];
+  const CANVAS_TYPES = ['stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram', 'editorial_text'];
 
   function rendersOnCanvas(scene) {
     return CANVAS_TYPES.indexOf(String((scene && scene.visualType) || '')) > -1;
@@ -432,8 +439,11 @@
   // Beats the video model can render from the script alone — no storyboard
   // still required, which is the whole point of the text-to-video workflow.
   function isTextDriven(scene) {
+    // Stock types don't need a storyboard still — the clip comes from the
+    // stock library, not from image-conditioned video generation.
     const vt = String((scene && scene.visualType) || '');
-    return vt === 't2v' || vt === 'broll' || vt === 'presenter';
+    return vt === 't2v' || vt === 'broll' || vt === 'presenter'
+        || vt === 'stock_video' || vt === 'stock_photo' || vt === 'stock_text';
   }
 
   async function referencesFor(scene) {
@@ -450,6 +460,13 @@
       if (refs.length) {
         return { mode: 'I', images: refs.slice(0, 4), usedStill: false, usedCast: ['(host)'] };
       }
+    }
+
+    // Stock footage — the clip comes from the stock library (Pixabay/Pexels).
+    // No video model is involved; the 'STOCK' mode tells the caller to use
+    // window.StockMedia.acquire() instead of the LTX adapter.
+    if (vt === 'stock_video' || vt === 'stock_photo' || vt === 'stock_text') {
+      return { mode: 'STOCK', images: [], usedStill: false, usedCast: [] };
     }
 
     // Text-to-video is the primary content path: the script describes the
@@ -636,6 +653,37 @@
         };
         writeState(st);
         return st[key];
+      }
+
+      if (refs.mode === 'STOCK') {
+        if (!(window.StockMedia && window.StockMedia.isConfigured())) {
+          throw new Error('StockMedia is not configured but a stock visual type was requested.');
+        }
+        const blob = await window.StockMedia.acquire(scene);
+        if (!blob) throw new Error('Stock generation returned nothing');
+        
+        await idbPut(String(scene.index), blob);
+        try {
+          window.dispatchEvent(new CustomEvent('blvck:clip-rendered', {
+            detail: { index: scene.index, kind: 'video' }
+          }));
+        } catch { /* no-op */ }
+        
+        st[key] = {
+          status: 'done',
+          parts: 1,
+          visualType: scene.visualType,
+          mode: 'STOCK',
+          bytes: blob.size,
+          at: Date.now()
+        };
+        writeState(st);
+        return st[key];
+      }
+
+      // ── LEGACY AI GATE ──────────────────────────────────────────────────
+      if (!(window.StockMedia && window.StockMedia.legacyAIEnabled())) {
+        throw new Error('Legacy AI video generation is disabled in settings. Production uses stock footage.');
       }
 
       // Reference modes need pixels; T2V by definition does not.
@@ -1066,7 +1114,7 @@
     const mode = window.BlvckModes ? window.BlvckModes.current() : null;
     const hostConfigured = !!(window.BlvckHost && window.BlvckHost.isConfigured());
 
-    const plan = await window.BlvckAI.generateJSON('/api/video/plan', {
+    const plan = await window.AIManager.generateJSON('/api/video/plan', {
       scenes: list.map((s) => ({
         index: s.index,
         timestamp: s.timestamp,

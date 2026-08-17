@@ -20,7 +20,9 @@
     cloudflare_worker: { endpoint: '', key: '', status: 'unknown' },
     replicate: { keys: [], activeIndex: 0, exhausted: new Set(), status: 'healthy', logs: [] },
     runway: { keys: [], activeIndex: 0, exhausted: new Set(), status: 'healthy', logs: [] },
-    luma: { keys: [], activeIndex: 0, exhausted: new Set(), status: 'healthy', logs: [] }
+    luma: { keys: [], activeIndex: 0, exhausted: new Set(), status: 'healthy', logs: [] },
+    pixabay: { keys: [], activeIndex: 0, exhausted: new Set(), status: 'healthy', logs: [] },
+    pexels: { keys: [], activeIndex: 0, exhausted: new Set(), status: 'healthy', logs: [] }
   };
 
   function loadKeys() {

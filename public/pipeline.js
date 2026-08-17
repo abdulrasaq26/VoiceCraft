@@ -13,7 +13,7 @@
     { key: 'script', label: 'Script', icon: '📝', target: 'script-card' },
     { key: 'voice', label: 'Voice', icon: '🎙️', target: null }, // main voice studio (no id)
     { key: 'storyboard', label: 'Storyboard', icon: '🎬', target: 'storyboard-card' },
-    { key: 'images', label: 'Images', icon: '🖼️', target: 'image-card' },
+    { key: 'images', label: 'Stock Footage', icon: '🎥', target: 'image-card' },
     { key: 'video', label: 'Video', icon: '🎞️', target: 'editor-card' },
     { key: 'youtube', label: 'YouTube', icon: '🎯', target: 'youtube-card' }
   ];

@@ -109,7 +109,7 @@
       logStep('Research', `Generating topic research brief & creative angle for "${projectTitle}"...`, 10);
       let researchText = (window.BlvckAssets && window.BlvckAssets.researchTopic && window.BlvckAssets.researchTopic()) || '';
       if (!researchText || researchText.length < 20) {
-        researchText = await window.BlvckAI.chat(
+        researchText = await window.AIManager.chat(
           `Provide a high-retention 3-point research summary and creative angle for a short video on: "${projectTitle}".`,
           { task: 'research' }
         );
@@ -124,7 +124,7 @@
       let scriptText = (window.BlvckAssets && window.BlvckAssets.script()) || '';
       const scriptTextarea = $('script-input') || $('text-input');
       if (!scriptText || scriptText.length < 40) {
-        scriptText = await window.BlvckAI.chat(
+        scriptText = await window.AIManager.chat(
           `Write an engaging 45-second video script for: "${projectTitle}". Include voiceover narration text broken into 3 clear paragraphs.`,
           { task: 'script' }
         );

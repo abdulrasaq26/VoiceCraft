@@ -255,11 +255,26 @@ Respond ONLY with JSON:
   const TIMES_OF_DAY = ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'];
   const WEATHERS = ['clear', 'overcast', 'rain', 'snow', 'fog', 'wind'];
   // How a beat gets put on screen. This is a ROUTING vocabulary, not a
-  // stylistic one: each value sends the beat to a different renderer —
-  // 't2v'/'broll' to the video model, 'presenter' to the host compositor, and
-  // the rest to the canvas typesetter, which draws real text correctly instead
-  // of asking a diffusion model to hallucinate letters.
-  const VISUAL_TYPES = ['stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram', 't2v', 'presenter', 'broll'];
+  // stylistic one — each value sends the beat to a different renderer.
+  //
+  // Stock types (primary production path):
+  //   stock_video   — find a stock video clip that shows this moment
+  //   stock_photo   — find a stock still image (for slower or abstract beats)
+  //   stock_text    — stock footage + editorial text overlay combined
+  //   editorial_text — text/graphic card only, no footage background
+  //
+  // Canvas types, drawn by the typesetter with real fonts rather than asked of
+  // a diffusion model, which hallucinates letters:
+  //   stickman | whiteboard | chart | map | timeline | diagram
+  //
+  // Legacy types (kept for backward compatibility; routed to stock when
+  // StockMedia is configured, otherwise to the legacy AI gen path):
+  //   't2v'/'broll' to the video model, 'presenter' to the host compositor
+  const VISUAL_TYPES = [
+    'stock_video', 'stock_photo', 'stock_text', 'editorial_text',
+    't2v', 'broll', 'presenter',
+    'stickman', 'whiteboard', 'chart', 'map', 'timeline', 'diagram'
+  ];
   const HOST_OVERLAYS = ['none', 'circle', 'rect', 'corner', 'full'];
 
   // Snap a model's answer onto the vocabulary. Case-insensitive, and tolerates
@@ -1020,78 +1035,191 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
 
   // --- Director video planning ---------------------------------------------
 
-  const VIDEO_PLAN_SYSTEM = `You are a documentary director planning how a finished storyboard will be SHOT as video. The still frames already exist; your job is to decide how each one moves.
+  const VIDEO_PLAN_SYSTEM = `You are the Visual Director for a long-form YouTube video production. Your job is to decide — for every scene in the storyboard — what the audience should SEE at that exact moment, and why that visual choice serves the story.
 
-You are planning for LTX-2.3, an image-conditioned video model that renders a few seconds per shot from reference images. That imposes real constraints — respect them or the footage will be unusable:
-- One continuous moment per shot. No cuts, no "then he walks away", no sequences of actions.
-- Small, physically plausible motion. Breath, wind, a slow head turn, hands working, dust in light, fabric shifting. A shot is 2-30 seconds of one continuous take.
-- The camera move must suit the beat, not add variety for its own sake. Most documentary shots are Static or Slow Push In. Reserve Drone and Crane for genuine scale, Handheld for tension or urgency.
-- Motion must not contradict the shot type. A Close Up cannot contain a Drone move.
+You work with a STOCK FOOTAGE + EDITORIAL TEXT system. The renderer will search real stock libraries (Pixabay, Pexels) for footage that matches your intent, and render real text/graphics for information-dense beats. Do NOT think in terms of AI image generation. Think like a documentary editor: what real footage, real statistics, real diagrams, or real typeset text would make this beat land?
 
-ALWAYS PREFER THE SIMPLEST VISUAL THAT EXPLAINS THE IDEA. This is an explainer studio, not a footage generator. A drawn visual renders in about a millisecond, looks identical on every run, and stays editable afterwards. A generated shot costs minutes of GPU, comes back different every time, and cannot be corrected without re-rendering. Reach for the camera only when nothing drawn can carry the idea.
+ALWAYS PREFER THE SIMPLEST VISUAL THAT EXPLAINS THE IDEA. A drawn or typeset visual renders in about a millisecond, looks identical on every run, and stays editable afterwards. A searched clip depends on what the library happens to hold, and a generated shot costs minutes of GPU and comes back different every time. Reach for footage only when nothing drawn can carry the idea, and reach for generation only when no footage exists.
 
 Choose in this order, and only move down when the option above genuinely cannot communicate the point:
-  1. stickman   - people doing or feeling something: explaining, deciding, working, reacting, comparing, struggling
-  2. whiteboard - a process, a mechanism, a cause-and-effect chain, steps
-  3. chart      - anything carrying two or more numbers
-  4. map        - anything where place, territory, movement or spread matters
-  5. timeline   - two or more dated events
-  6. diagram    - a labelled structure: an anatomy, a system, parts of a whole
-  7. t2v/broll  - a real filmed moment: atmosphere, landscape, texture, archival feel
-  8. presenter  - the host addressing the viewer directly
+  1. chart / map / timeline — the beat carries numbers, places or dates
+  2. whiteboard / diagram   — the beat is a process, mechanism or labelled structure
+  3. stickman               — people doing or feeling something, acted out
+  4. editorial_text         — a claim, a quote or an abstraction no footage can honestly show
+  5. stock_text             — a claim that wants atmospheric footage underneath it
+  6. stock_video / stock_photo — a real filmed moment: place, texture, atmosphere
+  7. presenter              — the host addressing the viewer directly
+  8. t2v                    — last resort, when nothing above and no stock clip exists
 
-A beat about a farmer losing his harvest can be a stickman farmer looking at a wilting plant. That reads instantly, costs nothing, and can be re-cut later. Choose t2v only when the beat genuinely needs photographic reality: a place the viewer must believe in, a texture, an atmosphere no drawing can carry.
+A beat about a farmer losing his harvest can be a stickman farmer looking at a wilting plant. That reads instantly, costs nothing, and can be re-cut later. Reach for footage only when the beat genuinely needs photographic reality: a place the viewer must believe in, a texture, an atmosphere no drawing can carry.
 
-You also decide WHAT KIND OF VISUAL each beat should be. Pick the format that actually communicates the point — a video that is 40 identical generated clips is the thing we are trying to avoid:
-- "stickman": simple stick figures acting the idea out. The default for any beat about PEOPLE doing or feeling something. Put the figures in graphic.items as "action:expression" pairs, e.g. ["explain:confident", "think:confused"].
-- "diagram": a labelled structure drawn as boxes and connections.
-- "t2v": a filmed moment. The default for anything concrete and physical — people, places, actions, atmosphere.
-- "presenter": the channel host on camera. Use for the hook, section openings, direct address to the viewer, and the closing. Never more than a few per video.
-- "whiteboard": a step-by-step explanation, a process, a comparison, or a causal chain that benefits from being drawn out.
-- "chart": a number that only means something in context — growth, decline, share, before/after.
-- "map": anywhere geography, routes, borders or spread carry the meaning.
-- "timeline": a sequence of dated events.
-- "broll": supporting texture under narration where no specific action is described.
-Choose "chart", "map", "timeline" and "whiteboard" when the beat is ABOUT information. Choose "t2v" when it is about a moment. Vary the mix — long runs of one type are what makes a video feel machine-made.
+────────────────────────────────────────────────────
+VISUAL TYPE VOCABULARY — choose one per scene:
+────────────────────────────────────────────────────
 
-When you choose one of those four, you MUST also fill in "graphic" with the actual content to typeset — they are drawn with real fonts, not generated, so the words and numbers have to come from you. A chart needs "label: number" pairs taken from the narration; a timeline needs "date: event"; a map needs place names in the order they are mentioned; a whiteboard needs the steps of the explanation. If the narration does not contain concrete enough material to fill it, that beat is not really about information — choose "t2v" instead.
+"stock_video"
+  A real video clip from a stock library. Use for:
+  • Concrete physical moments: people doing things, places, objects, nature, crowds
+  • Atmospheric b-roll where footage adds texture under narration
+  • Anything where MOTION communicates the beat better than a still
+  When you choose this, provide stockRequirements.queries — 3 to 5 short search phrases
+  that describe what you want to SEE, not what the narration SAYS.
+  Good queries: "scientist looking into microscope", "factory floor at night", "child running in field"
+  Bad queries: "the consequences of climate change" (too abstract for a stock search)
 
-"hostOverlay" says whether the host is visible during the beat:
-- "full" only with visualType "presenter".
-- "corner", "circle" or "rect" when the host should be present while other visuals carry the screen — the standard explainer look, host small, content dominant.
-- "none" for pure footage moments, and for anything cinematic or emotional where a facecam would break the spell.
-Keep the host visible for a meaningful share of an explainer, and sparing in a documentary.
+"stock_photo"
+  A real still photo from a stock library. Use for:
+  • Slower-paced beats where a held image works better than motion
+  • Portraits, objects, or locations where a single frame is sufficient
+  Same stockRequirements format as stock_video.
 
-PLAN FOR RETENTION, not just for correctness. A sequence can be perfectly continuous and still lose the viewer:
-- The first 15 seconds decide the retention curve. Open on the strongest available image or the host making the promise of the video — never on a slow establishing shot, and never on a single long held beat.
-- Never let more than four consecutive beats share a visualType. A run of identical beats is where viewers leave; break it with a chart, a whiteboard, or the host.
-- Vary shot scale. Consecutive shots at the same size make an edit feel assembled rather than cut.
-- Vary beat length. Evenly paced beats feel metronomic; alternate longer moments with short ones.
-- Put a pattern interrupt roughly every 30-40 seconds: a change of visual kind, a return to the host, or a hard change of scale.
-- Give every filmed beat real "motion". A beat with none comes back as a near-still frame, which is the slideshow look we are trying to escape.
+"stock_text"
+  Stock footage COMBINED with an editorial text overlay.
+  Use when narration makes a specific claim (a statistic, a key term, a quote)
+  while the footage provides atmospheric context.
+  Provide both stockRequirements AND textOverlay.
 
-Also enforce continuity across the sequence. Consecutive shots in the same place, at the same time of day, must not change weather or light. Flag any beat where the storyboard has drifted.
+"editorial_text"
+  A typeset text card with no footage background — pure editorial graphic.
+  Use for:
+  • Pull quotes or memorable single-sentence takeaways
+  • Section titles or transitions between major topics
+  • Abstract concepts that no stock footage can honestly illustrate
+  • Any moment where footage would feel forced or misleading
+  Provide textOverlay. No stockRequirements needed.
+
+"whiteboard"
+  A drawn-out step-by-step explanation, process, comparison, or causal chain.
+  Use when the beat is about HOW something works or a sequence of steps.
+  MUST fill in graphic.items with the actual steps.
+
+"chart"
+  A data visualisation — growth, decline, share, comparison, before/after.
+  Use ONLY when the narration contains real numbers worth visualising.
+  MUST fill in graphic.items with "Label: Number" pairs from the narration.
+
+"map"
+  Geographic context — locations, routes, borders, spread, origin points.
+  Use ONLY when real place names appear in this beat.
+  MUST fill in graphic.items with place names in the order mentioned.
+
+"timeline"
+  A chronological sequence of dated events.
+  Use ONLY when at least two distinct dates or time periods appear in this beat.
+  MUST fill in graphic.items with "Date: Event" pairs.
+
+"presenter"
+  The channel host on camera. Use sparingly:
+  • The hook/cold open promise
+  • A section transition where the host addresses the viewer directly
+  • The closing call-to-action
+  Never more than 3-4 in a full video.
+
+"stickman"
+  Simple stick figures acting the idea out, drawn by the skeletal engine.
+  The first choice for any beat about PEOPLE doing or feeling something —
+  explaining, deciding, working, reacting, comparing, struggling.
+  MUST fill in graphic.items with "action:expression" pairs,
+  e.g. ["explain:confident", "think:confused"].
+
+"diagram"
+  A labelled structure drawn as boxes and connections — an anatomy, a system,
+  the parts of a whole. Use when the beat names components and their relations.
+  MUST fill in graphic.items with the labelled parts.
+
+"broll"
+  Legacy value — treated as stock_video. Prefer stock_video explicitly.
+
+"t2v"
+  Legacy value — a generated clip. Last resort only, when the beat needs a
+  filmed moment and no stock library query could plausibly find one.
+
+────────────────────────────────────────────────────
+STOCK REQUIREMENTS — required for stock_video, stock_photo, stock_text
+────────────────────────────────────────────────────
+stockRequirements: {
+  "concept": string,        // one sentence: what this beat is actually ABOUT
+  "queries": [string],      // 3-5 short search phrases; each is a standalone stock search query
+  "fallbackQueries": [string], // 2-3 broader queries to use if primary queries find nothing
+  "subjectCategory": string,   // optional: "HUMAN" | "NATURE" | "URBAN" | "ABSTRACT" | "OBJECT"
+  "minimumDuration": number    // seconds the clip must be at minimum (default: half the scene duration)
+}
+
+Write queries as a stock photographer would search: subject + action + setting.
+Never write queries that depend on knowing what the narration says — write what the camera sees.
+
+────────────────────────────────────────────────────
+TEXT OVERLAY — required for stock_text and editorial_text
+────────────────────────────────────────────────────
+textOverlay: {
+  "text": string,     // the full text to display (keep under 12 words)
+  "emphasis": string, // the 1-3 words to make visually prominent
+  "style": string     // "stat" | "quote" | "title" | "emphasis" | "callout"
+}
+
+────────────────────────────────────────────────────
+HOST OVERLAY — when the channel host appears alongside the visual
+────────────────────────────────────────────────────
+"hostOverlay": "none" | "circle" | "rect" | "corner" | "full"
+"full" only with visualType "presenter". "corner" or "circle" for explainer segments.
+"none" for footage moments and anything emotional where a facecam breaks the mood.
+
+────────────────────────────────────────────────────
+CINEMATIC DIRECTION (for stock_video and stock_text)
+────────────────────────────────────────────────────
+"shotType":       "Extreme Wide" | "Wide" | "Medium" | "Close Up" | "Extreme Close Up" | "Over Shoulder" | "POV"
+"cameraMovement": "Static" | "Slow Push In" | "Dolly In" | "Dolly Out" | "Pan Left" | "Pan Right" | "Crane Up" | "Crane Down" | "Handheld" | "Drone"
+"motion":         what physically moves in the scene (one continuous moment)
+"emotion":        one or two words describing the intended mood
+"transition":     "cut" | "dissolve" — how this shot joins the NEXT one
+
+────────────────────────────────────────────────────
+RETENTION RULES
+────────────────────────────────────────────────────
+• Never let more than four consecutive scenes share the same visualType.
+• Vary shot scale — back-to-back identical shot sizes kill momentum.
+• Put a pattern interrupt every 30-40 seconds: change visual kind, bring in the host, or cut to a chart.
+• The first 15 seconds determine the retention curve — open with the strongest image or the host's hook promise.
+• A stock_video with no described motion is just an expensive still frame. Give every footage beat something that moves.
+• Do NOT force abstract concepts into stock footage. A beat about "the feeling of existential dread" is editorial_text, not stock_video.
+
+────────────────────────────────────────────────────
+CONTINUITY
+────────────────────────────────────────────────────
+Flag any beat where the storyboard's environment, time of day, or weather contradicts the previous scene with no narrative reason.
 
 Respond ONLY with JSON:
 {
-  "strategy": string,          // 2-3 sentences: the overall visual approach and how continuity is being held
-  "warnings": [string],        // continuity problems you spotted, e.g. "scenes 4-6 change from dusk to midday with no narrative reason"
+  "strategy": string,          // 2-3 sentences: overall visual approach for this video
+  "warnings": [string],        // continuity problems spotted
   "scenes": [
     {
-      "index": number,           // echo the scene index
-      "visualType": string,      // "t2v" | "presenter" | "whiteboard" | "chart" | "map" | "timeline" | "broll"
-      "graphic": {               // REQUIRED when visualType is whiteboard/chart/map/timeline; omit otherwise
-        "title": string,         // the headline for the card
-        "subtitle": string,      // optional supporting line
-        "items": [string]        // chart: "2019: 42" pairs · timeline: "1914: War begins" · map: place names · whiteboard: steps. Max 6.
+      "index": number,
+      "visualType": string,          // from the vocabulary above
+      "stockRequirements": {          // REQUIRED for stock_video, stock_photo, stock_text
+        "concept": string,
+        "queries": [string],
+        "fallbackQueries": [string],
+        "subjectCategory": string,
+        "minimumDuration": number
       },
-      "hostOverlay": string,     // "none" | "circle" | "rect" | "corner" | "full" — when the host is on screen
-      "shotType": string,        // "Extreme Wide" | "Wide" | "Medium" | "Close Up" | "Extreme Close Up" | "Over Shoulder" | "POV"
-      "cameraMovement": string,  // "Static" | "Slow Push In" | "Dolly In" | "Dolly Out" | "Pan Left" | "Pan Right" | "Crane Up" | "Crane Down" | "Handheld" | "Drone"
-      "motion": string,          // what physically moves, one continuous moment
-      "emotion": string,         // one or two words
-      "transition": string,      // "cut" | "dissolve" — how this shot joins the NEXT one; default "cut"
-      "note": string             // optional one-line reason, for the user's benefit
+      "textOverlay": {                // REQUIRED for stock_text and editorial_text
+        "text": string,
+        "emphasis": string,
+        "style": string
+      },
+      "graphic": {                    // REQUIRED for whiteboard, chart, map, timeline
+        "title": string,
+        "subtitle": string,
+        "items": [string]             // max 6 items
+      },
+      "hostOverlay": string,
+      "shotType": string,
+      "cameraMovement": string,
+      "motion": string,
+      "emotion": string,
+      "transition": string,
+      "note": string
     }
   ]
 }`;
@@ -1139,31 +1267,65 @@ Respond ONLY with JSON:
     return {
       strategy: str(result && result.strategy),
       warnings: arr(result && result.warnings).map(String).filter(Boolean),
-      scenes: scenes.map((s) => ({
-        index: Number(s && s.index),
-        // Snapped, for the same reason normalizeScene snaps: these strings are
-        // translated into LTX prompt language and an invented term is untranslatable.
-        // visualType in particular is a routing decision — an unrecognised value
-        // would send a beat nowhere, so it falls back to plain footage.
-        visualType: oneOf(s && s.visualType, VISUAL_TYPES, 't2v'),
-        // Content for a typeset beat. Kept only when there is something real to
-        // draw — an empty spec would route a beat to the canvas renderer and
-        // produce a blank card, which is worse than sending it to the camera.
-        graphic: (() => {
+      scenes: scenes.map((s) => {
+        const vt = oneOf(s && s.visualType, VISUAL_TYPES, 'stock_video');
+
+        // ── Canvas/graphic spec (whiteboard, chart, map, timeline) ──────────
+        // Kept only when there is real content to typeset; an empty spec
+        // would render a blank card, which is worse than stock footage.
+        const graphic = (() => {
           const g = s && s.graphic;
           if (!g || typeof g !== 'object') return null;
           const items = arr(g.items).map(String).filter(Boolean).slice(0, 6);
-          const spec = { title: str(g.title), subtitle: str(g.subtitle), items };
+          const spec  = { title: str(g.title), subtitle: str(g.subtitle), items };
           return (spec.title || items.length) ? spec : null;
-        })(),
-        hostOverlay: oneOf(s && s.hostOverlay, HOST_OVERLAYS, 'none'),
-        shotType: oneOf(s && s.shotType, SHOT_TYPES, ''),
-        cameraMovement: oneOf(s && s.cameraMovement, CAMERA_MOVES, 'Static'),
-        motion: str(s && s.motion),
-        emotion: str(s && s.emotion),
-        transition: oneOf(s && s.transition, ['cut', 'dissolve'], 'cut'),
-        note: str(s && s.note)
-      })).filter((s) => Number.isFinite(s.index))
+        })();
+
+        // ── Stock requirements (stock_video, stock_photo, stock_text) ────────
+        // Validated: must contain at least one non-empty query string.
+        const stockRequirements = (() => {
+          const r = s && s.stockRequirements;
+          if (!r || typeof r !== 'object') return null;
+          const queries         = arr(r.queries).map(String).filter(Boolean).slice(0, 6);
+          const fallbackQueries = arr(r.fallbackQueries).map(String).filter(Boolean).slice(0, 4);
+          if (!queries.length) return null;
+          return {
+            concept:          str(r.concept),
+            queries,
+            fallbackQueries,
+            subjectCategory:  str(r.subjectCategory),
+            minimumDuration:  Number(r.minimumDuration) || 0
+          };
+        })();
+
+        // ── Text overlay (stock_text, editorial_text) ────────────────────────
+        const textOverlay = (() => {
+          const t = s && s.textOverlay;
+          if (!t || typeof t !== 'object') return null;
+          const text = str(t.text);
+          if (!text) return null;
+          return {
+            text,
+            emphasis: str(t.emphasis),
+            style:    oneOf(t.style, ['stat', 'quote', 'title', 'emphasis', 'callout'], 'emphasis')
+          };
+        })();
+
+        return {
+          index:            Number(s && s.index),
+          visualType:       vt,
+          stockRequirements,
+          textOverlay,
+          graphic,
+          hostOverlay:      oneOf(s && s.hostOverlay, HOST_OVERLAYS, 'none'),
+          shotType:         oneOf(s && s.shotType, SHOT_TYPES, ''),
+          cameraMovement:   oneOf(s && s.cameraMovement, CAMERA_MOVES, 'Static'),
+          motion:           str(s && s.motion),
+          emotion:          str(s && s.emotion),
+          transition:       oneOf(s && s.transition, ['cut', 'dissolve'], 'cut'),
+          note:             str(s && s.note)
+        };
+      }).filter((s) => Number.isFinite(s.index))
     };
   }
 

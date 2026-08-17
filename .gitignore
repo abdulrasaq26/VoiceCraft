@@ -12,3 +12,34 @@ Uncensored-Local-Studio-main/
 # Local scratch/test scripts and personal test media
 scratch/
 ted.wav
+
+# One-shot codemods. These were written to apply a single edit to a single
+# file and are worthless once that edit is committed — the change itself is
+# the record, not the script that made it.
+patch_*.py
+kaggle_director/patch_*.py
+kaggle_director/fix_notebook*.py
+kaggle_director/check_cells*.py
+kaggle_director/debug_cell.py
+kaggle_director/find_install.py
+
+# Notebook assembly scratch: loose cell bodies and the generator that stitches
+# them together. Kaggle_Director_Qwen.ipynb is the artifact worth tracking.
+build_kaggle_notebook.py
+kaggle_director/generate_notebook.py
+kaggle_director/update_kaggle_nb.py
+kaggle_director/cell*.txt
+kaggle_director/update_cell*.py
+kaggle_director/validate.py
+
+# Ad-hoc probes run once against a live endpoint, not a test suite.
+check_hf.py
+regex_test.js
+test_nim.js
+test_validation.js
+test_cross_domain.js
+
+# Working copy of director/, plus Python bytecode.
+kaggle_director/tmp_director/
+__pycache__/
+*.pyc

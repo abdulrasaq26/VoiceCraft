@@ -157,7 +157,7 @@ Return JSON ONLY in format:
   "keywords": { "primary": "...", "secondary": [] }
 }`;
 
-      const respText = await window.BlvckAI.chat(prompt, { task: 'research' });
+      const respText = await window.AIManager.chat(prompt, { task: 'research' });
       const jsonMatch = respText.match(/\{[\s\S]*\}/);
       const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { summary: respText };
 

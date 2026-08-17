@@ -45,7 +45,7 @@
     stages.forEach(k => { if (st[k]) completedCount++; });
     const completionPct = Math.round((completedCount / stages.length) * 100);
     const assetCount = (window.BlvckAssets && window.BlvckAssets.getAll) ? window.BlvckAssets.getAll().length : 0;
-    const chatModel  = (window.BlvckAI && window.BlvckAI.chatModel) ? window.BlvckAI.chatModel() : 'NIM Gateway';
+    const chatModel  = (window.BlvckAI && window.AIManager.chatModel) ? window.AIManager.chatModel() : 'NIM Gateway';
     return { completionPct, completedCount, totalStages: stages.length, assetCount, chatModel, stageStatus: st };
   }
 
