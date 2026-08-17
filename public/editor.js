@@ -209,11 +209,50 @@
     return EFFECTS[i % EFFECTS.length];
   }
   function totalMs() {
+    // With measured timing the narration defines the project, not the sum of
+    // the clips — the clips were placed against it.
+    if (authoritative() && audio.totalMs) return audio.totalMs;
     const clipsTotal = clips.reduce((a, c) => a + c.durationSec * 1000, 0);
     return Math.max(clipsTotal, audio.totalMs || 0);
   }
+
   function clipAt(ms) {
     if (!clips.length) return null;
+
+    // ── Authoritative path: position is stored, not inferred ────────────────
+    if (authoritative()) {
+      let last = null;
+      for (const c of clips) {
+        const startMs = c.timelineStart * 1000;
+        const endMs = c.timelineEnd * 1000;
+        if (ms >= startMs && ms < endMs) {
+          return { clip: c, localMs: ms - startMs, startMs };
+        }
+        if (endMs <= ms) last = c;   // most recent beat that has already ended
+      }
+
+      // Nothing covers this moment. Never restart the footage: a viewer seeing
+      // the opening shot again under closing narration reads as a mistake,
+      // because it is one. Hold the last real frame instead — a still that
+      // outstays its beat is a lesser fault than footage that lies about
+      // where it is in the story.
+      if (last) {
+        const heldFor = last.timelineEnd - last.timelineStart;
+        return {
+          clip: last,
+          localMs: Math.max(0, heldFor * 1000 - 1),   // parked on its final frame
+          startMs: last.timelineStart * 1000,
+          held: true
+        };
+      }
+      // Before the first beat begins.
+      const first = clips[0];
+      return { clip: first, localMs: 0, startMs: first.timelineStart * 1000, held: true };
+    }
+
+    // ── Legacy path: sequential, and it may still cycle ─────────────────────
+    // Untouched on purpose. An estimated timeline has no authority to hold a
+    // frame against, and existing projects depend on this behaviour.
     let acc = 0;
     for (const c of clips) {
       const end = acc + c.durationSec * 1000;
@@ -230,6 +269,34 @@
     }
     const last = clips[clips.length - 1];
     return last ? { clip: last, localMs: last.durationSec * 1000, startMs: acc - last.durationSec * 1000 } : null;
+  }
+
+  /**
+   * Reject a timeline the renderer must not be asked to draw.
+   *
+   * Returns problems rather than throwing so the caller can report all of them
+   * at once. Deliberately not silently repaired: a shot ending after the
+   * narration is a planning fault, and quietly clamping it would hide the bug
+   * that produced it.
+   */
+  function validateTimeline(list, projectDurationSec) {
+    const problems = [];
+    (list || []).forEach((c, i) => {
+      const s = Number(c.timelineStart);
+      const e = Number(c.timelineEnd);
+      const at = `clip ${i} (scene ${c.sceneIndex})`;
+      if (!Number.isFinite(s) || !Number.isFinite(e)) {
+        problems.push(`${at}: timelineStart/timelineEnd missing`);
+        return;
+      }
+      if (s < 0) problems.push(`${at}: starts before zero (${s.toFixed(2)}s)`);
+      if (e <= s) problems.push(`${at}: ends at or before it starts (${s.toFixed(2)}→${e.toFixed(2)}s)`);
+      if (Number.isFinite(projectDurationSec) && projectDurationSec > 0
+          && e > projectDurationSec + 0.05) {
+        problems.push(`${at}: ends after the narration (${e.toFixed(2)}s of ${projectDurationSec.toFixed(2)}s)`);
+      }
+    });
+    return problems;
   }
 
   // --- Assembly ----------------------------------------------------------
@@ -310,8 +377,33 @@
   // when there is no narration to sync against). Clip minimums are applied
   // first, then any residual is absorbed by the last clip so the total lands
   // exactly on the audio length rather than merely close to it.
+  // ── Timing authority ──────────────────────────────────────────────────────
+  //
+  // Two kinds of timeline reach this module, and they must not be treated the
+  // same way. An estimated timeline is a guess at how long each beat runs, and
+  // stretching it to fit the audio makes it better. A Whisper timeline is a
+  // measurement of when each word was actually spoken, and stretching it makes
+  // it wrong — the overlay that was anchored to "forty percent" at 3.18s slides
+  // off the word it was written for.
+  //
+  // So `timingSource` is not decoration. Every timing decision below asks it
+  // first, and 'whisper' means the numbers are already right.
+  let timingSource = 'estimated';
+
+  function authoritative() {
+    return timingSource === 'whisper'
+      && clips.length > 0
+      && clips.every((c) => Number.isFinite(c.timelineStart) && Number.isFinite(c.timelineEnd));
+  }
+
   function rescaleClipsToAudio() {
     if (!audio || !audio.totalMs || !clips.length) return 0;
+
+    // Measured timing is the authority, not a starting point to be adjusted.
+    // The Director placed these beats against real word offsets; a proportional
+    // stretch to close a rounding gap would desynchronise every one of them.
+    if (authoritative()) return 0;
+
     const target = audio.totalMs;
     const current = clips.reduce((a, c) => a + c.durationSec * 1000, 0);
     if (!current) return 0;
@@ -490,6 +582,19 @@
       showStatus('Nothing to assemble yet. Generate narration (or a storyboard) first — scenes are built from either.');
       return;
     }
+    // Which clock is this project on?
+    //
+    // Measured timing requires BOTH halves: a transcript that came from real
+    // forced alignment, and scenes the Director actually placed against it. A
+    // transcript alone proves nothing about the storyboard, and timeline fields
+    // on an estimated project would claim an authority they do not have — so
+    // one without the other falls back to the legacy sequential path.
+    const transcript = (sb && sb.transcript) || null;
+    const measured = !!(window.Transcript && window.Transcript.isMeasured(transcript));
+    const placed = scenes.some((s) => Number.isFinite(Number(s.timelineStart))
+                                   && Number.isFinite(Number(s.timelineEnd)));
+    timingSource = (measured && placed) ? 'whisper' : 'estimated';
+
     // Deliberately NOT gated on scenes having stills. A text-to-video project
     // never generates any, and a canvas beat writes its image without the
     // scene's status ever becoming 'done'. Whether there is anything to show is
@@ -562,17 +667,36 @@
         const share = part === n - 1
           ? total - (total / n) * (n - 1)   // last part absorbs rounding
           : total / n;
+        // Absolute position on the finished video's clock. Present only when
+        // the Director worked against a measured transcript; otherwise the
+        // legacy sequential path still governs placement.
+        const beatStart = Number(s.timelineStart);
+        const beatEnd = Number(s.timelineEnd);
+        const timed = Number.isFinite(beatStart) && Number.isFinite(beatEnd) && beatEnd > beatStart;
+        // A beat cut into several parts divides its own window between them,
+        // so the parts still add up to the narration it was timed against.
+        const partStart = timed ? beatStart + ((beatEnd - beatStart) / n) * part : null;
+        const partEnd = timed
+          ? (part === n - 1 ? beatEnd : beatStart + ((beatEnd - beatStart) / n) * (part + 1))
+          : null;
+
         clips.push({
           sceneIndex: s.index,
           // The subtitle belongs to the beat, not the cut; repeating it on
           // every part would stutter the caption.
           subtitle: part === 0 ? (s.subtitle || s.sceneSummary || '') : '',
           camera: s.camera || '',
-          durationSec: share,
+          durationSec: timed ? partEnd - partStart : share,
+          timelineStart: partStart,
+          timelineEnd: partEnd,
           effect: autoEffect(clips.length, s.camera),
           // Per-scene presenter layout, set by the Director's plan. Undefined
           // means "use the channel default".
           hostLayout: s.hostOverlay || null,
+          // The excerpt window, so driveVideo knows where the shot's zero is
+          // inside a long archival source. Carried per clip because a replaced
+          // clip must not inherit the previous one's in-point.
+          excerpt: (s.stockAsset && s.stockAsset.excerpt) || s.excerpt || null,
           img: part === 0 ? img : null,
           video: videos[part] || null
         });
@@ -845,14 +969,45 @@
   // seeking once per animation frame would stall the decoder and the export
   // would record duplicated frames. When the user is scrubbing, the opposite:
   // pause and seek exactly, so the frame matches the playhead.
-  function driveVideo(v, localMs) {
+  /**
+   * Position a video element for this moment of the timeline.
+   *
+   * `clip` carries the excerpt window when one was chosen. An archive item is
+   * a whole film — an eleven-minute newsreel for a six-second beat — so the
+   * shot's zero is `sourceIn`, not the file's zero. Playing from zero gives the
+   * scene the film's opening title card instead of the footage the Director
+   * picked, which is what happened before this offset existed.
+   *
+   * Playback is clamped to `sourceOut`: at the end of the window the element is
+   * held on its last frame rather than allowed to run on into whatever the film
+   * does next.
+   */
+  function driveVideo(v, localMs, clip) {
     if (!v || !v.duration || Number.isNaN(v.duration)) return;
-    const want = Math.max(0, Math.min(v.duration - 0.001, localMs / 1000));
+
+    const ex = (clip && clip.excerpt) || null;
+    const hasWindow = ex
+      && Number.isFinite(Number(ex.sourceIn))
+      && Number.isFinite(Number(ex.sourceOut))
+      && Number(ex.sourceOut) > Number(ex.sourceIn);
+
+    // The file is the final authority on what exists: a sourceOut past the end
+    // of the decoded media would seek nowhere and freeze on a blank frame.
+    const inPoint = hasWindow ? Math.max(0, Math.min(Number(ex.sourceIn), v.duration - 0.001)) : 0;
+    const outPoint = hasWindow ? Math.min(Number(ex.sourceOut), v.duration) : v.duration;
+
+    const want = Math.max(inPoint, Math.min(outPoint - 0.001, inPoint + localMs / 1000));
+
     if (realtime) {
       if (v.paused) {
         v.currentTime = want;
         const p = v.play();
         if (p && p.catch) p.catch(() => {});
+      } else if (v.currentTime >= outPoint - 0.001) {
+        // Reached the end of the excerpt. Stop rather than continue into the
+        // rest of the film, and stay on the final frame.
+        v.pause();
+        v.currentTime = Math.max(inPoint, outPoint - 0.001);
       } else if (Math.abs(v.currentTime - want) > 0.25) {
         // Only correct genuine drift; small differences are normal at 1x.
         v.currentTime = want;
@@ -874,7 +1029,7 @@
     // fallback is not just unnecessary — it fights the footage and reads as a
     // second, wrong camera move on top of the intended one.
     if (clip.video) {
-      driveVideo(clip.video, localMs);
+      driveVideo(clip.video, localMs, clip);
       if (clip.video.readyState >= 2) {
         drawCover(g, clip.video, cw, ch, 1, 0, 0);
         return;
@@ -1453,6 +1608,29 @@
     await restoreTimeline();
   }
   if (window.BlvckData) window.BlvckData.register('editor', refresh);
+
+  // --- Timing surface ------------------------------------------------------
+  //
+  // The timing rules decide what the exported video actually shows, so they
+  // need to be testable without a canvas, an audio context or a storyboard in
+  // localStorage. Exposed deliberately narrow: the four functions that answer
+  // "which clip, at what point in its source, at this moment" — plus a way to
+  // set up the state they read.
+  window.BlvckEditorTiming = {
+    clipAt,
+    totalMs,
+    rescaleClipsToAudio,
+    driveVideo,
+    validateTimeline,
+    authoritative,
+    _setState({ clips: c, audio: a, timingSource: t, realtime: r }) {
+      if (Array.isArray(c)) clips = c;
+      if (a) audio = a;
+      if (typeof t === 'string') timingSource = t;
+      if (typeof r === 'boolean') realtime = r;
+    },
+    _getState: () => ({ clips, audio, timingSource, realtime })
+  };
 
   // --- Init --------------------------------------------------------------
 
