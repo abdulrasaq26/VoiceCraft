@@ -130,22 +130,37 @@ class StockRequirements(BaseModel):
     )
 
     # -- source intelligence ------------------------------------------------
+    #
+    # These two are REQUIRED, and that is the whole point of them.
+    #
+    # They were optional with defaults, and a grammar-constrained model skips
+    # optional fields: measured against the live 27B, every beat came back with
+    # sourceStrategy "auto" and preferredSources empty — including a Second
+    # World War beat — so nothing was ever routed to the film archive. Asked the
+    # same question with the fields required, the same model answered
+    # "archival" / ["archive_org"] with period-phrased queries and a 1943 date
+    # range. The model was never the problem; being allowed to say nothing was.
+    #
+    # An optional field with a sensible default reads as safe and is not: it
+    # turns "the Director decided" into "the Director declined to decide", and
+    # the two are indistinguishable downstream.
     sourceStrategy: SourceStrategy = Field(
-        default="auto",
         description=(
-            "Which kind of footage this beat wants. 'archival' for anything "
-            "historical, where authentic period film says more than a modern "
-            "restaging; 'modern_stock' for present-day life; 'auto' when "
-            "either would serve."
+            "REQUIRED. Which kind of footage this beat wants. 'archival' for "
+            "anything historical, where authentic period film says more than a "
+            "modern restaging; 'modern_stock' for present-day life; 'auto' only "
+            "when either would genuinely serve — not as a way to avoid choosing."
         ),
     )
     preferredSources: List[MediaSource] = Field(
-        default_factory=list,
+        min_length=1,
         max_length=3,
         description=(
-            "Libraries to search, best first. archive_org for historical, "
-            "documentary, newsreel, government and period material; pexels and "
-            "pixabay for modern footage. Leave empty to let AETHER choose."
+            "REQUIRED, best first. archive_org for historical, documentary, "
+            "newsreel, government and period material; pexels and pixabay for "
+            "modern footage. Name at least one — an empty list is not 'let "
+            "AETHER choose', it is a beat with no source decision at all. List "
+            "each library once."
         ),
     )
     archiveQueries: List[str] = Field(
@@ -321,9 +336,30 @@ def scene_violations(scene: dict) -> List[str]:
         # difference between a beat and no beat at all.
         problems.append("index is missing or not a whole number")
 
-    queries = ((scene.get("stockRequirements") or {}).get("queries")) or []
+    requirements = scene.get("stockRequirements") or {}
+    queries = requirements.get("queries") or []
     if visual in NEEDS_STOCK and not queries:
         problems.append(f"{visual} needs stockRequirements.queries — there is nothing to search for")
+
+    if visual in NEEDS_STOCK:
+        sources = requirements.get("preferredSources") or []
+        if not sources:
+            # Left empty, nothing routes this beat and every library gets the
+            # same generic search. Measured on the live model: with this field
+            # optional, it was empty on every beat including a wartime one.
+            problems.append(
+                f"{visual} needs stockRequirements.preferredSources — name at least one library"
+            )
+        if not requirements.get("sourceStrategy"):
+            problems.append(f"{visual} needs stockRequirements.sourceStrategy")
+
+        # An archive is catalogued by what a film IS, not by what it shows, so a
+        # beat sent to archive_org with only stock-phrased queries finds nothing.
+        if "archive_org" in sources and not (requirements.get("archiveQueries") or []):
+            problems.append(
+                "archive_org is preferred but archiveQueries is empty — "
+                "stock phrasing does not find anything in a film archive"
+            )
 
     if visual in NEEDS_TEXT and not ((scene.get("textOverlay") or {}).get("text") or "").strip():
         problems.append(f"{visual} needs textOverlay.text — it would render as a blank card")

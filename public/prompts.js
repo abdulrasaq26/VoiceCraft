@@ -1357,10 +1357,15 @@ Respond ONLY with JSON:
           // 1969 launch wants the archive, a modern coffee shop does not.
           // Dropping these fields here would silently discard that decision
           // and send every beat to the same two stock libraries.
+          // Deduplicated: asked for a list, the live 27B answered
+          // ["archive_org","archive_org","archive_org"], and a repeated
+          // preference would search the same library three times and read on
+          // screen as three separate decisions.
           const SOURCES = ['pexels', 'pixabay', 'archive_org'];
           const preferredSources = arr(r.preferredSources)
             .map((s) => String(s || '').toLowerCase().trim())
-            .filter((s) => SOURCES.indexOf(s) > -1);
+            .filter((s, i, all) => SOURCES.indexOf(s) > -1 && all.indexOf(s) === i)
+            .slice(0, 3);
 
           const timePeriod = (() => {
             const t = r.timePeriod;
@@ -1402,7 +1407,7 @@ Respond ONLY with JSON:
             minimumDuration:  Number(r.minimumDuration) || 0,
             sourceStrategy:   oneOf(r.sourceStrategy, SOURCE_STRATEGIES, 'auto'),
             preferredSources,
-            archiveQueries:   arr(r.archiveQueries).map(String).filter(Boolean).slice(0, 3),
+            archiveQueries:   arr(r.archiveQueries).map(String).filter((q, i, all) => q && all.indexOf(q) === i).slice(0, 3),
             sourceReason:     str(r.sourceReason),
             timePeriod,
             excerpt,
