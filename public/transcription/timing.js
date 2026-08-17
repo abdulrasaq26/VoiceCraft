@@ -262,12 +262,89 @@
     };
   }
 
+  /**
+   * Turn the Director's `textOverlay` into the `editorialOverlay` the renderer
+   * consumes (section 8).
+   *
+   * This module already validated and clamped `editorialOverlay` and nothing
+   * ever produced one, so overlays could be planned and never appear. The
+   * conversion lives here because the hard part is timing: a statistic card has
+   * to arrive on the words that say it, and `anchorOverlay` is what knows when
+   * those words were spoken.
+   *
+   * Placement, in order of preference:
+   *   1. the emphasis phrase, spoken — "forty percent" for a "40%" card
+   *   2. the overlay text itself, if that phrase is spoken
+   *   3. the shot's own window, held slightly inside its edges
+   *
+   * Returns null when there is nothing to show. It never invents text.
+   */
+  function overlayForShot(shot, transcript, opts = {}) {
+    const t = shot && shot.textOverlay;
+    if (!t || !String(t.text || '').trim()) return null;
+
+    const text = String(t.text).trim();
+    const emphasis = String(t.emphasis || '').trim();
+    const style = String(t.style || 'emphasis').toLowerCase();
+
+    const start0 = num(shot.timelineStart);
+    const end0 = num(shot.timelineEnd);
+    const haveShot = Number.isFinite(start0) && Number.isFinite(end0) && end0 > start0;
+
+    // Anchored to the voice when the voice was actually measured.
+    let anchor = null;
+    let anchoredTo = '';
+    if (transcript && window.Transcript && window.Transcript.isMeasured(transcript)) {
+      for (const phrase of [emphasis, text].filter(Boolean)) {
+        anchor = anchorOverlay(transcript, phrase, {
+          shot: haveShot ? shot : null,
+          lead: opts.lead != null ? opts.lead : 0.15,
+          minDuration: opts.minDuration != null ? opts.minDuration : 1.2
+        });
+        if (anchor) { anchoredTo = phrase; break; }
+      }
+    }
+
+    let start, end, method;
+    if (anchor) {
+      start = anchor.start;
+      end = anchor.end;
+      method = 'spoken_phrase';
+    } else if (haveShot) {
+      // Inset from the cut so the card is not competing with the transition.
+      const span = end0 - start0;
+      start = start0 + Math.min(0.4, span * 0.1);
+      end = Math.min(end0 - Math.min(0.3, span * 0.08), start + Math.max(1.2, span * 0.6));
+      if (end <= start) end = Math.min(end0, start + 0.5);
+      method = 'shot_window';
+    } else {
+      // No measured voice and no placed shot: there is no clock to hang this
+      // on, and a card at an invented time is worse than no card.
+      return null;
+    }
+
+    return {
+      enabled: true,
+      text,
+      emphasis,
+      style,
+      start: Math.round(start * 100) / 100,
+      end: Math.round(end * 100) / 100,
+      // Said plainly so the storyboard can show which of these were placed on
+      // the words and which were merely dropped into the shot.
+      method,
+      anchoredTo: anchor ? anchoredTo : '',
+      spokenAt: anchor ? anchor.spokenAt : null
+    };
+  }
+
   window.Timing = {
     EPSILON,
     validateShot,
     validatePlan,
     clampShot,
     bindExcerpt,
-    anchorOverlay
+    anchorOverlay,
+    overlayForShot
   };
 })();

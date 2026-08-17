@@ -1147,11 +1147,41 @@ stockRequirements: {
   "queries": [string],      // 3-5 short search phrases; each is a standalone stock search query
   "fallbackQueries": [string], // 2-3 broader queries to use if primary queries find nothing
   "subjectCategory": string,   // optional: "HUMAN" | "NATURE" | "URBAN" | "ABSTRACT" | "OBJECT"
-  "minimumDuration": number    // seconds the clip must be at minimum (default: half the scene duration)
+  "minimumDuration": number,   // seconds the clip must be at minimum (default: half the scene duration)
+
+  // ── SOURCE INTELLIGENCE ────────────────────────────────────────────
+  // Which library to ask is a directing decision. A 1969 launch wants the
+  // film archive; a modern coffee shop does not. Omitting these sends
+  // every beat to the same two stock libraries.
+  "sourceStrategy": string,      // "archival" | "modern_stock" | "auto"
+  "preferredSources": [string],  // best first, from "archive_org" | "pexels" | "pixabay"
+  "archiveQueries": [string],    // ONLY when archive_org is preferred (see below)
+  "sourceReason": string,        // one line for the producer on why this source suits the beat
+  "timePeriod": {                // ONLY when the script establishes a date. Never guessed.
+    "from": number,              // year, or null
+    "to": number,                // year, or null
+    "label": string              // e.g. "Second World War"
+  },
+  "excerpt": {                   // ONLY for archive_org — an archive item is a whole film
+    "required": true,
+    "targetDuration": number,    // seconds of it to use
+    "selectionIntent": string    // what should be VISIBLE: "workers operating wartime machinery"
+  },
+  "editorialPurpose": string     // why this footage serves the story editorially
 }
 
 Write queries as a stock photographer would search: subject + action + setting.
 Never write queries that depend on knowing what the narration says — write what the camera sees.
+
+An archive is catalogued by what a film IS, not by what it shows. So archiveQueries
+are phrased differently from stock queries: "1940s wartime factory newsreel" finds
+something in a film archive, "happy worker in factory" does not. Use archive_org for
+historical, documentary, newsreel, government and period material — anywhere authentic
+period film says more than a modern restaging.
+
+editorialPurpose is a production note, not a legal claim. Never assert that a use is
+fair, permitted or safe. Whether uncleared material may be published is decided by a
+person, and AETHER's rights policy decides whether it may be placed at all.
 
 ────────────────────────────────────────────────────
 TEXT OVERLAY — required for stock_text and editorial_text
@@ -1206,7 +1236,14 @@ Respond ONLY with JSON:
         "queries": [string],
         "fallbackQueries": [string],
         "subjectCategory": string,
-        "minimumDuration": number
+        "minimumDuration": number,
+        "sourceStrategy": string,      // "archival" | "modern_stock" | "auto"
+        "preferredSources": [string],  // "archive_org" | "pexels" | "pixabay"
+        "archiveQueries": [string],    // only when archive_org is preferred
+        "sourceReason": string,
+        "timePeriod": { "from": number, "to": number, "label": string },
+        "excerpt": { "required": true, "targetDuration": number, "selectionIntent": string },
+        "editorialPurpose": string
       },
       "textOverlay": {                // REQUIRED for stock_text and editorial_text
         "text": string,
@@ -1230,22 +1267,41 @@ Respond ONLY with JSON:
 }`;
 
   function videoPlanPrompt(payload) {
-    const { scenes, bible, characters, modeBrief, strategyBrief, host } = payload || {};
+    const { scenes, bible, characters, modeBrief, strategyBrief, host, timing } = payload || {};
     const cast = (Array.isArray(characters) ? characters : [])
       .map((c) => `- ${c.name}: ${c.descriptor || c.description || ''}`)
       .filter(Boolean)
       .join('\n');
     const beats = (Array.isArray(scenes) ? scenes : [])
       .map((s) =>
-        `#${s.index} [${s.timestamp || ''}] (${(s.durationSec || 0).toFixed
-          ? s.durationSec.toFixed(1)
-          : s.durationSec}s)\n` +
+        // Coerce once. The previous guard tested `(s.durationSec || 0).toFixed`
+        // — always truthy, since 0 has the method — and then called it on the
+        // raw value, so a scene without a duration threw while building the
+        // prompt. The failure surfaced as "Cannot read properties of undefined"
+        // from inside a provider fallback, which reads like a provider outage.
+        `#${s.index} [${s.timestamp || ''}] (${Number(s.durationSec || 0).toFixed(1)}s)\n` +
         `  narration: ${s.subtitle || ''}\n` +
         `  action: ${s.detectedAction || s.sceneSummary || ''}\n` +
         `  where: ${[s.environment, s.timeOfDay, s.weather, s.lighting].filter(Boolean).join(', ')}\n` +
         `  who: ${(s.characters || []).join(', ') || '(nobody)'}`
       )
       .join('\n');
+
+    // Measured narration timing, when the project has it. Presented as what it
+    // is — positions read off the recorded voice — so the model places shots
+    // against the audio rather than against sentence length. Absent, the model
+    // is told plainly that nothing was measured, because a shot placed to the
+    // tenth of a second on a guess is a false precision the renderer will then
+    // treat as authoritative.
+    const timingBlock = timing && Array.isArray(timing.segments) && timing.segments.length
+      ? `MEASURED NARRATION TIMING (from forced alignment of the actual recording; `
+        + `audio runs ${Number(timing.audioDuration || 0).toFixed(2)}s):\n`
+        + `${JSON.stringify(timing.segments, null, 1)}\n\n`
+        + `Place every beat against these numbers. timelineStart and timelineEnd are seconds on `
+        + `the finished video's clock, they must not overlap between beats, and the last beat must `
+        + `not end after the audio does. Never estimate a position when a measured one exists.`
+      : `NARRATION TIMING: not measured. Do not invent timelineStart or timelineEnd — omit them, `
+        + `and AETHER will lay the beats out from the cue list instead.`;
 
     const parts = [
       // Strategy first, then mode. Visual Intelligence sets the family the
@@ -1255,6 +1311,7 @@ Respond ONLY with JSON:
       host ? `CHANNEL HOST: ${host}` : 'CHANNEL HOST: none configured — do not plan presenter beats.',
       bible ? `PROJECT PROFILE:\n${JSON.stringify(bible, null, 2)}` : '',
       cast ? `CAST (keep these people consistent):\n${cast}` : '',
+      timingBlock,
       `STORYBOARD BEATS TO PLAN (echo every index):\n${beats}`
     ].filter(Boolean);
 
@@ -1320,6 +1377,23 @@ Respond ONLY with JSON:
             };
           })();
 
+          // An archive item is a whole film, so a beat needs a window into it.
+          // The Director says how long and what should be visible; it never
+          // names timecodes, because choosing the moment means examining the
+          // footage and that happens in ArchiveExcerpt.
+          const excerpt = (() => {
+            const e = r.excerpt;
+            if (!e || typeof e !== 'object') return null;
+            const target = Number(e.targetDuration);
+            const intent = str(e.selectionIntent);
+            if (!Number.isFinite(target) && !intent) return null;
+            return {
+              required: e.required !== false,
+              targetDuration: Number.isFinite(target) ? Math.min(60, Math.max(1, target)) : 6,
+              selectionIntent: intent
+            };
+          })();
+
           return {
             concept:          str(r.concept),
             queries,
@@ -1330,7 +1404,12 @@ Respond ONLY with JSON:
             preferredSources,
             archiveQueries:   arr(r.archiveQueries).map(String).filter(Boolean).slice(0, 3),
             sourceReason:     str(r.sourceReason),
-            timePeriod
+            timePeriod,
+            excerpt,
+            // A production note on why this footage serves the story. Never a
+            // legal claim: whether uncleared material may be published is
+            // decided by a person, and the rights policy decides placement.
+            editorialPurpose: str(r.editorialPurpose)
           };
         })();
 
@@ -1347,7 +1426,19 @@ Respond ONLY with JSON:
           };
         })();
 
-        return {
+        // Seconds on the finished video's clock, and only when the model gave
+        // both and they run forwards. A half-specified or inverted window is
+        // dropped rather than repaired: editor.js treats these as authoritative
+        // once timingSource is 'whisper', so a guess here becomes a wrong cut.
+        const placement = (() => {
+          const a = Number(s && s.timelineStart);
+          const b = Number(s && s.timelineEnd);
+          if (!Number.isFinite(a) || !Number.isFinite(b)) return { };
+          if (a < 0 || b <= a) return { };
+          return { timelineStart: Math.round(a * 1000) / 1000, timelineEnd: Math.round(b * 1000) / 1000 };
+        })();
+
+        return Object.assign({
           index:            Number(s && s.index),
           visualType:       vt,
           stockRequirements,
@@ -1360,7 +1451,7 @@ Respond ONLY with JSON:
           emotion:          str(s && s.emotion),
           transition:       oneOf(s && s.transition, ['cut', 'dissolve'], 'cut'),
           note:             str(s && s.note)
-        };
+        }, placement);
       }).filter((s) => Number.isFinite(s.index))
     };
   }

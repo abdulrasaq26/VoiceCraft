@@ -1150,7 +1150,13 @@
           }))
         : '',
       modeBrief: window.BlvckModes ? window.BlvckModes.briefFor(mode) : '',
-      host: hostConfigured ? window.BlvckHost.descriptor() : ''
+      host: hostConfigured ? window.BlvckHost.descriptor() : '',
+      // Measured narration timing, when the project has any. Null is meaningful
+      // and is passed as null: the Director must be able to tell the difference
+      // between "these are the real word positions" and "nobody measured", and
+      // placing shots against estimates presented as measurements is how the
+      // pictures end up confidently on the wrong beat.
+      timing: window.BlvckAlign ? window.BlvckAlign.forDirector() : null
     }, { task: 'storyboard' });
 
     // Merge onto the stored scenes by index.
@@ -1165,6 +1171,11 @@
     const strategy = window.BlvckVisualIQ
       ? window.BlvckVisualIQ.strategise({ script: scenes().map((x) => x.subtitle || x.sceneSummary || '').join(' ') })
       : null;
+    // The measured narration, if this project has any. Read once: it decides
+    // whether an overlay can be anchored to the spoken word or only dropped
+    // into the shot.
+    const transcript = window.BlvckAlign ? window.BlvckAlign.current() : null;
+
     const prevState = readState();
     let invalidated = 0;
     // Cards the Director proposed that the beat could not support.
@@ -1219,7 +1230,38 @@
             }
           }
 
-          return Object.assign({}, s, {
+          // The Director's search and source decisions travel with the beat.
+          //
+          // These used to be dropped here. StockMedia.acquire() then fell
+          // through to buildQueriesFromScene() — the first five words of the
+          // narration — which is precisely what the schema tells the model not
+          // to write ("describe what the camera sees, never what the narration
+          // says"). With preferredSources and archiveQueries gone the Director
+          // also had no way to route a beat to the film archive, so the whole
+          // source-intelligence layer was unreachable from the model that
+          // decides it. Everything downstream still worked, which is why it
+          // looked fine.
+          //
+          // Kept only when the Director actually returned them: a re-plan that
+          // omits requirements must not erase a good set from the last pass.
+          const requirements = p.stockRequirements || s.stockRequirements || null;
+          const overlayText  = p.textOverlay || s.textOverlay || null;
+
+          // Measured placement from the Director, when it gave any.
+          const placed = (Number.isFinite(p.timelineStart) && Number.isFinite(p.timelineEnd))
+            ? { timelineStart: p.timelineStart, timelineEnd: p.timelineEnd }
+            : {};
+
+          // The card the renderer will actually draw. Derived here rather than
+          // in the storyboard, because the conversion needs the shot's placement
+          // and the measured transcript together — and because an overlay the
+          // UI invented would not correspond to anything the Director planned.
+          const shotForOverlay = Object.assign({}, s, placed, { textOverlay: overlayText });
+          const editorialCard = (overlayText && window.Timing && window.Timing.overlayForShot)
+            ? window.Timing.overlayForShot(shotForOverlay, transcript)
+            : null;
+
+          return Object.assign({}, s, placed, {
             visualType: vt,
             graphic: spec,
             hostOverlay: overlay,
@@ -1227,7 +1269,12 @@
             cameraMovement: p.cameraMovement || s.cameraMovement,
             motion: p.motion || s.motion,
             emotion: p.emotion || s.emotion,
-            transition: p.transition || 'cut'
+            transition: p.transition || 'cut',
+            stockRequirements: requirements,
+            textOverlay: overlayText,
+            editorialOverlay: editorialCard || s.editorialOverlay || null,
+            // Continuity warnings and the reasoning behind a visual choice.
+            note: p.note || s.note || ''
           });
         });
         localStorage.setItem(SB_LS, JSON.stringify(sb));

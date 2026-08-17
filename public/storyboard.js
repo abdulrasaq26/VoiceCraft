@@ -1507,16 +1507,25 @@
 
   function saveProject() {
     try {
+      // The transcript is written by the alignment bridge, not by this module,
+      // and it is the thing editor.js reads to decide whether the project is on
+      // a measured clock. Rebuilding this payload from scratch used to delete it
+      // on the very next save, so alignment could succeed and be gone a moment
+      // later. Carry through whatever is already stored rather than assuming
+      // this module knows every key.
+      let existing = null;
+      try { existing = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { existing = null; }
+
       localStorage.setItem(
         LS_KEY,
-        JSON.stringify({
+        JSON.stringify(Object.assign({}, existing, {
           project: project(),
           cues,
           bible,
           assetMode,
           useRefs: useRefsEl ? useRefsEl.checked : true,
           scenes: scenes.map(({ ...s }) => s)
-        })
+        }))
       );
     } catch {
       /* quota — non-fatal */
