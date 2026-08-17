@@ -373,7 +373,7 @@ print('\\nStage 6 PASSED')
     code(
         """
 import time
-from director.inference import DirectorInference, preload_cuda_libraries
+from director.inference import DirectorInference, preload_cuda_libraries, quiet_backend_logs
 
 loaded = preload_cuda_libraries()
 print('preloaded CUDA libs:')
@@ -395,6 +395,12 @@ try:
 finally:
     _done.set()
 print(f'\\nLoaded in {time.time()-t0:.0f}s')
+
+# Loading is done, so the per-token chatter has stopped being progress and
+# started being noise. Left on, a single plan prints thousands of "CUDA Graph
+# id N reused" lines, which is what pushes the notebook output past the size
+# where Kaggle starts refusing to save the draft.
+print('backend logging:', 'quiet' if quiet_backend_logs() else 'still verbose (log hook unavailable)')
 
 import torch
 for i in range(torch.cuda.device_count()):
@@ -453,7 +459,25 @@ TEST_SCRIPT = (
     'Central banks respond by raising interest rates, which affects mortgages and spending.'
 )
 
-plan, latency = engine.generate_plan(script=TEST_SCRIPT, style='finance', title='Inflation explained')
+# A grammar-constrained plan is thousands of tokens at roughly ten a second, and
+# with the backend quiet there is nothing on screen while it works. Without this
+# the stage is indistinguishable from a hang — which is exactly how it was read.
+import threading
+import time as _time
+
+_planning = threading.Event()
+_t0 = _time.time()
+def _beat():
+    while not _planning.wait(20):
+        print(f'  [planning] {int(_time.time()-_t0)}s elapsed...', flush=True)
+threading.Thread(target=_beat, daemon=True).start()
+print('Planning — expect a few minutes; the source fields are required now, '
+      'so there is more to generate than before.', flush=True)
+try:
+    plan, latency = engine.generate_plan(script=TEST_SCRIPT, style='finance', title='Inflation explained')
+finally:
+    _planning.set()
+
 validated = VideoPlan(**plan)
 
 print(f'Latency : {latency:.1f}s')
@@ -468,6 +492,17 @@ for s in validated.scenes:
     elif s.textOverlay:
         detail = s.textOverlay.text
     print(f'  [{s.index}] {s.visualType:15} {detail}')
+    # The source decision, printed because it is the thing that was silently
+    # missing: with these fields optional the model omitted them on every beat
+    # and nothing was ever routed to the film archive.
+    r = s.stockRequirements
+    if r:
+        print(f'       source: {r.sourceStrategy} -> {", ".join(r.preferredSources) or "(none)"}')
+        if r.archiveQueries:
+            print(f'       archive: {" | ".join(r.archiveQueries[:2])}')
+        if r.timePeriod:
+            print(f'       period : {r.timePeriod.label or ""} '
+                  f'{r.timePeriod.from_year or ""}-{r.timePeriod.to_year or ""}')
 
 director_plan = plan
 print('\\nStage 8 PASSED')

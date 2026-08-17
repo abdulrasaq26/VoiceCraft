@@ -115,6 +115,39 @@ def _already_loaded(soname: str) -> bool:
         return False
 
 
+def quiet_backend_logs() -> bool:
+    """Silence llama.cpp's per-token logging once the model is loaded.
+
+    The CUDA backend prints "CUDA Graph id N reused" for every decoded token.
+    During the 2-5 minute load that chatter is the only sign of progress and is
+    worth keeping, but a grammar-constrained plan is thousands of tokens and the
+    same line thousands of times does real damage in a notebook: measured on
+    Kaggle it pushed the output past 370 KB, which is enough for the editor to
+    start answering "Failed to save draft", and it buries the one line that
+    actually says what happened.
+
+    Returns False if the installed llama-cpp-python does not expose the log
+    hook, because a noisy notebook is a far better outcome than a stage that
+    dies trying to make it quiet.
+    """
+    try:
+        import ctypes
+
+        import llama_cpp
+
+        # Held on the module so the callback is not garbage collected while C
+        # still holds the pointer — that crashes the kernel rather than logging.
+        @ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
+        def _swallow(level, text, user_data):  # noqa: ANN001, ARG001
+            return None
+
+        globals()["_LOG_SINK"] = _swallow
+        llama_cpp.llama_log_set(_swallow, ctypes.c_void_p(0))
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class DirectorInference:
     """Wraps the model with the three shapes AETHER asks for: chat, generate, plan."""
 
