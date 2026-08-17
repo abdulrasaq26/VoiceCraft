@@ -496,6 +496,60 @@
   // Downloads via the server-side CDN proxy (handles CORS from stock CDNs).
   // Caches the result in IDB so we never download the same asset twice.
 
+  // An archival film runs to tens of megabytes, and export refuses to record
+  // until it is cached — so a download with no visible progress looks like a
+  // hang at exactly the moment the user is waiting to start production.
+  //
+  // Events rather than a callback: the storyboard, the editor and any future
+  // panel all want this, and threading a callback through acquire() and its
+  // fallback chain would mean every caller re-deciding what to do with it.
+  function emit(name, detail) {
+    try { window.dispatchEvent(new CustomEvent(name, { detail })); } catch (e) { /* non-fatal */ }
+  }
+
+  async function readWithProgress(res, cacheKey, asset) {
+    const total = Number(res.headers.get('content-length')) || 0;
+    const base = { cacheKey, provider: asset.provider, id: asset.id, total };
+
+    // No length or no stream support: still say it started and finished, just
+    // without a percentage. A spinner that never moves beats a silent wait.
+    if (!total || !res.body || !res.body.getReader) {
+      emit('blvck:asset-progress', Object.assign({}, base, { received: 0, pct: null }));
+      const blob = await res.blob();
+      emit('blvck:asset-progress',
+        Object.assign({}, base, { received: blob.size, pct: 100, done: true }));
+      return blob;
+    }
+
+    const reader = res.body.getReader();
+    const parts = [];
+    let received = 0;
+    let lastEmit = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      received += value.length;
+      // Throttled: a 90 MB file arrives in thousands of chunks and re-rendering
+      // a card for each one costs more than the download.
+      const now = Date.now();
+      if (now - lastEmit > 250) {
+        lastEmit = now;
+        emit('blvck:asset-progress', Object.assign({}, base, {
+          received, pct: Math.round((received / total) * 100)
+        }));
+      }
+    }
+    emit('blvck:asset-progress', Object.assign({}, base, { received, pct: 100, done: true }));
+
+    // A truncated transfer decodes as a shorter film rather than an error, which
+    // is how a silently wrong excerpt gets into a finished video.
+    if (received < total) {
+      throw new Error(`Download of ${cacheKey} stopped at ${received} of ${total} bytes`);
+    }
+    return new Blob(parts, { type: res.headers.get('content-type') || 'application/octet-stream' });
+  }
+
   async function downloadAsset(asset) {
     const cacheKey = `${asset.provider}:${asset.id}`;
 
@@ -503,7 +557,11 @@
     const meta = getCacheMeta();
     if (meta[cacheKey]) {
       const blob = await idbGet(cacheKey);
-      if (blob && blob.size > 0) return blob;
+      if (blob && blob.size > 0) {
+        emit('blvck:asset-cached',
+          { cacheKey, provider: asset.provider, id: asset.id, bytes: blob.size, fromCache: true });
+        return blob;
+      }
     }
 
     // An asset whose URL is already one of our own proxy paths is same-origin
@@ -524,7 +582,7 @@
       throw new Error(`Stock download failed for ${cacheKey} (${res.status}): ${await res.text().catch(() => '')}`);
     }
 
-    const blob = await res.blob();
+    const blob = await readWithProgress(res, cacheKey, asset);
     if (!blob || blob.size < 512) {
       throw new Error(`Downloaded asset ${cacheKey} appears empty (${blob ? blob.size : 0} bytes)`);
     }
@@ -542,7 +600,23 @@
       downloadedAt: Date.now()
     };
     setCacheMeta(newMeta);
+    emit('blvck:asset-cached', { cacheKey, provider: asset.provider, id: asset.id, bytes: blob.size });
     return blob;
+  }
+
+  // The cache meta lives in localStorage and the bytes live in IndexedDB, and
+  // they can disagree — a cleared IndexedDB leaves the meta claiming a hit.
+  // Anything telling the user they are ready to export has to check the bytes.
+  async function isCached(asset) {
+    if (!asset || !asset.provider || !asset.id) return false;
+    const cacheKey = `${asset.provider}:${asset.id}`;
+    if (!getCacheMeta()[cacheKey]) return false;
+    try {
+      const blob = await idbGet(cacheKey);
+      return !!(blob && blob.size > 0);
+    } catch (e) {
+      return false;
+    }
   }
 
   // ── Used-asset tracker ────────────────────────────────────────────────────
@@ -984,6 +1058,7 @@
     markUsed,
     clearUsed,
     // Cache inspection
-    getCacheMeta
+    getCacheMeta,
+    isCached
   };
 })();

@@ -1206,12 +1206,15 @@
       }
 
       let stockInfo = null;
+      let cacheInfo = null;
       if (scene.stockAsset) {
         stockInfo = document.createElement('div');
         stockInfo.className = 'sb-scene-insight';
         const sa = scene.stockAsset;
         stockInfo.innerHTML = `<span><strong>Stock:</strong> ${sa.provider} ${sa.type} (${sa.id})</span>` +
           (sa.fallback ? ` <span style="color:var(--warning)">[Fallback: ${sa.fallback}]</span>` : '');
+
+        cacheInfo = buildCacheRow(scene);
       }
 
       const actions = document.createElement('div');
@@ -1284,13 +1287,171 @@
       if (subtitle.textContent) body.appendChild(subtitle);
       body.appendChild(details);
       if (stockInfo) body.appendChild(stockInfo);
+      if (cacheInfo) body.appendChild(cacheInfo);
       body.appendChild(actions);
       row.append(thumb, body);
       scenesEl.appendChild(row);
     });
     updateProgress();
     updateControls();
+    // Whether the bytes are really in IndexedDB is an async question, so the
+    // row renders from what is known synchronously and is corrected a moment
+    // later rather than blocking the whole list on a storage read.
+    auditCacheRows();
   }
+
+  // --- Local cache status -------------------------------------------------
+  //
+  // Export refuses to record until every clip is cached locally. Without this
+  // the storyboard looks finished while the export button is about to say no,
+  // and a 90 MB archival download would run with no visible progress.
+
+  // sceneIndex -> { pct, received, total } while a download is in flight.
+  const downloading = new Map();
+
+  function cacheKeyFor(scene) {
+    const sa = scene && scene.stockAsset;
+    return sa && sa.provider && sa.id ? `${sa.provider}:${sa.id}` : null;
+  }
+
+  function buildCacheRow(scene) {
+    const row = document.createElement('div');
+    row.className = 'sb-scene-insight';
+    row.dataset.cacheRow = String(scene.index);
+    paintCacheRow(row, scene, downloading.has(scene.index) ? 'downloading' : 'unknown');
+    return row;
+  }
+
+  function paintCacheRow(row, scene, state) {
+    row.innerHTML = '';
+    const label = document.createElement('span');
+
+    if (state === 'downloading') {
+      const p = downloading.get(scene.index) || {};
+      const mb = p.total ? ` of ${(p.total / 1048576).toFixed(0)} MB` : '';
+      label.innerHTML = `<strong>Local cache:</strong> downloading `
+        + `${p.pct == null ? '' : p.pct + '% '}`
+        + `<span style="color:#9aa4b2">(${((p.received || 0) / 1048576).toFixed(1)} MB${mb})</span>`;
+      row.appendChild(label);
+      return;
+    }
+
+    if (state === 'cached') {
+      label.innerHTML = '<strong>Local cache:</strong> '
+        + '<span style="color:var(--success,#3ddc84)">cached locally · ready for export</span>';
+      row.appendChild(label);
+      return;
+    }
+
+    if (state === 'missing') {
+      label.innerHTML = '<strong>Local cache:</strong> '
+        + '<span style="color:var(--warning)">not cached — export is blocked until it is</span>';
+      row.appendChild(label);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'Download now';
+      btn.style.cssText = 'margin-left:8px;font-size:0.72rem;padding:2px 8px';
+      btn.addEventListener('click', () => cacheSceneAsset(scene, btn));
+      row.appendChild(btn);
+      return;
+    }
+
+    label.innerHTML = '<strong>Local cache:</strong> <span style="color:#9aa4b2">checking…</span>';
+    row.appendChild(label);
+  }
+
+  function rowFor(index) {
+    return scenesEl.querySelector(`[data-cache-row="${index}"]`);
+  }
+
+  async function auditCacheRows() {
+    if (!window.StockMedia || !window.StockMedia.isCached) return;
+    for (const scene of scenes) {
+      if (!cacheKeyFor(scene)) continue;
+      const row = rowFor(scene.index);
+      if (!row) continue;
+      if (downloading.has(scene.index)) { paintCacheRow(row, scene, 'downloading'); continue; }
+      const ok = await window.StockMedia.isCached(scene.stockAsset);
+      const live = rowFor(scene.index);              // the list may have re-rendered
+      if (live) paintCacheRow(live, scene, ok ? 'cached' : 'missing');
+    }
+  }
+
+  // Downloading is placement. An asset that has not cleared the rights policy
+  // must not land in the production cache just because someone pressed a button
+  // next to it — the same gate acquire() applies, applied here too rather than
+  // reimplemented.
+  async function cacheSceneAsset(scene, btn) {
+    const asset = scene.stockAsset;
+    if (!asset || !window.StockMedia) return;
+
+    if (window.StockMedia.clearForProduction
+        && !window.StockMedia.clearForProduction(asset, scene)) {
+      const row = rowFor(scene.index);
+      if (row) {
+        row.innerHTML = '';
+        const s = document.createElement('span');
+        s.innerHTML = '<strong>Local cache:</strong> '
+          + '<span style="color:var(--danger)">not downloaded — this source has not cleared '
+          + 'the project’s rights policy</span>';
+        row.appendChild(s);
+      }
+      saveProject();
+      return;
+    }
+
+    if (btn) btn.disabled = true;
+    downloading.set(scene.index, { pct: null, received: 0, total: 0 });
+    const row = rowFor(scene.index);
+    if (row) paintCacheRow(row, scene, 'downloading');
+
+    try {
+      await window.StockMedia.downloadAsset(asset);
+      downloading.delete(scene.index);
+      const live = rowFor(scene.index);
+      if (live) paintCacheRow(live, scene, 'cached');
+    } catch (err) {
+      downloading.delete(scene.index);
+      const live = rowFor(scene.index);
+      if (live) {
+        live.innerHTML = '';
+        const s = document.createElement('span');
+        s.innerHTML = `<strong>Local cache:</strong> `
+          + `<span style="color:var(--danger)">download failed: ${esc(String(err.message).slice(0, 90))}</span>`;
+        live.appendChild(s);
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Retry';
+        retry.style.cssText = 'margin-left:8px;font-size:0.72rem;padding:2px 8px';
+        retry.addEventListener('click', () => cacheSceneAsset(scene, retry));
+        live.appendChild(retry);
+      }
+    }
+  }
+
+  window.addEventListener('blvck:asset-progress', (ev) => {
+    const d = (ev && ev.detail) || {};
+    const scene = scenes.find((s) => cacheKeyFor(s) === d.cacheKey);
+    if (!scene) return;
+    if (d.done) {
+      downloading.delete(scene.index);
+      const row = rowFor(scene.index);
+      if (row) paintCacheRow(row, scene, 'cached');
+      return;
+    }
+    downloading.set(scene.index, { pct: d.pct, received: d.received, total: d.total });
+    const row = rowFor(scene.index);
+    if (row) paintCacheRow(row, scene, 'downloading');
+  });
+
+  window.addEventListener('blvck:asset-cached', (ev) => {
+    const d = (ev && ev.detail) || {};
+    const scene = scenes.find((s) => cacheKeyFor(s) === d.cacheKey);
+    if (!scene) return;
+    downloading.delete(scene.index);
+    const row = rowFor(scene.index);
+    if (row) paintCacheRow(row, scene, 'cached');
+  });
 
   // --- Persistence -------------------------------------------------------
 
