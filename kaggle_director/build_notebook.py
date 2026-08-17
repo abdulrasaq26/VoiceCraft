@@ -146,9 +146,39 @@ pip('nvidia-cuda-runtime-cu12', 'nvidia-cublas-cu12', label='CUDA runtime')
 # dependency with it, which on this image means swapping numpy out from under
 # a kernel that already imported torch in Stage 1 — and that kills the kernel
 # later, at a random cell, with no error pointing back here.
-pip('--force-reinstall', '--no-deps', 'llama-cpp-python',
-    '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/cu124',
-    label='llama-cpp-python CUDA wheel (1.9 GB — the slow one, 3-8 min)')
+#
+# --index-url, not --extra-index-url. With --extra-index-url, PyPI stays the
+# primary index and pip picks the best candidate across both — and PyPI ships
+# llama-cpp-python as an sdist ONLY. So when no wheel on the CUDA index matches
+# this image, pip quietly falls back to the source tarball and starts compiling
+# llama.cpp, which takes far longer than the download it replaced and looks
+# exactly like a hung cell. --no-deps means nothing else is being resolved, so
+# restricting the index to the CUDA one is safe.
+#
+# --only-binary=:all: is the belt to that braces: if there is no usable wheel,
+# fail immediately and say so, rather than starting an hour-long build.
+CUDA_WHEEL_INDEX = 'https://abetlen.github.io/llama-cpp-python/whl/cu124'
+
+# The wheels changed platform tag partway through the 0.3 series: up to 0.3.19
+# they are cp3XX-linux_x86_64, which installs on any Linux, and from 0.3.30 they
+# are py3-none-manylinux_2_35, which needs glibc 2.35 or newer. So the newest
+# release is not automatically the installable one on this image.
+import platform
+print('  glibc:', '.'.join(platform.libc_ver()[1].split('.')[:2]) or 'unknown')
+
+try:
+    pip('--force-reinstall', '--no-deps', '--only-binary=:all:', 'llama-cpp-python',
+        '--index-url', CUDA_WHEEL_INDEX,
+        label='llama-cpp-python CUDA wheel (1.9 GB — the slow one, 3-8 min)')
+except RuntimeError as exc:
+    # No wheel matched. Almost always the manylinux_2_35 tag against an older
+    # glibc; fall back to the last release tagged plain linux_x86_64, which
+    # installs regardless.
+    print(f'\n  no compatible wheel for the newest release ({exc})')
+    print('  falling back to 0.3.19, the last release tagged linux_x86_64\n', flush=True)
+    pip('--force-reinstall', '--no-deps', '--only-binary=:all:', 'llama-cpp-python==0.3.19',
+        '--index-url', CUDA_WHEEL_INDEX,
+        label='llama-cpp-python 0.3.19 CUDA wheel')
 
 # Its actual dependencies, installed normally so anything already satisfied is
 # left alone.
