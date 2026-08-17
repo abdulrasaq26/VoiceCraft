@@ -1718,6 +1718,81 @@
 
   // --- Persistence -------------------------------------------------------
 
+  // What a persisted clip is. Media elements are deliberately absent: an <img>
+  // or <video> cannot be serialised, and both are recoverable — stills from the
+  // storyboard image store, footage from the stock cache, each keyed by
+  // identifiers that ARE saved here.
+  /**
+   * May this timeline be exported under the project's rights policy?
+   *
+   * Reads the clips, not the storyboard scenes: once a clip has been replaced
+   * or locked the two diverge, and the thing about to be encoded is the clip.
+   *
+   * Deliberately thin. Classification, policy and the review decision all live
+   * in ArchiveLicense / AttributionManager, and a second copy of that reasoning
+   * here would be a second answer to a question that must only have one.
+   */
+  function exportRightsCheck() {
+    if (!window.AttributionManager || !window.RightsUI) {
+      // No rights system loaded: allow, because refusing on the basis of a
+      // missing module would block projects with no archival material at all.
+      return { canExport: true, blockers: [], reason: 'rights system not loaded' };
+    }
+    const scenes = clips.map((c) => ({
+      index: c.sceneIndex,
+      stockAsset: c.stockAsset || null,
+      rightsApproval: c.rightsApproval || null
+    }));
+    const audit = window.AttributionManager.audit(scenes, window.RightsUI.currentPolicy());
+    return {
+      canExport: audit.canExport,
+      blockers: audit.blockers,
+      attributions: audit.attributions,
+      policy: window.RightsUI.currentPolicy()
+    };
+  }
+
+  function serialiseClip(c) {
+    return {
+      sceneIndex: c.sceneIndex,
+      subtitle: c.subtitle,
+      camera: c.camera,
+      durationSec: c.durationSec,
+      effect: c.effect,
+
+      // Absolute position on the finished video's clock.
+      timelineStart: c.timelineStart,
+      timelineEnd: c.timelineEnd,
+
+      // Which slice of a long archival source this shot uses. Without it a
+      // reopened project would play the film from its opening title card.
+      excerpt: c.excerpt || null,
+
+      // How the frame is fitted — pillarbox for archival 4:3, cover for modern
+      // stock. Recomputable from the aspect, but the Director's explicit choice
+      // is not.
+      treatment: c.treatment || null,
+
+      // Provenance and rights. The one thing that genuinely cannot be
+      // reconstructed later: which item this footage came from and on what
+      // terms.
+      stockAsset: c.stockAsset || null,
+
+      // The editorial card and the moment it was anchored to.
+      editorialOverlay: c.editorialOverlay || null,
+
+      // Presenter layout, when the Director placed the host in this beat.
+      hostLayout: c.hostLayout || null,
+
+      // A locked clip must come back as the same clip.
+      locked: !!c.locked,
+
+      // Review decisions are the user's, and re-asking would be worse than
+      // useless — it would invite a different answer to the same question.
+      rightsApproval: c.rightsApproval || null
+    };
+  }
+
   function saveTimeline() {
     try {
       localStorage.setItem(
@@ -1726,7 +1801,14 @@
           project: project(),
           subStyle,
           transitionsOn,
-          clips: clips.map((c) => ({ sceneIndex: c.sceneIndex, subtitle: c.subtitle, camera: c.camera, durationSec: c.durationSec, effect: c.effect }))
+          // The whole clip, not five fields of it. Everything below is a
+          // decision made upstream — by Whisper, by the Director, by the rights
+          // gate — and dropping any of it on save means the project cannot be
+          // reopened, only rebuilt. `serialiseClip` is the single definition of
+          // what a persisted clip is; the package export uses it too, so the two
+          // cannot drift.
+          timingSource,
+          clips: clips.map(serialiseClip)
         })
       );
     } catch {
@@ -1745,10 +1827,35 @@
     Object.assign(subStyle, saved.subStyle || {});
     if (typeof saved.transitionsOn === 'boolean') transitionsOn = saved.transitionsOn;
     applySubControls();
+    // Timing authority has to come back too, or a reopened Whisper project
+    // would be rescaled to fit the audio on its first render — the exact bug
+    // Step 1 removed.
+    timingSource = saved.timingSource === 'whisper' ? 'whisper' : 'estimated';
+
     clips = [];
     for (const c of saved.clips) {
       const blob = await idbGet(SB_DB, SB_STORE, String(c.sceneIndex));
-      clips.push({ ...c, img: blob ? await loadImage(blob) : null });
+      const clip = { ...c, img: blob ? await loadImage(blob) : null };
+
+      // Rehydrate footage from the stock cache. It is keyed provider:id, and
+      // both halves survive in stockAsset — so a reopened project keeps its
+      // archive excerpt as playable video rather than degrading to a still.
+      if (c.stockAsset && c.stockAsset.provider && c.stockAsset.id) {
+        const key = `${c.stockAsset.provider}:${c.stockAsset.id}`;
+        try {
+          const media = await idbGet('blvck-stock-cache', 'assets', key);
+          if (media && media.size > 0 && c.stockAsset.type !== 'photo') {
+            clip.video = await loadVideo(media);
+          } else if (media && media.size > 0 && !clip.img) {
+            clip.img = await loadImage(media);
+          }
+        } catch (e) {
+          // Cache miss is recoverable — the scene falls back the same way it
+          // would for any unavailable source, and says so.
+          console.warn(`[Editor] cached media missing for ${key}: ${e.message}`);
+        }
+      }
+      clips.push(clip);
     }
     await loadAudio();
     stage.hidden = false;
@@ -1786,6 +1893,20 @@
     }
     try {
       pause();
+
+      // Before anything is encoded. A blocked asset that reaches the recorder
+      // has already been published as far as this code is concerned — the file
+      // exists and nothing downstream will re-examine it.
+      const rights = exportRightsCheck();
+      if (!rights.canExport) {
+        const lines = rights.blockers
+          .map((b) => `scene ${String(b.index).padStart(2, '0')}: ${b.headline}`);
+        showStatus(`Export blocked by the "${rights.policy}" rights policy — `
+          + `${rights.blockers.length} scene(s) unresolved. ${lines.join('; ')}. `
+          + 'Replace the footage, or review it in the storyboard, then export again.');
+        return;
+      }
+
       const h = resSel ? Number(resSel.value) || 720 : 720;
       const w = Math.round((h * 16) / 9);
       const off = document.createElement('canvas');
@@ -1920,7 +2041,14 @@
         fps: 30,
         resolution: resSel ? `${resSel.value}p` : '720p',
         subtitleStyle: subStyle,
-        clips: clips.map((c, i) => ({ order: i + 1, scene: c.sceneIndex, image: `images/scene-${String(i + 1).padStart(3, '0')}.png`, durationSec: c.durationSec, effect: c.effect, subtitle: c.subtitle }))
+        // Same definition as the local save, plus where the still sits in the
+        // package. A package that carried less than the browser's own save
+        // would be a lossy export dressed as an archive.
+        timingSource,
+        clips: clips.map((c, i) => Object.assign(serialiseClip(c), {
+          order: i + 1,
+          image: `images/scene-${String(i + 1).padStart(3, '0')}.png`
+        }))
       };
       files.push({ name: 'subtitles.srt', data: enc.encode(buildSrt()) });
       files.push({ name: 'edl.json', data: enc.encode(JSON.stringify(edl, null, 2)) });
@@ -2044,6 +2172,8 @@
     videoDrawable,
     prepareClipsForExport,
     setReadinessTimeout,
+    serialiseClip,
+    exportRightsCheck,
     ensureVideoReadyForShot,
     shotDiagnostics,
     getReadinessTimeout: () => readinessTimeoutMs,
