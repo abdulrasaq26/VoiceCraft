@@ -15,7 +15,13 @@ import unittest
 
 from .cache import get_cache_key
 from .inference import strip_thinking
-from .schema import VideoPlan, get_json_schema, plan_violations, scene_violations
+from .schema import (
+    VideoPlan,
+    archive_query_advice,
+    get_json_schema,
+    plan_violations,
+    scene_violations,
+)
 
 # Mirrors the vocabularies in public/prompts.js. If a test here fails after you
 # edit that file, the fix is to change both, not to loosen the test.
@@ -212,9 +218,14 @@ class TestPayloadMatchesType(unittest.TestCase):
         self.assertTrue(any("preferredSources" in p for p in problems), problems)
         self.assertTrue(any("sourceStrategy" in p for p in problems), problems)
 
-    def test_archive_beat_needs_archive_phrased_queries(self):
-        """An archive is catalogued by what a film IS, not by what it shows."""
-        problems = scene_violations(self._scene(
+    def test_archive_beat_without_archive_queries_is_advice_not_a_violation(self):
+        """It renders fine, so it must not trigger a whole-plan regeneration.
+
+        A violation re-asks the model for the ENTIRE plan. Measured live, one
+        beat costs about 150s, so paying that twice for a beat that draws
+        correctly is the wrong trade — the producer gets a note instead.
+        """
+        scene = self._scene(
             visualType="stock_video",
             stockRequirements={
                 "concept": "wartime production",
@@ -223,8 +234,24 @@ class TestPayloadMatchesType(unittest.TestCase):
                 "preferredSources": ["archive_org"],
                 "archiveQueries": [],
             },
-        ))
-        self.assertTrue(any("archiveQueries" in p for p in problems), problems)
+        )
+        self.assertEqual(scene_violations(scene), [])
+
+        notes = archive_query_advice({"scenes": [scene]})
+        self.assertTrue(any("archiveQueries" in msg for _, msg in notes), notes)
+
+    def test_archive_beat_with_archive_queries_draws_no_advice(self):
+        notes = archive_query_advice({"scenes": [self._scene(
+            visualType="stock_video",
+            stockRequirements={
+                "concept": "wartime production",
+                "queries": ["factory workers"],
+                "sourceStrategy": "archival",
+                "preferredSources": ["archive_org"],
+                "archiveQueries": ["1940s wartime factory newsreel"],
+            },
+        )]})
+        self.assertEqual(notes, [])
 
     def test_archive_beat_with_archive_queries_is_clean(self):
         problems = scene_violations(self._scene(

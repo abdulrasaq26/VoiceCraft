@@ -172,8 +172,72 @@
     // script, a style, and the beats to plan against. Posting the raw
     // storyboard payload here used to fail schema validation before the model
     // was ever reached, so translate it first.
+    /**
+     * How many beats to ask for in one request.
+     *
+     * The tunnel cuts any single request at 300s, and the Director costs
+     * roughly 50-70s fixed plus 80-100s per beat — measured live: one beat
+     * returned in 150.0s, three beats exceeded the ceiling at both low and
+     * xhigh effort. So this is not a tuning knob, it is the difference between
+     * a plan arriving and a gateway error.
+     *
+     * One is the safe default. Two is usually fine and halves the fixed cost;
+     * three does not fit. Raise it only against a tunnel without the limit.
+     */
+    planBatchSize() {
+      try {
+        const stored = Number(localStorage.getItem('blvck:director_batch') || 0);
+        return stored > 0 ? Math.min(8, stored) : 1;
+      } catch (e) {
+        return 1;   // no storage (tests, workers) — the safe default is the default
+      }
+    }
+
     async director(payload, options = {}) {
-      const scenes = Array.isArray(payload && payload.scenes) ? payload.scenes : [];
+      const all = Array.isArray(payload && payload.scenes) ? payload.scenes : [];
+      const size = this.planBatchSize();
+      if (all.length <= size) return this._directorBatch(payload, options, all);
+
+      // Plan in batches, but show the model the WHOLE script every time. It
+      // still decides each beat knowing what comes before and after; only the
+      // number of beats it has to write per request comes down.
+      const merged = { strategy: '', warnings: [], scenes: [] };
+      for (let at = 0; at < all.length; at += size) {
+        const chunk = all.slice(at, at + size);
+        try {
+          window.dispatchEvent(new CustomEvent('blvck:director-progress', {
+            detail: { done: at, total: all.length, planning: chunk.map((s) => s.index) }
+          }));
+        } catch (e) { /* non-fatal */ }
+
+        const part = await this._directorBatch(payload, options, chunk);
+        if (!merged.strategy && part.strategy) merged.strategy = part.strategy;
+        // strategy and warnings describe the whole video, and every batch sees
+        // the whole script — so each one reports them again. Keep the first
+        // strategy and one copy of each warning; three identical continuity
+        // notes read as three problems.
+        for (const w of part.warnings || []) {
+          if (merged.warnings.indexOf(w) === -1) merged.warnings.push(w);
+        }
+        // A batch owns exactly the beats it was asked for. The model sees the
+        // whole script, so it can and does return plans for beats outside the
+        // chunk; merging those wholesale duplicates every beat once per batch.
+        const asked = new Set(chunk.map((s, i) => (Number.isFinite(s && s.index) ? s.index : at + i)));
+        const seen = new Set(merged.scenes.map((s) => s.index));
+        for (const s of part.scenes || []) {
+          if (asked.has(s.index) && !seen.has(s.index)) merged.scenes.push(s);
+        }
+      }
+      try {
+        window.dispatchEvent(new CustomEvent('blvck:director-progress', {
+          detail: { done: all.length, total: all.length, planning: [] }
+        }));
+      } catch (e) { /* non-fatal */ }
+      return merged;
+    }
+
+    async _directorBatch(payload, options = {}, only = null) {
+      const scenes = only || (Array.isArray(payload && payload.scenes) ? payload.scenes : []);
       const bible  = (payload && payload.bible) || {};
 
       const cues = scenes.map((s, i) => ({
@@ -182,7 +246,15 @@
         text:  String((s && (s.subtitle || s.sceneSummary)) || '')
       }));
 
-      const script = cues.map((c) => c.text).filter(Boolean).join('\n');
+      // The script is always the WHOLE piece, even when only some beats are
+      // being planned. A beat decided in isolation loses the thing that makes
+      // the decision good — "decades later" only means anything next to the
+      // sentence before it.
+      const everyScene = Array.isArray(payload && payload.scenes) ? payload.scenes : scenes;
+      const script = everyScene
+        .map((s) => String((s && (s.subtitle || s.sceneSummary)) || ''))
+        .filter(Boolean)
+        .join('\n');
       if (!script) throw new Error('Director: no narration to plan against.');
 
       // Visual Intelligence and the channel mode each decide part of the look.

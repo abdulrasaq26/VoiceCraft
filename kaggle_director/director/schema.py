@@ -355,13 +355,14 @@ def scene_violations(scene: dict) -> List[str]:
         if not requirements.get("sourceStrategy"):
             problems.append(f"{visual} needs stockRequirements.sourceStrategy")
 
-        # An archive is catalogued by what a film IS, not by what it shows, so a
-        # beat sent to archive_org with only stock-phrased queries finds nothing.
-        if "archive_org" in sources and not (requirements.get("archiveQueries") or []):
-            problems.append(
-                "archive_org is preferred but archiveQueries is empty — "
-                "stock phrasing does not find anything in a film archive"
-            )
+    # Deliberately NOT a violation: archive_org preferred with no archiveQueries.
+    #
+    # It is a real quality problem — an archive is catalogued by what a film IS,
+    # so stock phrasing searches it badly — but scene_violations means "this beat
+    # cannot be rendered", and this one renders perfectly well: StockMedia falls
+    # back to the ordinary queries. Listing it here made every such beat fail
+    # validation and triggered a full re-generation of the whole plan, which is
+    # a large cost for a beat that was never broken. See archive_query_advice().
 
     if visual in NEEDS_TEXT and not ((scene.get("textOverlay") or {}).get("text") or "").strip():
         problems.append(f"{visual} needs textOverlay.text — it would render as a blank card")
@@ -370,6 +371,28 @@ def scene_violations(scene: dict) -> List[str]:
         problems.append(f"{visual} needs graphic.items — it would render as a blank card")
 
     return problems
+
+
+def archive_query_advice(plan: dict) -> List[Tuple[Any, str]]:
+    """Quality notes that are worth showing but not worth regenerating for.
+
+    Separated from plan_violations because the two have different costs: a
+    violation re-asks the model for the entire plan, while these are things a
+    producer can see and fix in one click.
+    """
+    notes: List[Tuple[Any, str]] = []
+    for position, scene in enumerate(plan.get("scenes") or []):
+        if not isinstance(scene, dict):
+            continue
+        requirements = scene.get("stockRequirements") or {}
+        sources = requirements.get("preferredSources") or []
+        if "archive_org" in sources and not (requirements.get("archiveQueries") or []):
+            notes.append((
+                scene.get("index", position),
+                "archive_org is preferred but archiveQueries is empty — the archive "
+                "will be searched with stock phrasing, which finds far less",
+            ))
+    return notes
 
 
 def plan_violations(plan: dict) -> List[Tuple[Any, str]]:
