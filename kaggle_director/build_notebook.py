@@ -220,14 +220,40 @@ MODEL_DIR  = '/tmp/qwen38'
 N_CTX    = 16384
 API_PORT = 8001
 
+# Reading the two secrets is a network call to Kaggle's API, and it prints
+# nothing while it waits. On a slow response this cell looks identical to a hung
+# kernel, which is how it came to be interrupted mid-request — the traceback
+# pointed at ssl.read, which reads like a crash and is really just a stop.
+#
+# So: say what is being fetched, and name each one as it lands.
+NGROK_AUTHTOKEN  = ''
+DIRECTOR_API_KEY = ''
 try:
     from kaggle_secrets import UserSecretsClient
+
+    print('Reading secrets from Add-ons -> Secrets (a network call; a few seconds)...',
+          flush=True)
     _s = UserSecretsClient()
-    NGROK_AUTHTOKEN  = _s.get_secret('NGROK_AUTHTOKEN')
-    DIRECTOR_API_KEY = _s.get_secret('DIRECTOR_API_KEY')
-except Exception:
-    NGROK_AUTHTOKEN  = os.environ.get('NGROK_AUTHTOKEN', '')
-    DIRECTOR_API_KEY = os.environ.get('DIRECTOR_API_KEY', 'test-key-change-me')
+    for _label in ('NGROK_AUTHTOKEN', 'DIRECTOR_API_KEY'):
+        try:
+            _value = _s.get_secret(_label)
+            if _label == 'NGROK_AUTHTOKEN':
+                NGROK_AUTHTOKEN = _value
+            else:
+                DIRECTOR_API_KEY = _value
+            print(f'  {_label:<18} found', flush=True)
+        except Exception as _exc:  # one missing secret must not lose the other
+            print(f'  {_label:<18} not set ({type(_exc).__name__})', flush=True)
+except Exception as exc:
+    print(f'Kaggle secrets unavailable ({exc}); falling back to environment.', flush=True)
+
+# Whatever the secrets store did not supply, the environment might.
+NGROK_AUTHTOKEN  = NGROK_AUTHTOKEN  or os.environ.get('NGROK_AUTHTOKEN', '')
+DIRECTOR_API_KEY = DIRECTOR_API_KEY or os.environ.get('DIRECTOR_API_KEY', 'test-key-change-me')
+
+if not NGROK_AUTHTOKEN:
+    print('\\n  [WARN] No NGROK_AUTHTOKEN. Stage 10 will serve on localhost only,')
+    print('         so AETHER on your machine will not be able to reach this.')
 
 os.environ['DIRECTOR_MODEL']   = f'{MODEL_REPO}:{QUANT}'
 os.environ['DIRECTOR_API_KEY'] = DIRECTOR_API_KEY
