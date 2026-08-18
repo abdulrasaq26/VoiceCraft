@@ -432,18 +432,26 @@
       return this.isQwenHealthy;
     }
 
+    // The single writer of the provider badge. Everything that displays which
+    // provider is live reads from here, so there is one answer rather than a
+    // race between two components with different ideas.
     updateUIStatus() {
-      // Update UI if elements exist
       const statusEls = document.querySelectorAll('.ai-provider-status, #mc-gateway-name, #gateway-status');
       statusEls.forEach(el => {
-        if (this.isQwenHealthy) {
+        if (this.isQwenHealthy === true) {
           el.innerHTML = '🟢 Qwen3.8-27B — Primary';
-          el.title = 'Connected to Kaggle Qwen Director';
-          el.style.color = '#10b981'; // Green
-        } else {
+          el.title = 'Connected to the Kaggle Qwen Director';
+          el.style.color = '#10b981';
+        } else if (this.isQwenHealthy === false) {
           el.innerHTML = '🟡 NVIDIA NIM — Fallback';
-          el.title = 'Qwen3.8-27B unavailable';
-          el.style.color = '#fbbf24'; // Yellow
+          el.title = 'Qwen3.8-27B is unreachable';
+          el.style.color = '#fbbf24';
+        } else {
+          // Null means nothing has asked yet. Reporting a fallback here would
+          // claim Qwen had failed when it has not been tried.
+          el.innerHTML = '○ Checking…';
+          el.title = 'Checking which provider is available';
+          el.style.color = '';
         }
       });
     }

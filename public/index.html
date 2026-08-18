@@ -74,7 +74,10 @@
         </div>
         <div class="mc-item">
           <span class="mc-label">AI Gateway:</span>
-          <span id="mc-gateway-name" class="badge">NVIDIA NIM (Llama 3.3 70B)</span>
+          <!-- Painted by AIProviderManager.updateUIStatus(); it is the only writer.
+               Hardcoding a provider here meant the bar asserted NIM before
+               anything had asked which provider was live. -->
+          <span id="mc-gateway-name" class="badge ai-provider-status">Checking…</span>
         </div>
       </div>
 

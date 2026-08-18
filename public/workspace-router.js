@@ -45,8 +45,7 @@
     stages.forEach(k => { if (st[k]) completedCount++; });
     const completionPct = Math.round((completedCount / stages.length) * 100);
     const assetCount = (window.BlvckAssets && window.BlvckAssets.getAll) ? window.BlvckAssets.getAll().length : 0;
-    const chatModel  = (window.BlvckAI && window.AIManager.chatModel) ? window.AIManager.chatModel() : 'NIM Gateway';
-    return { completionPct, completedCount, totalStages: stages.length, assetCount, chatModel, stageStatus: st };
+    return { completionPct, completedCount, totalStages: stages.length, assetCount, stageStatus: st };
   }
 
   /* ---- Mission Control Bar Update ---------------------------------- */
@@ -56,12 +55,19 @@
     const pctEl     = document.getElementById('mc-completion-pct');
     const fillEl    = document.getElementById('mc-progress-fill');
     const assetsEl  = document.getElementById('mc-assets-count');
-    const gatewayEl = document.getElementById('mc-gateway-name');
 
     if (pctEl)     pctEl.textContent     = `${metrics.completionPct}%`;
     if (fillEl)    fillEl.style.width    = `${metrics.completionPct}%`;
     if (assetsEl)  assetsEl.textContent  = `${metrics.assetCount}`;
-    if (gatewayEl) gatewayEl.textContent = `NVIDIA NIM (${metrics.chatModel})`;
+    // The gateway badge is deliberately not touched here.
+    //
+    // This wrote `NVIDIA NIM (...)` unconditionally — the provider was
+    // never consulted, only the chat model name was interpolated — and
+    // this function runs on a 3s interval. So AIProviderManager would
+    // correctly paint "Qwen3.8-27B — Primary" after a successful health
+    // check and within three seconds this overwrote it with NIM. Qwen
+    // never stopped being primary; only the label lied, which is a worse
+    // failure than being wrong once because it looks like a live reading.
 
     document.querySelectorAll('.copilot-completion-val').forEach(el => {
       el.textContent = `${metrics.completionPct}%`;
