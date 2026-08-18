@@ -353,15 +353,21 @@ durations with words distributed by syllable weight — and labels the timing
 import os, shutil, threading, time
 from huggingface_hub import hf_hub_download
 
+# Decimal GB (10^9), because that is how HuggingFace lists these files.
+# Anything comparing against it must divide by 1e9, NOT by 1024**3 — the two
+# differ by 7%, which is enough to fail a complete download: Q5_K_M is 19.8 GB
+# and 18.4 GiB, and a guard that mixed the units rejected the finished file.
 EXPECTED_GB = {'Q3_K_M': 13.8, 'Q4_K_M': 17.1, 'Q5_K_M': 19.8, 'Q8_0': 29.0}.get(QUANT, 20.0)
+EXPECTED_GIB = EXPECTED_GB * 1e9 / 1024**3
 
 os.makedirs(MODEL_DIR, exist_ok=True)
-free_gb = shutil.disk_usage(MODEL_DIR).free / 1024**3
-print(f'Free on {MODEL_DIR}: {free_gb:.1f} GB   |   need ~{EXPECTED_GB:.1f} GB')
-if free_gb < EXPECTED_GB * 1.15:
+free_gib = shutil.disk_usage(MODEL_DIR).free / 1024**3
+print(f'Free on {MODEL_DIR}: {free_gib:.1f} GiB   |   need ~{EXPECTED_GIB:.1f} GiB '
+      f'({EXPECTED_GB:.1f} GB as HuggingFace lists it)')
+if free_gib < EXPECTED_GIB * 1.15:
     raise RuntimeError(
-        f'Not enough disk: {free_gb:.1f} GB free, {QUANT} needs about '
-        f'{EXPECTED_GB:.1f} GB. Drop to a smaller quant in Stage 3.'
+        f'Not enough disk: {free_gib:.1f} GiB free, {QUANT} needs about '
+        f'{EXPECTED_GIB:.1f} GiB. Drop to a smaller quant in Stage 3.'
     )
 
 # Downloading straight into local_dir avoids the older two-step behaviour that
@@ -384,8 +390,8 @@ def _beat():
                     got += os.path.getsize(os.path.join(root, f))
                 except OSError:
                     pass
-        got_gb = got / 1024**3
-        print(f'  [download] {got_gb:5.1f} / ~{EXPECTED_GB:.1f} GB   '
+        got_gib = got / 1024**3
+        print(f'  [download] {got_gib:5.1f} / ~{EXPECTED_GIB:.1f} GiB   '
               f'({int(time.time()-t0)}s elapsed)', flush=True)
 
 threading.Thread(target=_beat, daemon=True).start()
@@ -400,12 +406,14 @@ finally:
 # Stage 7 as "ValueError: Failed to load model from file", which points at
 # the loader and says nothing about the 20 GB that never arrived. Checked
 # here, the message names the real problem and the fix.
-got_gb = os.path.getsize(MODEL_PATH) / 1024**3
+got_bytes = os.path.getsize(MODEL_PATH)
+got_gib = got_bytes / 1024**3
 with open(MODEL_PATH, 'rb') as fh:
     magic = fh.read(4)
 
 print(f'\\nPath : {MODEL_PATH}')
-print(f'Size : {got_gb:.1f} GB of ~{EXPECTED_GB:.1f} GB expected   ({int(time.time()-t0)}s)')
+print(f'Size : {got_gib:.1f} GiB of ~{EXPECTED_GIB:.1f} GiB expected '
+      f'({got_bytes/1e9:.1f} GB of ~{EXPECTED_GB:.1f} GB)   ({int(time.time()-t0)}s)')
 print(f'Magic: {magic!r}')
 
 if magic != b'GGUF':
@@ -415,10 +423,10 @@ if magic != b'GGUF':
     )
 # 4% covers the gap between the quant table above and the real file; further
 # off than that is a truncated transfer, not a rounding difference.
-if got_gb < EXPECTED_GB * 0.96:
+if got_gib < EXPECTED_GIB * 0.96:
     raise RuntimeError(
-        f'{MODEL_PATH} is {got_gb:.1f} GB but {QUANT} should be about '
-        f'{EXPECTED_GB:.1f} GB - the download did not finish. Remove it and '
+        f'{MODEL_PATH} is {got_gib:.1f} GiB but {QUANT} should be about '
+        f'{EXPECTED_GIB:.1f} GiB - the download did not finish. Remove it and '
         f'run this stage again:  rm -rf {MODEL_DIR}'
     )
 
