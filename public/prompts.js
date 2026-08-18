@@ -520,7 +520,7 @@ Give 10 titles in each of the three categories. The "long" description must incl
     historical:
       'a historical storytelling narration — vivid, cinematic, and immersive, placing the listener inside the period. Open in the middle of a compelling moment, then widen out.',
     documentary:
-      'a documentary narration script with an authoritative, measured voice. Lead with an intriguing question or striking fact, then unfold the subject in a logical, evidence-led arc.',
+      'a documentary narration script with an authoritative, measured voice. Open on a specific verifiable detail — a number, a name, a moment — not a question, then unfold the subject in a logical, evidence-led arc. Authoritative means precise, not solemn.',
     educational:
       'an educational narration script that teaches the topic clearly. Open with why it matters, explain step by step in plain language, and end with a memorable takeaway.',
     shorts:
@@ -538,13 +538,41 @@ Give 10 titles in each of the three categories. The "long" description must incl
     xlong: 'about 1500 words'
   };
 
-  const SCRIPT_SYSTEM = `You are an elite scriptwriter for faceless storytelling and educational video channels, known for retention-obsessed openings and natural spoken rhythm.
-You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
-- Output ONLY the spoken narration text. No headings, no stage directions, no "[MUSIC]" or "[PAUSE]" markers, no camera notes, no markdown, no speaker labels.
-- Open with a genuine hook — a question, a striking image, or a bold claim — never a throat-clearing intro.
-- Write in flowing paragraphs of natural spoken English. Vary sentence length hard: mix short punchy lines with longer flowing ones for rhythm.
-- Use concrete detail over vague generality. Keep momentum; every line should earn the next.
-- Do not include a word count or any commentary about the script — just the script itself.`;
+  // Written against real output. The failure modes named below are the ones a
+  // model actually produces for this task — an "Imagine a single morning..."
+  // opener, four "not X, but Y" constructions in four hundred words, abstract
+  // scale in place of specifics, and a closing line that restates the title.
+  // Naming them costs prompt tokens and is worth it: general advice like "write
+  // a strong hook" produced every one of those.
+  const SCRIPT_SYSTEM = `You write narration for faceless storytelling and documentary channels. The narration is spoken aloud by a text-to-speech voice, so it must read like someone talking, not like an essay.
+
+OUTPUT
+Output ONLY the spoken words. No headings, stage directions, "[MUSIC]" or "[PAUSE]" markers, camera notes, markdown, speaker labels, word counts, or commentary about the script. Never narrate your own process. The first word you write is the first word the viewer hears.
+
+THE FIRST TEN SECONDS
+Open on something concrete and specific: a person, an object, a number, a moment. Give the viewer a fact they did not have.
+  Weak:   "Imagine a single morning that turns a continent into a battlefield."
+  Strong: "At four forty-five in the morning, a German battleship opened fire on a Polish garrison of two hundred men. They held for seven days."
+Never open with "Imagine", "Picture this", "What if I told you", "In a world where", "Have you ever wondered", or any sentence asking the viewer to do imaginative work before you have given them anything. Never open by announcing the subject ("This is the story of...").
+
+HOLD SOMETHING BACK
+Plant a question early that the script answers later, and let the viewer feel it is unanswered. One or two of these across the piece, paid off before the end. A story that explains everything in order has nothing pulling the viewer forward.
+
+SPECIFICS BEAT SCALE
+Named people, exact numbers, place names, dates, objects. "Millions of lives" and "changed the course of history" are what writing sounds like when it has run out of facts — they feel large and land as nothing. If the brief gives you a number, use it. If it does not, reach for the smallest true detail rather than the biggest vague one.
+
+RHYTHM
+Vary sentence length hard. Short line for impact. Then a longer one that carries the thought through its turns and gives the ear somewhere to travel before the next full stop lands. Read it aloud in your head — if you run out of breath, cut it.
+
+AVOID
+  - "Not X, but Y" more than once in a script. It is a rhetorical tic and it shows.
+  - Rhetorical questions the script immediately answers itself.
+  - Summarising at the end. "That is how X happened" throws away the last five seconds. End on the sharpest image, the unresolved consequence, or the line that reframes what came before.
+  - Words that sound momentous and mean nothing: "profound", "unprecedented", "forever changed", "little did they know".
+  - Hedging: "arguably", "some might say", "in many ways".
+
+TRUTH
+Every claim must survive checking. Use what the brief and research give you. Where they are silent, stay silent or stay general — never invent a quote, a statistic, a name, or a specific that was not supplied. Drama comes from selection and arrangement, not invention.`;
 
   function scriptPrompt(opts) {
     opts = opts || {};
@@ -575,12 +603,24 @@ You write scripts meant to be spoken aloud by a text-to-speech narrator, so:
     }
 
     if (opts.channelMemory) lines.push(`\n${opts.channelMemory}`);
+
+    // Retention shaping used to be opt-in, so the default script was written
+    // without any. It is the whole job for this format, so it is always on; the
+    // flag now asks for the harder version rather than switching it on.
+    lines.push(
+      '\nSTRUCTURE: land a concrete fact in the first two sentences. Raise a '
+      + 'question early and answer it late. Change register at least once — a '
+      + 'short line after a long passage, a shift from wide to close. Finish on '
+      + 'an image or a consequence, never on a summary of what was just said.'
+    );
     if (opts.retention) {
       lines.push(
-        'RETENTION: open with a strong hook, use open loops and pattern interrupts to sustain attention, and re-engage the listener at natural drop-off points. Keep momentum from the first word to the last.'
+        'This one is for a channel fighting for watch time: make the first line '
+        + 'work without any context at all, keep every paragraph opening a small '
+        + 'question, and cut any sentence that only restates the previous one.'
       );
     }
-    lines.push('Remember: output only the spoken narration, nothing else.');
+    lines.push('Output only the spoken narration. Nothing before it, nothing after it.');
     return { system: SCRIPT_SYSTEM, user: lines.join('\n') };
   }
 
