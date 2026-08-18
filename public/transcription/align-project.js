@@ -215,7 +215,44 @@
    * project whose timings were never measured, which is the exact false claim
    * this whole layer exists to avoid.
    */
+  /** How many times to ask again when the answer comes back short. */
+  const COVERAGE_ATTEMPTS = 3;
+
+  /**
+   * Align, and ask again if the answer is short.
+   *
+   * The endpoint under-returns intermittently — measured live at 10 of 19 words
+   * on one run and 19 of 19 on the next, same script, same audio. Rejecting a
+   * partial answer is only half the rule: the other half is that asking again
+   * usually works, and a producer should not have to know that.
+   *
+   * Bounded, and the last failure is re-thrown with its coverage intact, so a
+   * genuinely broken endpoint still reports as broken rather than looping.
+   */
   async function align(opts = {}) {
+    let lastErr = null;
+    for (let attempt = 1; attempt <= COVERAGE_ATTEMPTS; attempt++) {
+      try {
+        return await alignOnce(opts);
+      } catch (err) {
+        lastErr = err;
+        // Only a short answer is worth repeating. A missing endpoint or absent
+        // audio will fail identically every time.
+        if (!err.coverage || attempt === COVERAGE_ATTEMPTS) throw err;
+        try {
+          window.dispatchEvent(new CustomEvent('blvck:align-retry', {
+            detail: { attempt, of: COVERAGE_ATTEMPTS, coverage: err.coverage }
+          }));
+        } catch (e) { /* non-fatal */ }
+        console.warn(`[Align] covered ${err.coverage.matched}/${err.coverage.expected} words `
+          + `(${Math.round(err.coverage.ratio * 100)}%) — asking again `
+          + `(attempt ${attempt + 1}/${COVERAGE_ATTEMPTS})`);
+      }
+    }
+    throw lastErr;
+  }
+
+  async function alignOnce(opts = {}) {
     if (!window.Transcript) throw new Error('Transcript module is not loaded.');
     if (!window.BlvckSync) throw new Error('Sync engine is not loaded.');
 
