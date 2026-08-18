@@ -529,11 +529,24 @@ for s in validated.scenes:
     r = s.stockRequirements
     if r:
         print(f'       source: {r.sourceStrategy} -> {", ".join(r.preferredSources) or "(none)"}')
-        if r.archiveQueries:
-            print(f'       archive: {" | ".join(r.archiveQueries[:2])}')
-        if r.timePeriod:
-            print(f'       period : {r.timePeriod.label or ""} '
-                  f'{r.timePeriod.from_year or ""}-{r.timePeriod.to_year or ""}')
+        # getattr, because stockRequirements is a union discriminated on
+        # sourceStrategy: a modern beat has no archiveQueries, excerpt or
+        # editorialPurpose at all — that is the point of the split, not a gap
+        # to fill in. Reading them directly raises AttributeError on exactly
+        # the beats that are behaving correctly.
+        archive_queries = getattr(r, 'archiveQueries', None)
+        if archive_queries:
+            print(f'       archive: {" | ".join(archive_queries[:2])}')
+        excerpt = getattr(r, 'excerpt', None)
+        if excerpt:
+            print(f'       excerpt: {excerpt.targetDuration:.0f}s — {excerpt.selectionIntent}')
+        purpose = getattr(r, 'editorialPurpose', '')
+        if purpose:
+            print(f'       why    : {purpose}')
+        period = getattr(r, 'timePeriod', None)
+        if period:
+            print(f'       period : {period.label or ""} '
+                  f'{period.from_year or ""}-{period.to_year or ""}')
 
 director_plan = plan
 print('\\nStage 8 PASSED')
