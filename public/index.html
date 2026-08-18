@@ -744,26 +744,30 @@
             <input id="sb-files" type="file" multiple accept=".srt,.vtt,.txt,.md" />
             <div id="sb-filelist" class="sb-filelist"></div>
 
+            <!-- Live state of the three systems the plan depends on. Read from
+                 the systems themselves, never asserted. -->
+            <div id="sb-signals" class="sb-signals"></div>
+
             <section class="controls sb-controls">
-              <div class="control" style="grid-column: span 2;">
-                <label>Project Format</label>
-                <div class="read-only-badge" id="sb-format-display" style="padding: 0.5rem; background: var(--bg-hover); border-radius: 4px; font-weight: 500; text-align: center;">16:9 Landscape</div>
+              <div class="control">
+                <label>Format</label>
+                <div class="read-only-badge" id="sb-format-display">16:9 Landscape</div>
               </div>
               <div class="control">
-                <label for="sb-stock-strategy">Stock Strategy</label>
+                <label for="sb-stock-strategy">Media strategy</label>
                 <select id="sb-stock-strategy">
-                  <option value="auto" selected>Auto</option>
-                  <option value="video">Video Preferred</option>
-                  <option value="photo">Photo Preferred</option>
+                  <option value="auto" selected>Auto — let the Director decide</option>
+                  <option value="video">Modern stock</option>
+                  <option value="photo">Stills preferred</option>
                   <option value="mixed">Mixed</option>
                 </select>
               </div>
               <div class="control">
-                <label for="sb-stock-provider">Provider</label>
+                <label for="sb-stock-provider">Providers</label>
                 <select id="sb-stock-provider">
                   <option value="all" selected>Pixabay + Pexels</option>
-                  <option value="pixabay">Pixabay Only</option>
-                  <option value="pexels">Pexels Only</option>
+                  <option value="pixabay">Pixabay only</option>
+                  <option value="pexels">Pexels only</option>
                 </select>
               </div>
               <div class="control">
@@ -774,20 +778,34 @@
                   <option value="10">Dense</option>
                 </select>
               </div>
+              <!-- What may be published. Rendered by RightsUI so there is one
+                   definition of the policies, not two. -->
+              <div class="control" style="grid-column: 1 / -1;">
+                <label>Rights policy</label>
+                <div id="sb-rights-policy"></div>
+              </div>
             </section>
 
             <div class="actions">
-              <button id="sb-analyze" class="btn primary"><span class="btn-label">Generate Visual Plan &amp; Fetch Stock</span><span class="spinner" hidden></span></button>
+              <button id="sb-analyze" class="btn primary"><span class="btn-label">Generate Visual Plan &amp; Fetch Media</span><span class="spinner" hidden></span></button>
               <button id="sb-clear" class="btn ghost clear-btn" type="button" data-clear="storyboard">🗑 Clear storyboard</button>
             </div>
 
             <div id="sb-status" class="status" hidden></div>
+
+            <!-- The Director runs for minutes, so this reports which beat it is
+                 on rather than spinning. -->
+            <div id="sb-director-progress" class="sb-director-progress" hidden></div>
+
             <div id="sb-progress" class="queue-head" hidden>
               <div class="progress-track"><div id="sb-progress-fill" class="progress-fill"></div></div>
               <div class="queue-stats-row"><span id="sb-stats" class="queue-stats"></span><span id="sb-eta" class="queue-eta"></span></div>
             </div>
 
-            <div id="sb-bible" class="sb-bible card ghost" hidden></div>
+            <!-- Counted from the scenes themselves on every render. -->
+            <div id="sb-summary" class="sb-summary" hidden></div>
+            <div id="sb-export-readiness" class="sb-readiness" hidden></div>
+
             <div id="sb-scenes" class="sb-scenes"></div>
 
             <div id="sb-exports" class="exports" hidden style="margin-top: 1rem; display: flex; gap: 0.5rem;">

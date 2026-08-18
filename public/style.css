@@ -3102,3 +3102,182 @@ body.sidebar-collapsed .brand-name {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.78rem;
 }
+
+/* Storyboard: the production workspace
+   ---------------------------------------------------------------------------
+   The card answers eight questions in the order a producer asks them, with the
+   media as the visual anchor and everything diagnostic behind a disclosure. */
+
+.sb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.95rem 1rem;
+}
+
+.sb-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border, #232a31);
+}
+.sb-card-id { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; }
+.sb-scene-no {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem; letter-spacing: 0.12em; color: var(--text-dim, #9aa4b2);
+}
+.sb-scene-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem; font-variant-numeric: tabular-nums; color: var(--text, #e6e6ea);
+}
+
+/* Media leads; the reasoning sits beside it and wraps under on narrow screens. */
+.sb-card-body { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 1rem; }
+@media (max-width: 780px) { .sb-card-body { grid-template-columns: 1fr; } }
+
+.sb-media { position: relative; }
+.sb-media .sb-thumb,
+.sb-media .sb-thumb-video { width: 100%; border-radius: 6px; display: block; background: #0b0f12; }
+.sb-media .sb-thumb-placeholder {
+  aspect-ratio: 16 / 9; display: grid; place-items: center; border-radius: 6px;
+  background: var(--bg-hover, #171d22); color: var(--text-dim, #9aa4b2); font-size: 0.82rem;
+}
+
+.sb-card-facts { display: flex; flex-direction: column; gap: 0.65rem; min-width: 0; }
+.sb-field { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.sb-field-label {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.66rem; letter-spacing: 0.11em; text-transform: uppercase;
+  color: var(--text-dim, #9aa4b2);
+}
+.sb-field-value { font-size: 0.85rem; color: var(--text, #e6e6ea); }
+.sb-narration { font-size: 0.9rem; line-height: 1.5; }
+.sb-intent { font-size: 0.88rem; line-height: 1.45; }
+/* A short production rationale, never the model's own reasoning. */
+.sb-rationale { font-size: 0.78rem; color: var(--text-dim, #9aa4b2); font-style: italic; }
+
+.sb-chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.sb-chip {
+  display: inline-block; padding: 0.12em 0.5em; border-radius: 3px;
+  font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase;
+  background: var(--bg-hover, #171d22); color: var(--text-dim, #9aa4b2);
+  border: 1px solid var(--border, #232a31); white-space: nowrap;
+}
+.sb-chip-ok       { color: #3ddc84; border-color: #1d4c33; background: #10241a; }
+.sb-chip-warn     { color: #d9b45c; border-color: #4a3d1a; background: #241f10; }
+.sb-chip-bad      { color: #e8836f; border-color: #4d2a20; background: #2a1712; }
+.sb-chip-busy     { color: #7fb7f0; border-color: #21384d; background: #101c26; }
+.sb-chip-idle     { color: #9aa4b2; }
+.sb-chip-archival { color: #d9b45c; border-color: #4a3d1a; }
+.sb-chip-modern   { color: #7fb7f0; border-color: #21384d; }
+.sb-chip-source   { color: #b9a7f0; border-color: #322a4d; }
+.sb-chip-type     { color: var(--text, #e6e6ea); }
+.sb-chip-period   { color: #9aa4b2; }
+
+.sb-queries { margin: 0; padding-left: 1.05rem; font-size: 0.82rem; }
+.sb-queries li { margin-bottom: 0.15rem; }
+.sb-query-archive { color: #d9b45c; }
+.sb-query-archive .sb-chip { margin-left: 0.4rem; }
+
+/* Two clocks side by side, because conflating them is the classic error. */
+.sb-two-clocks { display: flex; flex-wrap: wrap; gap: 0.9rem; }
+.sb-clock { display: flex; flex-direction: column; gap: 0.1rem; }
+.sb-clock-label {
+  font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-dim, #9aa4b2);
+}
+.sb-clock-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86rem; font-variant-numeric: tabular-nums;
+}
+.sb-clock-of { font-size: 0.7rem; color: var(--text-dim, #9aa4b2); }
+
+.sb-warn { font-size: 0.78rem; color: #d9b45c; }
+.sb-ok-note { font-size: 0.78rem; color: #3ddc84; }
+.sb-error { font-size: 0.78rem; color: var(--danger, #e8836f); }
+
+.sb-overlay-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.05rem; font-weight: 600;
+}
+
+/* Timing: legible at a glance, deliberately not an editing surface. */
+.sb-timing { display: flex; flex-direction: column; gap: 0.25rem; }
+.sb-timing-head {
+  display: flex; justify-content: space-between;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem; color: var(--text-dim, #9aa4b2); font-variant-numeric: tabular-nums;
+}
+.sb-lane { display: grid; grid-template-columns: 4.5rem 1fr; align-items: center; gap: 0.5rem; }
+.sb-lane-label { font-size: 0.68rem; color: var(--text-dim, #9aa4b2); }
+.sb-lane-track { position: relative; height: 12px; border-radius: 3px; background: var(--bg-hover, #171d22); }
+.sb-lane-fill {
+  position: absolute; top: 0; bottom: 0; border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6rem; line-height: 12px; text-align: center; color: #0b0f12; overflow: hidden;
+}
+.sb-lane-narration { background: #46607a; }
+.sb-lane-visual    { background: #3f7f6f; }
+.sb-lane-overlay   { background: #d9b45c; }
+.sb-lane-archive   { background: #8a6fb0; color: #f2ecff; }
+
+.sb-attribution { display: flex; flex-direction: column; gap: 0.4rem; }
+.sb-credit { font-size: 0.82rem; line-height: 1.45; }
+.sb-inline-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.sb-details { border-top: 1px solid var(--border, #232a31); padding-top: 0.5rem; }
+.sb-details summary { cursor: pointer; font-size: 0.72rem; color: var(--text-dim, #9aa4b2); }
+.sb-dl {
+  display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 0.8rem;
+  margin: 0.5rem 0 0; font-size: 0.76rem;
+}
+.sb-dl dt { color: var(--text-dim, #9aa4b2); }
+.sb-dl dd { margin: 0; word-break: break-word; }
+
+.sb-scene-actions { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+.sb-lock {
+  display: flex; align-items: center; gap: 0.3rem;
+  font-size: 0.76rem; color: var(--text-dim, #9aa4b2); cursor: pointer;
+}
+.sb-download { font-size: 0.76rem; margin-left: auto; }
+
+/* Header: what the three systems are doing, and what the project adds up to. */
+.sb-signals { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.6rem 0; }
+.sb-signal {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.76rem;
+  background: var(--bg-hover, #171d22); border: 1px solid var(--border, #232a31);
+}
+.sb-signal.ok   { border-color: #1d4c33; }
+.sb-signal.warn { border-color: #4a3d1a; color: #d9b45c; }
+.sb-signal.bad  { border-color: #4d2a20; color: #e8836f; }
+
+.sb-summary { display: flex; flex-wrap: wrap; gap: 1.6rem; margin: 0.8rem 0; }
+.sb-summary-group { display: flex; flex-direction: column; gap: 0.15rem; }
+.sb-summary-title {
+  font-size: 0.66rem; letter-spacing: 0.11em; text-transform: uppercase;
+  color: var(--text-dim, #9aa4b2); margin-bottom: 0.2rem;
+}
+.sb-summary-row { display: flex; gap: 0.5rem; font-size: 0.82rem; }
+.sb-summary-count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums; color: var(--text-dim, #9aa4b2);
+}
+
+.sb-readiness { padding: 0.5rem 0.75rem; border-radius: 4px; font-size: 0.84rem; margin-bottom: 0.8rem; }
+.sb-readiness.ok   { background: #10241a; color: #3ddc84; }
+.sb-readiness.warn { background: #241f10; color: #d9b45c; }
+.sb-readiness.bad  { background: #2a1712; color: #e8836f; }
+
+/* The Director runs for minutes; this says which beat rather than spinning. */
+.sb-director-progress {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  padding: 0.7rem 0.85rem; margin: 0.7rem 0; border-radius: 5px;
+  background: var(--bg-hover, #171d22); border: 1px solid var(--border, #232a31);
+}
+.sb-dp-head { display: flex; justify-content: space-between; font-size: 0.84rem; }
+.sb-dp-note { font-size: 0.74rem; color: var(--text-dim, #9aa4b2); }
+.sb-dp-track { height: 5px; border-radius: 3px; background: #0b0f12; overflow: hidden; }
+.sb-dp-fill { height: 100%; background: #3f7f6f; transition: width 0.3s ease; }

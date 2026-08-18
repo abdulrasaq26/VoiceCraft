@@ -835,6 +835,12 @@
   // --- Rendering ---------------------------------------------------------
 
   function renderBible() {
+    // The panel is gone from the workspace — it described a cast and a visual
+    // style that no longer drive anything the producer can act on. The bible
+    // DATA stays: GraphicRenderer.paletteFor() reads it for the editorial
+    // cards, and applyContinuity() reads it across batch boundaries. So this
+    // is a no-op rather than a deletion.
+    if (!bibleEl) return;
     if (!bible) {
       bibleEl.hidden = true;
       return;
@@ -1097,208 +1103,792 @@
     document.body.appendChild(previewEl);
   }
 
+  // --- Scene card ---------------------------------------------------------
+  //
+  // The card answers eight questions in the order a producer asks them:
+  // what is said, what should be seen, which strategy, which library, which
+  // asset, which part of it, may we use it, is it ready. Everything else —
+  // licence URLs, archive identifiers, raw timings — lives behind a disclosure,
+  // because a card that shows everything shows nothing.
+  //
+  // Nothing here decides anything. Rights come from RightsUI, credits from
+  // AttributionManager, excerpt windows from ArchiveExcerpt, cache state from
+  // the StockMedia events. This module arranges them.
+
+  const STRATEGY_LABEL = {
+    archival: 'Archival',
+    modern_stock: 'Modern stock',
+    auto: 'Either'
+  };
+  const SOURCE_LABEL = {
+    archive_org: 'Internet Archive',
+    pexels: 'Pexels',
+    pixabay: 'Pixabay'
+  };
+  const TYPE_LABEL = {
+    stock_video: 'Stock video',
+    stock_photo: 'Stock photo',
+    stock_text: 'Stock + text',
+    editorial_text: 'Editorial graphic',
+    chart: 'Chart', map: 'Map', timeline: 'Timeline', diagram: 'Diagram',
+    whiteboard: 'Whiteboard', stickman: 'Stickman',
+    t2v: 'Footage', broll: 'Footage', presenter: 'Presenter'
+  };
+
+  const clock = (s) => {
+    const n = Math.max(0, Number(s) || 0);
+    const m = Math.floor(n / 60);
+    return `${String(m).padStart(2, '0')}:${(n - m * 60).toFixed(2).padStart(5, '0')}`;
+  };
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function field(label, node) {
+    const wrap = el('div', 'sb-field');
+    wrap.appendChild(el('div', 'sb-field-label', label));
+    if (typeof node === 'string') wrap.appendChild(el('div', 'sb-field-value', node));
+    else if (node) wrap.appendChild(node);
+    return wrap;
+  }
+
+  function chip(text, kind) {
+    return el('span', 'sb-chip' + (kind ? ' sb-chip-' + kind : ''), text);
+  }
+
+  /** Where this beat sits on the finished video's clock. */
+  function sceneWindow(scene) {
+    const a = Number(scene.timelineStart), b = Number(scene.timelineEnd);
+    if (Number.isFinite(a) && Number.isFinite(b) && b > a) {
+      return { start: a, end: b, measured: true };
+    }
+    // Fall back to the cue timestamp, which is an estimate and is labelled so.
+    const parts = String(scene.timestamp || '').split(/\s*-\s*/);
+    const toSec = (t) => {
+      const m = String(t || '').match(/^(?:(\d+):)?(\d{1,2}):(\d{2})(?:[.,](\d{1,3}))?$/);
+      if (!m) return null;
+      return Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4] || 0) / 1000;
+    };
+    const s = toSec(parts[0]), e = toSec(parts[1]);
+    if (s != null && e != null && e > s) return { start: s, end: e, measured: false };
+    return null;
+  }
+
+  /** Q1 — what is being said, and do we actually know when. */
+  function narrationBlock(scene) {
+    const text = scene.subtitle || scene.sceneSummary || '';
+    if (!text) return null;
+    const wrap = field('Narration', el('div', 'sb-narration', text));
+    const t = window.BlvckAlign && window.BlvckAlign.current();
+    if (t && window.Transcript && window.Transcript.isMeasured(t)
+        && Number.isFinite(Number(scene.timelineStart))) {
+      wrap.querySelector('.sb-field-label').appendChild(chip('✓ Whisper aligned', 'ok'));
+    }
+    return wrap;
+  }
+
+  /** Q2 — what the Director thinks the viewer should see. */
+  function intentBlock(scene) {
+    const r = scene.stockRequirements || {};
+    // The concept, not the prompt. Chain-of-thought never reaches the card.
+    const intent = r.concept || scene.detectedAction || scene.visualGoal || '';
+    if (!intent) return null;
+    const wrap = field('Visual intent', el('div', 'sb-intent', intent));
+    if (r.sourceReason) wrap.appendChild(el('div', 'sb-rationale', r.sourceReason));
+    return wrap;
+  }
+
+  /** Q3 and Q4 — which strategy, and which library. */
+  function strategyBlock(scene) {
+    const r = scene.stockRequirements || {};
+    const row = el('div', 'sb-chip-row');
+    const type = TYPE_LABEL[scene.visualType] || scene.visualType || 'Footage';
+    row.appendChild(chip(type, 'type'));
+    if (r.sourceStrategy) {
+      row.appendChild(chip(STRATEGY_LABEL[r.sourceStrategy] || r.sourceStrategy,
+                           r.sourceStrategy === 'archival' ? 'archival' : 'modern'));
+    }
+    for (const s of r.preferredSources || []) {
+      row.appendChild(chip(SOURCE_LABEL[s] || s, 'source'));
+    }
+    if (r.timePeriod) {
+      const p = r.timePeriod;
+      const label = p.label || [p.from, p.to].filter(Boolean).join('–');
+      if (label) row.appendChild(chip(label, 'period'));
+    }
+    return row.children.length ? field('Strategy', row) : null;
+  }
+
+  /** What was actually searched for. Archive phrasing is shown separately
+      because it is a different kind of query, not a variant of the same one. */
+  function searchBlock(scene) {
+    const r = scene.stockRequirements || {};
+    const stock = r.queries || [];
+    const archive = r.archiveQueries || [];
+    if (!stock.length && !archive.length) return null;
+    const list = el('ul', 'sb-queries');
+    for (const q of archive) {
+      const li = el('li', 'sb-query-archive', q);
+      li.appendChild(chip('archive', 'source'));
+      list.appendChild(li);
+    }
+    for (const q of stock.slice(0, archive.length ? 2 : 4)) list.appendChild(el('li', null, q));
+    return field('Search', list);
+  }
+
+  /** Q6 — which part of the source is used. Two clocks, never conflated. */
+  function excerptBlock(scene) {
+    const asset = scene.stockAsset || {};
+    const ex = asset.excerpt || (scene.stockRequirements || {}).excerpt || null;
+    if (!ex) return null;
+
+    const wrap = el('div', 'sb-excerpt');
+    const applied = ex.applied || Number.isFinite(Number(ex.start));
+    if (applied) {
+      const inn = Number(ex.sourceIn != null ? ex.sourceIn : ex.start);
+      const outn = Number(ex.sourceOut != null ? ex.sourceOut : ex.end);
+      const table = el('div', 'sb-two-clocks');
+      const src = el('div', 'sb-clock');
+      src.appendChild(el('span', 'sb-clock-label', 'In the source film'));
+      src.appendChild(el('span', 'sb-clock-value', `${clock(inn)} → ${clock(outn)}`));
+      if (ex.sourceDuration) {
+        src.appendChild(el('span', 'sb-clock-of', `of ${clock(ex.sourceDuration)}`));
+      }
+      const tl = el('div', 'sb-clock');
+      tl.appendChild(el('span', 'sb-clock-label', 'In this video'));
+      const w = sceneWindow(scene);
+      tl.appendChild(el('span', 'sb-clock-value',
+        w ? `${clock(w.start)} → ${clock(w.end)}` : 'not yet placed'));
+      table.append(src, tl);
+      wrap.appendChild(table);
+    } else if (ex.selectionIntent) {
+      wrap.appendChild(el('div', 'sb-field-value', 'Excerpt requested, not yet chosen.'));
+    }
+
+    if (ex.selectionIntent) {
+      wrap.appendChild(el('div', 'sb-rationale', `Looking for: ${ex.selectionIntent}`));
+    }
+    // The system already records how the window was picked. Saying so is the
+    // difference between a producer trusting it and checking it.
+    if (ex.method === 'heuristic_window' || ex.reviewSuggested) {
+      const warn = el('div', 'sb-warn',
+        '⚠ Excerpt estimated — start point not selected by watching the footage.');
+      wrap.appendChild(warn);
+    } else if (ex.method) {
+      wrap.appendChild(el('div', 'sb-ok-note', '✓ Excerpt chosen from the film’s own frames.'));
+    }
+    return field('Excerpt', wrap);
+  }
+
+  /** Q7 — may we use it. Rendered by RightsUI; nothing decided here. */
+  function rightsBlock(scene) {
+    if (!window.RightsUI || !window.RightsUI.sceneRightsHtml) return null;
+    const html = window.RightsUI.sceneRightsHtml(scene);
+    if (!html) return null;
+    const host = el('div', 'sb-rights');
+    host.innerHTML = html;
+    return host;
+  }
+
+  /** The credit line, when one is owed, with somewhere to put it. */
+  function attributionBlock(scene) {
+    const AM = window.AttributionManager;
+    if (!AM || !AM.forAsset) return null;
+    const credit = AM.forAsset(scene.stockAsset);
+    if (!credit) return null;
+
+    const wrap = el('div', 'sb-attribution');
+    const line = AM.onScreenLine ? AM.onScreenLine(scene.stockAsset) : '';
+    const text = line || [credit.title, credit.creator && `by ${credit.creator}`,
+                          credit.licenseName].filter(Boolean).join(' · ');
+    wrap.appendChild(el('div', 'sb-credit', text));
+
+    const actions = el('div', 'sb-inline-actions');
+    const copy = el('button', 'btn ghost small', 'Copy attribution');
+    copy.type = 'button';
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        copy.textContent = 'Copied';
+        setTimeout(() => { copy.textContent = 'Copy attribution'; }, 1500);
+      } catch (e) { copy.textContent = 'Copy failed'; }
+    });
+    const where = el('button', 'btn ghost small', 'Where it appears');
+    where.type = 'button';
+    where.addEventListener('click', () => {
+      const desc = AM.youtubeDescription ? AM.youtubeDescription(scenes) : '';
+      showRawResponse(desc || text);
+    });
+    actions.append(copy, where);
+    wrap.appendChild(actions);
+    return field('Attribution required', wrap);
+  }
+
+  /** The card the renderer will draw, and when. */
+  function overlayBlock(scene) {
+    const ov = scene.editorialOverlay;
+    if (!ov || !ov.enabled) return null;
+    const wrap = el('div', 'sb-overlay');
+    wrap.appendChild(el('div', 'sb-overlay-text', ov.text || ''));
+    wrap.appendChild(el('div', 'sb-field-value', `${clock(ov.start)} → ${clock(ov.end)}`));
+    if (ov.method === 'spoken_phrase' && ov.anchoredTo) {
+      wrap.appendChild(el('div', 'sb-rationale', `On the words "${ov.anchoredTo}".`));
+    } else if (ov.method === 'shot_window') {
+      wrap.appendChild(el('div', 'sb-rationale', 'Placed in the shot — the phrase was not found in the narration.'));
+    }
+    return field('Editorial overlay', wrap);
+  }
+
+  /**
+   * A compact picture of the beat's clock.
+   *
+   * Deliberately not an editing surface: it answers "does the overlay land
+   * inside the shot, and which slice of the film is this" at a glance, and
+   * nothing more.
+   */
+  function timingBar(scene) {
+    const w = sceneWindow(scene);
+    if (!w) return null;
+    const span = w.end - w.start;
+    if (!(span > 0)) return null;
+
+    const bar = el('div', 'sb-timing');
+    const head = el('div', 'sb-timing-head');
+    head.append(el('span', null, clock(w.start)), el('span', null, clock(w.end)));
+    bar.appendChild(head);
+
+    const lane = (label, from, to, cls) => {
+      const row = el('div', 'sb-lane');
+      row.appendChild(el('span', 'sb-lane-label', label));
+      const track = el('div', 'sb-lane-track');
+      const fill = el('div', 'sb-lane-fill' + (cls ? ' ' + cls : ''));
+      const left = Math.max(0, Math.min(100, ((from - w.start) / span) * 100));
+      const width = Math.max(1, Math.min(100 - left, ((to - from) / span) * 100));
+      fill.style.left = left + '%';
+      fill.style.width = width + '%';
+      track.appendChild(fill);
+      row.appendChild(track);
+      return row;
+    };
+
+    bar.appendChild(lane('Narration', w.start, w.end, 'sb-lane-narration'));
+    bar.appendChild(lane('Visual', w.start, w.end, 'sb-lane-visual'));
+    const ov = scene.editorialOverlay;
+    if (ov && ov.enabled && Number.isFinite(Number(ov.start))) {
+      bar.appendChild(lane('Overlay', Number(ov.start), Number(ov.end), 'sb-lane-overlay'));
+    }
+    const ex = (scene.stockAsset || {}).excerpt;
+    if (ex && (ex.applied || Number.isFinite(Number(ex.start)))) {
+      const row = lane('Archive', w.start, w.end, 'sb-lane-archive');
+      const inn = Number(ex.sourceIn != null ? ex.sourceIn : ex.start);
+      const outn = Number(ex.sourceOut != null ? ex.sourceOut : ex.end);
+      row.querySelector('.sb-lane-fill').textContent = `${clock(inn)} → ${clock(outn)}`;
+      bar.appendChild(row);
+    }
+    if (!w.measured) {
+      bar.appendChild(el('div', 'sb-rationale', 'Estimated from the cue list — narration not aligned.'));
+    }
+    return bar;
+  }
+
+  /** Everything a producer only wants when something looks wrong. */
+  function detailsBlock(scene) {
+    const asset = scene.stockAsset;
+    if (!asset) return null;
+    const box = el('details', 'sb-details');
+    box.appendChild(el('summary', null, 'Asset details'));
+    const dl = el('dl', 'sb-dl');
+    const add = (k, v) => {
+      if (v == null || v === '') return;
+      dl.appendChild(el('dt', null, k));
+      dl.appendChild(el('dd', null, String(v)));
+    };
+    add('Provider', asset.provider);
+    add('Asset id', asset.id);
+    const a = asset.archive || {};
+    add('Archive item', a.identifier);
+    add('Title', a.title);
+    add('Creator', a.creator);
+    add('Date', a.date);
+    add('Collection', Array.isArray(a.collection) ? a.collection.join(', ') : a.collection);
+    if (asset.duration) add('Duration', `${Number(asset.duration).toFixed(1)}s`);
+    if (asset.width && asset.height) add('Resolution', `${asset.width}×${asset.height}`);
+    add('Orientation', asset.orientation);
+    if (asset.license) {
+      add('Licence', asset.license.label || asset.license.tier);
+      add('Licence URL', asset.license.licenseUrl);
+    }
+    add('Source page', asset.sourceUrl);
+    if (asset.treatment) add('Framing', asset.treatment.note || asset.treatment.fit);
+    if ((asset.queriesUsed || []).length) add('Queries used', asset.queriesUsed.join(' · '));
+    if (asset.fallback) add('Fallback tier', asset.fallback);
+    box.appendChild(dl);
+    return box;
+  }
+
+  /** The media itself, which is what the card is actually about. */
+  function mediaBlock(scene) {
+    const url = urls.get(scene.index);
+    const isVideo = sceneAssetType(scene) === 'video';
+    const stage = el('div', 'sb-media');
+
+    if (url && scene.status === 'done') {
+      let thumb;
+      if (isVideo) {
+        thumb = document.createElement('video');
+        thumb.className = 'sb-thumb sb-thumb-video';
+        thumb.src = url;
+        thumb.muted = true; thumb.loop = true; thumb.playsInline = true; thumb.controls = true;
+        // 'metadata' loads duration but decodes no picture, so a rendered clip
+        // shows as a black player until someone presses play.
+        thumb.preload = 'auto';
+        thumb.addEventListener('loadeddata', () => {
+          if (thumb.currentTime === 0) {
+            try { thumb.currentTime = 0.1; } catch { /* some codecs refuse an early seek */ }
+          }
+        }, { once: true });
+      } else {
+        thumb = document.createElement('img');
+        thumb.className = 'sb-thumb';
+        thumb.src = url;
+        thumb.alt = `Scene ${scene.index}`;
+      }
+      thumb.style.cursor = 'zoom-in';
+      thumb.title = 'Click to preview full size';
+      thumb.addEventListener('click', (e) => {
+        if (isVideo && e.target !== thumb) return;   // let the controls work
+        if (isVideo) e.preventDefault();
+        openPreview(scene, url, isVideo);
+      });
+      stage.appendChild(thumb);
+    } else {
+      const ph = el('div', 'sb-thumb-placeholder');
+      ph.textContent = scene.status === 'generating' ? 'Finding media…'
+                     : scene.status === 'error' ? 'No media'
+                     : 'Queued';
+      stage.appendChild(ph);
+    }
+    return stage;
+  }
+
+  /** Q8, per scene: what is stopping this beat reaching the export. */
+  function sceneState(scene) {
+    if (scene.status === 'error') return { label: 'Media error', kind: 'bad' };
+    if (scene.status === 'generating') return { label: 'Searching', kind: 'busy' };
+    if (scene.stockLocked) return { label: 'Locked', kind: 'ok' };
+
+    const asset = scene.stockAsset;
+    if (asset && asset.rightsStatus && !asset.rightsStatus.usable) {
+      return asset.rightsStatus.humanReviewRequired
+        ? { label: 'Needs review', kind: 'warn' }
+        : { label: 'Rights blocked', kind: 'bad' };
+    }
+    if ((scene.editorialCandidates || []).length && !asset) {
+      return { label: 'Needs review', kind: 'warn' };
+    }
+    if (scene.status !== 'done') return { label: 'Planning', kind: 'idle' };
+    if (asset && asset.fallback) return { label: 'Fallback used', kind: 'warn' };
+    return { label: 'Ready', kind: 'ok' };
+  }
+
+  function sceneActions(scene) {
+    const bar = el('div', 'sb-scene-actions');
+
+    const regen = el('button', 'btn ghost small', scene.status === 'error' ? 'Retry' : 'Search again');
+    regen.type = 'button';
+    regen.disabled = running || !!scene.stockLocked;
+    regen.title = scene.stockLocked ? 'Unlock the clip first' : 'Search again with the Director’s queries';
+    regen.addEventListener('click', () => regenerateScene(scene));
+    bar.appendChild(regen);
+
+    if (window.StockMedia && window.StockMedia.isConfigured()) {
+      const replace = el('button', 'btn ghost small', 'Replace');
+      replace.type = 'button';
+      replace.disabled = running || !!scene.stockLocked;
+      replace.addEventListener('click', async () => {
+        const suggested = ((scene.stockRequirements || {}).queries || [])[0] || '';
+        const q = prompt('Search for a replacement clip:', suggested);
+        if (!q) return;
+        scene.status = 'generating';
+        renderScenes();
+        try {
+          const blob = await window.StockMedia.replaceClip(scene, q);
+          if (blob) storeAsset(scene.index, blob);
+          scene.status = 'done';
+          scene.error = null;
+        } catch (err) {
+          scene.status = 'error';
+          scene.error = err.message;
+        }
+        saveProject();
+        renderScenes();
+      });
+      bar.appendChild(replace);
+    }
+
+    // Only where there is a film to take an excerpt from.
+    const asset = scene.stockAsset;
+    if (asset && asset.provider === 'archive_org' && window.ArchiveExcerpt) {
+      const edit = el('button', 'btn ghost small', 'Edit excerpt');
+      edit.type = 'button';
+      edit.disabled = running;
+      edit.addEventListener('click', () => editExcerpt(scene));
+      bar.appendChild(edit);
+    }
+
+    const lock = el('label', 'sb-lock');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !!scene.stockLocked;
+    box.disabled = running || (!scene.stockAsset && scene.status !== 'done');
+    box.addEventListener('change', () => {
+      scene.stockLocked = box.checked;
+      saveProject();
+      renderScenes();
+    });
+    lock.append(box, document.createTextNode('Lock'));
+    lock.title = 'A locked clip keeps its asset, excerpt, rights and cache through a re-plan';
+    bar.appendChild(lock);
+
+    if (scene.status === 'done' && urls.get(scene.index)) {
+      const ext = sceneAssetType(scene) === 'video' ? videoExt(memBlobs.get(scene.index)) : 'png';
+      const dl = document.createElement('a');
+      dl.className = 'sb-download';
+      dl.href = urls.get(scene.index);
+      dl.download = `${project()} Scene ${String(scene.index).padStart(2, '0')}.${ext}`;
+      dl.textContent = 'Download';
+      bar.appendChild(dl);
+    }
+    return bar;
+  }
+
+  /** Set In / Set Out against the existing excerpt logic. */
+  async function editExcerpt(scene) {
+    const asset = scene.stockAsset || {};
+    const ex = asset.excerpt || {};
+    const currentIn = Number(ex.sourceIn != null ? ex.sourceIn : ex.start) || 0;
+    const currentOut = Number(ex.sourceOut != null ? ex.sourceOut : ex.end) || (currentIn + 6);
+
+    const inn = prompt(
+      `Set In — seconds into the source film (it runs ${Number(asset.duration || ex.sourceDuration || 0).toFixed(1)}s):`,
+      String(currentIn));
+    if (inn === null) return;
+    const outn = prompt('Set Out — seconds into the source film:', String(currentOut));
+    if (outn === null) return;
+
+    try {
+      const chosen = window.ArchiveExcerpt.setManualExcerpt({
+        sourceDuration: Number(asset.duration || ex.sourceDuration || 0),
+        sourceIn: Number(inn),
+        sourceOut: Number(outn)
+      });
+      if (!chosen) throw new Error('That window does not fit inside the film.');
+      scene.stockAsset = Object.assign({}, asset, { excerpt: chosen });
+      saveProject();
+      renderScenes();
+      showStatus(`Scene ${scene.index}: excerpt set to ${clock(chosen.sourceIn != null ? chosen.sourceIn : chosen.start)}`
+        + ` → ${clock(chosen.sourceOut != null ? chosen.sourceOut : chosen.end)}.`, 'info');
+    } catch (err) {
+      showStatus(`Could not set that excerpt: ${err.message}`);
+    }
+  }
+
   function renderScenes() {
-    // A preview left open would point at a blob URL this re-render is about to
-    // revoke.
+    // A preview left open would point at a blob URL this re-render revokes.
     closePreview();
     scenesEl.innerHTML = '';
+
     scenes.forEach((scene) => {
-      const row = document.createElement('div');
-      row.className = 'sb-scene' + (scene.status === 'generating' ? ' is-generating' : '') + (scene.status === 'error' ? ' is-error' : '');
+      const state = sceneState(scene);
+      const card = el('article', 'sb-scene sb-card' + (scene.status === 'generating' ? ' is-generating' : '')
+        + (scene.status === 'error' ? ' is-error' : ''));
 
-      const url = urls.get(scene.index);
-      const isVideo = sceneAssetType(scene) === 'video';
-      let thumb;
-      if (url && scene.status === 'done') {
-        if (isVideo) {
-          thumb = document.createElement('video');
-          thumb.className = 'sb-thumb sb-thumb-video';
-          thumb.src = url;
-          thumb.muted = true;
-          thumb.loop = true;
-          thumb.playsInline = true;
-          thumb.controls = true;
-          // 'metadata' loads duration but decodes no picture, so the card shows
-          // a black player until the user presses play — a rendered clip looks
-          // like a failed one. Nudge past the first frame to force a poster.
-          thumb.preload = 'auto';
-          thumb.addEventListener('loadeddata', () => {
-            if (thumb.currentTime === 0) {
-              try {
-                thumb.currentTime = 0.1;
-              } catch {
-                /* some codecs refuse an early seek; the player still works */
-              }
-            }
-          }, { once: true });
-        } else {
-          thumb = document.createElement('img');
-          thumb.className = 'sb-thumb';
-          thumb.src = url;
-          thumb.alt = `Scene ${scene.index}`;
-        }
-        // Open the full-size preview. On a video the controls are inside the
-        // element, so only a click on the frame itself should open the
-        // lightbox — otherwise hitting play would fill the screen instead.
-        thumb.style.cursor = 'zoom-in';
-        thumb.title = 'Click to preview full size';
-        thumb.addEventListener('click', (e) => {
-          if (isVideo && e.target !== thumb) return;
-          if (isVideo) e.preventDefault();
-          openPreview(scene, url, isVideo);
-        });
-      } else {
-        thumb = document.createElement('div');
-        thumb.className = 'sb-thumb-placeholder';
-        const noun = isVideo ? 'video' : 'image';
-        thumb.textContent =
-          scene.status === 'generating'
-            ? `Generating ${noun}…`
-            : scene.status === 'error'
-              ? 'Failed'
-              : `Queued (${noun})`;
+      // ── header ──────────────────────────────────────────────────────────
+      const head = el('header', 'sb-card-head');
+      const idBlock = el('div', 'sb-card-id');
+      idBlock.appendChild(el('span', 'sb-scene-no', `SCENE ${String(scene.index).padStart(2, '0')}`));
+      const w = sceneWindow(scene);
+      if (w) {
+        idBlock.appendChild(el('span', 'sb-scene-time',
+          `${clock(w.start)} → ${clock(w.end)} · ${(w.end - w.start).toFixed(2)}s`));
       }
+      head.appendChild(idBlock);
+      head.appendChild(chip(state.label, state.kind));
+      card.appendChild(head);
 
-      const body = document.createElement('div');
-      body.className = 'sb-scene-body';
+      // ── body: media on one side, the reasoning on the other ─────────────
+      const body = el('div', 'sb-card-body');
+      body.appendChild(mediaBlock(scene));
 
-      const head = document.createElement('div');
-      head.className = 'sb-scene-head';
-      const tag = document.createElement('span');
-      tag.className = 'sb-scene-tag';
-      tag.textContent = `Scene ${scene.index}`;
-      head.appendChild(tag);
-      const meta = document.createElement('span');
-      meta.textContent = `${scene.timestamp ? scene.timestamp + ' · ' : ''}${scene.camera} · ${scene.sceneType}`;
-      head.appendChild(meta);
-
-      const subtitle = document.createElement('div');
-      subtitle.className = 'sb-scene-subtitle';
-      subtitle.textContent = scene.subtitle || scene.sceneSummary;
-
-      // Prompt transparency: show the detected action + visual goal, and let
-      // the user edit the actual image prompt before generating.
-      const details = document.createElement('div');
-      details.className = 'sb-scene-insight';
-      details.style.display = 'flex';
-      details.style.flexDirection = 'column';
-      details.style.gap = '4px';
-
-      if (scene.subtitle) {
-        const span = document.createElement('span');
-        span.innerHTML = `<strong>Narration:</strong> ${esc(scene.subtitle)}`;
-        details.appendChild(span);
+      const facts = el('div', 'sb-card-facts');
+      for (const block of [narrationBlock(scene), intentBlock(scene), strategyBlock(scene),
+                           searchBlock(scene), excerptBlock(scene), overlayBlock(scene)]) {
+        if (block) facts.appendChild(block);
       }
-      if (scene.detectedAction || scene.visualGoal) {
-        const span = document.createElement('span');
-        span.innerHTML = `<strong>Visual Intent:</strong> ${esc(scene.detectedAction || scene.visualGoal)}`;
-        details.appendChild(span);
-      }
-      if (scene.visualType) {
-        const span = document.createElement('span');
-        span.innerHTML = `<strong>Strategy:</strong> ${esc(scene.visualType)}`;
-        details.appendChild(span);
-      }
-      if (scene.stockRequirements && scene.stockRequirements.queries && scene.stockRequirements.queries.length) {
-        const span = document.createElement('span');
-        span.innerHTML = `<strong>Search Queries:</strong> ${esc(scene.stockRequirements.queries.join(', '))}`;
-        details.appendChild(span);
-      }
+      body.appendChild(facts);
+      card.appendChild(body);
 
-      let stockInfo = null;
-      let cacheInfo = null;
-      if (scene.stockAsset) {
-        stockInfo = document.createElement('div');
-        stockInfo.className = 'sb-scene-insight';
-        const sa = scene.stockAsset;
-        stockInfo.innerHTML = `<span><strong>Stock:</strong> ${sa.provider} ${sa.type} (${sa.id})</span>` +
-          (sa.fallback ? ` <span style="color:var(--warning)">[Fallback: ${sa.fallback}]</span>` : '');
+      const bar = timingBar(scene);
+      if (bar) card.appendChild(bar);
 
-        cacheInfo = buildCacheRow(scene);
-      }
+      const rights = rightsBlock(scene);
+      if (rights) card.appendChild(rights);
+      const credit = attributionBlock(scene);
+      if (credit) card.appendChild(credit);
 
-      const actions = document.createElement('div');
-      actions.className = 'sb-scene-actions';
-      const regen = document.createElement('button');
-      regen.type = 'button';
-      regen.textContent = scene.status === 'error' ? 'Retry Fetch' : 'Fetch Again';
-      regen.disabled = running;
-      regen.addEventListener('click', () => regenerateScene(scene));
-      actions.appendChild(regen);
+      if (scene.stockAsset) card.appendChild(buildCacheRow(scene));
 
-      // Stock replacement control
-      if (window.StockMedia && window.StockMedia.isConfigured() && ['stock_video', 'stock_photo', 'stock_text', 't2v', 'broll'].includes(scene.visualType)) {
-        const replaceBtn = document.createElement('button');
-        replaceBtn.type = 'button';
-        replaceBtn.textContent = 'Replace Manually';
-        replaceBtn.title = 'Search and replace this scene with a specific stock clip';
-        replaceBtn.disabled = running;
-        replaceBtn.addEventListener('click', async () => {
-          const q = prompt('Search query for replacement clip:');
-          if (!q) return;
-          scene.status = 'generating';
-          renderScenes();
-          try {
-            const blob = await window.StockMedia.replaceClip(scene, q);
-            if (blob) storeAsset(scene.index, blob);
-            scene.status = 'done';
-            scene.error = null;
-          } catch (err) {
-            scene.status = 'error';
-            scene.error = err.message;
-          }
-          saveProject();
-          renderScenes();
-        });
-        actions.appendChild(replaceBtn);
-      }
+      const details = detailsBlock(scene);
+      if (details) card.appendChild(details);
 
-      // Lock toggle
-      const lockLabel = document.createElement('label');
-      lockLabel.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;color:#9aa4b2;cursor:pointer;margin-left:auto';
-      const lockCheck = document.createElement('input');
-      lockCheck.type = 'checkbox';
-      lockCheck.checked = !!scene.stockLocked;
-      lockCheck.disabled = running || (!scene.stockAsset && scene.status !== 'done');
-      lockCheck.addEventListener('change', () => {
-        scene.stockLocked = lockCheck.checked;
-        saveProject();
-      });
-      lockLabel.append(lockCheck, 'Lock Clip');
-      actions.appendChild(lockLabel);
-
-      if (scene.status === 'done' && url) {
-        const ext = isVideo ? videoExt(memBlobs.get(scene.index)) : 'png';
-        const dl = document.createElement('a');
-        dl.href = url;
-        dl.download = `${project()} Scene ${String(scene.index).padStart(2, '0')}.${ext}`;
-        dl.textContent = 'Download';
-        actions.appendChild(dl);
-      }
       if (scene.status === 'error' && scene.error) {
-        const err = document.createElement('span');
-        err.style.color = 'var(--danger)';
-        err.style.fontSize = '0.72rem';
-        err.textContent = scene.error.slice(0, 80);
-        actions.appendChild(err);
+        card.appendChild(el('div', 'sb-error', scene.error.slice(0, 160)));
       }
 
-      body.appendChild(head);
-      if (subtitle.textContent) body.appendChild(subtitle);
-      body.appendChild(details);
-      if (stockInfo) body.appendChild(stockInfo);
-      if (cacheInfo) body.appendChild(cacheInfo);
-      body.appendChild(actions);
-      row.append(thumb, body);
-      scenesEl.appendChild(row);
+      card.appendChild(sceneActions(scene));
+      scenesEl.appendChild(card);
     });
+
+    renderSummary();
+    renderSignals();
     updateProgress();
     updateControls();
-    // Whether the bytes are really in IndexedDB is an async question, so the
-    // row renders from what is known synchronously and is corrected a moment
-    // later rather than blocking the whole list on a storage read.
     auditCacheRows();
   }
+
+  // --- Project summary ------------------------------------------------------
+  //
+  // Counted from the scenes on every render. Nothing here is configured or
+  // remembered, so it cannot drift from what the cards show.
+
+  let policyMounted = false;
+  function mountRightsPolicy() {
+    const host = $('sb-rights-policy');
+    if (!host || policyMounted || !window.RightsUI || !window.RightsUI.policySelectorHtml) return;
+    host.innerHTML = window.RightsUI.policySelectorHtml();
+    window.RightsUI.bindPolicySelector(host);
+    policyMounted = true;
+  }
+
+  function renderSummary() {
+    mountRightsPolicy();
+    const host = $('sb-summary');
+    if (!host) return;
+    if (!scenes.length) { host.hidden = true; return; }
+    host.hidden = false;
+    host.innerHTML = '';
+
+    const byType = new Map();
+    let cleared = 0, attribution = 0, review = 0, blocked = 0;
+    for (const s of scenes) {
+      const label = TYPE_LABEL[s.visualType] || 'Footage';
+      byType.set(label, (byType.get(label) || 0) + 1);
+
+      const asset = s.stockAsset;
+      if (!asset) continue;
+      const lic = asset.license || {};
+      const verdict = asset.rightsStatus || {};
+      if (verdict.humanReviewRequired) review++;
+      else if (verdict.usable === false) blocked++;
+      else if (lic.requiresAttribution) attribution++;
+      else cleared++;
+    }
+
+    const group = (title, rows) => {
+      const box = el('div', 'sb-summary-group');
+      box.appendChild(el('div', 'sb-summary-title', title));
+      for (const [k, v] of rows) {
+        const line = el('div', 'sb-summary-row');
+        line.append(el('span', 'sb-summary-count', String(v).padStart(2, '0')),
+                    el('span', 'sb-summary-label', k));
+        box.appendChild(line);
+      }
+      return box;
+    };
+
+    host.appendChild(group(`${scenes.length} scene${scenes.length === 1 ? '' : 's'}`,
+                           [...byType.entries()].sort((a, b) => b[1] - a[1])));
+
+    const rights = [['Cleared', cleared], ['Attribution required', attribution],
+                    ['Review required', review]];
+    if (blocked) rights.push(['Not cleared', blocked]);
+    host.appendChild(group('Rights', rights));
+
+    renderReadiness({ review, blocked });
+  }
+
+  /** Q8 for the project. Asks the export gate rather than re-deciding. */
+  function renderReadiness(counts) {
+    const host = $('sb-export-readiness');
+    if (!host) return;
+    const problems = [];
+
+    // Ask the audit for the count rather than deriving one. Counting locally
+    // produced "0 scenes not cleared for export", which is both wrong and
+    // exactly the kind of statement that stops being believed.
+    if (window.AttributionManager && window.AttributionManager.audit && window.RightsUI) {
+      const report = window.AttributionManager.audit(scenes, window.RightsUI.currentPolicy());
+      const n = (report.blockers || []).length;
+      if (!report.canExport && n) {
+        problems.push({ kind: 'bad', text: `${n} scene${n === 1 ? '' : 's'} not cleared for export` });
+      } else if (!report.canExport) {
+        problems.push({ kind: 'bad', text: 'Rights policy blocks this export' });
+      }
+    }
+    void counts;
+    const missing = scenes.filter((s) => s.status === 'error').length;
+    if (missing) problems.push({ kind: 'bad', text: `${missing} scene${missing === 1 ? '' : 's'} with no media` });
+    const pending = scenes.filter((s) => s.status !== 'done' && s.status !== 'error').length;
+    if (pending) problems.push({ kind: 'warn', text: `${pending} scene${pending === 1 ? '' : 's'} still being fetched` });
+
+    host.hidden = !scenes.length;
+    host.innerHTML = '';
+    if (!problems.length) {
+      host.className = 'sb-readiness ok';
+      host.appendChild(el('span', null, '✓ Ready for export'));
+      return;
+    }
+    host.className = 'sb-readiness ' + (problems.some((p) => p.kind === 'bad') ? 'bad' : 'warn');
+    host.appendChild(el('span', null, problems.map((p) => p.text).join(' · ')));
+  }
+
+
+  // --- Signals --------------------------------------------------------------
+  //
+  // Which brain is answering, and whether the narration timing can be trusted.
+  // Both are read from the systems themselves on every render — a badge that
+  // asserts "Whisper aligned" without asking is worse than no badge.
+
+  async function renderSignals() {
+    const host = $('sb-signals');
+    if (!host) return;
+    host.innerHTML = '';
+
+    // Which Director. AIManager knows; this only reports — but it only knows
+    // once something has asked, and on a fresh load nothing has. Ask, then
+    // re-render when the answer lands rather than leaving "checking…" forever.
+    const mgr = window.AIManager;
+    if (mgr && mgr.isQwenHealthy == null && mgr.checkHealth && !renderSignals._asking) {
+      renderSignals._asking = true;
+      mgr.checkHealth()
+        .catch(() => {})
+        .then(() => { renderSignals._asking = false; renderSignals(); });
+    }
+
+    const brain = el('div', 'sb-signal');
+    if (mgr && mgr.isQwenHealthy === true) {
+      brain.className = 'sb-signal ok';
+      brain.textContent = '🟢 Qwen3.8-27B — Primary';
+    } else if (mgr && mgr.isQwenHealthy === false) {
+      brain.className = 'sb-signal warn';
+      brain.textContent = '🟡 NVIDIA NIM — Fallback (Qwen unavailable)';
+    } else {
+      brain.textContent = '○ Director — checking…';
+    }
+    host.appendChild(brain);
+
+    // Narration timing. `stale` is the one that matters: re-recorded audio
+    // leaves timings describing something that no longer exists.
+    const timing = el('div', 'sb-signal');
+    if (window.BlvckAlign) {
+      let state = null;
+      try { state = await window.BlvckAlign.status(); } catch (e) { state = null; }
+      if (!state || state.state === 'none') {
+        timing.textContent = '○ Narration timing — not measured';
+      } else if (state.state === 'stale') {
+        timing.className = 'sb-signal warn';
+        timing.textContent = '⚠ Narration timing stale — re-align required';
+        const fix = el('button', 'btn ghost small', 'Re-align');
+        fix.type = 'button';
+        fix.addEventListener('click', () => realign());
+        timing.appendChild(fix);
+      } else if (state.state === 'aligned') {
+        timing.className = 'sb-signal ok';
+        timing.textContent = `✓ Whisper aligned — ${state.wordCount} word timings`;
+      } else {
+        timing.textContent = '○ Timing estimated from text, not measured';
+        const fix = el('button', 'btn ghost small', 'Align narration');
+        fix.type = 'button';
+        fix.addEventListener('click', () => realign());
+        timing.appendChild(fix);
+      }
+    }
+    host.appendChild(timing);
+
+    const fmt = $('sb-format-display');
+    if (fmt && window.StockMedia && window.StockMedia.projectOrientation) {
+      const o = window.StockMedia.projectOrientation();
+      fmt.textContent = o === 'portrait' ? '9:16 Portrait'
+                      : o === 'square' ? '1:1 Square' : '16:9 Landscape';
+    }
+  }
+
+  /** Run the real alignment, and say plainly when it comes back short. */
+  async function realign() {
+    showStatus('Aligning the narration against the recorded audio…', 'info');
+    try {
+      const res = await window.BlvckAlign.align({ force: true });
+      showStatus(`Narration aligned — ${res.wordCount} word timings from ${res.audioDuration.toFixed(1)}s of audio.`, 'info');
+    } catch (err) {
+      // The coverage guard rejects a partial alignment rather than storing it,
+      // and a retry usually succeeds, so say that rather than just failing.
+      showStatus(err.message);
+    }
+    renderSignals();
+    renderScenes();
+  }
+
+  // --- Director progress ----------------------------------------------------
+  //
+  // A plan is minutes of work, batched one beat per request. A spinner for that
+  // long reads as a hang, so this reports which beat and roughly how long is
+  // left, from the measured pace of this run rather than a guess.
+
+  let directorStartedAt = 0;
+
+  window.addEventListener('blvck:director-progress', (ev) => {
+    const d = (ev && ev.detail) || {};
+    const host = $('sb-director-progress');
+    if (!host) return;
+
+    if (!directorStartedAt) directorStartedAt = Date.now();
+    const done = Number(d.done) || 0;
+    const total = Number(d.total) || 0;
+
+    if (!total || done >= total) {
+      host.hidden = true;
+      directorStartedAt = 0;
+      return;
+    }
+
+    host.hidden = false;
+    host.innerHTML = '';
+    const head = el('div', 'sb-dp-head');
+    head.appendChild(el('span', null, 'Generating visual plan'));
+    head.appendChild(el('span', null, `Beat ${done + 1} of ${total}`));
+    host.appendChild(head);
+
+    const track = el('div', 'sb-dp-track');
+    const fill = el('div', 'sb-dp-fill');
+    fill.style.width = Math.round((done / total) * 100) + '%';
+    track.appendChild(fill);
+    host.appendChild(track);
+
+    // Estimated from this run's own pace once there is a beat to measure. A
+    // beat has taken anywhere from 116s to 296s, so a fixed estimate would be
+    // wrong in both directions.
+    let note = 'The Director is working. You can keep using the rest of AETHER.';
+    if (done > 0) {
+      const perBeat = (Date.now() - directorStartedAt) / done;
+      const left = Math.round((perBeat * (total - done)) / 60000);
+      if (left >= 1) note = `About ${left} minute${left === 1 ? '' : 's'} left. ` + note;
+    }
+    host.appendChild(el('div', 'sb-dp-note', note));
+  });
 
   // --- Local cache status -------------------------------------------------
   //
