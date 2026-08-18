@@ -40,7 +40,7 @@ from .schema import (
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
-def strip_thinking(text: str) -> str:
+def strip_thinking(text: str, started_inside: bool = False) -> str:
     """Drop the reasoning and return the answer.
 
     The opening <think> usually is NOT in the output. This model's chat
@@ -52,6 +52,12 @@ def strip_thinking(text: str) -> str:
     Everything up to the last closing tag is deliberation; what follows is the
     answer. An unclosed block means generation stopped mid-thought, and there
     is no answer in it at all — an empty string is the honest result.
+
+    `started_inside` says the prompt opened the block, which the caller knows
+    and this function cannot: with reasoning enabled, text carrying no tags at
+    all is not an answer, it is deliberation that never closed. Returning it
+    put a model thinking aloud — "We need answer user's request. Need produce
+    final only spoken narration… Let's count." — into a finished script.
     """
     text = text or ""
     if "</think>" in text:
@@ -59,6 +65,8 @@ def strip_thinking(text: str) -> str:
     text = _THINK_BLOCK.sub("", text)
     if "<think>" in text:
         return text.split("<think>", 1)[0].strip()
+    if started_inside:
+        return ""
     return text.strip()
 
 
@@ -279,7 +287,7 @@ class DirectorInference:
                     )
                     raw = result["choices"][0]["message"]["content"] or ""
 
-            answer = strip_thinking(raw)
+            answer = strip_thinking(raw, started_inside=bool(thinking))
             if not answer and raw.strip():
                 # Everything generated was deliberation that never closed, so
                 # there is no answer to return. Saying so beats an empty string
@@ -290,9 +298,10 @@ class DirectorInference:
                 )
             return answer
 
-        return self._stream(prepared, prompt, temperature, max_tokens, kwargs)
+        return self._stream(prepared, prompt, temperature, max_tokens, kwargs, thinking)
 
-    def _stream(self, messages, prompt, temperature, max_tokens, kwargs) -> Iterator[str]:
+    def _stream(self, messages, prompt, temperature, max_tokens, kwargs,
+                thinking: bool = True) -> Iterator[str]:
         """Yield content deltas, holding the model lock for the whole stream."""
         with self._lock:
             if prompt is not None:
@@ -308,9 +317,20 @@ class DirectorInference:
                 )
                 deltas = (c["choices"][0].get("delta", {}).get("content") or "" for c in chunks)
 
-            # Generation may begin already inside a reasoning block opened by
-            # the prompt, so assume we are in one until proven otherwise.
-            in_thought = False
+            # Generation begins already inside a reasoning block whenever the
+            # prompt opened one, which is exactly what the chat template does
+            # with thinking on: it ends on a bare `<think>` and only the CLOSING
+            # tag is ever generated.
+            #
+            # This started at False — the opposite of the line above it — so
+            # every reasoning token was streamed straight to the caller until a
+            # closing tag arrived, and if the model never emitted one, the whole
+            # deliberation was the answer. That is how a script came back
+            # beginning "We need answer user's request… Let's count."
+            #
+            # With thinking off the template pre-closes the block, so generation
+            # starts outside it and nothing should be suppressed.
+            in_thought = bool(thinking)
             seen_close = False
             for delta in deltas:
                 if not delta:

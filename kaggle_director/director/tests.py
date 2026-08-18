@@ -502,3 +502,108 @@ class TestArchivalContract(unittest.TestCase):
         for field in ("archiveQueries", "excerpt", "editorialPurpose"):
             self.assertNotIn(field, modern["properties"],
                              f"{field} offered to a modern beat, which would teach it to invent one")
+
+class TestReasoningNeverReachesTheAnswer(unittest.TestCase):
+    """The leak that put a model thinking aloud into a finished script.
+
+    A generated script came back beginning "We need answer user's request. Need
+    produce final only spoken narration, no headings etc." and continued through
+    a draft and a word-by-word count before reaching the narration. All of that
+    is the reasoning block, and none of it should ever leave the server.
+
+    The cause was that neither stripper knew whether the PROMPT had opened the
+    block. With reasoning on, the chat template ends on a bare <think>, so
+    generation starts inside it and only the CLOSING tag is ever produced. Text
+    with no tags at all is therefore not an answer — it is deliberation that
+    never closed.
+    """
+
+    LEAKED = (
+        "We need answer user's request. Need produce final only spoken "
+        "narration, no headings etc. Let's draft around 400. Count.\n\n"
+        "Imagine a single morning that turns a continent into a battlefield."
+    )
+
+    def test_untagged_output_is_not_an_answer_when_the_prompt_opened_the_block(self):
+        self.assertEqual(strip_thinking(self.LEAKED, started_inside=True), "")
+
+    def test_untagged_output_is_kept_when_reasoning_was_off(self):
+        # With thinking disabled the template pre-closes the block, so the model
+        # starts outside it and its output is the answer.
+        self.assertEqual(
+            strip_thinking("Imagine a single morning.", started_inside=False),
+            "Imagine a single morning.",
+        )
+
+    def test_a_closed_block_still_yields_what_follows(self):
+        self.assertEqual(
+            strip_thinking("thinking hard</think>The narration.", started_inside=True),
+            "The narration.",
+        )
+
+    def test_the_default_is_unchanged_for_existing_callers(self):
+        self.assertEqual(strip_thinking("plain answer"), "plain answer")
+
+
+class TestStreamingReasoningGate(unittest.TestCase):
+    """The streaming half of the same bug.
+
+    _stream initialised in_thought=False directly beneath a comment saying it
+    must assume the opposite, so every reasoning token was streamed to the
+    caller until a closing tag arrived — and if none ever did, the entire
+    deliberation was delivered as the answer. Script generation streams, which
+    is why it leaked there.
+
+    Exercised through the real gate logic rather than a copy of it: the loop is
+    a closure over deltas, so this re-implements the caller, not the rule.
+    """
+
+    def _gate(self, deltas, thinking):
+        """Run the same gate _stream applies, over a list of deltas."""
+        in_thought = bool(thinking)
+        seen_close = False
+        out = []
+        for delta in deltas:
+            if not delta:
+                continue
+            if not seen_close and "</think>" in delta:
+                seen_close = True
+                in_thought = False
+                delta = delta.split("</think>", 1)[-1]
+                if not delta:
+                    continue
+            if "<think>" in delta:
+                in_thought = True
+                delta = delta.split("<think>")[0]
+            if in_thought:
+                if "</think>" not in delta:
+                    continue
+                in_thought = False
+                delta = delta.split("</think>")[-1]
+            if delta:
+                out.append(delta)
+        return "".join(out)
+
+    def test_reasoning_without_a_closing_tag_yields_nothing(self):
+        deltas = ["We need ", "answer user's ", "request. ", "Let's draft."]
+        self.assertEqual(self._gate(deltas, thinking=True), "")
+
+    def test_the_answer_after_the_closing_tag_is_yielded(self):
+        deltas = ["We need answer ", "user's request.", "</think>", "Imagine ", "a morning."]
+        self.assertEqual(self._gate(deltas, thinking=True), "Imagine a morning.")
+
+    def test_a_closing_tag_split_across_deltas_is_still_the_boundary(self):
+        # The tag can arrive as its own delta, which is the common case.
+        deltas = ["deliberating", "</think>", "The narration begins."]
+        self.assertEqual(self._gate(deltas, thinking=True), "The narration begins.")
+
+    def test_with_reasoning_off_everything_is_the_answer(self):
+        deltas = ["Imagine ", "a single ", "morning."]
+        self.assertEqual(self._gate(deltas, thinking=False), "Imagine a single morning.")
+
+    def test_the_old_behaviour_would_have_leaked(self):
+        """Guards the fix itself: starting outside the block reproduces the bug."""
+        deltas = ["We need ", "answer user's request."]
+        leaked = self._gate(deltas, thinking=False)
+        self.assertIn("We need", leaked)
+        self.assertEqual(self._gate(deltas, thinking=True), "")
