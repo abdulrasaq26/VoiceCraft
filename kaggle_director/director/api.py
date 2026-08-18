@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
@@ -212,6 +213,37 @@ def generate_endpoint(req: GenerateRequest, _: str = Depends(check_token)) -> di
     return {"content": text}
 
 
+# Plans in flight, by cache key.
+#
+# The cache was checked once, on the way in, and generate_plan() then queued on
+# the engine lock. So a second identical request arriving mid-generation missed
+# the cache, waited for the first to finish, and generated the whole plan again
+# — measured: a request cut by the gateway at 300.8s, retried 90s later, came
+# back cached=false with latency_sec 296.2. Two full generations for one plan.
+#
+# That matters because the gateway cuts at 300s and a plan takes about that
+# long, so "fire, get cut, ask again" is the natural way to use this endpoint.
+# It has to collect the first answer rather than start a second one.
+_inflight: Dict[str, threading.Event] = {}
+_inflight_results: Dict[str, Any] = {}
+_inflight_guard = threading.Lock()
+
+
+def _release(key: str, plan: Optional[dict]) -> None:
+    """Wake everyone waiting on this key, whether it worked or not.
+
+    The result is held briefly as well as cached, because a waiter that arrives
+    after the event is set but before the cache write is visible would
+    otherwise see nothing and report a failure for a plan that succeeded.
+    """
+    with _inflight_guard:
+        event = _inflight.pop(key, None)
+        if plan is not None:
+            _inflight_results[key] = plan
+        if event is not None:
+            event.set()
+
+
 @app.post("/director")
 def director_endpoint(req: DirectorRequest, _: str = Depends(check_token)) -> dict:
     key = get_cache_key(req.script, req.style, MODEL_ID, SCHEMA_VERSION, f"{req.cues}|{req.brief}|{req.reasoning_effort}")
@@ -219,6 +251,26 @@ def director_endpoint(req: DirectorRequest, _: str = Depends(check_token)) -> di
         cached = get_cached_result(key)
         if cached is not None:
             return {"success": True, "cached": True, "plan": cached, **cached}
+
+        # Is this exact plan already being generated? Wait for it instead of
+        # asking the GPU for the same thing twice.
+        waiter = None
+        with _inflight_guard:
+            if key in _inflight:
+                waiter = _inflight[key]
+            else:
+                _inflight[key] = threading.Event()
+
+        if waiter is not None:
+            # No timeout: the caller's own client decides how long to wait, and
+            # the work is already running either way.
+            waiter.wait()
+            done = get_cached_result(key)
+            if done is None:
+                done = _inflight_results.get(key)
+            if done is not None:
+                return {"success": True, "cached": True, "joined": True, "plan": done, **done}
+            raise HTTPException(502, "Director: the request this one joined failed.")
 
     try:
         plan, latency = get_engine().generate_plan(
@@ -232,9 +284,14 @@ def director_endpoint(req: DirectorRequest, _: str = Depends(check_token)) -> di
             plan_tokens=req.plan_tokens,
         )
     except Exception as exc:  # noqa: BLE001
+        # Release anyone waiting on this key before failing, or they wait for a
+        # result that is never coming. finally would be tidier but must not run
+        # before set_cached_result below.
+        _release(key, None)
         raise HTTPException(502, f"Director failed: {exc}") from exc
 
     set_cached_result(key, plan)
+    _release(key, plan)
     # `plan` is also splatted at the top level so a caller can read `scenes`
     # straight off the response without knowing about this envelope.
     return {

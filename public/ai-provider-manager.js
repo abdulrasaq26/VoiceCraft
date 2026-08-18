@@ -145,10 +145,24 @@
     async generateJSON(endpoint, payload, options = {}) {
       // Qwen /generate endpoint doesn't strictly enforce JSON schema unless requested,
       // but AETHER uses BlvckPrompts to prompt for JSON. We just call generate.
-      const prompt = window.BlvckPrompts && window.BlvckPrompts.build
+      const built = window.BlvckPrompts && window.BlvckPrompts.build
         ? window.BlvckPrompts.build(endpoint, payload)
         : `Return a valid JSON object for ${endpoint} given input: ${JSON.stringify(payload)}. Respond with pure JSON ONLY.`;
-      
+
+      // build() returns { system, user } for most routes and a bare string for
+      // the rest. generate() takes a string, so the object arrived as one and
+      // was rejected before the model was ever reached:
+      //
+      //   422 {"loc":["body","prompt"],"msg":"Input should be a valid string"}
+      //
+      // This is the path the app drops to when /director is unavailable, so it
+      // failing meant there was no fallback at all — and it surfaced as the
+      // NEXT provider being missing, which reads like a configuration problem
+      // rather than a bug here.
+      const prompt = typeof built === 'string'
+        ? built
+        : [built.system, built.user].filter(Boolean).join('\n\n');
+
       const text = await this.generate(prompt, options);
       
       if (window.BlvckPrompts && window.BlvckPrompts.parse) {
@@ -326,10 +340,24 @@
     }
 
     async generateJSON(endpoint, payload, options = {}) {
-      const prompt = window.BlvckPrompts && window.BlvckPrompts.build
+      const built = window.BlvckPrompts && window.BlvckPrompts.build
         ? window.BlvckPrompts.build(endpoint, payload)
         : `Return a valid JSON object for ${endpoint} given input: ${JSON.stringify(payload)}. Respond with pure JSON ONLY.`;
-      
+
+      // build() returns { system, user } for most routes and a bare string for
+      // the rest. generate() takes a string, so the object arrived as one and
+      // was rejected before the model was ever reached:
+      //
+      //   422 {"loc":["body","prompt"],"msg":"Input should be a valid string"}
+      //
+      // This is the path the app drops to when /director is unavailable, so it
+      // failing meant there was no fallback at all — and it surfaced as the
+      // NEXT provider being missing, which reads like a configuration problem
+      // rather than a bug here.
+      const prompt = typeof built === 'string'
+        ? built
+        : [built.system, built.user].filter(Boolean).join('\n\n');
+
       const text = await this.generate(prompt, options);
       
       if (window.BlvckPrompts && window.BlvckPrompts.parse) {

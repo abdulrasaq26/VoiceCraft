@@ -1,0 +1,212 @@
+<!doctype html><meta charset="utf-8"><title>Alignment quality audit</title>
+<body style="font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;background:#0e1315;color:#e8edeb;padding:16px;max-width:120ch">
+<h1 style="font-size:1.1rem">Where do the words go?</h1>
+<p style="color:#8998a0;max-width:88ch">
+  A live run returned 11 aligned words for 15.13s of narration whose script holds about 30.
+  This counts the words at every stage — spoken, returned by <code>/v1/align</code>, kept by the
+  sync engine, kept by <code>Transcript</code> — and names the ones that go missing, so the loss
+  can be attributed to a stage rather than guessed at.
+</p>
+<pre id="out" style="white-space:pre-wrap"></pre>
+
+<script src="adapters/provider-manager.js"></script>
+<script src="adapters/fish-adapter.js"></script>
+<script src="transcription/transcript.js"></script>
+<script src="sync-engine.js"></script>
+<script src="voice-cloning.js"></script>
+<script>
+const out = document.getElementById('out');
+const say = (s) => { out.textContent += s + '\n'; };
+const fails = [];
+const check = (n, c, d) => {
+  say((c ? '  PASS  ' : '  FAIL  ') + n + (c ? '' : '  <- ' + JSON.stringify(d)));
+  if (!c) fails.push(n);
+};
+
+// Three lengths, because "how much is returned" and "how much was sent" are
+// different questions and only a sweep separates them.
+const CASES = [
+  // The exact script from the run that returned 11 words for 15.13s. Kept as a
+  // case in its own right: it is the only text that has ever under-returned,
+  // and "it did not reproduce" is only worth saying about the same input.
+  { name: 'the live-chain script',
+    text: 'During World War Two, American factories dramatically increased production. '
+        + 'Decades later, modern factories began replacing repetitive manual work with robotics. '
+        + 'Today, consumers feel inflation most directly when they pay for groceries.' },
+  { name: 'one short sentence',
+    text: 'American factories transformed almost overnight.' },
+  { name: 'three sentences',
+    text: 'American factories transformed almost overnight. '
+        + 'Forty percent of the workforce on that line were women. '
+        + 'Today the same site builds electric vehicle batteries.' },
+  { name: 'six sentences',
+    text: 'American factories transformed almost overnight. '
+        + 'Forty percent of the workforce on that line were women. '
+        + 'Today the same site builds electric vehicle batteries. '
+        + 'The assembly line ran without pause for four years. '
+        + 'Every sixty three minutes another bomber rolled out. '
+        + 'Nothing on that scale had been attempted before.' }
+];
+
+const norm = (w) => String(w || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const wordsOf = (t) => String(t).split(/\s+/).map(norm).filter(Boolean);
+
+function fishEndpoint() {
+  try {
+    const raw = localStorage.getItem('blvck:keys_fishaudio') || '';
+    const v = raw.trim().startsWith('"') ? JSON.parse(raw) : raw;
+    return String(v || '').replace(/\/+$/, '');
+  } catch { return ''; }
+}
+
+const ep = fishEndpoint();
+const headers = { 'Content-Type': 'application/json', 'x-fish-endpoint': ep };
+
+function blobToBase64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+
+(async () => {
+  const T = window.Transcript;
+  check('a Fish endpoint is configured', !!ep, 'blvck:keys_fishaudio is empty');
+  if (!ep) { window.__done = { fails }; return; }
+
+  const status = await (await fetch('/api/proxy/fish/aether/status', { headers })).json();
+  check('the backend reports alignment support', status.alignment === true, status);
+  say(`  endpoint: ${ep}`);
+  say('');
+
+  const results = [];
+  for (const c of CASES) {
+    say(`================ ${c.name} ================`);
+    const expected = wordsOf(c.text);
+    say(`spoken script: ${expected.length} words`);
+
+    // Real TTS through the production adapter, so the audio is what AETHER
+    // would actually align.
+    let audioBlob;
+    try {
+      const url = await window.FishAdapter.textToSpeech({
+        input: c.text, voice: 'default', onProgress: (m) => say('    ' + m)
+      });
+      audioBlob = await (await fetch(url)).blob();
+    } catch (e) {
+      say('  TTS failed: ' + e.message); continue;
+    }
+
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await ctx.decodeAudioData(await audioBlob.arrayBuffer());
+    const wav = window.BlvckVoiceCloning.encodeWav(buf.getChannelData(0), buf.sampleRate);
+    say(`audio: ${(audioBlob.size / 1024).toFixed(1)} KB mp3 -> ${buf.duration.toFixed(2)}s `
+      + `@ ${buf.sampleRate}Hz -> ${(wav.size / 1024).toFixed(1)} KB wav`);
+
+    // ── the RAW response, before anything of ours touches it ──────────────
+    const b64 = await blobToBase64(wav);
+    const t0 = performance.now();
+    let raw;
+    try {
+      const r = await fetch('/api/proxy/fish/v1/align', {
+        method: 'POST', headers, body: JSON.stringify({ audio_b64: b64, text: c.text })
+      });
+      raw = await r.json();
+    } catch (e) { say('  align failed: ' + e.message); continue; }
+    const alignMs = Math.round(performance.now() - t0);
+
+    say(`raw response keys: ${Object.keys(raw).join(', ')}`);
+    const rawWords = raw.words || [];
+    const rawSegs = raw.segments || null;
+    say(`raw: ${rawWords.length} words`
+      + (rawSegs ? `, ${rawSegs.length} segments` : ', no segments key')
+      + `, duration ${raw.duration}, in ${alignMs}ms`);
+    if (raw.language) say(`language: ${raw.language}`);
+    if (raw.model) say(`model: ${raw.model}`);
+
+    if (rawWords.length) {
+      const first = rawWords[0], last = rawWords[rawWords.length - 1];
+      say(`first word: "${first.text || first.word}" @ ${first.start}`);
+      say(`last  word: "${last.text || last.word}" @ ${last.end}`);
+      say(`covers ${last.end}s of ${buf.duration.toFixed(2)}s audio `
+        + `(${((last.end / buf.duration) * 100).toFixed(0)}%)`);
+    }
+
+    // Which words are missing, and where — the middle or the tail?
+    const returned = rawWords.map((w) => norm(w.text || w.word)).filter(Boolean);
+    const missing = [];
+    let cursor = 0;
+    for (const want of expected) {
+      const at = returned.indexOf(want, cursor);
+      if (at === -1) missing.push(want);
+      else cursor = at + 1;
+    }
+    const retained = expected.length ? ((expected.length - missing.length) / expected.length) * 100 : 0;
+    say(`retained: ${expected.length - missing.length}/${expected.length} = ${retained.toFixed(0)}%`);
+    if (missing.length) {
+      say(`missing (${missing.length}): ${missing.join(' ')}`);
+      const firstMissing = expected.indexOf(missing[0]);
+      say(`first gap at word ${firstMissing + 1} of ${expected.length}`
+        + (firstMissing > expected.length * 0.6 ? '  → looks like TRUNCATION at the tail'
+                                                : '  → words dropped from the MIDDLE'));
+    }
+
+    // ── through our own layers ────────────────────────────────────────────
+    const timeline = window.BlvckSync.normalize(raw, 'aligned', buf.duration);
+    say(`after BlvckSync.normalize: ${timeline.words.length} words, `
+      + `${(timeline.sentences || []).length} sentence(s)`);
+    const transcript = T.fromSyncTimeline(timeline, {
+      script: c.text,
+      audioFingerprint: T.fingerprint({ byteLength: wav.size, duration: buf.duration }),
+      model: 'audit'
+    });
+    const kept = transcript ? T.words(transcript).length : 0;
+    say(`after Transcript.fromSyncTimeline: ${kept} words, `
+      + `${transcript ? (transcript.segments || []).length : 0} segment(s)`);
+
+    check(`${c.name}: our layers drop nothing`,
+          timeline.words.length === rawWords.length && kept === rawWords.length,
+          { raw: rawWords.length, normalized: timeline.words.length, transcript: kept });
+
+    results.push({ name: c.name, expected: expected.length, raw: rawWords.length,
+                   retained: Number(retained.toFixed(0)), audio: Number(buf.duration.toFixed(2)),
+                   covered: rawWords.length ? Number(rawWords[rawWords.length - 1].end) : 0 });
+    say('');
+  }
+
+  say('================ summary ================');
+  say('case                       spoken  aligned  kept%   audio    covered');
+  for (const r of results) {
+    say(`${r.name.padEnd(26)} ${String(r.expected).padStart(6)} `
+      + `${String(r.raw).padStart(8)} ${String(r.retained).padStart(6)}% `
+      + `${String(r.audio).padStart(7)}s ${String(r.covered).padStart(8)}s`);
+  }
+
+  // A constant word count across lengths means a cap; a constant covered-seconds
+  // means the audio is being cut. They point at different bugs.
+  if (results.length >= 2) {
+    const counts = results.map((r) => r.raw);
+    const covers = results.map((r) => r.covered);
+    say('');
+    if (new Set(counts).size === 1) {
+      say(`DIAGNOSIS: the same ${counts[0]} words come back regardless of length — a CAP on words.`);
+    } else if (Math.max(...covers) - Math.min(...covers) < 2 && results.length > 1) {
+      say(`DIAGNOSIS: coverage stops near ${covers[0]}s whatever the audio length — the AUDIO is being cut.`);
+    } else if (results.every((r) => r.retained > 90)) {
+      say('DIAGNOSIS: alignment is complete at every length tested.');
+    } else {
+      say('DIAGNOSIS: partial loss that scales with length — see the per-case gaps above.');
+    }
+  }
+
+  say('');
+  say(fails.length ? 'FAILED (' + fails.length + '): ' + fails.join(', ') : 'OUR LAYERS RETAIN EVERYTHING /v1/align RETURNS');
+  window.__done = { fails, results };
+})().catch((e) => {
+  say('ERROR: ' + e.message);
+  say(e.stack || '');
+  window.__done = { fails: ['threw'] };
+});
+</script>

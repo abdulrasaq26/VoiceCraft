@@ -120,6 +120,42 @@
     return '';
   }
 
+  // ── Coverage ──────────────────────────────────────────────────────────────
+
+  /** Below this, the timeline describes too little of the script to be trusted. */
+  const MIN_COVERAGE = 0.85;
+
+  const _normWord = (w) => String(w || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  /**
+   * How much of the script the aligner actually came back with.
+   *
+   * Matched in order rather than as a set, so a repeated word cannot be counted
+   * twice and a large dropped span is not disguised by the same words appearing
+   * elsewhere.
+   */
+  function alignmentCoverage(script, timeline) {
+    const expected = String(script || '').split(/\s+/).map(_normWord).filter(Boolean);
+    const got = ((timeline && timeline.words) || [])
+      .map((w) => _normWord(w.text || w.word)).filter(Boolean);
+
+    let cursor = 0;
+    let matched = 0;
+    const missing = [];
+    for (const want of expected) {
+      const at = got.indexOf(want, cursor);
+      if (at === -1) missing.push(want);
+      else { matched++; cursor = at + 1; }
+    }
+    return {
+      expected: expected.length,
+      returned: got.length,
+      matched,
+      missing,
+      ratio: expected.length ? matched / expected.length : 1
+    };
+  }
+
   // ── Status ────────────────────────────────────────────────────────────────
 
   function current() {
@@ -204,6 +240,28 @@
       throw err;
     }
 
+    // Does the alignment actually cover the script?
+    //
+    // Measured twice on identical input, the endpoint returned 31 of 31 words
+    // once and 11 of them the other time. A short answer is not flagged as an
+    // error — it arrives as a perfectly well-formed timeline — so without this
+    // a third of the narration would be filed as measured truth and every beat
+    // after the gap would be placed against timings that describe nothing.
+    //
+    // The threshold is deliberately loose. Aligners legitimately merge
+    // hyphenated words and drop the odd filler, and a missing word or two does
+    // not damage placement. Losing a third does.
+    const coverage = alignmentCoverage(text, timeline);
+    if (coverage.ratio < MIN_COVERAGE) {
+      const err = new Error(
+        `Alignment covered only ${coverage.matched} of ${coverage.expected} words `
+        + `(${Math.round(coverage.ratio * 100)}%). This is intermittent — run it again. `
+        + 'Storing it would present a partial transcript as measured timing.');
+      err.coverage = coverage;
+      err.timeline = timeline;
+      throw err;
+    }
+
     const transcript = window.Transcript.fromSyncTimeline(timeline, {
       script: text,
       audioFingerprint: window.Transcript.fingerprint({
@@ -260,6 +318,8 @@
     save,
     clear,
     forDirector,
+    alignmentCoverage,
+    MIN_COVERAGE,
     // exported for tests
     _internal: { collectNarration, narrationText }
   };
