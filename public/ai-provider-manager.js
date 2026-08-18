@@ -69,6 +69,10 @@
       return false;
     }
 
+    _directorFetch(body) {
+      return this._fetch('/director', body);
+    }
+
     async _fetch(path, body) {
       const res = await fetch(`${this.baseUrl}${path}`, {
         method: 'POST',
@@ -279,18 +283,42 @@
         .filter(Boolean)
         .join('\n\n');
 
-      const res = await this._fetch('/director', {
-        script,
-        title: String(bible.title || 'Untitled'),
-        style: String(bible.visualStyle || bible.style || 'documentary'),
-        cues,
-        brief,
-        max_tokens: Math.min(16384, 1200 + cues.length * 320),
-        // The unconstrained thinking pass. The grammar forces the first token
-        // to be a brace, so this is the only place the director gets to reason
-        // about the video at all.
-        reasoning_effort: effortFor(Object.assign({ task: 'storyboard' }, options))
-      });
+      // Collect our own work rather than starting again elsewhere.
+      //
+      // The tunnel cuts any request at 300s and a beat can take longer, so the
+      // first attempt is often killed by the gateway while the GPU carries on.
+      // The server holds that generation and joins an identical request to it —
+      // but only if one arrives, and previously none did: the client fell
+      // through to /generate and then to NIM, discarding a plan that was still
+      // being made. Measured: 604s spent, then "NIM API key is missing".
+      //
+      // So a gateway failure is retried with the same body. The retry joins,
+      // waits, and returns the first attempt's result. No second generation.
+      const gatewayCut = (e) => /HTTP 50[234]|gateway|timed out|socket hang up|fetch failed/i
+        .test(String((e && e.message) || ''));
+
+      let res = null;
+      for (let attempt = 1; attempt <= 4 && !res; attempt++) {
+        try {
+          res = await this._directorFetch({
+            script,
+            title: String(bible.title || 'Untitled'),
+            style: String(bible.visualStyle || bible.style || 'documentary'),
+            cues,
+            brief,
+            max_tokens: Math.min(16384, 1200 + cues.length * 320),
+            // The unconstrained thinking pass. The grammar forces the first
+            // token to be a brace, so this is the only place the director gets
+            // to reason about the video at all.
+            reasoning_effort: effortFor(Object.assign({ task: 'storyboard' }, options))
+          });
+        } catch (e) {
+          if (attempt >= 4 || !gatewayCut(e)) throw e;
+          console.warn(`[QwenProvider] the gateway cut the plan request (${e.message}); `
+            + `asking again to join the generation already running (attempt ${attempt + 1}/4)`);
+          await new Promise((r) => setTimeout(r, 4000));
+        }
+      }
 
       const data = await res.json();
       if (!data || data.success === false) {

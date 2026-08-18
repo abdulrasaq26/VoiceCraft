@@ -423,14 +423,21 @@
     setAnalyzing(true, 'Analyzing the story & inferring visual style…');
     const onAttempt = (n, max) => { if (n > 1) setAnalyzing(true, `Reformatting response (attempt ${n} of ${max})…`); };
     try {
-      // 1. Project profile (story + inferred/selected visual style)
-      const bibleRes = await window.AIManager.generateJSON('/api/storyboard/bible', { context: ctx }, { onAttempt, task: 'bible' });
-      bible = bibleRes.bible;
-      syncBibleToConsistency();
-      renderBible();
+      // The story bible is no longer generated.
+      //
+      // It described a cast, locations and a diffusion-era visual style for a
+      // pipeline that no longer exists: nothing in the stock/archive/editorial
+      // flow reads the characters or the style, and the Director decides the
+      // look from the narration itself. Generating it cost a model round trip
+      // per storyboard and could rewrite AssetConsistency underneath the run.
+      //
+      // Whatever bible a previous project stored is still READ where it is
+      // genuinely consumed — GraphicRenderer.paletteFor() for the editorial
+      // cards, applyContinuity() across batch boundaries — and both handle its
+      // absence. So this stops producing it without stranding anything.
 
-      // 2. Scene prompts in batches (with prior summaries for continuity)
-      setAnalyzing(true, 'Writing scene prompts…');
+      // Scene prompts in batches (with prior summaries for continuity).
+      setAnalyzing(true, 'Reading the narration…');
       scenes = [];
       // A new storyboard reuses scene indices for entirely different content,
       // so every render record from the old one is now a lie: it reported
@@ -1768,26 +1775,26 @@
     if (!host) return;
     host.innerHTML = '';
 
-    // Which Director. AIManager knows; this only reports — but it only knows
-    // once something has asked, and on a fresh load nothing has. Ask, then
-    // re-render when the answer lands rather than leaving "checking…" forever.
+    // Which Director.
+    //
+    // AIProviderManager already health-checks on DOMContentLoaded and repaints
+    // every .ai-provider-status element, so this joins that mechanism instead
+    // of running a second check — one definition of "is Qwen up", not two. The
+    // initial text comes from the state it has already established, so a fresh
+    // Storyboard does not sit on "checking…" waiting for an unrelated request.
     const mgr = window.AIManager;
-    if (mgr && mgr.isQwenHealthy == null && mgr.checkHealth && !renderSignals._asking) {
-      renderSignals._asking = true;
-      mgr.checkHealth()
-        .catch(() => {})
-        .then(() => { renderSignals._asking = false; renderSignals(); });
-    }
-
-    const brain = el('div', 'sb-signal');
+    const brain = el('div', 'sb-signal ai-provider-status');
     if (mgr && mgr.isQwenHealthy === true) {
-      brain.className = 'sb-signal ok';
-      brain.textContent = '🟢 Qwen3.8-27B — Primary';
+      brain.classList.add('ok');
+      brain.innerHTML = '🟢 Qwen3.8-27B — Primary';
     } else if (mgr && mgr.isQwenHealthy === false) {
-      brain.className = 'sb-signal warn';
-      brain.textContent = '🟡 NVIDIA NIM — Fallback (Qwen unavailable)';
+      brain.classList.add('warn');
+      brain.innerHTML = '🟡 NVIDIA NIM — Fallback';
     } else {
-      brain.textContent = '○ Director — checking…';
+      // Nothing has asked yet — ask once, and let updateUIStatus paint the
+      // answer into this element when it lands.
+      brain.innerHTML = '○ Director — checking…';
+      if (mgr && mgr.checkHealth) mgr.checkHealth().catch(() => {});
     }
     host.appendChild(brain);
 
