@@ -321,7 +321,16 @@
     const pexelsOrientation  = toPexelsOrientation(orientation);
 
     const allowed = (name) => {
-      if (provider !== 'all' && provider !== name) return false;
+      // 'modern' is the two commercial stock libraries and nothing else. It
+      // exists because "Pixabay + Pexels" was previously spelled 'all', which
+      // also let the archive through — so a producer who wanted to exclude
+      // archival footage had no way to say so, and one who thought they had
+      // excluded it had not.
+      if (provider === 'modern') {
+        if (name === 'archive_org') return false;
+      } else if (provider !== 'all' && provider !== name) {
+        return false;
+      }
       if (Array.isArray(sources) && sources.length) return sources.includes(name);
       return true;
     };

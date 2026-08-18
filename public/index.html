@@ -767,8 +767,15 @@
               </div>
               <div class="control">
                 <label for="sb-stock-provider">Providers</label>
+                <!-- 'all' has always permitted archive_org — stock-media's
+                     search() allows every source when provider is 'all' — but
+                     the option was labelled "Pixabay + Pexels", so the control
+                     read as excluding the archive while including it. The
+                     narrow options genuinely do exclude it, silently. -->
                 <select id="sb-stock-provider">
-                  <option value="all" selected>Pixabay + Pexels</option>
+                  <option value="all" selected>All sources — the Director chooses</option>
+                  <option value="modern">Modern stock only (Pixabay + Pexels)</option>
+                  <option value="archive_org">Internet Archive only</option>
                   <option value="pixabay">Pixabay only</option>
                   <option value="pexels">Pexels only</option>
                 </select>
