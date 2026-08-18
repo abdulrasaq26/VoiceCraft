@@ -496,12 +496,39 @@ for i in range(torch.cuda.device_count()):
     free, total = torch.cuda.mem_get_info(i)
     print(f'  GPU {i}: {(total-free)/1024**3:.1f}/{total/1024**3:.1f} GB used')
 
+# Liveness, not reasoning. thinking=False matters here: with reasoning on, this
+# model opens a <think> block and spends its whole budget in it, so asking for a
+# three-word answer in 64 tokens produced 64 tokens of deliberation and no
+# answer at all. That used to be returned AS the answer — the stage printed
+# "Response: 'Thinking:\\n\\n1. **Analyze the Request:**...'" and passed — and now
+# it correctly raises instead. Either way the request was wrong: a smoke test
+# should ask the cheapest question that proves the engine decodes.
 t0 = time.time()
-text = engine.chat([{'role': 'user', 'content': 'Say exactly: INFERENCE OK'}], max_tokens=64)
+text = engine.chat(
+    [{'role': 'user', 'content': 'Say exactly: INFERENCE OK'}],
+    max_tokens=32,
+    thinking=False,
+)
 print(f'\\nResponse: {text!r}')
-print(f'Latency : {time.time()-t0:.1f}s')
+print(f'Latency : {time.time()-t0:.1f}s  (no reasoning — this is a liveness check)')
 if not text.strip():
     raise RuntimeError('Empty response — the model loaded but generated nothing.')
+
+# One reasoning call too, with room to finish, because thinking=False exercises
+# a different path through the chat template and Stage 8 depends on the other.
+t1 = time.time()
+thought = engine.chat(
+    [{'role': 'user', 'content': 'In one sentence: why is 1939 the year the war began in Europe?'}],
+    max_tokens=1200,
+    reasoning_effort='low',
+)
+print(f'\\nWith reasoning: {thought.strip()[:160]!r}')
+print(f'Latency : {time.time()-t1:.1f}s')
+if not thought.strip():
+    raise RuntimeError(
+        'Reasoning produced no answer. The model spent its budget deliberating '
+        'and never closed the block — raise max_tokens.'
+    )
 print('\\nStage 7 PASSED')
 """
     ),
