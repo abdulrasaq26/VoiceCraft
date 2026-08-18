@@ -705,10 +705,29 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       if (saved && saved.voiceId && voiceById.has(saved.voiceId)) {
         applySettings(saved);
       } else {
-        currentVoiceId = allVoices[0] ? allVoices[0].id : 'af_heart';
+        // A saved voice the engine no longer has used to be replaced in
+        // silence. The consequence was invisible and expensive: the fallback
+        // is 'default', the Fish adapter strips 'default' rather than sending
+        // it, so the request carried NO reference at all and the bare base
+        // model answered — a voice nobody chose, on every chunk. From the
+        // outside that reads as "the engine ignored my selection".
+        //
+        // Seen live: a project saved with "Adam" against a voice pack that is
+        // not in the running server. Fish logged
+        //   convert the provided text to speech<|im_end|>
+        // with no reference block, where a real reference logs the clip text
+        // and an encoded prompt around ten times the size.
+        if (saved && saved.voiceId) {
+          const names = allVoices.map((v) => v.id).join(', ');
+          console.warn(`[Voices] the saved voice "${saved.voiceId}" is not in this `
+            + `engine's list, so it cannot be used. Available: ${names}`);
+          showStatus(`The saved voice “${saved.voiceId}” is not loaded on this `
+            + `server — pick another, or reload the voice pack that contains it.`);
+        }
+        currentVoiceId = allVoices[0] ? allVoices[0].id : null;
         renderVoiceCard();
       }
-      clearStatus();
+      if (!(saved && saved.voiceId && !voiceById.has(saved.voiceId))) clearStatus();
     } catch (err) {
       console.warn('[loadVoices] Error loading voices:', err);
     }

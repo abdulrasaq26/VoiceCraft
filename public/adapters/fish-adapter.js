@@ -7,6 +7,11 @@
   ];
   let lastError = '';
 
+  // The last run's per-chunk requests, so a wrong-sounding voice can be traced
+  // to what was asked for rather than guessed at. Read with
+  // FishAdapter.lastRequests() in the console.
+  let lastRequests = [];
+
   function getFishEndpoint() {
     let ep = window.ProviderManager.getPoolState('fishaudio')?.endpoint || 'https://api.fish.audio';
     // Remove trailing slashes
@@ -181,6 +186,18 @@
     // and Fish has no tag parser — it would speak the word. Strip it.
     const deTag = (t) => String(t).replace(/\[[^\]\n]{1,40}\]/g, '').replace(/[ \t]{2,}/g, ' ').trim();
 
+    lastRequests = [];
+
+    // 'default' means "no reference" to this engine, so the base model answers
+    // and the result is nobody's chosen voice. That is a legitimate request,
+    // but it is indistinguishable in the output from a selection that failed to
+    // arrive — which is exactly how a lost voice went unnoticed. Say it.
+    if (!voice || voice === 'default') {
+      console.warn('[Fish] no voice reference for this run — the base model will '
+        + 'answer, which will not match any named voice.');
+      if (onProgress) onProgress('No voice reference selected — using the base model.');
+    }
+
     const work = [];
     const passages = (segments && segments.length) ? segments : [{ text: input, reference_id: voice }];
     for (const seg of passages) {
@@ -192,6 +209,27 @@
     if (!work.length) return null;
 
     const gen = buildGenParams(params);
+
+    // One seed for the whole run.
+    //
+    // Fish samples afresh for every request, so a script split into eight
+    // chunks was eight independent takes of the same reference — the timbre
+    // drifts and a listener hears the voice change mid-video. The comment in
+    // renderOne has always said the seed must stay fixed across chunks; nothing
+    // ever set one, because buildGenParams only emits `seed` when the CALLER
+    // supplies it and the voice studio does not.
+    //
+    // A caller's explicit seed still wins, so a producer can reproduce a take
+    // exactly. Otherwise one is drawn here, once, and reused for every chunk:
+    // runs still differ from each other, but a single run is internally
+    // consistent, which is the property that was missing.
+    if (gen.seed == null) {
+      gen.seed = Math.floor(Math.random() * 2147483647);
+      if (onProgress) onProgress(`Voice seed ${gen.seed} (same take across the whole script)`);
+    }
+    console.log(`[Fish] seed ${gen.seed} for ${work.length} chunk(s), reference `
+      + `${JSON.stringify([...new Set(work.map((w) => w.reference_id))])}`);
+
     const allAudioBuffers = [];
 
     // Split a chunk roughly in half on a sentence, then clause, then word
@@ -216,12 +254,20 @@
       status === 500 && /out of memory|CUDA|Failed to generate speech/i.test(String(body));
 
     async function renderOne(item, depth = 0) {
+      // gen carries the run seed, so every chunk is the same take of the voice.
       const payload = { text: item.text, format: 'mp3', ...gen };
       if (item.reference_id && item.reference_id !== 'default') {
         payload.reference_id = item.reference_id;
       }
-      // A fixed seed must stay fixed across chunks, otherwise each chunk is a
-      // different take and the delivery drifts mid-script.
+      // What actually goes on the wire, per chunk. A voice coming back wrong is
+      // otherwise impossible to attribute: the request that carried the
+      // reference and the audio that came back are never seen together.
+      lastRequests.push({
+        reference_id: payload.reference_id || '(none — server default)',
+        seed: payload.seed,
+        chars: item.text.length,
+        text: item.text.slice(0, 48)
+      });
 
       const res = await fetch(`/api/proxy/fish/v1/tts`, {
         method: 'POST',
@@ -274,7 +320,8 @@
     probeFish,
     listVoices,
     textToSpeech,
-    lastError: () => lastError
+    lastError: () => lastError,
+    lastRequests: () => lastRequests.slice()
   };
 
   // Auto-check on load (non-blocking)
