@@ -394,17 +394,67 @@ try:
 finally:
     done.set()
 
-os.environ['DIRECTOR_MODEL_PATH'] = MODEL_PATH
+# Verify what actually landed, rather than only reporting it.
+#
+# A short or interrupted download passed this stage and then failed in
+# Stage 7 as "ValueError: Failed to load model from file", which points at
+# the loader and says nothing about the 20 GB that never arrived. Checked
+# here, the message names the real problem and the fix.
+got_gb = os.path.getsize(MODEL_PATH) / 1024**3
+with open(MODEL_PATH, 'rb') as fh:
+    magic = fh.read(4)
+
 print(f'\\nPath : {MODEL_PATH}')
-print(f'Size : {os.path.getsize(MODEL_PATH)/1024**3:.1f} GB   ({int(time.time()-t0)}s)')
+print(f'Size : {got_gb:.1f} GB of ~{EXPECTED_GB:.1f} GB expected   ({int(time.time()-t0)}s)')
+print(f'Magic: {magic!r}')
+
+if magic != b'GGUF':
+    raise RuntimeError(
+        f'{MODEL_PATH} does not begin with the GGUF magic bytes (got {magic!r}). '
+        'That file is not a usable model. Delete it and run this stage again.'
+    )
+# 4% covers the gap between the quant table above and the real file; further
+# off than that is a truncated transfer, not a rounding difference.
+if got_gb < EXPECTED_GB * 0.96:
+    raise RuntimeError(
+        f'{MODEL_PATH} is {got_gb:.1f} GB but {QUANT} should be about '
+        f'{EXPECTED_GB:.1f} GB - the download did not finish. Remove it and '
+        f'run this stage again:  rm -rf {MODEL_DIR}'
+    )
+
+os.environ['DIRECTOR_MODEL_PATH'] = MODEL_PATH
 print('\\nStage 6 PASSED')
 """
     ),
     md("## Stage 7 — Load the model and smoke test\n\nThe CUDA runtime is preloaded first; without it `import llama_cpp` fails with `libcudart.so.12: cannot open shared object file`."),
     code(
         """
+import os
 import time
 from director.inference import DirectorInference, preload_cuda_libraries, quiet_backend_logs
+
+# Check the file before the loader does. llama.cpp reports every reason for
+# failing to load as the same ValueError, so an absent or truncated GGUF is
+# indistinguishable from an incompatible one unless it is checked here.
+if not MODEL_PATH or not os.path.exists(MODEL_PATH):
+    raise RuntimeError(
+        f'No model at {MODEL_PATH!r}. Kaggle clears /tmp between sessions, so '
+        'Stage 6 has to run in this session before this one.'
+    )
+_gb = os.path.getsize(MODEL_PATH) / 1024**3
+with open(MODEL_PATH, 'rb') as _fh:
+    _magic = _fh.read(4)
+print(f'model: {MODEL_PATH}  ({_gb:.1f} GB, magic {_magic!r})')
+if _magic != b'GGUF':
+    raise RuntimeError(
+        f'{MODEL_PATH} is not a GGUF file (starts with {_magic!r}). Delete it '
+        'and re-run Stage 6.'
+    )
+if _gb < 5:
+    raise RuntimeError(
+        f'{MODEL_PATH} is only {_gb:.1f} GB, far short of any supported quant - '
+        'the download was interrupted. Delete it and re-run Stage 6.'
+    )
 
 loaded = preload_cuda_libraries()
 print('preloaded CUDA libs:')
