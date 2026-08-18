@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from typing import Any, List, Literal, Optional, Tuple
+from typing import Annotated, Any, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -100,8 +100,8 @@ class Excerpt(BaseModel):
     )
 
 
-class StockRequirements(BaseModel):
-    """What to search the stock libraries for. Required for the stock_* types."""
+class _StockCommon(BaseModel):
+    """What every stock beat needs, whichever library it is bound for."""
 
     concept: str = Field(
         description="One sentence naming what this beat is actually about."
@@ -130,50 +130,13 @@ class StockRequirements(BaseModel):
         ge=0,
         description="Seconds the clip must run at minimum. 0 means half the scene duration.",
     )
-
-    # -- source intelligence ------------------------------------------------
-    #
-    # These two are REQUIRED, and that is the whole point of them.
-    #
-    # They were optional with defaults, and a grammar-constrained model skips
-    # optional fields: measured against the live 27B, every beat came back with
-    # sourceStrategy "auto" and preferredSources empty — including a Second
-    # World War beat — so nothing was ever routed to the film archive. Asked the
-    # same question with the fields required, the same model answered
-    # "archival" / ["archive_org"] with period-phrased queries and a 1943 date
-    # range. The model was never the problem; being allowed to say nothing was.
-    #
-    # An optional field with a sensible default reads as safe and is not: it
-    # turns "the Director decided" into "the Director declined to decide", and
-    # the two are indistinguishable downstream.
-    sourceStrategy: SourceStrategy = Field(
-        description=(
-            "REQUIRED. Which kind of footage this beat wants. 'archival' for "
-            "anything historical, where authentic period film says more than a "
-            "modern restaging; 'modern_stock' for present-day life; 'auto' only "
-            "when either would genuinely serve — not as a way to avoid choosing."
-        ),
-    )
     preferredSources: List[MediaSource] = Field(
         min_length=1,
         max_length=3,
         description=(
-            "REQUIRED, best first. archive_org for historical, documentary, "
-            "newsreel, government and period material; pexels and pixabay for "
-            "modern footage. Name at least one — an empty list is not 'let "
-            "AETHER choose', it is a beat with no source decision at all. List "
-            "each library once."
-        ),
-    )
-    archiveQueries: List[str] = Field(
-        default_factory=list,
-        max_length=3,
-        description=(
-            "Searches phrased for a film archive rather than a stock library. "
-            "An archive is catalogued by what a film IS, not by what it shows: "
-            "'1940s wartime factory newsreel' finds something, 'happy worker "
-            "in factory' does not. Only fill this in when archive_org is in "
-            "preferredSources."
+            "REQUIRED, best first. Name at least one — an empty list is not "
+            "'let AETHER choose', it is a beat with no source decision at all. "
+            "List each library once."
         ),
     )
     sourceReason: str = Field(
@@ -184,24 +147,101 @@ class StockRequirements(BaseModel):
             "modern re-creation.' Not your reasoning — the production rationale."
         ),
     )
-    timePeriod: Optional[TimePeriod] = Field(
-        default=None,
-        description="Only when the script establishes a date. Never guessed.",
-    )
-    excerpt: Optional[Excerpt] = Field(
-        default=None,
-        description="Set for archive sources, which are whole films rather than clips.",
-    )
-    editorialPurpose: str = Field(
-        default="",
+
+
+class ArchivalRequirements(_StockCommon):
+    """An archival beat, and everything AETHER needs to actually use one.
+
+    A film archive is not a stock library with older clips in it. Asking it for
+    footage means naming the artefact, choosing a window inside a whole film,
+    and saying why that film earns its place. Those are four separate decisions
+    and the Director is the only thing that can make them — so on this branch
+    they are structurally required, not encouraged.
+
+    Required here rather than validated afterwards because a validation failure
+    re-asks the model for the entire plan, and one beat costs about 150 seconds
+    against the live 27B. The grammar can simply make the omission unspellable.
+
+    `sourceStrategy` is first so the grammar's alternation resolves on its very
+    first field: once the model has written "archival" it is committed to this
+    branch and cannot reach the end of the object without the rest.
+    """
+
+    sourceStrategy: Literal["archival"] = Field(
         description=(
-            "Why this footage serves the story editorially — 'historical "
-            "context for the wartime production figures'. A production note, "
-            "not a legal claim: never assert that a use is fair, permitted or "
-            "safe. Whether uncleared material may be published is decided by "
-            "a person, not here."
+            "Authentic period film says more here than any modern restaging: a "
+            "war, a launch, a protest, a vanished way of working."
         ),
     )
+    archiveQueries: List[str] = Field(
+        min_length=1,
+        max_length=3,
+        description=(
+            "REQUIRED. Searches phrased for a film archive rather than a stock "
+            "library. An archive is catalogued by what a film IS, not by what "
+            "it shows: '1940s wartime factory newsreel' finds something, 'happy "
+            "worker in factory' does not."
+        ),
+    )
+    excerpt: Excerpt = Field(
+        description=(
+            "REQUIRED. An archive item is a whole film, so the beat needs a "
+            "window into it and a statement of what should be visible there."
+        ),
+    )
+    editorialPurpose: str = Field(
+        min_length=1,
+        description=(
+            "REQUIRED. Why this footage serves the story — 'historical context "
+            "for the wartime production figures'. A production note, not a "
+            "legal claim: never assert that a use is fair, permitted or safe. "
+            "Whether uncleared material may be published is decided by a "
+            "person, not here."
+        ),
+    )
+    timePeriod: Optional[TimePeriod] = Field(
+        default=None,
+        description=(
+            "Fill this in whenever the narration establishes a date, and leave "
+            "it out when it does not. A guessed decade points the search at the "
+            "wrong footage, which is worse than not narrowing it at all."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _archive_is_among_the_sources(self) -> "ArchivalRequirements":
+        # Repaired rather than rejected. The model has already said this beat is
+        # archival; a preferredSources list that then omits archive_org is a
+        # slip, not a different decision, and rejecting it would cost a full
+        # re-plan. "contains" is not expressible in JSON Schema, so this is the
+        # one archival rule the grammar cannot carry.
+        if "archive_org" not in self.preferredSources:
+            self.preferredSources = ["archive_org"] + list(self.preferredSources)[:2]
+        return self
+
+
+class ModernRequirements(_StockCommon):
+    """A present-day beat. The archival fields are absent because they are meaningless here.
+
+    Nothing in a modern stock library needs an excerpt window or an archive
+    query, and requiring them would teach the model to invent both.
+    """
+
+    sourceStrategy: Literal["modern_stock", "auto"] = Field(
+        description=(
+            "'modern_stock' for present-day life; 'auto' only when either kind "
+            "would genuinely serve — not as a way to avoid choosing."
+        ),
+    )
+
+
+# Discriminated on sourceStrategy, so the grammar itself decides which fields a
+# beat must carry. This is what makes "required for archival, irrelevant for
+# modern" expressible at all: a single flat model can only say "optional".
+StockRequirements = Annotated[
+    Union[ArchivalRequirements, ModernRequirements],
+    Field(discriminator="sourceStrategy"),
+]
 
 
 class TextOverlay(BaseModel):
@@ -458,7 +498,15 @@ def _inline_refs(node: object, defs: dict, depth: int = 0) -> object:
 # and a numeric bound is not worth risking the whole grammar over — the
 # Pydantic model still enforces it on the way back out.
 _GRAMMAR_NOISE = ("description", "title", "default", "minimum", "maximum",
-                  "exclusiveMinimum", "exclusiveMaximum")
+                  "exclusiveMinimum", "exclusiveMaximum",
+                  # A discriminated union carries a mapping of literal values to
+                  # "#/$defs/..." strings. Those are VALUES, so inlining leaves
+                  # them behind pointing at definitions that no longer exist —
+                  # and the grammar compiler is handed dangling references. The
+                  # branches keep their const/enum on sourceStrategy, which is
+                  # what actually constrains generation; the mapping is a
+                  # validator convenience and nothing here validates with it.
+                  "discriminator")
 
 
 def _grammar_safe(node: object) -> object:

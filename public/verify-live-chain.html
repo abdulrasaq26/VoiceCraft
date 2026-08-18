@@ -103,13 +103,13 @@ window.fetch = async function (input, init) {
   // 2.0 is the generation where the source fields were optional. Running the
   // acceptance test against it would measure the old service and blame the model.
   check('the service is running the schema that REQUIRES a source decision',
-        String(health.schema_version) !== '2.0-aether',
+        /^2.[2-9]/.test(String(health.schema_version)),
         { schema_version: health.schema_version,
-          note: 'still 2.0 — the regenerated notebook has not been re-run yet' });
-  if (String(health.schema_version) === '2.0-aether') {
+          note: 'needs 2.2 or newer — the regenerated notebook has not been re-run yet' });
+  if (!/^2.[2-9]/.test(String(health.schema_version))) {
     say('');
-    say('STOPPING: this session still compiles the old grammar, where sourceStrategy and');
-    say('preferredSources are optional. Re-run the regenerated notebook, then run this again.');
+    say('STOPPING: this session compiles an older grammar. 2.2 is what makes an archival');
+    say('beat carry archiveQueries, excerpt and editorialPurpose. Re-run the notebook first.');
     window.__done = { fails, staleSchema: true };
     return;
   }

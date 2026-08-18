@@ -408,3 +408,97 @@ class TestCache(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestArchivalContract(unittest.TestCase):
+    """Archival beats must arrive usable, enforced by the grammar not by retry.
+
+    The Director is the only thing that can decide why an archive earns this
+    beat, what to search it for, and which moment inside a whole film to use.
+    Left optional, a constrained model omits all three — measured. A validator
+    would catch it, but a violation re-asks for the ENTIRE plan at ~150s a beat,
+    so the schema makes the omission unspellable instead.
+    """
+
+    ARCHIVAL = {
+        "concept": "American factories converting to war production",
+        "queries": ["factory assembly line workers"],
+        "sourceStrategy": "archival",
+        "preferredSources": ["archive_org"],
+        "archiveQueries": ["1940s wartime factory newsreel"],
+        "excerpt": {"required": True, "targetDuration": 6.0,
+                    "selectionIntent": "workers operating wartime machinery"},
+        "editorialPurpose": "historical context for the production figures",
+        "timePeriod": {"from_year": 1941, "to_year": 1945, "label": "Second World War"},
+    }
+    MODERN = {
+        "concept": "Shopping today",
+        "queries": ["supermarket checkout"],
+        "sourceStrategy": "modern_stock",
+        "preferredSources": ["pexels", "pixabay"],
+    }
+
+    def _plan(self, requirements):
+        plan = json.loads(json.dumps(MINIMAL_PLAN))
+        plan["scenes"][0]["stockRequirements"] = requirements
+        return plan
+
+    def test_a_complete_archival_beat_validates(self):
+        scene = VideoPlan(**self._plan(self.ARCHIVAL)).scenes[0]
+        self.assertEqual(scene.stockRequirements.sourceStrategy, "archival")
+        self.assertEqual(scene.stockRequirements.excerpt.selectionIntent,
+                         "workers operating wartime machinery")
+
+    def test_a_modern_beat_needs_none_of_it(self):
+        scene = VideoPlan(**self._plan(self.MODERN)).scenes[0]
+        self.assertEqual(scene.stockRequirements.sourceStrategy, "modern_stock")
+        self.assertFalse(hasattr(scene.stockRequirements, "excerpt"))
+
+    def test_archival_without_an_excerpt_is_rejected(self):
+        broken = dict(self.ARCHIVAL)
+        del broken["excerpt"]
+        with self.assertRaises(Exception):
+            VideoPlan(**self._plan(broken))
+
+    def test_archival_without_archive_queries_is_rejected(self):
+        broken = dict(self.ARCHIVAL)
+        broken["archiveQueries"] = []
+        with self.assertRaises(Exception):
+            VideoPlan(**self._plan(broken))
+
+    def test_archival_without_an_editorial_purpose_is_rejected(self):
+        broken = dict(self.ARCHIVAL)
+        broken["editorialPurpose"] = ""
+        with self.assertRaises(Exception):
+            VideoPlan(**self._plan(broken))
+
+    def test_time_period_stays_optional(self):
+        """A guessed decade searches the wrong decade. Absent beats invented."""
+        without = dict(self.ARCHIVAL)
+        del without["timePeriod"]
+        scene = VideoPlan(**self._plan(without)).scenes[0]
+        self.assertIsNone(scene.stockRequirements.timePeriod)
+
+    def test_archive_org_is_repaired_into_the_sources(self):
+        """The beat is already archival; omitting the library is a slip, not a
+        different decision — and rejecting it would cost a whole re-plan."""
+        slipped = dict(self.ARCHIVAL, preferredSources=["pexels"])
+        scene = VideoPlan(**self._plan(slipped)).scenes[0]
+        self.assertIn("archive_org", scene.stockRequirements.preferredSources)
+
+    def test_the_grammar_carries_the_rule_not_just_the_validator(self):
+        """If this only held in pydantic, the model could still omit the fields
+        and we would pay a re-plan to find out."""
+        req = (get_json_schema(inline=True)["properties"]["scenes"]["items"]
+               ["properties"]["stockRequirements"])
+        branches = [b for alt in req["anyOf"] for b in alt.get("oneOf", [])]
+        archival = next(b for b in branches
+                        if b["properties"]["sourceStrategy"].get("const") == "archival")
+        for field in ("archiveQueries", "excerpt", "editorialPurpose"):
+            self.assertIn(field, archival["required"], f"{field} not forced by the grammar")
+
+        modern = next(b for b in branches
+                      if "modern_stock" in (b["properties"]["sourceStrategy"].get("enum") or []))
+        for field in ("archiveQueries", "excerpt", "editorialPurpose"):
+            self.assertNotIn(field, modern["properties"],
+                             f"{field} offered to a modern beat, which would teach it to invent one")

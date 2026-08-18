@@ -1386,6 +1386,11 @@ Respond ONLY with JSON:
           // The Director says how long and what should be visible; it never
           // names timecodes, because choosing the moment means examining the
           // footage and that happens in ArchiveExcerpt.
+          // Required by the grammar on an archival beat since 2.2, and absent
+          // from a modern one by construction — so its presence is a signal,
+          // not just a bonus field. Still tolerated as missing: this parser
+          // also handles plans from the /generate fallback, which has no
+          // grammar behind it.
           const excerpt = (() => {
             const e = r.excerpt;
             if (!e || typeof e !== 'object') return null;
