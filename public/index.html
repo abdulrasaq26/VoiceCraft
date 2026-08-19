@@ -1190,6 +1190,13 @@
         <p class="field-note" style="margin-top:0;">Used only when Qwen is unreachable. One key per line.</p>
         <label for="set-nim-keys">API Keys</label>
         <textarea id="set-nim-keys" rows="2" placeholder="nvapi-..." style="margin-bottom:10px;"></textarea>
+        <!-- The fallback needs testing more than the primary does, not less:
+             it is only ever reached when Qwen is already down, so a dead key
+             here is discovered at the worst possible moment. -->
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+          <button id="btn-test-nim" class="btn ghost small" type="button">Test connection</button>
+          <span id="nim-test-result" class="field-note" style="margin:0;"></span>
+        </div>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <label for="set-chat-model" style="margin:0;">NIM model</label>
           <button id="btn-refresh-models" class="btn ghost small" type="button">↻ Refresh</button>

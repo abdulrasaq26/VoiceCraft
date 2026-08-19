@@ -17,6 +17,8 @@
   const btnTestQwen = $('btn-test-qwen');
   const qwenTestResult = $('qwen-test-result');
   const nimInput = $('set-nim-keys');
+  const btnTestNim = $('btn-test-nim');
+  const nimTestResult = $('nim-test-result');
   const chatModelSel = $('set-chat-model');
   const btnRefreshModels = $('btn-refresh-models');
   const fishInput = $('set-fishaudio-endpoint');
@@ -77,6 +79,69 @@
     const PM = window.ProviderManager;
     if (!PM || !qwenEndpointInput) return;
     PM.setCredentials('qwen', qwenEndpointInput.value, qwenKeyInput ? qwenKeyInput.value : '');
+  }
+
+  // Prove the fallback works BEFORE it is needed.
+  //
+  // NIM is only reached when Qwen is unreachable, so an expired or mistyped key
+  // surfaces at the worst moment — mid-generation, with the primary already
+  // down, as an error naming the wrong subsystem. There was no way to check it
+  // short of taking Qwen offline and trying to make a video.
+  //
+  // This asks NVIDIA for its model list: the cheapest call that proves the key
+  // is accepted, costs no tokens, and also tells us what this key may run.
+  async function testNim() {
+    if (!nimTestResult) return;
+    const keys = (nimInput ? nimInput.value : '')
+      .split('\n').map((k) => k.trim()).filter(Boolean);
+    if (!keys.length) {
+      nimTestResult.textContent = 'Add a key first.';
+      return;
+    }
+
+    btnTestNim.disabled = true;
+    nimTestResult.textContent = `Checking ${keys.length} key${keys.length > 1 ? 's' : ''}…`;
+
+    const results = [];
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      try {
+        const res = await fetch('https://integrate.api.nvidia.com/v1/models', {
+          headers: { Authorization: `Bearer ${key}` },
+          signal: AbortSignal.timeout(20000)
+        });
+        const raw = await res.text();
+        let body = null;
+        try { body = JSON.parse(raw); } catch (_) { /* handled below */ }
+
+        if (res.status === 401 || res.status === 403) {
+          results.push({ ok: false, why: 'rejected — the key is invalid or expired' });
+        } else if (!res.ok) {
+          results.push({ ok: false, why: `HTTP ${res.status}${body && body.detail ? ` — ${body.detail}` : ''}` });
+        } else {
+          const models = (body && Array.isArray(body.data)) ? body.data.length : 0;
+          results.push({ ok: true, why: `${models} model${models === 1 ? '' : 's'} available` });
+        }
+      } catch (err) {
+        const timedOut = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
+        results.push({ ok: false, why: timedOut ? 'no reply within 20s' : err.message });
+      }
+    }
+
+    const good = results.filter((r) => r.ok).length;
+    if (keys.length === 1) {
+      nimTestResult.textContent = results[0].ok
+        ? `🟢 ${results[0].why}`
+        : `🔴 ${results[0].why}`;
+    } else {
+      // Name the failing ones by position, since the keys themselves must not
+      // be echoed back into the page.
+      const bad = results.map((r, i) => (r.ok ? null : `#${i + 1} ${r.why}`)).filter(Boolean);
+      nimTestResult.textContent = good === keys.length
+        ? `🟢 all ${good} keys work`
+        : `${good ? '🟡' : '🔴'} ${good}/${keys.length} working — ${bad.join('; ')}`;
+    }
+    btnTestNim.disabled = false;
   }
 
   async function testQwen() {
@@ -182,6 +247,7 @@
 
   if (btnTestQwen) btnTestQwen.addEventListener('click', testQwen);
   openBtn.addEventListener('click', openModal);
+  if (btnTestNim) btnTestNim.addEventListener('click', testNim);
   if (saveBtn) saveBtn.addEventListener('click', save);
   modal.querySelectorAll('.close-modal, [data-close]').forEach((b) => b.addEventListener('click', closeModal));
   window.addEventListener('blvck:models-updated', populateModelDropdown);
