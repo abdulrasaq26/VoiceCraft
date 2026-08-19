@@ -437,10 +437,33 @@
     return data;
   }
 
+  // A label that never changes cannot be told apart from a frozen page, and
+  // this step legitimately takes minutes on the fallback provider — measured at
+  // 20-44s for a trivial request and longer for a real script. Counting up is
+  // the difference between "it is thinking" and "it has died".
+  let analyzingTimer = null;
+
   function setAnalyzing(on, label) {
     analyzeBtn.disabled = on;
     analyzeSpinner.hidden = !on;
-    analyzeLabel.textContent = on ? label || 'Working…' : 'Analyze & generate';
+
+    if (analyzingTimer) { clearInterval(analyzingTimer); analyzingTimer = null; }
+
+    if (!on) {
+      analyzeLabel.textContent = 'Analyze & generate';
+      return;
+    }
+
+    const text = label || 'Working…';
+    const started = Date.now();
+    const paint = () => {
+      const secs = Math.round((Date.now() - started) / 1000);
+      // Silent for the first few seconds, so a quick step does not flicker a
+      // counter at the producer.
+      analyzeLabel.textContent = secs < 4 ? text : `${text} ${secs}s`;
+    };
+    paint();
+    analyzingTimer = setInterval(paint, 1000);
   }
 
   async function analyzeAndGenerate() {

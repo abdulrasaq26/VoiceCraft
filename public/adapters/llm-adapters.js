@@ -22,7 +22,11 @@
     // nothing falls back, and the Storyboard waits forever.
     //
     // Streaming gets longer, because the budget covers the whole response.
-    const NIM_TIMEOUT_MS = (typeof onChunk === 'function') ? 180000 : 90000;
+    // Measured through this proxy: 20-44s for a trivial request, and the app's
+    // real prompts are several times larger. 90s was inside that range and
+    // would have aborted legitimate work; 240s only ends a request that is
+    // genuinely not coming back.
+    const NIM_TIMEOUT_MS = (typeof onChunk === 'function') ? 300000 : 240000;
     const withBudget = (init) => Object.assign({}, init, {
       signal: AbortSignal.timeout(NIM_TIMEOUT_MS)
     });
