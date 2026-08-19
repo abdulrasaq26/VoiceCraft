@@ -100,9 +100,10 @@ TOTAL_VRAM = sum(torch.cuda.get_device_properties(i).total_memory
 print(f'\\nCUDA {torch.version.cuda} | torch {torch.__version__}')
 print(f'GPUs {GPU_COUNT} | total VRAM {TOTAL_VRAM:.1f} GB')
 if GPU_COUNT < 2:
-    print('\\n[WARN] One GPU only. Q5_K_M (19.8 GB) will spill to CPU and crawl.')
+    print('\\n[WARN] One GPU only. A 20 GB quant will spill to CPU and crawl.')
     print('       This is what a Colab free session looks like; Kaggle gives 2x T4.')
-    print('       Drop to Q3_K_M in Stage 3 if you are staying here.')
+    print('       Drop to a smaller quant in Stage 3 if you are staying here;')
+    print('       Stage 6 lists what the repo currently publishes.')
 print('\\nStage 1 PASSED')
 """
     ),
@@ -310,9 +311,30 @@ second with no warning that anything is wrong.
     ),
     code(
         """
+import importlib
 import sys
 
 sys.path.insert(0, '.')
+
+# The package on disk is written by Stage 4, and /kaggle/working survives a
+# notebook re-upload. So a session can hold an older copy than this notebook
+# expects, and the symptom is an ImportError inside a later stage rather than
+# anything pointing at the cause. Check it here and say what to do.
+REQUIRED_BUILD = 3
+for _m in ('director', 'director.inference', 'director.schema', 'director.prompts',
+           'director.api', 'director.cache'):
+    if _m in sys.modules:
+        importlib.reload(sys.modules[_m])
+import director   # noqa: E402
+
+if getattr(director, 'PACKAGE_BUILD', 0) < REQUIRED_BUILD:
+    raise RuntimeError(
+        f'director/ on disk is build {getattr(director, "PACKAGE_BUILD", 0)}, '
+        f'but this notebook needs build {REQUIRED_BUILD}. The package is written '
+        'by Stage 4 - run Stage 4 (all seven "wrote director/..." cells), then '
+        'this stage again.'
+    )
+
 from director.inference import (   # noqa: E402
     loud_backend_logs,
     preload_cuda_libraries,
@@ -529,6 +551,25 @@ print('\\nStage 6 PASSED')
         """
 import os
 import time
+# Stage 4 writes this package to disk and /kaggle/working outlives a notebook
+# re-upload, so a session can hold an older copy than this notebook expects.
+# Unguarded, that surfaces as an ImportError inside whichever stage happens to
+# need the new name first, pointing at the symptom rather than the cause.
+import importlib as _importlib
+import sys as _sys
+
+_sys.path.insert(0, '.')
+for _m in [k for k in list(_sys.modules) if k == 'director' or k.startswith('director.')]:
+    _importlib.reload(_sys.modules[_m])
+import director as _director   # noqa: E402
+
+if getattr(_director, 'PACKAGE_BUILD', 0) < 3:
+    raise RuntimeError(
+        f'director/ on disk is build {getattr(_director, "PACKAGE_BUILD", 0)}, '
+        'but this notebook needs build 3. Run Stage 4 (the seven '
+        '"wrote director/..." cells), then this stage again.'
+    )
+
 from director.inference import (
     DirectorInference,
     loud_backend_logs,
@@ -684,6 +725,25 @@ print('\\nA storyboard is a few thousand tokens, so budget accordingly.')
     code(
         """
 import json
+# Stage 4 writes this package to disk and /kaggle/working outlives a notebook
+# re-upload, so a session can hold an older copy than this notebook expects.
+# Unguarded, that surfaces as an ImportError inside whichever stage happens to
+# need the new name first, pointing at the symptom rather than the cause.
+import importlib as _importlib
+import sys as _sys
+
+_sys.path.insert(0, '.')
+for _m in [k for k in list(_sys.modules) if k == 'director' or k.startswith('director.')]:
+    _importlib.reload(_sys.modules[_m])
+import director as _director   # noqa: E402
+
+if getattr(_director, 'PACKAGE_BUILD', 0) < 3:
+    raise RuntimeError(
+        f'director/ on disk is build {getattr(_director, "PACKAGE_BUILD", 0)}, '
+        'but this notebook needs build 3. Run Stage 4 (the seven '
+        '"wrote director/..." cells), then this stage again.'
+    )
+
 from director.schema import VideoPlan
 
 # `engine` is the one loaded in Stage 7. Constructing a second
@@ -762,6 +822,25 @@ print('\\nStage 8 PASSED')
     md("## Stage 9 — AETHER compatibility\n\nRe-implements what `parseVideoPlan()` does, so a plan that would arrive empty in the app fails here instead."),
     code(
         """
+# Stage 4 writes this package to disk and /kaggle/working outlives a notebook
+# re-upload, so a session can hold an older copy than this notebook expects.
+# Unguarded, that surfaces as an ImportError inside whichever stage happens to
+# need the new name first, pointing at the symptom rather than the cause.
+import importlib as _importlib
+import sys as _sys
+
+_sys.path.insert(0, '.')
+for _m in [k for k in list(_sys.modules) if k == 'director' or k.startswith('director.')]:
+    _importlib.reload(_sys.modules[_m])
+import director as _director   # noqa: E402
+
+if getattr(_director, 'PACKAGE_BUILD', 0) < 3:
+    raise RuntimeError(
+        f'director/ on disk is build {getattr(_director, "PACKAGE_BUILD", 0)}, '
+        'but this notebook needs build 3. Run Stage 4 (the seven '
+        '"wrote director/..." cells), then this stage again.'
+    )
+
 from director.schema import plan_violations
 
 # Uses the same check the director itself runs, rather than a second copy that
@@ -811,6 +890,25 @@ tunnel.
 import threading, time
 import requests
 import uvicorn
+# Stage 4 writes this package to disk and /kaggle/working outlives a notebook
+# re-upload, so a session can hold an older copy than this notebook expects.
+# Unguarded, that surfaces as an ImportError inside whichever stage happens to
+# need the new name first, pointing at the symptom rather than the cause.
+import importlib as _importlib
+import sys as _sys
+
+_sys.path.insert(0, '.')
+for _m in [k for k in list(_sys.modules) if k == 'director' or k.startswith('director.')]:
+    _importlib.reload(_sys.modules[_m])
+import director as _director   # noqa: E402
+
+if getattr(_director, 'PACKAGE_BUILD', 0) < 3:
+    raise RuntimeError(
+        f'director/ on disk is build {getattr(_director, "PACKAGE_BUILD", 0)}, '
+        'but this notebook needs build 3. Run Stage 4 (the seven '
+        '"wrote director/..." cells), then this stage again.'
+    )
+
 import director.api as api
 
 # Hand the API the model that is already loaded, and the settings Stage 3 chose.
