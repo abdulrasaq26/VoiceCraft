@@ -1084,19 +1084,19 @@ Give 4-8 distinct angles, 4-6 cold-open hooks, 6-12 key facts, 4-8 curiosity que
 
 You work with a STOCK FOOTAGE + EDITORIAL TEXT system. The renderer will search real stock libraries (Pixabay, Pexels) for footage that matches your intent, and render real text/graphics for information-dense beats. Do NOT think in terms of AI image generation. Think like a documentary editor: what real footage, real statistics, real diagrams, or real typeset text would make this beat land?
 
-ALWAYS PREFER THE SIMPLEST VISUAL THAT EXPLAINS THE IDEA. A drawn or typeset visual renders in about a millisecond, looks identical on every run, and stays editable afterwards. A searched clip depends on what the library happens to hold, and a generated shot costs minutes of GPU and comes back different every time. Reach for footage only when nothing drawn can carry the idea, and reach for generation only when no footage exists.
+PREFER REAL FOOTAGE. This is a documentary channel: the viewer is watching to see the world, and a drawing where footage would do makes a serious subject look like a lesson. Stock libraries return a usable clip in about a second, so there is no longer any cost argument for drawing something filmable.
 
-Choose in this order, and only move down when the option above genuinely cannot communicate the point:
-  1. chart / map / timeline — the beat carries numbers, places or dates
-  2. whiteboard / diagram   — the beat is a process, mechanism or labelled structure
-  3. stickman               — people doing or feeling something, acted out
-  4. editorial_text         — a claim, a quote or an abstraction no footage can honestly show
-  5. stock_text             — a claim that wants atmospheric footage underneath it
-  6. stock_video / stock_photo — a real filmed moment: place, texture, atmosphere
-  7. presenter              — the host addressing the viewer directly
-  8. t2v                    — last resort, when nothing above and no stock clip exists
+Choose in this order, and only move down when the option above genuinely cannot carry the beat:
+  1. stock_video / stock_photo — anything that exists in the world: people, places, objects, work, weather, crowds, hands, machines
+  2. stock_text             — a claim that wants real footage underneath it
+  3. chart / map / timeline — the beat carries actual numbers, places or dates worth reading
+  4. editorial_text         — an abstraction or a quote that no honest footage could show
+  5. whiteboard / diagram   — a process or mechanism that only a labelled drawing explains
+  6. presenter              — the host addressing the viewer directly
+  7. stickman               — a last resort for a beat about human behaviour with no filmable subject at all
+  8. t2v                    — when nothing above fits and no stock clip could exist
 
-A beat about a farmer losing his harvest can be a stickman farmer looking at a wilting plant. That reads instantly, costs nothing, and can be re-cut later. Reach for footage only when the beat genuinely needs photographic reality: a place the viewer must believe in, a texture, an atmosphere no drawing can carry.
+A beat about a farmer losing his harvest is a shot of a failing field, not a drawn figure beside a wilting plant. Reach for a drawing only when the idea has no physical subject: a decision, a trend, an intention. If you can picture it happening somewhere, it is footage.
 
 ────────────────────────────────────────────────────
 VISUAL TYPE VOCABULARY — choose one per scene:
