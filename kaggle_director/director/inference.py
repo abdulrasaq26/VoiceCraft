@@ -156,6 +156,31 @@ def quiet_backend_logs() -> bool:
         return False
 
 
+def loud_backend_logs() -> bool:
+    """Undo quiet_backend_logs() for the rest of this process.
+
+    The log sink llama.cpp holds is global and outlives the cell that installed
+    it, so once quiet_backend_logs() has run, every later load in the same
+    kernel is mute — including one that fails. That turned a load error into a
+    bare "Failed to load model from file" with nothing above it, which is the
+    one situation where those logs are the entire diagnosis.
+
+    Call this before loading if you need to see why a load fails.
+    """
+    try:
+        import ctypes
+
+        import llama_cpp
+
+        globals().pop("_LOG_SINK", None)
+        llama_cpp.llama_log_set(
+            ctypes.cast(None, ctypes.c_void_p), ctypes.c_void_p(0)
+        )
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class DirectorInference:
     """Wraps the model with the three shapes AETHER asks for: chat, generate, plan."""
 

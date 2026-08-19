@@ -315,6 +315,10 @@ import sys
 sys.path.insert(0, '.')
 from director.inference import preload_cuda_libraries   # noqa: E402
 
+# The log sink is global and survives the cell that set it, so a re-run of
+# this stage inherits the silence from the last one - and a failing load
+# then reports nothing at all. Be loud while loading; quieten afterwards.
+loud_backend_logs()
 loaded = preload_cuda_libraries()
 print('preloaded CUDA libraries:')
 for lib in loaded:
@@ -522,7 +526,12 @@ print('\\nStage 6 PASSED')
         """
 import os
 import time
-from director.inference import DirectorInference, preload_cuda_libraries, quiet_backend_logs
+from director.inference import (
+    DirectorInference,
+    loud_backend_logs,
+    preload_cuda_libraries,
+    quiet_backend_logs,
+)
 
 # Check the file before the loader does. llama.cpp reports every reason for
 # failing to load as the same ValueError, so an absent or truncated GGUF is
