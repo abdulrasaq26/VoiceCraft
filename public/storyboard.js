@@ -10,6 +10,27 @@
   const analyzeLabel = analyzeBtn.querySelector('.btn-label');
   const clearBtn = $('sb-clear');
   const statusEl = $('sb-status');
+  // The project title, used to name every export and stored with the project.
+  //
+  // This was referenced by project() and never declared. The `titleInput &&`
+  // guard there could not help: referencing an undeclared identifier throws a
+  // ReferenceError before && is ever evaluated, and the element's id is
+  // "title-input" — hyphenated, so not a valid identifier — which is why the
+  // browser's implicit global for element ids did not cover it either.
+  //
+  // saveProject() calls project(), so every save threw. Live, that killed the
+  // media queue the moment the first scene finished downloading: the asset was
+  // already in hand, the scene was never marked done, no card rendered, and the
+  // status sat on "Fetching stock media..." indefinitely.
+  const titleInput = $('title-input');
+
+  // Left behind when the cast panel was removed from the Storyboard. The code
+  // that touched them still runs and still guards with `if (castEl)`, which
+  // throws rather than skipping when the name was never declared at all. The
+  // lookups return null now that the markup is gone, so those guards do what
+  // they were written to do.
+  const castEl = $('sb-cast');
+  const castListEl = $('sb-cast-list');
   const progressWrap = $('sb-progress');
   const progressFill = $('sb-progress-fill');
   const statsEl = $('sb-stats');
