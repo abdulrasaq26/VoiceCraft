@@ -12,6 +12,14 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3000;
 const ROOT = path.join(__dirname, 'public');
 
+// Everything the app is built from is edited live; nothing here is a versioned
+// asset, so there is no case for caching any of it.
+const NO_CACHE = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
+  'Pragma': 'no-cache',
+  'Expires': '0'
+};
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -1006,14 +1014,21 @@ const server = http.createServer((req, res) => {
           res.writeHead(404);
           res.end('Not found');
         } else {
-          res.writeHead(200, { 'Content-Type': MIME['.html'] });
+          res.writeHead(200, Object.assign({ 'Content-Type': MIME['.html'] }, NO_CACHE));
           res.end(html);
         }
       });
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
+    // Source is edited constantly and served straight off disk, so a cached
+    // copy is always the wrong one. Without any cache header the browser picks
+    // a heuristic freshness lifetime of its own and can hold JS for hours —
+    // which looks exactly like a fix that did not work, and cost several
+    // rounds of exactly that confusion.
+    if (['.js', '.html', '.css', '.json'].includes(ext)) Object.assign(headers, NO_CACHE);
+    res.writeHead(200, headers);
     res.end(data);
   });
 });
