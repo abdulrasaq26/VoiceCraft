@@ -10,6 +10,24 @@
     const proxyEndpoint = '/api/proxy/nvidia/v1/chat/completions';
     const directEndpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
+    // NIM's own budget, deliberately unrelated to Qwen's.
+    //
+    // The two providers fail in opposite ways and must not share a number.
+    // Qwen reasons for minutes and a plan legitimately takes 150-300s, so a
+    // short timeout there would abandon healthy work — it has its own handling,
+    // including a retry that joins the generation already running. NIM answers
+    // a request like this in 20-45s when it is healthy; measured across three
+    // identical calls it returned in 42s and 20s and, once, never answered at
+    // all. Without a bound that third case hangs the run: nothing fails, so
+    // nothing falls back, and the Storyboard waits forever.
+    //
+    // Streaming gets longer, because the budget covers the whole response.
+    const NIM_TIMEOUT_MS = (typeof onChunk === 'function') ? 180000 : 90000;
+    const withBudget = (init) => Object.assign({}, init, {
+      signal: AbortSignal.timeout(NIM_TIMEOUT_MS)
+    });
+    const timedOut = (e) => e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+
     if (!key) {
       throw new Error('NVIDIA NIM API Key is missing. Please enter your nvapi-... key in Settings.');
     }
@@ -31,18 +49,28 @@
 
     let res;
     try {
-      res = await fetch(proxyEndpoint, {
+      res = await fetch(proxyEndpoint, withBudget({
         method: 'POST',
         headers,
         body: JSON.stringify(body)
-      });
+      }));
     } catch (e) {
+      // A timeout is not a reason to try the direct endpoint: a browser cannot
+      // reach integrate.api.nvidia.com at all — no CORS headers for a page
+      // origin — so that attempt fails as a NetworkError and replaces a clear
+      // "took too long" with a misleading one.
+      if (timedOut(e)) {
+        throw new Error(
+          `NVIDIA NIM did not respond within ${Math.round(NIM_TIMEOUT_MS / 1000)}s. `
+          + 'The service is slow or unavailable right now.'
+        );
+      }
       console.warn('[NVIDIA NIM] Local proxy failed, attempting direct fetch:', e);
-      res = await fetch(directEndpoint, {
+      res = await fetch(directEndpoint, withBudget({
         method: 'POST',
         headers,
         body: JSON.stringify(body)
-      });
+      }));
     }
 
     if (res.status === 429 || res.status === 401 || res.status === 403) {
@@ -51,7 +79,7 @@
       const nextKey = window.ProviderManager.getActiveKey('nim');
       if (nextKey && nextKey !== key) {
         headers['Authorization'] = `Bearer ${nextKey}`;
-        res = await fetch(proxyEndpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+        res = await fetch(proxyEndpoint, withBudget({ method: 'POST', headers, body: JSON.stringify(body) }));
       }
     }
 
