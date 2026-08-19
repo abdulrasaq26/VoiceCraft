@@ -496,12 +496,22 @@ if magic != b'GGUF':
     )
 # 4% covers the gap between the quant table above and the real file; further
 # off than that is a truncated transfer, not a rounding difference.
-if EXPECTED_GIB and got_gib < EXPECTED_GIB * 0.96:
+# Exact, because the repo publishes the exact byte count and a percentage
+# tolerance hides the failure it exists to catch: at 96%, a file 0.74 GiB short
+# of Q5_K_M still passes, loads far enough to look plausible, and then fails
+# inside llama.cpp as "Failed to load model from file" - which points at the
+# loader and says nothing about the missing bytes.
+if EXPECTED_BYTES and got_bytes != EXPECTED_BYTES:
+    short = EXPECTED_BYTES - got_bytes
     raise RuntimeError(
-        f'{MODEL_PATH} is {got_gib:.1f} GiB but {MODEL_FILE} should be about '
-        f'{EXPECTED_GIB:.1f} GiB - the download did not finish. Remove it and '
-        f'run this stage again:  rm -rf {MODEL_DIR}'
+        f'{MODEL_PATH} is {got_bytes:,} bytes but {MODEL_FILE} is '
+        f'{EXPECTED_BYTES:,} - '
+        + (f'{short:,} bytes short ({short/1024**2:.1f} MiB).'
+           if short > 0 else f'{-short:,} bytes too long.')
+        + f' Remove it and run this stage again:  rm -rf {MODEL_DIR}'
     )
+if EXPECTED_BYTES:
+    print(f'Size matches the repo exactly ({got_bytes:,} bytes).')
 
 os.environ['DIRECTOR_MODEL_PATH'] = MODEL_PATH
 print('\\nStage 6 PASSED')
@@ -522,10 +532,24 @@ if not MODEL_PATH or not os.path.exists(MODEL_PATH):
         f'No model at {MODEL_PATH!r}. Kaggle clears /tmp between sessions, so '
         'Stage 6 has to run in this session before this one.'
     )
-_gb = os.path.getsize(MODEL_PATH) / 1024**3
+_bytes = os.path.getsize(MODEL_PATH)
+_gib = _bytes / 1024**3
 with open(MODEL_PATH, 'rb') as _fh:
     _magic = _fh.read(4)
-print(f'model: {MODEL_PATH}  ({_gb:.1f} GB, magic {_magic!r})')
+print(f'model: {MODEL_PATH}')
+print(f'       {_bytes:,} bytes ({_gib:.2f} GiB), magic {_magic!r}')
+# If Stage 6 ran in this session it knows the published size; say whether this
+# file matches it exactly, so a load failure below can be attributed rather
+# than guessed at.
+try:
+    if EXPECTED_BYTES:
+        if _bytes == EXPECTED_BYTES:
+            print('       matches the published size exactly')
+        else:
+            print(f'       MISMATCH: the repo publishes {EXPECTED_BYTES:,} bytes '
+                  f'({EXPECTED_BYTES - _bytes:+,} difference) - the file is incomplete')
+except NameError:
+    print('       (Stage 6 has not run in this session, so the size is unverified)')
 if _magic != b'GGUF':
     raise RuntimeError(
         f'{MODEL_PATH} is not a GGUF file (starts with {_magic!r}). Delete it '
