@@ -117,12 +117,42 @@
     };
   }
 
+  /** A frame that never arrives must not stop the run. */
+  const FRAME_TIMEOUT_MS = 15000;
+
   function loadImage(url) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error(`could not load frame ${url}`));
+
+      // Neither onload nor onerror fires if the server accepts the connection
+      // and then says nothing, so this promise could never settle — and it sits
+      // upstream of the download timeout, which therefore never got a chance to
+      // apply. Measured in production: an acquisition stuck for over an hour on
+      // "Generating scene 1 of 2 - 0%", with a bounded download below it that
+      // was never reached.
+      //
+      // A thumbnail is a few kilobytes; fifteen seconds is already generous.
+      // Failing one frame is cheap — selectExcerpt scores whatever frames it
+      // did get, and falls back to a heuristic window if too few arrive.
+      let settled = false;
+      const finish = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        img.onload = img.onerror = null;
+        // Stop a transfer that is going nowhere, rather than leaving it to
+        // occupy one of the browser's six connections to the host.
+        if (arg instanceof Error) img.src = '';
+        fn(arg);
+      };
+      const timer = setTimeout(
+        () => finish(reject, new Error(`frame timed out after ${FRAME_TIMEOUT_MS / 1000}s: ${url}`)),
+        FRAME_TIMEOUT_MS
+      );
+
+      img.onload = () => finish(resolve, img);
+      img.onerror = () => finish(reject, new Error(`could not load frame ${url}`));
       img.src = url;
     });
   }
