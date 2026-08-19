@@ -210,7 +210,8 @@ import os
 #   Q8_0       29.0 GB  no room for the KV cache   no
 MODEL_REPO = 'unsloth/Qwen3.8-27B-GGUF'
 QUANT      = 'Q5_K_M'
-MODEL_FILE = f'Qwen3.8-27B-{QUANT}.gguf'
+# MODEL_FILE is resolved in Stage 6 from the repo listing, because the
+# published filenames change when the model is re-quantized.
 MODEL_DIR  = '/tmp/qwen38'
 
 # This model is hybrid: only about a quarter of its 64 layers use full
@@ -376,15 +377,61 @@ durations with words distributed by syllable weight — and labels the timing
     md("## Stage 6 — Download the GGUF (~20 GB, once per session)"),
     code(
         """
-import os, shutil, threading, time
+import os, re, shutil, threading, time
 from huggingface_hub import hf_hub_download
 
 # Decimal GB (10^9), because that is how HuggingFace lists these files.
 # Anything comparing against it must divide by 1e9, NOT by 1024**3 — the two
 # differ by 7%, which is enough to fail a complete download: Q5_K_M is 19.8 GB
 # and 18.4 GiB, and a guard that mixed the units rejected the finished file.
-EXPECTED_GB = {'Q3_K_M': 13.8, 'Q4_K_M': 17.1, 'Q5_K_M': 19.8, 'Q8_0': 29.0}.get(QUANT, 20.0)
-EXPECTED_GIB = EXPECTED_GB * 1e9 / 1024**3
+# Ask the repo what it actually holds, rather than hardcoding a filename and a
+# size. Both go stale: unsloth re-quantized this model and every plain K-quant
+# became a UD ("Unsloth Dynamic") build, so
+#   Qwen3.8-27B-Q5_K_M.gguf   ->  404
+#   Qwen3.8-27B-UD-Q5_K_M.gguf -> the real file
+# A hardcoded name cannot survive that, and a hardcoded size is a second thing
+# to get wrong — the sizes here came from the repo listing and were already
+# once compared in the wrong unit.
+from huggingface_hub import HfApi
+
+_api = HfApi()
+_files = [f for f in _api.list_repo_files(MODEL_REPO) if f.endswith('.gguf')]
+
+def _pick(quant):
+    # The file for this quant, preferring an exact name and then a UD build.
+    #
+    # Ordered deliberately: an exact match wins, then the dynamic build of
+    # the same quant, and only then anything containing the name - so asking
+    # for Q5_K_M can never quietly return Q5_K_S because it sorted first.
+    base = MODEL_REPO.split('/')[-1].replace('-GGUF', '')
+    for candidate in (f'{base}-{quant}.gguf', f'{base}-UD-{quant}.gguf'):
+        if candidate in _files:
+            return candidate
+    loose = [f for f in _files if quant in f and '/' not in f]
+    return loose[0] if loose else None
+
+MODEL_FILE = _pick(QUANT)
+if not MODEL_FILE:
+    _offered = sorted({re.sub(r'^.*?-(UD-)?(Q\\d[^.]*|BF16|F16)\\.gguf$', r'\\2', f)
+                       for f in _files if '/' not in f and 'mmproj' not in f})
+    raise RuntimeError(
+        f'{MODEL_REPO} has no file for {QUANT}. It offers: {", ".join(_offered)}.\\n'
+        f'Set QUANT in Stage 3 to one of those.'
+    )
+
+# The size comes from the same listing, so it cannot disagree with the file.
+_info = _api.model_info(MODEL_REPO, files_metadata=True)
+_entry = next((x for x in _info.siblings if x.rfilename == MODEL_FILE), None)
+EXPECTED_BYTES = getattr(_entry, 'size', None) or 0
+EXPECTED_GIB = EXPECTED_BYTES / 1024**3 if EXPECTED_BYTES else 0
+EXPECTED_GB  = EXPECTED_BYTES / 1e9 if EXPECTED_BYTES else 0
+print(f'Resolved {QUANT} -> {MODEL_FILE}'
+      + (f'  ({EXPECTED_GIB:.1f} GiB / {EXPECTED_GB:.1f} GB)' if EXPECTED_BYTES else ''))
+if not EXPECTED_BYTES:
+    # Without a published size there is nothing to verify against; say so
+    # rather than inventing a threshold.
+    print('  [WARN] the repo did not publish a size, so the completeness check '
+          'will only verify the GGUF magic bytes.')
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 free_gib = shutil.disk_usage(MODEL_DIR).free / 1024**3
@@ -449,9 +496,9 @@ if magic != b'GGUF':
     )
 # 4% covers the gap between the quant table above and the real file; further
 # off than that is a truncated transfer, not a rounding difference.
-if got_gib < EXPECTED_GIB * 0.96:
+if EXPECTED_GIB and got_gib < EXPECTED_GIB * 0.96:
     raise RuntimeError(
-        f'{MODEL_PATH} is {got_gib:.1f} GiB but {QUANT} should be about '
+        f'{MODEL_PATH} is {got_gib:.1f} GiB but {MODEL_FILE} should be about '
         f'{EXPECTED_GIB:.1f} GiB - the download did not finish. Remove it and '
         f'run this stage again:  rm -rf {MODEL_DIR}'
     )
