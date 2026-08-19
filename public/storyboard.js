@@ -26,6 +26,38 @@
   const presetEl = $('sb-style-preset');
   const presetSaveBtn = $('sb-save-preset');
   const densityEl = $('sb-density');
+
+  // These three decide what gets fetched and how much of it, so losing them on
+  // reload is not a cosmetic annoyance: a producer who chose "Modern stock
+  // only" to avoid the archive would silently be back on every source after a
+  // refresh, and would not know until a beat came back archival.
+  const CONTROL_PREFS = 'blvck:storyboard_controls';
+
+  function restoreControls() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(CONTROL_PREFS) || '{}'); } catch { /* defaults */ }
+    const pairs = [['strategy', stockStrategyEl], ['provider', stockProviderEl],
+                   ['density', densityEl]];
+    for (const [key, el] of pairs) {
+      if (!el || !saved[key]) continue;
+      // Only restore a value the control still offers — the options changed
+      // once already when the archive was added.
+      if ([...el.options].some((o) => o.value === saved[key])) el.value = saved[key];
+    }
+    for (const [, el] of pairs) {
+      if (el) el.addEventListener('change', saveControls);
+    }
+  }
+
+  function saveControls() {
+    try {
+      localStorage.setItem(CONTROL_PREFS, JSON.stringify({
+        strategy: stockStrategyEl ? stockStrategyEl.value : undefined,
+        provider: stockProviderEl ? stockProviderEl.value : undefined,
+        density: densityEl ? densityEl.value : undefined
+      }));
+    } catch { /* a full quota must not break the page */ }
+  }
   const assetModeEl = $('sb-asset-mode');
   const generateAllBtn = $('sb-generate-all');
   const scenesEl = $('sb-scenes');
@@ -2499,6 +2531,7 @@
   const importBtn = $('sb-import');
   if (importBtn) importBtn.addEventListener('click', importFromProject);
   if (useRefsEl) useRefsEl.addEventListener('change', saveProject);
+  restoreControls();
   analyzeBtn.addEventListener('click', analyzeAndGenerate);
   // The #sb-clear button carries data-clear="storyboard", so the data manager
   // wires it (confirm + undo). Fall back to a direct clear only if the data
