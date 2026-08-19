@@ -104,7 +104,16 @@ class _StockCommon(BaseModel):
     """What every stock beat needs, whichever library it is bound for."""
 
     concept: str = Field(
-        description="One sentence naming what this beat is actually about."
+        description=(
+            "One sentence describing THE SHOT - what the camera sees: subject, "
+            "action, setting. Not the topic and not the narration rewritten. "
+            "'a person browses a collection of scripts' is a topic and fits "
+            "every beat in the section; 'hands turning the pages of a bound "
+            "screenplay on a lamp-lit desk' is a shot. Two beats in one section "
+            "must not share a shot: if a beat adds no new subject - a fragment, "
+            "a continuing list - name the concrete thing it does add rather "
+            "than repeating the previous beat's picture."
+        )
     )
     queries: List[str] = Field(
         description=(

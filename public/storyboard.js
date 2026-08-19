@@ -368,7 +368,28 @@
       const spanBySec = start != null && cur.startS != null ? (end ?? start) - cur.startS : null;
       const overBySec = spanBySec != null && spanBySec >= targetSec;
       const overByWords = spanBySec == null && cur.words >= WORD_BUDGET;
-      if (overBySec || overByWords) {
+
+      // Only break where a sentence ends.
+      //
+      // Cutting purely on elapsed seconds splits mid-sentence, and the tail
+      // becomes a beat of its own with no subject in it. Seen live: a 13s beat
+      // ending "...television,.. anime,.." followed by a 2s beat reading
+      // "unproduced and radio shows." The Director cannot picture that, so it
+      // reaches for the topic of the passage and repeats the previous shot —
+      // which is what a repeated visual intent actually was.
+      //
+      // A beat may run over budget to reach the end of a sentence; it may not
+      // start halfway through one. The cap below still bounds the total.
+      // A sentence ends with a word (or a closing quote) then terminal
+      // punctuation. Fish writes its pause marker as a comma followed by
+      // dots — "television,.." — so the character BEFORE the stop is what
+      // separates a real sentence end from a breath.
+      const endsSentence = /[A-Za-z0-9)"'\]]\s*[.!?]+["')\]]?\s*$/.test(cur.text.trim());
+      // Do not hold a beat open forever chasing a full stop: some subtitle
+      // tracks have none at all.
+      const wayOver = spanBySec != null && spanBySec >= targetSec * 2.5;
+
+      if ((overBySec || overByWords) && (endsSentence || wayOver)) {
         beats.push(cur);
         cur = { startS: start, endS: end, startTs: c.timestamp, endTs: c.timestamp, words: c.text.split(/\s+/).length, text: c.text };
       } else {

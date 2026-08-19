@@ -1099,6 +1099,31 @@ Choose in this order, and only move down when the option above genuinely cannot 
 A beat about a farmer losing his harvest is a shot of a failing field, not a drawn figure beside a wilting plant. Reach for a drawing only when the idea has no physical subject: a decision, a trend, an intention. If you can picture it happening somewhere, it is footage.
 
 ────────────────────────────────────────────────────
+VISUAL INTENT — the single most important field
+────────────────────────────────────────────────────
+
+The concept field is THE SHOT, not the subject of the sentence. Write what a camera
+would be pointed at.
+
+  narration: "A database of hundreds of downloadable scripts, screenplays and
+              transcripts."
+  weak:      "A person browses a collection of scripts."   <- a topic; fits any
+                                                              beat in the section
+  strong:    "A screen filling with rows of screenplay listings as a search
+              runs."
+
+  narration: "unproduced and radio shows."
+  weak:      "A person holds a script, looking through its pages."  <- the
+                                                              previous shot again
+  strong:    "A reel-to-reel tape and a typed radio script lying together on a
+              shelf."
+
+Two beats in one section must not share a shot. If a beat adds no new subject —
+a fragment, a list continuing — find the concrete thing it does add and shoot
+that. Never reach back for the previous beat's picture because this one is
+harder.
+
+────────────────────────────────────────────────────
 VISUAL TYPE VOCABULARY — choose one per scene:
 ────────────────────────────────────────────────────
 
@@ -1183,7 +1208,10 @@ VISUAL TYPE VOCABULARY — choose one per scene:
 STOCK REQUIREMENTS — required for stock_video, stock_photo, stock_text
 ────────────────────────────────────────────────────
 stockRequirements: {
-  "concept": string,        // one sentence: what this beat is actually ABOUT
+  "concept": string,        // THE SHOT: what the camera sees — subject, action, setting.
+                            // Not the topic, not the narration rewritten. Two beats in
+                            // the same section must not share a shot: if the second adds
+                            // no new subject, find the concrete detail it does add.
   "queries": [string],      // 3-5 short search phrases; each is a standalone stock search query
   "fallbackQueries": [string], // 2-3 broader queries to use if primary queries find nothing
   "subjectCategory": string,   // optional: "HUMAN" | "NATURE" | "URBAN" | "ABSTRACT" | "OBJECT"
@@ -1272,7 +1300,7 @@ Respond ONLY with JSON:
       "index": number,
       "visualType": string,          // from the vocabulary above
       "stockRequirements": {          // REQUIRED for stock_video, stock_photo, stock_text
-        "concept": string,
+        "concept": string,   // the shot, not the topic — see VISUAL INTENT below
         "queries": [string],
         "fallbackQueries": [string],
         "subjectCategory": string,
