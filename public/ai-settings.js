@@ -106,9 +106,31 @@
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
       try {
-        const res = await fetch('https://integrate.api.nvidia.com/v1/models', {
-          headers: { Authorization: `Bearer ${key}` },
-          signal: AbortSignal.timeout(20000)
+        // Through the app's own proxy, and against an endpoint that actually
+        // checks the key.
+        //
+        // Two things made an earlier version of this useless. Calling
+        // integrate.api.nvidia.com straight from the page fails as
+        // "NetworkError when attempting to fetch resource" — no CORS headers
+        // for a browser origin, so the request never leaves and no key is ever
+        // tested. And /v1/models does not authenticate: measured, it answers
+        // 200 with a deliberately invalid key, so it reports success for
+        // anything.
+        //
+        // One token of chat does authenticate: 403 for a bad key, 200 for a
+        // good one, and it costs essentially nothing.
+        const res = await fetch('/api/proxy/nvidia/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'meta/llama-3.1-8b-instruct',
+            messages: [{ role: 'user', content: 'hi' }],
+            max_tokens: 1
+          }),
+          signal: AbortSignal.timeout(30000)
         });
         const raw = await res.text();
         let body = null;
@@ -116,11 +138,15 @@
 
         if (res.status === 401 || res.status === 403) {
           results.push({ ok: false, why: 'rejected — the key is invalid or expired' });
+        } else if (res.status === 429) {
+          // The key is real; it is just out of quota. Worth distinguishing,
+          // because "get a new key" is the wrong fix for it.
+          results.push({ ok: false, why: 'rate limited — the key works but has no quota right now' });
         } else if (!res.ok) {
-          results.push({ ok: false, why: `HTTP ${res.status}${body && body.detail ? ` — ${body.detail}` : ''}` });
+          const detail = body && (body.detail || (body.error && body.error.message));
+          results.push({ ok: false, why: `HTTP ${res.status}${detail ? ` — ${detail}` : ''}` });
         } else {
-          const models = (body && Array.isArray(body.data)) ? body.data.length : 0;
-          results.push({ ok: true, why: `${models} model${models === 1 ? '' : 's'} available` });
+          results.push({ ok: true, why: 'key accepted' });
         }
       } catch (err) {
         const timedOut = err && (err.name === 'TimeoutError' || err.name === 'AbortError');

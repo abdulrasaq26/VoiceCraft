@@ -65,7 +65,12 @@
     if (!key) return Array.from(registry.values());
 
     try {
-      const res = await fetch('https://integrate.api.nvidia.com/v1/models', {
+      // Same reason as everywhere else: a browser cannot reach
+      // integrate.api.nvidia.com directly, so this call has never succeeded
+      // from the page — it failed as a NetworkError and left the model list
+      // empty, which is why the NIM dropdown never populated and Refresh
+      // appeared to do nothing.
+      const res = await fetch('/api/proxy/nvidia/v1/models', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${key}`,

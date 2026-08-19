@@ -156,7 +156,14 @@ const server = http.createServer((req, res) => {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'application/json',
             'Content-Type': req.headers['content-type'] || 'application/json',
-            'Authorization': (process.env.NVIDIA_NIM_API ? `Bearer ${process.env.NVIDIA_NIM_API}` : req.headers['authorization']) || '',
+            // The caller's key wins, with .env as the fallback — the same order
+            // Qwen and Fish use. Reversed, this quietly substituted the .env key
+            // for whatever Settings sent, so a Test connection button reported
+            // success for a key it had never used and a wrong key in Settings
+            // was undetectable.
+            'Authorization': req.headers['authorization']
+              || (process.env.NVIDIA_NIM_API ? `Bearer ${process.env.NVIDIA_NIM_API}` : '')
+              || '',
             'Content-Length': buffer.length,
             'Connection': 'close'
           },
