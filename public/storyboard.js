@@ -499,7 +499,17 @@
       // "canvas" for beats whose images had already been cleared, which made
       // unrendered scenes look finished and kept them out of the queue.
       if (window.BlvckLTX && window.BlvckLTX.reset) window.BlvckLTX.reset();
+      // Measured: one batch is ~34s on the NIM fallback, and a full script is
+      // several of them back to back. A label that says "Reading the
+      // narration..." for four minutes is indistinguishable from a hang, and
+      // was reported as one. Name the batch, so progress is visible even when
+      // each step is slow.
+      const totalBatches = Math.max(1, Math.ceil(cues.length / SCENE_BATCH));
       for (let i = 0; i < cues.length; i += SCENE_BATCH) {
+        const batchNo = Math.floor(i / SCENE_BATCH) + 1;
+        setAnalyzing(true, totalBatches > 1
+          ? `Reading the narration — part ${batchNo} of ${totalBatches}…`
+          : 'Reading the narration…');
         const batch = cues.slice(i, i + SCENE_BATCH);
         const prior = scenes.slice(-3).map((s) => `${s.camera}: ${s.sceneSummary}`);
         const res = await window.AIManager.generateJSON('/api/storyboard/scenes', {
