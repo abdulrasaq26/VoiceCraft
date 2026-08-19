@@ -613,9 +613,15 @@ import time
 t0 = time.time()
 first = None
 count = 0
+# thinking=False measures the decode rate against tokens you can actually see.
+# With reasoning on, this asked for 150 words in a 256-token budget: the model
+# spent all of it inside the <think> block, the stream correctly withheld every
+# one of those tokens, and the cell ended with "Stream produced nothing".
+# Before reasoning was gated it looked fine, because the deliberation itself was
+# being streamed out as the answer.
 for delta in engine.chat(
     [{'role': 'user', 'content': 'Explain what inflation is, in about 150 words.'}],
-    max_tokens=256, stream=True,
+    max_tokens=256, stream=True, thinking=False,
 ):
     if first is None:
         first = time.time()
@@ -623,7 +629,11 @@ for delta in engine.chat(
     count += 1
 
 if first is None:
-    raise RuntimeError('Stream produced nothing.')
+    raise RuntimeError(
+        'Stream produced nothing. Every token was withheld, which means the '
+        'model was still reasoning when the budget ran out - raise max_tokens, '
+        'or keep thinking=False for a speed measurement.'
+    )
 gen = time.time() - first
 print(f'\\n\\nTTFT   : {first-t0:.2f}s')
 print(f'Chunks : {count}')
