@@ -144,6 +144,9 @@
       req.onerror = () => reject(req.error);
     });
   }
+  /** Where a clip lives. The editor reads video from here, stills from String(index). */
+  const clipKey = (index) => `clip:${index}`;
+
   async function idbPut(key, blob) {
     try {
       const db = await idbOpen();
@@ -862,9 +865,19 @@
     memBlobs.set(index, blob);
     if (urls.has(index)) URL.revokeObjectURL(urls.get(index));
     urls.set(index, URL.createObjectURL(blob));
-    idbPut(String(index), blob);
+
+    // Video goes under the clip key, stills under the scene key.
+    //
+    // Everything went to the scene key, video included. The Storyboard reads
+    // with the same branch it renders by, so the card looked right — real
+    // footage, "cached locally, ready for export" — while the editor, which
+    // loads video from clip:N, found nothing there and assembled a text card
+    // in its place. The whole storyboard came out as typeset cards and a
+    // stickman.
+    const video = isVideoBlob(blob);
+    idbPut(video ? clipKey(index) : String(index), blob);
     const scene = scenes.find((s) => s.index === index);
-    if (scene) scene.assetType = isVideoBlob(blob) ? 'video' : 'image';
+    if (scene) scene.assetType = video ? 'video' : 'image';
   }
 
   async function regenerateScene(scene) {
@@ -2667,7 +2680,9 @@
     generateStill: (scene) => generateSceneAsset(scene),
     /** Persist a rendered asset against a scene, so it appears on the card. */
     attachAsset: async (scene, blob, kind) => {
-      await idbPut(String(scene.index), blob);
+      // Same convention as storeAsset: the editor reads video from clip:N.
+      const video = kind === 'video' || isVideoBlob(blob);
+      await idbPut(video ? clipKey(scene.index) : String(scene.index), blob);
       const s = scenes.find((x) => x.index === scene.index);
       if (s) {
         s.status = 'done';
