@@ -133,7 +133,8 @@
     const res = await fetch(endpoint, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'x-pixabay-key': key },
-      body:    JSON.stringify(params)
+      body:    JSON.stringify(params),
+      signal:  AbortSignal.timeout(SEARCH_TIMEOUT_MS)
     });
 
     if (!res.ok) throw new Error(`Pixabay ${res.status}: ${await res.text().catch(() => '')}`);
@@ -196,7 +197,8 @@
     const res = await fetch(endpoint, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'x-pexels-key': key },
-      body:    JSON.stringify(params)
+      body:    JSON.stringify(params),
+      signal:  AbortSignal.timeout(SEARCH_TIMEOUT_MS)
     });
 
     if (!res.ok) throw new Error(`Pexels ${res.status}: ${await res.text().catch(() => '')}`);
@@ -558,6 +560,16 @@
     }
     return new Blob(parts, { type: res.headers.get('content-type') || 'application/octet-stream' });
   }
+
+  /**
+   * How long a provider search may take.
+   *
+   * Bounded for the same reason the download is: an unanswered request never
+   * fails, so the caller never falls through to the next provider or the next
+   * level, and the queue sits at 0% indefinitely. A search returns a page of
+   * JSON, so ten seconds is already slow.
+   */
+  const SEARCH_TIMEOUT_MS = 20000;
 
   /**
    * How long one media download may take.

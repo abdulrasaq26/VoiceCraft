@@ -1,6 +1,14 @@
 // Modular LLM Provider Adapters for Blvck-TTS v5.1
 // Proxies NVIDIA NIM Gateway requests through server.js to bypass browser CORS / NetworkError
 (() => {
+
+  // Every request in this file is a chat completion over the network, and one
+  // that is never answered hangs its caller forever — the failure mode that
+  // left the Storyboard sitting at 0%. NIM sets its own budget from measured
+  // latency; this is the floor for the rest.
+  const DEFAULT_REQUEST_TIMEOUT_MS = 240000;
+  const requestSignal = () => AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS);
+
   'use strict';
 
   // NVIDIA NIM Gateway Infrastructure Client
@@ -144,6 +152,7 @@
     const res = await fetch(`${endpoint}/chat/completions`, {
       method: 'POST',
       headers,
+      signal: requestSignal(),
       body: JSON.stringify({
         model: model || 'openai/gpt-4o-mini',
         messages,
@@ -168,6 +177,7 @@
     const res = await fetch(`${endpoint}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: requestSignal(),
       body: JSON.stringify({
         model: model || 'qwen2.5',
         messages,
@@ -208,6 +218,7 @@
     try {
       res = await fetch(proxyEndpoint, {
         method: 'POST',
+        signal: requestSignal(),
         headers,
         body: JSON.stringify(body)
       });
@@ -216,6 +227,7 @@
       try {
         res = await fetch(`${ep}/chat/completions`, {
           method: 'POST',
+          signal: requestSignal(),
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
         });
