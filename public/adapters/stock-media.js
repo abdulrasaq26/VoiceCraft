@@ -569,6 +569,30 @@
    */
   const DOWNLOAD_TIMEOUT_MS = 240000;
 
+  /**
+   * Say why a candidate was abandoned, and what happens next.
+   *
+   * A stalled download used to be invisible: one console.warn naming the asset,
+   * nothing about how long it took, whether it timed out or errored, or that
+   * the run was moving on to another candidate. From the Storyboard it read as
+   * "Fetching stock..." forever even while the pipeline was working through
+   * alternatives.
+   */
+  function noteCandidateFailure(asset, stage, err, startedAt, next) {
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    const timedOut = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
+    const why = timedOut
+      ? `timed out after ${elapsed}s`
+      : `${err && err.message ? err.message : 'failed'} (after ${elapsed}s)`;
+    console.warn(`[StockMedia] ${stage} ${asset.provider}:${asset.id} — ${why}`);
+    console.warn(`[StockMedia]   → candidate failed, ${next}`);
+    emit('blvck:asset-failed', {
+      provider: asset.provider, id: asset.id, stage,
+      timedOut, elapsedSec: Number(elapsed),
+      reason: err && err.message ? err.message : 'failed', next
+    });
+  }
+
   async function downloadAsset(asset) {
     const cacheKey = `${asset.provider}:${asset.id}`;
 
@@ -768,8 +792,12 @@
 
     if (results.length) {
       const ranked = rank(results, rankOpts, usedIds);
-      for (const asset of ranked) {
+      console.log(`[StockMedia] scene ${scene.index}: ${ranked.length} cleared candidate(s) — `
+        + ranked.slice(0, 4).map((a) => `${a.provider}:${a.id}`).join(', '));
+      for (let i = 0; i < ranked.length; i++) {
+        const asset = ranked[i];
         if (!clearForProduction(asset, scene)) continue;
+        const startedAt = Date.now();
         try {
           // Rights were settled by clearForProduction above. Only now does it
           // make sense to spend anything on choosing WHERE in the film to cut:
@@ -781,9 +809,14 @@
           const blob = await downloadAsset(asset);
           markUsed(asset);
           _attachStockMeta(scene, asset, directorQueries, 'primary');
+          console.log(`[StockMedia] scene ${scene.index}: ${asset.provider}:${asset.id} `
+            + `in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
           return blob;
         } catch (err) {
-          console.warn(`[StockMedia] Download failed ${asset.provider}:${asset.id}: ${err.message}`);
+          const next = ranked[i + 1]
+            ? `trying ${ranked[i + 1].provider}:${ranked[i + 1].id}`
+            : 'no candidates left at this level — falling back';
+          noteCandidateFailure(asset, 'download', err, startedAt, next);
         }
       }
     }
