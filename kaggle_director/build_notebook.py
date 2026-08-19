@@ -313,7 +313,10 @@ second with no warning that anything is wrong.
 import sys
 
 sys.path.insert(0, '.')
-from director.inference import preload_cuda_libraries   # noqa: E402
+from director.inference import (   # noqa: E402
+    loud_backend_logs,
+    preload_cuda_libraries,
+)
 
 # The log sink is global and survives the cell that set it, so a re-run of
 # this stage inherits the silence from the last one - and a failing load
@@ -570,6 +573,9 @@ if _gb < 5:
         'the download was interrupted. Delete it and re-run Stage 6.'
     )
 
+# Same reason as Stage 5b: the sink is global, so a re-run inherits the
+# silence and a failing load says nothing.
+loud_backend_logs()
 loaded = preload_cuda_libraries()
 print('preloaded CUDA libs:')
 for lib in loaded:
