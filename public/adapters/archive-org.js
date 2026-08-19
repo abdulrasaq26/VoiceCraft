@@ -20,6 +20,14 @@
 
   const PROXY = '/api/proxy/archive';
 
+  /**
+   * How long a search or metadata call may take before it is abandoned.
+   *
+   * Generous — the archive is often slow rather than broken — but finite, so a
+   * connection that is never going to answer cannot stall the whole run.
+   */
+  const REQUEST_TIMEOUT_MS = 45000;
+
   // Formats worth considering, best first. Anything not listed is ignored —
   // which is how PDFs, OCR text, torrents and subtitle files stay out.
   const VIDEO_FORMATS = [
@@ -94,7 +102,14 @@
     let lastErr;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const res = await schedule(() => fetch(`${PROXY}${path}`));
+        // Bounded, because archive.org sometimes accepts a connection and then
+        // never answers. Retries and backoff do not help there: the request
+        // simply never settles, so the whole acquisition hangs behind it and
+        // the fallback hierarchy below it never runs. Measured: an acquisition
+        // sat for 40 minutes and only ended when the harness gave up.
+        const res = await schedule(() => fetch(`${PROXY}${path}`, {
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+        }));
 
         // Being told to slow down is an instruction, not an error to retry
         // through at the same pace.

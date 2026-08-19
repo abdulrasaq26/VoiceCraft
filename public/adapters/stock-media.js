@@ -559,6 +559,16 @@
     return new Blob(parts, { type: res.headers.get('content-type') || 'application/octet-stream' });
   }
 
+  /**
+   * How long one media download may take.
+   *
+   * Archival masters run to tens of megabytes and the archive is not fast, so
+   * this is deliberately roomy. It exists to bound failure, not to enforce
+   * speed: a stalled transfer must end as a failed candidate the caller can
+   * step past, rather than as a run that never finishes.
+   */
+  const DOWNLOAD_TIMEOUT_MS = 240000;
+
   async function downloadAsset(asset) {
     const cacheKey = `${asset.provider}:${asset.id}`;
 
@@ -579,9 +589,15 @@
     // URL to fetch server-side — would fail every time.
     const isLocalProxy = asset.downloadUrl.startsWith('/');
 
+    // A media file is tens of megabytes over a link that can stall, so this
+    // needs a budget of its own — long enough for a real archival film on a
+    // slow day, short enough that a dead connection does not take the run with
+    // it. Without one, acquire()'s fallbacks never get to run: the beat cannot
+    // move on to the next candidate because the first never fails.
     const res = isLocalProxy
-      ? await fetch(asset.downloadUrl)
+      ? await fetch(asset.downloadUrl, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
       : await fetch('/api/proxy/stock-download', {
+          signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ url: asset.downloadUrl })
