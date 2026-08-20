@@ -220,6 +220,8 @@
   let bible = null;
   let scenes = []; // { index, timestamp, subtitle, sceneType, camera, visualFocus, sceneSummary, prompt, status, error }
   let running = false;
+  // Re-entry guard for Analyze specifically. See analyzeAndGenerate().
+  let analyzing = false;
   let paused = false;
   let cancelRequested = false;
   const durations = [];
@@ -652,8 +654,38 @@
   }
 
   async function analyzeAndGenerate() {
-    if (running) return;
+    // Two guards, because they cover different things. `running` is the stock
+    // queue's flag and this function only ever READ it - it never set one of
+    // its own, so nothing here was actually re-entrant-safe. The button being
+    // disabled was doing that job by accident, and only from the moment
+    // setAnalyzing(true) ran.
+    //
+    // That stopped being true when alignment moved to the front: autoAlign
+    // awaits a status check that decodes the whole narration, and the button
+    // sat live and clickable for all of it. A second click started a second
+    // concurrent run - two sets of provider calls, two writes to the same
+    // scenes array, and a wall-clock far past any single request's timeout.
+    if (running || analyzing) return;
+    analyzing = true;
+    // Disabled before the first await, not after it.
+    setAnalyzing(true, 'Preparing…');
 
+    try {
+      await analyzeAndGenerateInner();
+    } catch (err) {
+      // The inner function handles the failures it expects. Anything reaching
+      // here is unexpected, and leaving the spinner running would present a
+      // crash as work still in progress - which is exactly how a stuck
+      // Storyboard has been reported before.
+      console.error('[Storyboard] Analyze failed unexpectedly:', err);
+      showStatus(`Analyze stopped: ${err && err.message ? err.message : err}`);
+    } finally {
+      analyzing = false;
+      if (analyzeBtn && analyzeBtn.disabled) setAnalyzing(false);
+    }
+  }
+
+  async function analyzeAndGenerateInner() {
     // Measure the narration FIRST. buildContext() turns the cue list into
     // beats, so an alignment that lands after it would have nothing to change.
     const aligned = await autoAlign();
@@ -662,6 +694,7 @@
     const ctx = buildContext();
     if (!cues.length) {
       showStatus('Upload a subtitle file (or a script) first.');
+      setAnalyzing(false);
       return;
     }
     clearStatus();
