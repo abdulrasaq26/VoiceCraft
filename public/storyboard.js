@@ -545,8 +545,120 @@
     analyzingTimer = setInterval(paint, 1000);
   }
 
+  // How long Analyze will wait for the aligner before giving up on it.
+  //
+  // Finite on purpose. Alignment uploads the whole narration to Fish and can
+  // legitimately take a couple of minutes, but a storyboard that sits forever
+  // behind an endpoint that has gone away is the failure mode this feature is
+  // most likely to introduce - so it is bounded, and running past the bound
+  // costs the run nothing except measured timing.
+  let autoAlignBudgetMs = 180000;
+
+  function withDeadline(promise, ms, label) {
+    let timer;
+    const bell = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const e = new Error(label);
+        e.timedOut = true;
+        reject(e);
+      }, ms);
+    });
+    return Promise.race([promise, bell]).finally(() => clearTimeout(timer));
+  }
+
+  /**
+   * Measure the narration before planning anything against it.
+   *
+   * Alignment existed and was wired end to end, but nothing ever ran it: the
+   * only caller was the Re-align button. So every project planned against TTS
+   * cues, whose per-part lengths are real but whose boundaries inside a part
+   * are apportioned by character count - and the Director was told, correctly,
+   * that nothing had been measured.
+   *
+   * Two things have to happen here, not one. Storing the transcript is what
+   * gives the Director real word positions. Rewriting the project's subtitles
+   * FROM that transcript is what makes the cuts follow it, because beats are
+   * built from the cue list and nothing was regenerating the cue list -
+   * Transcript.toSRT existed and had no callers at all. Aligning without that
+   * second step would light up the badge and change none of the timings.
+   *
+   * Returns a short outcome for the caller to report. Never throws: a project
+   * with no narration yet, an aligner that is down, or an alignment that comes
+   * back too thin all mean "carry on with estimated timing", which is what the
+   * whole pipeline did until now anyway.
+   */
+  async function autoAlign() {
+    if (!window.BlvckAlign || !window.Transcript) return { ran: false, why: 'alignment unavailable' };
+
+    let state = null;
+    try { state = await window.BlvckAlign.status(); } catch (e) { state = null; }
+    if (state && state.state === 'aligned') {
+      return { ran: false, already: true, wordCount: state.wordCount };
+    }
+    if (state && state.state === 'unavailable') return { ran: false, why: state.reason };
+
+    // 'none', 'estimated' and 'stale' are all worth measuring. Whether there is
+    // any audio to measure is align()'s own question - asking it here would be
+    // a second copy of collectNarration's rules, and the two would drift.
+    setAnalyzing(true, 'Measuring the narration against the recorded audio…');
+    try {
+      const res = await withDeadline(
+        window.BlvckAlign.align({ force: state && state.state === 'stale' }),
+        autoAlignBudgetMs,
+        `The aligner did not answer within ${Math.round(autoAlignBudgetMs / 1000)}s.`);
+
+      // Now make the cues themselves measured, or nothing downstream changes.
+      let cuesRewritten = false;
+      try {
+        const srt = window.Transcript.toSRT(res.transcript);
+        if (srt && window.BlvckAssets) {
+          window.BlvckAssets.setSubtitlesSRT(srt, 'whisper');
+          // The storyboard holds its own copy of the imported file, and
+          // buildContext reads that copy rather than the project store.
+          files = files.filter((f) => !(f.kind === 'subtitles' && f.imported));
+          files.push({ name: 'narration-aligned.srt', kind: 'subtitles',
+                       content: srt, imported: true });
+          renderFileList();
+          cuesRewritten = true;
+        }
+      } catch (e) {
+        // A measured transcript that will not render as subtitles is still
+        // worth keeping for the Director's word positions.
+        console.warn('[Storyboard] aligned, but could not rewrite the cues: ' + e.message);
+      }
+      return { ran: true, ok: true, wordCount: res.wordCount,
+               audioDuration: res.audioDuration, cuesRewritten };
+    } catch (err) {
+      return { ran: true, ok: false, timedOut: !!err.timedOut, why: err.message };
+    }
+  }
+
+  /** One plain sentence about what the aligner did, or why it did not. */
+  function alignmentNote(a) {
+    if (!a) return '';
+    if (a.already) return ` Timing: already measured — ${a.wordCount} word timings.`;
+    if (!a.ran) return '';
+    if (a.ok) {
+      return a.cuesRewritten
+        ? ` Timing: measured — ${a.wordCount} word timings from ${Number(a.audioDuration || 0).toFixed(1)}s of audio, and the cuts follow them.`
+        : ` Timing: measured — ${a.wordCount} word timings, but the cue list could not be rewritten, so the cuts still follow the estimate.`;
+    }
+    // A failure is not fatal and must not read as one, but it must not be
+    // silent either: the difference between measured and estimated timing is
+    // exactly what the user asked to be able to see.
+    return a.timedOut
+      ? ' Timing: still estimated — the aligner did not answer in time. Press Re-align to try again.'
+      : ` Timing: still estimated — ${a.why}`;
+  }
+
   async function analyzeAndGenerate() {
     if (running) return;
+
+    // Measure the narration FIRST. buildContext() turns the cue list into
+    // beats, so an alignment that lands after it would have nothing to change.
+    const aligned = await autoAlign();
+    renderSignals();
+
     const ctx = buildContext();
     if (!cues.length) {
       showStatus('Upload a subtitle file (or a script) first.');
@@ -641,11 +753,13 @@
         ? ` 📉 ${planned.retention.issues.slice(0, 2).map((i) => `[${i.where}] ${i.message}`).join(' ')}`
         : '';
       showStatus(
-        `${scenes.length} beat(s) planned as ${planned.mode || 'default'} — ${mix}. Fetching stock media...${warn}${ret}`,
+        `${scenes.length} beat(s) planned as ${planned.mode || 'default'} — ${mix}.`
+        + `${alignmentNote(aligned)} Fetching stock media...${warn}${ret}`,
         'info'
       );
     } else {
-      showStatus(`${scenes.length} scenes planned. Fetching stock media...`, 'info');
+      showStatus(`${scenes.length} scenes planned.${alignmentNote(aligned)} `
+        + 'Fetching stock media...', 'info');
     }
 
     runStockQueue();
@@ -2733,6 +2847,10 @@
     assetTypeFor: (scene) => sceneAssetType(scene || {}),
     /** Render one scene's still (or canvas card) exactly as the storyboard does. */
     generateStill: (scene) => generateSceneAsset(scene),
+    /** How long Analyze will wait for the aligner. Exported so a test can
+        prove the bound holds without sitting through the real one. */
+    autoAlignBudgetMs: () => autoAlignBudgetMs,
+    _setAutoAlignBudget: (ms) => { autoAlignBudgetMs = Number(ms) || autoAlignBudgetMs; },
     /** Persist a rendered asset against a scene, so it appears on the card. */
     attachAsset: async (scene, blob, kind) => {
       // Same convention as storeAsset: the editor reads video from clip:N.
