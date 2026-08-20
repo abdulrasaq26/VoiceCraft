@@ -59,6 +59,26 @@ check('Qwen shows the broken arena concept', QWEN.indexOf(flat('the blue man gro
 check('NIM  shows what to write instead', NIM.indexOf(flat('a darkened arena stage under coloured lights')) >= 0);
 check('Qwen shows what to write instead', QWEN.indexOf(flat('a darkened arena stage under coloured lights')) >= 0);
 
+console.log('\n--- the intent is reasoned through, not written straight out ---');
+// The baseline showed beat 1 could reach no better than strong_contextual with
+// entity=related, and that ceiling was set by the intent naming an act no CC0
+// library holds - not by retrieval and not by the evaluator. So the Director
+// now walks the availability question BEFORE writing the shot, in both copies.
+const STEPS = [
+  ['asks what the viewer should understand', 'what is the viewer supposed to understand'],
+  ['asks what evidence communicates it', 'what observable evidence communicates that'],
+  ['asks what could realistically exist', 'what could realistically exist in these libraries'],
+  ['asks what preserves the meaning when it cannot', 'what preserves the meaning'],
+  ['and writes the queries last', 'only now, the queries']
+];
+for (const [what, phrase] of STEPS) {
+  const p = flat(phrase);
+  check(`NIM  - ${what}`, NIM.indexOf(p) >= 0, phrase);
+  check(`Qwen - ${what}`, QWEN.indexOf(p) >= 0, phrase);
+}
+check('NIM  names the substitution deliberately', NIM.indexOf(flat('assetStrategy')) >= 0);
+check('Qwen names the substitution deliberately', QWEN.indexOf(flat('assetStrategy')) >= 0);
+
 console.log('\n--- describing a shot and searching for one are different jobs ---');
 check('NIM  separates the two', NIM.indexOf(flat('queries are a different job')) >= 0);
 check('Qwen separates the two', QWEN.indexOf(flat('queries are a different job')) >= 0);

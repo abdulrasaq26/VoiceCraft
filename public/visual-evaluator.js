@@ -79,9 +79,25 @@
   // service that is down. Two at a time is still eight candidates in about the
   // time four would take once retries are counted, and it stays welcome.
   const CONCURRENCY = 2;
-  // Beyond this the cost stops buying accuracy: the metadata pass has already
-  // ordered them, and the eighth is rarely right when the first seven were wrong.
-  const MAX_JUDGED = 8;
+  // Four, and the number is measured rather than guessed.
+  //
+  // Replaying every shortlist size against the judgements recorded in the
+  // five-beat baseline:
+  //
+  //   beat 1  N=2..8 all pick the same asset   (winner sat at metadata rank 1)
+  //   beat 3  N=2,3 pick a WORSE asset         (winner sat at metadata rank 4)
+  //           N=4,5,8 pick the same asset
+  //   beat 5  N=2..8 all refuse correctly
+  //
+  // So four preserves every decision the baseline made, and three does not - it
+  // loses the PISA improvement, which is the only correct winner change in the
+  // whole measurement. The obvious cut is the wrong one, which is why it was
+  // replayed rather than assumed.
+  //
+  // Halves the vision calls and roughly halves the judge's output tokens, which
+  // is where the time goes: the judge generates ~400 tokens at a measured 24.6
+  // tokens/second.
+  const MAX_JUDGED = 4;
 
   // ── How sure we have to be, given what the narration is claiming ──────────
   //

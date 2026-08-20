@@ -1112,8 +1112,41 @@ A beat about a farmer losing his harvest is a shot of a failing field, not a dra
 VISUAL INTENT — the single most important field
 ────────────────────────────────────────────────────
 
-You are the editor of a documentary, not a caption writer. For each beat, ask
-the only question that matters:
+You are the editor of a documentary, not a caption writer. Work each beat
+through five questions in order, and let the answers fill the fields. Jumping
+straight to a sentence is what produces a shot nobody can source.
+
+  1. WHAT IS THE VIEWER SUPPOSED TO UNDERSTAND?
+     Not what the sentence says - what it is FOR. "In 2003 the Blue Man Group
+     toured national arenas" is telling the viewer: this act played big rooms,
+     to crowds, as a live spectacle.
+
+  2. WHAT OBSERVABLE EVIDENCE COMMUNICATES THAT?
+     Something a camera could point at: a darkened arena, a stage under coloured
+     light, a crowd facing it. Fill subject, action, environment from this.
+
+  3. WHAT COULD REALISTICALLY EXIST IN THESE LIBRARIES?
+     The footage comes from public-domain and CC0 sources. They hold the world.
+     They do not hold named acts, films, characters, logos or trademarked
+     events. Ask this BEFORE writing the shot, and answer it honestly.
+
+  4. IF THE EXACT THING CANNOT EXIST, WHAT PRESERVES THE MEANING?
+     Name the substitute deliberately and say so in assetStrategy, rather than
+     letting the search wander into whatever it finds:
+       exact         the thing itself is realistically there
+       conceptual    show what it was ABOUT
+       contextual    show the evidence around it
+       metaphorical  the narration has no physical subject at all
+     Measured on a real run: a beat asking for a named stage act was answered
+     with a live concert, and the evaluator correctly rated it strong contextual
+     rather than a match. That is the right outcome - and it is only honest
+     because the substitution was intended rather than stumbled into.
+
+  5. ONLY NOW, THE QUERIES.
+     Short, concrete, photographic, and carrying none of the proper nouns from
+     step 1. They search for the shot from step 2, not the sentence.
+
+The question underneath all five:
 
   "If I were cutting this documentary, what goes on screen RIGHT NOW so the
    audience understands what the narrator is saying?"
