@@ -1,0 +1,1337 @@
+{
+  "at": "2026-08-20T18:30:57.535Z",
+  "levels": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "trialsPerLevel": 6,
+  "maxAttempts": 3,
+  "backoffMs": [
+    0,
+    400,
+    1200
+  ],
+  "perAttemptTimeoutMs": 30000,
+  "summary": {
+    "initial": 50,
+    "final": 54,
+    "failedFirst": 10,
+    "recovered": 4,
+    "kinds": {
+      "500": 2,
+      "timeout": 8,
+      "ok": 50
+    },
+    "byLevel": {
+      "1": {
+        "n": 6,
+        "initialOk": 5,
+        "finalOk": 5
+      },
+      "2": {
+        "n": 12,
+        "initialOk": 10,
+        "finalOk": 10
+      },
+      "3": {
+        "n": 18,
+        "initialOk": 16,
+        "finalOk": 18
+      },
+      "4": {
+        "n": 24,
+        "initialOk": 19,
+        "finalOk": 21
+      }
+    },
+    "buckets": {
+      "0": {
+        "n": 1,
+        "fail": 1
+      },
+      "30": {
+        "n": 2,
+        "fail": 2
+      },
+      "120": {
+        "n": 3,
+        "fail": 1
+      },
+      "180": {
+        "n": 4,
+        "fail": 4
+      },
+      "270": {
+        "n": 13,
+        "fail": 0
+      },
+      "300": {
+        "n": 6,
+        "fail": 0
+      },
+      "330": {
+        "n": 9,
+        "fail": 1
+      },
+      "360": {
+        "n": 12,
+        "fail": 0
+      },
+      "390": {
+        "n": 1,
+        "fail": 0
+      },
+      "420": {
+        "n": 5,
+        "fail": 1
+      },
+      "450": {
+        "n": 4,
+        "fail": 0
+      }
+    },
+    "p50": 2510,
+    "p95": 21059,
+    "max": 26590
+  },
+  "results": [
+    {
+      "level": 1,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 17517,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 18
+        },
+        {
+          "n": 2,
+          "ms": 373,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 18
+        },
+        {
+          "n": 3,
+          "ms": 317,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 20
+        }
+      ],
+      "initialOk": false,
+      "finalOk": false,
+      "recovered": false,
+      "firstKind": "500",
+      "totalMs": 18207
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 30023,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 51
+        },
+        {
+          "n": 2,
+          "ms": 30312,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 81
+        },
+        {
+          "n": 3,
+          "ms": 30302,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 113
+        }
+      ],
+      "initialOk": false,
+      "finalOk": false,
+      "recovered": false,
+      "firstKind": "timeout",
+      "totalMs": 90637
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 30436,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 51
+        },
+        {
+          "n": 2,
+          "ms": 30280,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 82
+        },
+        {
+          "n": 3,
+          "ms": 30335,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 113
+        }
+      ],
+      "initialOk": false,
+      "finalOk": false,
+      "recovered": false,
+      "firstKind": "timeout",
+      "totalMs": 91051
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 6021,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 120
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 6021
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 30380,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 145
+        },
+        {
+          "n": 2,
+          "ms": 26590,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 172
+        }
+      ],
+      "initialOk": false,
+      "finalOk": true,
+      "recovered": true,
+      "firstKind": "timeout",
+      "totalMs": 56970
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 9164,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 123
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 9164
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 30013,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 202
+        },
+        {
+          "n": 2,
+          "ms": 22452,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 225
+        },
+        {
+          "n": 3,
+          "ms": 255,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 227
+        }
+      ],
+      "initialOk": false,
+      "finalOk": false,
+      "recovered": false,
+      "firstKind": "timeout",
+      "totalMs": 52720
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 30293,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 203
+        },
+        {
+          "n": 2,
+          "ms": 22048,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 225
+        },
+        {
+          "n": 3,
+          "ms": 292,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 227
+        }
+      ],
+      "initialOk": false,
+      "finalOk": false,
+      "recovered": false,
+      "firstKind": "timeout",
+      "totalMs": 52633
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 30291,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 203
+        },
+        {
+          "n": 2,
+          "ms": 22052,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 225
+        },
+        {
+          "n": 3,
+          "ms": 226,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 226
+        }
+      ],
+      "initialOk": false,
+      "finalOk": false,
+      "recovered": false,
+      "firstKind": "timeout",
+      "totalMs": 52569
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 30263,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 203
+        },
+        {
+          "n": 2,
+          "ms": 30298,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 233
+        },
+        {
+          "n": 3,
+          "ms": 21995,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 256
+        }
+      ],
+      "initialOk": false,
+      "finalOk": true,
+      "recovered": true,
+      "firstKind": "timeout",
+      "totalMs": 82556
+    },
+    {
+      "level": 1,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 16701,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 274
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 16701
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1592,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 276
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1592
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 2434,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 277
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 2434
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1935,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 280
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1935
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1178,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 279
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1178
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 2951,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 281
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 2951
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1908,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 284
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1908
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 2510,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 284
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 2510
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 2495,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 284
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 2495
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 2532,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 284
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 2532
+    },
+    {
+      "level": 1,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1019,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 286
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1019
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 2166,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 289
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 2166
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1959,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 289
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1959
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 11356,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 301
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 11356
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 11631,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 302
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 11631
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 13427,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 303
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 13427
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 2525,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 307
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 2525
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1840,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 306
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1840
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 30005,
+          "status": 0,
+          "ok": false,
+          "kind": "timeout",
+          "atSec": 334
+        },
+        {
+          "n": 2,
+          "ms": 1551,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 336
+        }
+      ],
+      "initialOk": false,
+      "finalOk": true,
+      "recovered": true,
+      "firstKind": "timeout",
+      "totalMs": 31556
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 2856,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 307
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 2856
+    },
+    {
+      "level": 1,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 5653,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 343
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 5653
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 827,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 344
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 827
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1851,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 345
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1851
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1250,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 347
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1250
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1398,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 347
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1398
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1310,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 347
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1310
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1342,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 350
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1342
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1342,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 350
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1342
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 15508,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 364
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 15508
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 15670,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 364
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 15670
+    },
+    {
+      "level": 1,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 714,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 365
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 714
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 2932,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 369
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 2932
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1583,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 368
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1583
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1260,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 371
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1260
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 844,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 371
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 844
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1258,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 371
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1258
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1587,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 374
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1587
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1538,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 374
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1538
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 12032,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 384
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 12032
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 11991,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 384
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 11991
+    },
+    {
+      "level": 1,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 13902,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 399
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 13902
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 19956,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 420
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 19956
+    },
+    {
+      "level": 2,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 21059,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 421
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 21059
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1272,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 423
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1272
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 6685,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 428
+        },
+        {
+          "n": 2,
+          "ms": 308,
+          "status": 500,
+          "ok": false,
+          "kind": "500",
+          "atSec": 429
+        },
+        {
+          "n": 3,
+          "ms": 15690,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 446
+        }
+      ],
+      "initialOk": false,
+      "finalOk": true,
+      "recovered": true,
+      "firstKind": "500",
+      "totalMs": 22683
+    },
+    {
+      "level": 3,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 1170,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 423
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 1170
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 4716,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 451
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 4716
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 4892,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 452
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 4892
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 6827,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 453
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 6827
+    },
+    {
+      "level": 4,
+      "attempts": [
+        {
+          "n": 1,
+          "ms": 4760,
+          "status": 200,
+          "ok": true,
+          "kind": "ok",
+          "atSec": 451
+        }
+      ],
+      "initialOk": true,
+      "finalOk": true,
+      "recovered": false,
+      "firstKind": "ok",
+      "totalMs": 4760
+    }
+  ],
+  "conclusion": {
+    "question": "provider instability, or our request architecture?",
+    "answer": "provider",
+    "evidence": [
+      "Failures cluster hard in time: 2/10 succeeded in the first 240s, 48/50 after it. Levels were interleaved, so every concurrency level was represented in both windows.",
+      "Initial success by level is flat - 83%, 83%, 89%, 79% for levels 1 to 4 - with no trend. Concurrency does not predict failure.",
+      "The dominant failure is a 30s TIMEOUT (8 of 10), not an error code (2 x HTTP 500). The endpoint mostly hangs rather than refusing."
+    ],
+    "retryValue": "40% of first-attempt failures recovered (4/10), lifting 83% to 90%. Worth having, but not transformative - and since most failures are 30s timeouts, each retry is bought at 30s, not at the 2.5s a healthy call costs.",
+    "latency": "p50 2510ms, p95 21059ms, max 26590ms. Most calls are fast; a minority sit in the queue for twenty seconds.",
+    "supersedes": "vision_bench_v1.json's concurrency section, which ran its levels in blocks and therefore measured the clock."
+  }
+}
