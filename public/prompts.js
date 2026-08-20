@@ -280,6 +280,16 @@ Respond ONLY with JSON:
   // Where a beat's footage should come from. Modern stock libraries hold what
   // the world looks like now; a film archive holds what it looked like then.
   // Asking the wrong one is not a quality problem, it is a wrong answer.
+  // What kind of claim the narration is making, which decides how much
+  // evidence a candidate has to carry before it may be used.
+  const SPECIFICITY_LEVELS = ['exact_event', 'specific_person', 'specific_place',
+    'historical_event', 'general_event', 'concept', 'metaphorical'];
+
+  // How the beat expects to be illustrated when the exact thing cannot be
+  // sourced - named so the Director chooses deliberately rather than drifting
+  // into whatever the search returns.
+  const ASSET_STRATEGIES = ['exact', 'conceptual', 'contextual', 'metaphorical'];
+
   const SOURCE_STRATEGIES = ['auto', 'modern_stock', 'archival', 'mixed'];
 
   // Snap a model's answer onto the vocabulary. Case-insensitive, and tolerates
@@ -1272,6 +1282,40 @@ stockRequirements: {
                             // no new subject, find the concrete detail it does add.
   "queries": [string],      // 3-5 short search phrases; each is a standalone stock search query
   "fallbackQueries": [string], // 2-3 broader queries to use if primary queries find nothing
+
+  // ── THE SHOT, TAKEN APART ──────────────────────────────────────────
+  // A retrieved clip is checked against these one at a time, and a single
+  // sentence cannot say which part failed. "Spider-Man swings through the
+  // city" and a swinging park bench share a word, share no subject and share
+  // no action — separated fields are what let that be reported rather than
+  // scored as a near miss.
+  "subject": string,        // who or what is on screen: "a drummer", "wartime factory workers"
+  "action": string,         // what is happening: "playing to a crowd", "assembling an aircraft"
+  "environment": string,    // where: "a darkened arena", "a 1940s factory floor"
+  "narrativeRole": string,  // why this beat needs a picture at all: "establish the scale of production"
+  "requiredElements": [string], // 2-4 things that MUST be visible for the clip to work
+  "avoid": [string],        // 2-4 near misses to reject: "static skyline", "person sitting", "empty room"
+
+  // How much evidence this beat's claim demands. "The Apollo 11 astronauts
+  // landed in July 1969" needs strong evidence and a generic astronaut will
+  // not do; "space exploration captured the imagination" is served by a much
+  // wider range. One threshold for both is wrong in one direction or the other.
+  "specificity": "exact_event" | "specific_person" | "specific_place" |
+                 "historical_event" | "general_event" | "concept" | "metaphorical",
+
+  // How you expect to illustrate it when the exact thing cannot be sourced.
+  // Choose deliberately — this is the difference between a considered
+  // substitute and drifting into whatever the search happens to return.
+  //   "exact"        the thing itself is realistically in the libraries
+  //   "conceptual"   the event cannot be sourced; show what it was ABOUT
+  //                  ("the discovery changed neuroscience" → a researcher
+  //                   reading a brain scan)
+  //   "contextual"   show the evidence around it ("the policy affected
+  //                  millions" → newspaper front pages, crowds, documents)
+  //   "metaphorical" the narration has no physical subject at all
+  //                  ("success is rarely a straight path" → a winding road)
+  "assetStrategy": "exact" | "conceptual" | "contextual" | "metaphorical",
+
   "subjectCategory": string,   // optional: "HUMAN" | "NATURE" | "URBAN" | "ABSTRACT" | "OBJECT"
   "minimumDuration": number,   // seconds the clip must be at minimum (default: half the scene duration)
 
@@ -1534,6 +1578,26 @@ Respond ONLY with JSON:
             concept:          str(r.concept),
             queries,
             fallbackQueries,
+            // The shot, taken apart.
+            //
+            // The evaluator judges a retrieved clip against these, and a
+            // single sentence cannot say which part failed: "Spider-Man swings
+            // through the city" and a swinging park bench share a word, share
+            // no subject and share no action, and only separated fields can
+            // report that. All optional - a plan carrying only `concept` still
+            // works, which is what keeps existing projects running.
+            subject:          str(r.subject),
+            action:           str(r.action),
+            environment:      str(r.environment),
+            narrativeRole:    str(r.narrativeRole),
+            requiredElements: arr(r.requiredElements).map(String).filter(Boolean).slice(0, 6),
+            avoid:            arr(r.avoid).map(String).filter(Boolean).slice(0, 6),
+            // How much evidence this beat's claim demands. Apollo 11 in July
+            // 1969 and "space captured the imagination" are not the same
+            // evidential problem, and one threshold for both is wrong in one
+            // direction or the other.
+            specificity:      oneOf(r.specificity, SPECIFICITY_LEVELS, ''),
+            assetStrategy:    oneOf(r.assetStrategy, ASSET_STRATEGIES, ''),
             subjectCategory:  str(r.subjectCategory),
             minimumDuration:  Number(r.minimumDuration) || 0,
             sourceStrategy:   oneOf(r.sourceStrategy, SOURCE_STRATEGIES, 'auto'),

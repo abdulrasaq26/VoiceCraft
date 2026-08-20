@@ -142,6 +142,75 @@ class _StockCommon(BaseModel):
         description="2-3 broader queries to try if the primary queries find nothing.",
         max_length=4,
     )
+    # ---- the shot, taken apart ----------------------------------------
+    #
+    # A retrieved clip is checked against these one field at a time, and a
+    # single sentence cannot say which part failed. "Spider-Man swings through
+    # the city" and a swinging park bench share a word, share no subject and
+    # share no action; separated fields are what let that be reported rather
+    # than scored as a near miss. All optional, so a plan carrying only
+    # `concept` still works.
+    subject: str = Field(
+        default="",
+        description="Who or what is on screen: 'a drummer', 'wartime factory workers'.",
+    )
+    action: str = Field(
+        default="",
+        description="What is happening: 'playing to a crowd', 'assembling an aircraft'.",
+    )
+    environment: str = Field(
+        default="",
+        description="Where it happens: 'a darkened arena', 'a 1940s factory floor'.",
+    )
+    narrativeRole: str = Field(
+        default="",
+        description="Why this beat needs a picture: 'establish the scale of production'.",
+    )
+    requiredElements: List[str] = Field(
+        default_factory=list,
+        description="2-4 things that MUST be visible for the clip to work.",
+        max_length=4,
+    )
+    avoid: List[str] = Field(
+        default_factory=list,
+        description=(
+            "2-4 near misses to reject: 'static skyline', 'person sitting', "
+            "'empty room'. These are the clips a keyword search returns that "
+            "look related and tell the audience nothing."
+        ),
+        max_length=4,
+    )
+    specificity: Optional[
+        Literal["exact_event", "specific_person", "specific_place",
+                "historical_event", "general_event", "concept", "metaphorical"]
+    ] = Field(
+        default=None,
+        description=(
+            "How much evidence this beat's claim demands. 'The Apollo 11 "
+            "astronauts landed in July 1969' needs strong evidence and a "
+            "generic astronaut will not do; 'space exploration captured the "
+            "imagination' is served by a much wider range. One threshold for "
+            "both is wrong in one direction or the other."
+        ),
+    )
+    assetStrategy: Optional[
+        Literal["exact", "conceptual", "contextual", "metaphorical"]
+    ] = Field(
+        default=None,
+        description=(
+            "How you expect to illustrate it when the exact thing cannot be "
+            "sourced. Choose deliberately - this is the difference between a "
+            "considered substitute and drifting into whatever the search "
+            "returns. 'exact': the thing itself is realistically in the "
+            "libraries. 'conceptual': the event cannot be sourced, so show "
+            "what it was ABOUT - 'the discovery changed neuroscience' becomes "
+            "a researcher reading a brain scan. 'contextual': show the "
+            "evidence around it - 'the policy affected millions' becomes "
+            "newspaper front pages, crowds, documents. 'metaphorical': the "
+            "narration has no physical subject at all - 'success is rarely a "
+            "straight path' becomes a winding road."
+        ),
+    )
     subjectCategory: Optional[Literal["HUMAN", "NATURE", "URBAN", "ABSTRACT", "OBJECT"]] = Field(
         default=None, description="Coarse subject bucket, used to break ties between clips."
     )

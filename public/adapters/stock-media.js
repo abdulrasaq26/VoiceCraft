@@ -950,6 +950,85 @@
   // The AI generation path (LTX, SDXL, Pollinations, etc.) is NOT part of
   // this hierarchy. When null is returned, the storyboard renders a text card.
 
+  /**
+   * Hand the shortlist to the evaluator, and record what it decided.
+   *
+   * The bridge, and deliberately thin: this owns none of the reasoning and
+   * none of the fetching. It exists so acquire() has one call to make and one
+   * shape to read back, and so the outcome is written onto the scene where the
+   * storyboard can show it rather than being decided invisibly.
+   *
+   * Never throws. An evaluator that is unreachable, slow, or answering nonsense
+   * must leave the pipeline exactly as it was before this layer existed - the
+   * metadata order, unchanged. A storyboard that stops because the judge is
+   * out is worse than one judged only on metadata.
+   */
+  async function judgeCandidates(scene, req, ranked, sourceStrategy) {
+    const off = { ran: false, verdict: 'NOT_EVALUATED', accepted: [] };
+    const E = window.BlvckVisualEvaluator;
+    if (!E || !E.available || !E.available()) return off;
+    if (!ranked.length) return off;
+
+    // Whatever the Director actually supplied. The structured fields are
+    // additive - a plan carrying only `concept` still gives the evaluator a
+    // brief, which is what keeps older projects working.
+    const intent = {
+      concept:          req.concept,
+      subject:          req.subject,
+      action:           req.action,
+      environment:      req.environment,
+      timePeriod:       req.timePeriod || scene.timePeriod,
+      narrativeRole:    req.narrativeRole || req.editorialPurpose,
+      requiredElements: req.requiredElements,
+      avoid:            req.avoid
+    };
+    const specificity = req.specificity || (sourceStrategy === 'archival' ? 'historical_event' : null);
+
+    let out;
+    try {
+      out = await E.evaluate({
+        narration: scene.subtitle || scene.sceneSummary || '',
+        intent,
+        candidates: ranked,
+        specificity
+      });
+    } catch (err) {
+      console.warn(`[StockMedia] scene ${scene.index}: the evaluator failed (${err.message}) `
+        + '— falling back to the metadata order');
+      return off;
+    }
+    if (!out || !out.ran) return off;
+
+    for (const x of out.scored) {
+      const j = x.judgement;
+      console.log(`[Evaluator] scene ${scene.index}  ${x.asset.provider}:${x.asset.id}  `
+        + `${Math.round(x.score * 100)}%  ${j.classification}  "${j.sees}"`
+        + (j.sawPicture ? '' : '  (no thumbnail — judged on description alone)'));
+    }
+    console.log(`[Evaluator] scene ${scene.index}: ${out.verdict} `
+      + `(${out.confidence}, floor ${Math.round(out.floor * 100)}%, ${out.tookMs}ms)`);
+
+    // Written onto the scene so the storyboard can be honest about how sure it
+    // is, rather than presenting every beat as equally settled.
+    scene.visualEvaluation = {
+      verdict: out.verdict,
+      confidence: out.confidence,
+      floor: out.floor,
+      considered: out.scored.length,
+      best: out.scored[0] && {
+        id: `${out.scored[0].asset.provider}:${out.scored[0].asset.id}`,
+        score: Math.round(out.scored[0].score * 100) / 100,
+        classification: out.scored[0].judgement.classification,
+        sees: out.scored[0].judgement.sees
+      },
+      rejected: out.scored.filter((x) => !out.accepted.includes(x))
+        .map((x) => ({ id: `${x.asset.provider}:${x.asset.id}`,
+                       classification: x.judgement.classification,
+                       sees: x.judgement.sees }))
+    };
+    return out;
+  }
+
   async function acquire(scene, opts = {}) {
     const req            = scene.stockRequirements || {};
     const orientation    = req.orientation || projectOrientation();
@@ -994,9 +1073,42 @@
                                  sources: preferredSources, archiveQueries, timePeriod });
 
     if (results.length) {
-      const ranked = rank(results, rankOpts, usedIds);
+      let ranked = rank(results, rankOpts, usedIds);
       console.log(`[StockMedia] scene ${scene.index}: ${ranked.length} cleared candidate(s) — `
         + ranked.slice(0, 4).map((a) => `${a.provider}:${a.id}`).join(', '));
+
+      // ── Does any of this actually tell the beat? ────────────────────────
+      //
+      // The one place worth asking. Everything above has already narrowed
+      // hundreds of provider results down to a handful using metadata, which
+      // is cheap; this looks at the pictures, which is not. Putting it here
+      // means it runs once per beat on a shortlist rather than per query, per
+      // provider, or per result.
+      //
+      // A rejection is allowed to cost the whole level. Falling through to a
+      // broader search is the correct answer to "none of these show it" - and
+      // taking the best of a bad shortlist because something has to be
+      // returned is precisely the behaviour that put swans under a beat about
+      // a stage show.
+      const verdictOf = await judgeCandidates(scene, req, ranked, sourceStrategy);
+      if (verdictOf.ran) {
+        // accepted is [judged and good..., then the ones whose frame could not
+        // be read]. The second group is unproven, not rejected: a thumbnail
+        // that turned out to be a title card says nothing about the clip.
+        const usable = verdictOf.accepted.map((x) => x.asset);
+        if (verdictOf.verdict === 'NO_SUITABLE_ASSET' && !usable.length) {
+          console.log(`[StockMedia] scene ${scene.index}: none of the ${ranked.length} `
+            + 'candidates show the beat — widening rather than settling');
+          ranked = [];
+        } else if (verdictOf.verdict === 'NO_SUITABLE_ASSET') {
+          console.log(`[StockMedia] scene ${scene.index}: nothing legible showed the beat, `
+            + `falling through to ${usable.length} unread candidate(s)`);
+          ranked = usable;
+        } else {
+          ranked = usable;
+        }
+      }
+
       for (let i = 0; i < ranked.length; i++) {
         const asset = ranked[i];
         if (!clearForProduction(asset, scene)) continue;
