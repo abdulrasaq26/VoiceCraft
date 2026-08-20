@@ -27,7 +27,27 @@ const path = require('path');
 
 const PORT = process.argv[2] || '3491';
 const NO_VISION = process.argv.includes('--no-vision');
-const OUT = path.join(PROJECT, 'tests', 'live', 'baseline_five_beats.json');
+// The baseline artifact is immutable once it holds a real measurement.
+//
+// A reference point that later runs quietly overwrite is not a reference point,
+// and the whole purpose of this file is to be able to say later whether a change
+// actually improved the Director. A dry run carrying no vision column is not a
+// measurement and may be replaced; anything else gets the next free version.
+function outputPath() {
+  const dir = path.join(PROJECT, 'tests', 'live');
+  const first = path.join(dir, 'baseline_five_beats.json');
+  if (!fs.existsSync(first)) return first;
+  try {
+    const held = JSON.parse(fs.readFileSync(first, 'utf8'));
+    if (held.noVision) return first;          // a dry run holds nothing worth keeping
+  } catch (e) { return first; }
+  for (let v = 2; v < 100; v++) {
+    const next = path.join(dir, `baseline_five_beats_v${v}.json`);
+    if (!fs.existsSync(next)) return next;
+  }
+  throw new Error('too many baseline versions');
+}
+const OUT = outputPath();
 
 const env = fs.readFileSync(PROJECT + '/.env', 'utf8');
 const envGet = (k) => {

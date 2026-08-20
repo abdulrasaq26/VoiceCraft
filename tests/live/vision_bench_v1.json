@@ -1,0 +1,134 @@
+{
+  "at": "2026-08-20T17:11:37.480Z",
+  "concurrency": [
+    {
+      "level": 1,
+      "wallMs": 29870,
+      "n": 8,
+      "ok": 0,
+      "errRate": 100,
+      "statuses": {
+        "500": 8
+      },
+      "medianMs": null,
+      "p95Ms": null,
+      "maxQueue": 0
+    },
+    {
+      "level": 2,
+      "wallMs": 1188,
+      "n": 8,
+      "ok": 0,
+      "errRate": 100,
+      "statuses": {
+        "429": 1,
+        "500": 7
+      },
+      "medianMs": null,
+      "p95Ms": null,
+      "maxQueue": 0
+    },
+    {
+      "level": 3,
+      "wallMs": 84635,
+      "n": 8,
+      "ok": 3,
+      "errRate": 63,
+      "statuses": {
+        "200": 3,
+        "500": 5
+      },
+      "medianMs": 22908,
+      "p95Ms": 61379,
+      "maxQueue": 0
+    },
+    {
+      "level": 4,
+      "wallMs": 56173,
+      "n": 8,
+      "ok": 8,
+      "errRate": 0,
+      "statuses": {
+        "200": 8
+      },
+      "medianMs": 12955,
+      "p95Ms": 56173,
+      "maxQueue": 0
+    }
+  ],
+  "judge": [
+    {
+      "model": "meta/llama-3.1-8b-instruct",
+      "candidates": 4,
+      "ms": 7896,
+      "status": 200,
+      "ok": true,
+      "promptTokens": 383,
+      "completionTokens": 197,
+      "queue": null,
+      "tokPerSec": null,
+      "error": null
+    },
+    {
+      "model": "meta/llama-3.1-8b-instruct",
+      "candidates": 8,
+      "ms": 4727,
+      "status": 200,
+      "ok": true,
+      "promptTokens": 566,
+      "completionTokens": 389,
+      "queue": null,
+      "tokPerSec": null,
+      "error": null
+    },
+    {
+      "model": "meta/llama-3.3-70b-instruct",
+      "candidates": 4,
+      "ms": 39484,
+      "status": 0,
+      "ok": false,
+      "error": "read ECONNRESET"
+    },
+    {
+      "model": "meta/llama-3.3-70b-instruct",
+      "candidates": 8,
+      "ms": 47417,
+      "status": 200,
+      "ok": true,
+      "promptTokens": 566,
+      "completionTokens": 400,
+      "queue": {
+        "num_running_reqs": 3,
+        "num_waiting_reqs": 0
+      },
+      "tokPerSec": 24.556629519601405,
+      "error": null
+    }
+  ],
+  "judgeQuality": {
+    "note": "One sample per beat, same prompt, 8B versus 70B. The 70B failed all three attempts in this pass (timeout, ECONNRESET, ECONNRESET), so the comparison is against its scores recorded in the baseline artifact.",
+    "beats": [
+      {
+        "beat": 1,
+        "model8bMs": 5621,
+        "model70bMs": null,
+        "model70bError": "client timeout at 75s"
+      },
+      {
+        "beat": 3,
+        "model8bMs": 5610,
+        "model70bMs": null,
+        "model70bError": "ECONNRESET"
+      },
+      {
+        "beat": 5,
+        "model8bMs": 4688,
+        "model70bMs": null,
+        "model70bError": "ECONNRESET",
+        "verdict": "8B rated the top four candidates 0.85/0.8/0.7/0.9 all direct_illustration for 'Spider-Man swings through the city'. Those candidates are city streets, a cityscape and - at rank 2 in the raw pool - a park swing. The 70B scored the same descriptions 45/42/35/34% weak_contextual and refused the beat. The 8B would have destroyed the honest refusal, which is the single most valuable behaviour the baseline demonstrated."
+      }
+    ],
+    "conclusion": "REJECTED. The 8B judge is roughly ten times faster and cannot be used: it does not discriminate. It also invented a class - 'indirect_illustration' - outside the vocabulary it was given, which the parser clamps but which shows the contract is not being followed."
+  },
+  "concurrencyCaveat": "INCONCLUSIVE - the levels ran sequentially, so level correlates with time, and the endpoint's 500s come and go in windows. Level 1 failed 8/8 while level 4 succeeded 8/8, which is the opposite of a saturation effect. The experiment measured time, not concurrency. A valid version has to interleave the levels."
+}
