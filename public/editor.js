@@ -809,30 +809,64 @@
   }
 
   /**
+   * How much of the source survives a cover crop.
+   *
+   * 1.0 means the aspect matches the canvas and nothing is lost. 0.32 means a
+   * portrait clip in a landscape timeline: filling the frame throws away two
+   * thirds of the picture.
+   */
+  function coverVisibleFraction(img, cw, ch) {
+    const iw = img && (img.naturalWidth || img.videoWidth || img.width);
+    const ih = img && (img.naturalHeight || img.videoHeight || img.height);
+    if (!iw || !ih || !cw || !ch) return 1;
+    const ir = iw / ih;
+    const cr = cw / ch;
+    return Math.min(ir / cr, cr / ir);
+  }
+
+  /**
    * Which fit this clip gets.
    *
    * Explicit rather than inferred wherever possible: the Director's or the
-   * asset's own treatment wins. The aspect fallback exists because an archival
-   * clip that arrived without a treatment is still 4:3, and cropping it by
-   * default is the failure this whole change is about.
+   * asset's own treatment wins.
+   *
+   * Below that, the question is not "is this archival" but "how much of the
+   * picture would cropping destroy". Cover is the right trade when the aspects
+   * are close - a 16:10 clip losing a sliver of its edges costs nothing, and
+   * filling the frame looks better than bars. It is the wrong trade when the
+   * source is a different shape entirely: a 9:16 stock clip cover-fitted into a
+   * 16:9 timeline is drawn 2276px tall inside a 720px frame, so the viewer sees
+   * a third of it and the subject is usually not in that third.
+   *
+   * This used to apply only to archive_org material, which meant a portrait or
+   * square clip from Pexels or Pixabay was silently cropped to a vertical strip.
+   * The reason archival needed it first was never that it was archival - it was
+   * that it was a different shape.
    */
-  function fitFor(clip, img) {
+  const COVER_KEEPS_ENOUGH = 0.8;   // below this, cropping loses too much
+
+  function fitFor(clip, img, cw, ch) {
     const declared = clip && clip.treatment && clip.treatment.fit;
     if (declared === 'contain' || declared === 'pillarbox' || declared === 'letterbox') return 'contain';
     if (declared === 'cover' || declared === 'crop' || declared === 'fill') return 'cover';
+    if (!img) return 'cover';
 
-    // Archival material with a materially different aspect: preserve it.
+    // Archival keeps its tighter rule: in period material the edges are
+    // routinely the subject, so even a small crop is a real loss.
     const isArchive = !!(clip && ((clip.stockAsset && clip.stockAsset.provider === 'archive_org')
                                    || (clip.excerpt && clip.excerpt.sourceIn != null)));
-    if (isArchive && img) {
-      const iw = img.naturalWidth || img.videoWidth || img.width;
-      const ih = img.naturalHeight || img.videoHeight || img.height;
-      if (iw && ih) {
-        const drift = Math.abs((iw / ih) - (16 / 9)) / (16 / 9);
-        if (drift > 0.05) return 'contain';
-      }
+    const iw = img.naturalWidth || img.videoWidth || img.width;
+    const ih = img.naturalHeight || img.videoHeight || img.height;
+    if (!iw || !ih) return 'cover';
+
+    if (isArchive) {
+      const drift = Math.abs((iw / ih) - (16 / 9)) / (16 / 9);
+      return drift > 0.05 ? 'contain' : 'cover';
     }
-    return 'cover';
+    // Everything else: crop only while most of the frame survives it.
+    const width = cw || 16;
+    const height = ch || 9;
+    return coverVisibleFraction(img, width, height) < COVER_KEEPS_ENOUGH ? 'contain' : 'cover';
   }
 
   function drawCover(g, img, cw, ch, scale, txF, tyF) {
@@ -1578,7 +1612,7 @@
         driveVideo(clip.video, localMs, clip);
         if (videoDrawable(clip.video)) {
           clip.fallbackUsed = null;
-          const fit = fitFor(clip, clip.video);
+          const fit = fitFor(clip, clip.video, cw, ch);
           (fit === 'contain' ? drawContain : drawCover)(g, clip.video, cw, ch, 1, 0, 0);
           return;
         }
@@ -1603,7 +1637,7 @@
     const t = effectTransform(clip.effect, p);
     // A contained frame is not panned or zoomed: a Ken Burns move on a
     // pillarboxed archival still slides the picture out of its own letterbox.
-    const fit = fitFor(clip, still);
+    const fit = fitFor(clip, still, cw, ch);
     if (fit === 'contain') drawContain(g, still, cw, ch, 1, 0, 0);
     else drawCover(g, still, cw, ch, t.scale, t.tx, t.ty);
   }

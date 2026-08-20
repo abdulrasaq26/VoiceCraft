@@ -474,9 +474,19 @@
     if (mediaType === 'photo' && asset.type === 'video') score -= 5;
 
     // Orientation match.
+    //
+    // The mismatch penalty is heavy on purpose. A portrait clip in a landscape
+    // timeline cannot be shown whole without bars down both sides, and cannot
+    // be shown full-bleed without throwing away two thirds of the picture -
+    // there is no good outcome, only a choice of which one to lose. At -15 a
+    // portrait clip with a convenient duration still won on total score, which
+    // is how vertical footage reached the timeline at all. It stays a
+    // preference rather than a filter: when a beat has no landscape candidate,
+    // the wrong shape still beats no footage.
     if (orientation !== 'any') {
       if (asset.orientation === orientation) score += 20;
-      else score -= 15;
+      else if (asset.orientation === 'square') score -= 25;
+      else score -= 45;
     }
 
     // Duration scoring for video assets.
