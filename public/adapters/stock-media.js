@@ -107,7 +107,17 @@
       duration:     Number(opts.duration     || 0),
       orientation:  opts.orientation || deriveOrientation(w, h),
       tags:         Array.isArray(opts.tags) ? opts.tags.map(String) : [],
-      sourceUrl:    String(opts.sourceUrl    || '')
+      sourceUrl:    String(opts.sourceUrl    || ''),
+      // Frames spread through the clip, when the provider publishes them.
+      //
+      // thumbnailUrl is frame ZERO for Pixabay and for the archive, and a great
+      // many clips open on a title card, a logo or a slate - so inspecting it
+      // reports on the card rather than on the footage. Pexels publishes five
+      // real preview frames per clip and costs nothing to use; Pixabay and the
+      // archive publish none, but both serve a small mp4 that can be decoded
+      // when the cheap frame turns out to be useless.
+      frames:       Array.isArray(opts.frames) ? opts.frames.map(String).filter(Boolean) : [],
+      previewVideoUrl: String(opts.previewVideoUrl || '')
     };
   }
 
@@ -161,10 +171,24 @@
         const vids   = hit.videos || {};
         const best   = vids.large  || vids.medium || vids.small || vids.tiny || {};
         const medium = vids.medium || vids.small  || vids.tiny  || best;
-        // Pixabay video thumbnails come from Vimeo (picture_id is the Vimeo ID).
-        const thumb  = hit.userImageURL || (hit.picture_id
-          ? `https://i.vimeocdn.com/video/${hit.picture_id}_295x166.jpg`
-          : '');
+        const tiny   = vids.tiny   || vids.small  || medium;
+        // The clip's own frame, which Pixabay publishes on every size.
+        //
+        // This used to read hit.picture_id and build a Vimeo URL from it, with
+        // hit.userImageURL as the fallback. Pixabay no longer returns
+        // picture_id at all - it is null on every hit - so the fallback was
+        // taken every time, and userImageURL is the UPLOADER'S AVATAR.
+        //
+        // So every Pixabay video in this app has been carrying a photographer's
+        // profile picture as its thumbnail, or nothing when they had not set
+        // one. It is on the scene cards, and it is what the visual evaluator
+        // was shown: asked what a concert clip contained, it correctly answered
+        // "a man in a turtleneck sweater" and "the words ICONIK Media Group in
+        // gold lettering", because that is what it was given. Clips from one
+        // uploader share an avatar, which is why several different clips came
+        // back described identically.
+        const thumb  = (tiny && tiny.thumbnail) || (medium && medium.thumbnail)
+          || (best && best.thumbnail) || '';
         return makeAsset({
           provider:     'pixabay',
           id:           String(hit.id),
@@ -176,7 +200,13 @@
           height:       best.height || 0,
           duration:     hit.duration || 0,
           tags:         String(hit.tags || '').split(',').map(t => t.trim()).filter(Boolean),
-          sourceUrl:    hit.pageURL || ''
+          sourceUrl:    hit.pageURL || '',
+          // Pixabay publishes no frame array - every size it offers is the same
+          // frame zero, and the indexed variants (_1.jpg, _2.jpg) 404. So the
+          // only way past a title card here is to decode the small mp4, which
+          // is why it travels with the asset.
+          frames:       [],
+          previewVideoUrl: (tiny && tiny.url) || medium.url || ''
         });
       } else {
         return makeAsset({
@@ -250,7 +280,13 @@
           height:       best.height  || v.height || 0,
           duration:     v.duration   || 0,
           tags:         [], // Pexels v1 doesn't return tags on video results
-          sourceUrl:    v.url || ''
+          sourceUrl:    v.url || '',
+          // Pexels publishes preview frames spread through the clip. They cost
+          // nothing extra and are the only place in this file where a
+          // representative frame is available without decoding anything.
+          frames:       Array.isArray(v.video_pictures)
+            ? v.video_pictures.map((f) => f && f.picture).filter(Boolean) : [],
+          previewVideoUrl: (sorted[0] && sorted[0].link) || ''
         });
       }).filter(a => a.downloadUrl);
     } else {
