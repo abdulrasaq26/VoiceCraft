@@ -1,0 +1,210 @@
+{
+  "at": "2026-08-20T22:02:53.913Z",
+  "model": "meta/llama-3.3-70b-instruct",
+  "results": [
+    {
+      "id": 1,
+      "name": "Blue Man Group \u2014 stage",
+      "narration": "In two thousand three, the Blue Man Group embarked on their How to Be a Megastar national arena tour, a performance that would showcase the power of creativity.",
+      "oldIntent": "The Blue Man Group performs on stage",
+      "ms": 47296,
+      "ok": true,
+      "visualType": "stock_video",
+      "requirements": {
+        "concept": "A darkened arena stage under coloured lights, drums and a crowd silhouetted in front of it",
+        "queries": [
+          "concert stage lights crowd",
+          "arena stage silhouette",
+          "drummer on stage"
+        ],
+        "fallbackQueries": [
+          "live music performance",
+          "stage show",
+          "crowd cheering"
+        ],
+        "subject": "",
+        "action": "",
+        "environment": "",
+        "narrativeRole": "",
+        "requiredElements": [],
+        "avoid": [],
+        "specificity": "",
+        "assetStrategy": "",
+        "subjectCategory": "HUMAN",
+        "minimumDuration": 5,
+        "sourceStrategy": "modern_stock",
+        "preferredSources": [
+          "pexels",
+          "pixabay"
+        ],
+        "archiveQueries": [],
+        "sourceReason": "To capture the energy and spectacle of a live performance",
+        "timePeriod": null,
+        "excerpt": null,
+        "editorialPurpose": "To establish the Blue Man Group's national arena tour as a showcase for creativity"
+      },
+      "queryKinds": [
+        "VISUAL",
+        "VISUAL",
+        "VISUAL"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Blue Man Group \u2014 audience",
+      "narration": "The Blue Man Group's interactive shows, with their emphasis on participation and improvisation, demonstrate the importance of thinking on one's feet.",
+      "oldIntent": "The Blue Man Group interacts with the audience",
+      "ms": 36034,
+      "ok": true,
+      "visualType": "stock_video",
+      "requirements": {
+        "concept": "A performer in a colorful costume interacting with audience members on stage",
+        "queries": [
+          "interactive stage show",
+          "improvisational performance",
+          "audience participation"
+        ],
+        "fallbackQueries": [
+          "live show crowd interaction",
+          "stage performance",
+          "improvisation"
+        ],
+        "subject": "",
+        "action": "",
+        "environment": "",
+        "narrativeRole": "",
+        "requiredElements": [],
+        "avoid": [],
+        "specificity": "",
+        "assetStrategy": "",
+        "subjectCategory": "HUMAN",
+        "minimumDuration": 5,
+        "sourceStrategy": "modern_stock",
+        "preferredSources": [
+          "pexels",
+          "pixabay"
+        ],
+        "archiveQueries": [],
+        "sourceReason": "To capture the vibrant and dynamic atmosphere of interactive performances",
+        "timePeriod": null,
+        "excerpt": null,
+        "editorialPurpose": "To illustrate the importance of thinking on one's feet in improvisational settings"
+      },
+      "queryKinds": [
+        "VISUAL",
+        "VISUAL",
+        "VISUAL"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "PISA",
+      "narration": "This is echoed in the results of the Programme for International Student Assessment, a worldwide educational assessment that evaluates the knowledge and skills of students.",
+      "oldIntent": "A student participates in the PISA assessment",
+      "ms": 50284,
+      "ok": true,
+      "visualType": "stock_video",
+      "requirements": {
+        "concept": "Students taking a test in a classroom",
+        "queries": [
+          "students taking a test",
+          "classroom assessment",
+          "education evaluation"
+        ],
+        "fallbackQueries": [
+          "students in a classroom",
+          "test taking",
+          "school assessment"
+        ],
+        "subject": "",
+        "action": "",
+        "environment": "",
+        "narrativeRole": "",
+        "requiredElements": [],
+        "avoid": [],
+        "specificity": "",
+        "assetStrategy": "",
+        "subjectCategory": "HUMAN",
+        "minimumDuration": 5,
+        "sourceStrategy": "modern_stock",
+        "preferredSources": [
+          "pexels",
+          "pixabay"
+        ],
+        "archiveQueries": [],
+        "sourceReason": "To show a modern and relatable educational setting",
+        "timePeriod": null,
+        "excerpt": null,
+        "editorialPurpose": "To establish the context of the Programme for International Student Assessment"
+      },
+      "queryKinds": [
+        "VISUAL",
+        "VISUAL",
+        "VISUAL"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Business success",
+      "narration": "But what can we learn from these seemingly disparate sources about the path to success in business?",
+      "oldIntent": "A person thinks deeply about the path to success",
+      "ms": 23569,
+      "ok": true,
+      "visualType": "editorial_text",
+      "requirements": null,
+      "queryKinds": []
+    },
+    {
+      "id": 5,
+      "name": "Spider-Man",
+      "narration": "Meanwhile, the Spider-Man film series, with its emphasis on determination and hard work, shows how ordinary people can achieve extraordinary success.",
+      "oldIntent": "Spider-Man swings through the city",
+      "ms": 54082,
+      "ok": true,
+      "visualType": "stock_video",
+      "requirements": {
+        "concept": "A city skyline at dusk, with people walking in the foreground",
+        "queries": [
+          "city skyline at dusk",
+          "people walking in city",
+          "urban landscape"
+        ],
+        "fallbackQueries": [
+          "city street at night",
+          "people in urban environment",
+          "metropolitan area"
+        ],
+        "subject": "",
+        "action": "",
+        "environment": "",
+        "narrativeRole": "",
+        "requiredElements": [],
+        "avoid": [],
+        "specificity": "",
+        "assetStrategy": "",
+        "subjectCategory": "URBAN",
+        "minimumDuration": 5,
+        "sourceStrategy": "modern_stock",
+        "preferredSources": [
+          "pexels",
+          "pixabay"
+        ],
+        "archiveQueries": [],
+        "sourceReason": "To show the contrast between ordinary life and extraordinary success",
+        "timePeriod": null,
+        "excerpt": null,
+        "editorialPurpose": "To visually represent the idea that ordinary people can achieve extraordinary success"
+      },
+      "queryKinds": [
+        "VISUAL",
+        "VISUAL",
+        "VISUAL"
+      ]
+    }
+  ],
+  "diagnosis": {
+    "structuredFieldsEmpty": "Every one of subject, action, environment, narrativeRole, requiredElements, avoid, specificity and assetStrategy came back empty on all five beats. Cause found: VIDEO_PLAN_SYSTEM carries TWO schema listings. The new fields were added to the explanatory one at line 1312; the authoritative one - the block that says 'Respond ONLY with JSON' at line 1428 - was never updated and lists only the original fields. The model did exactly what the final contract asked. My error, not the model's.",
+    "beat1Contaminated": "Beat 1's concept is verbatim the worked example in the prompt: 'A darkened arena stage under coloured lights, drums and a crowd silhouetted in front of it'. The narration matches the example's narration, so this is recitation, not reasoning, and it cannot be counted as evidence either way.",
+    "beat5": "Spider-Man: the entity was removed but so was the action. 'A city skyline at dusk, with people walking in the foreground' is precisely the static skyline the vision evaluator already refuses. Avoiding the unsourceable name is not the same as preserving what the viewer needs to understand."
+  }
+}
