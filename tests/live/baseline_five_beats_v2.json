@@ -1,0 +1,1706 @@
+{
+  "at": "2026-08-20T21:18:26.578Z",
+  "config": {
+    "orientation": "landscape",
+    "mediaType": "video",
+    "minimumDuration": 3,
+    "targetDuration": 9,
+    "provider": "modern"
+  },
+  "noVision": false,
+  "results": [
+    {
+      "poolSize": 32,
+      "terms": [
+        "blue",
+        "man",
+        "group",
+        "performs",
+        "stage",
+        "performing",
+        "concert",
+        "lights",
+        "crowd"
+      ],
+      "retrievalMs": 2134,
+      "metadataMs": 3,
+      "A": {
+        "id": "pixabay:1287",
+        "provider": "pixabay",
+        "assetId": "1287",
+        "title": "id-1287",
+        "sourceUrl": "https://pixabay.com/videos/id-1287/",
+        "picture": "https://cdn.pixabay.com/video/2015/11/08/1287-145131537_tiny.jpg",
+        "providerFrames": 0,
+        "tags": [
+          "swans",
+          "ducks",
+          "water",
+          "white",
+          "bird",
+          "nature",
+          "animal",
+          "wildlife"
+        ],
+        "px": 3686400,
+        "duration": 23
+      },
+      "B": {
+        "id": "pixabay:1630",
+        "provider": "pixabay",
+        "assetId": "1630",
+        "title": "id-1630",
+        "sourceUrl": "https://pixabay.com/videos/id-1630/",
+        "picture": "https://cdn.pixabay.com/video/2015/12/11/1630-148614385_tiny.jpg",
+        "providerFrames": 0,
+        "tags": [
+          "concert",
+          "light effects",
+          "cheering",
+          "audience",
+          "light beams",
+          "people",
+          "crowd",
+          "happy"
+        ],
+        "px": 2073600,
+        "duration": 15,
+        "metaPct": 78
+      },
+      "candidates": [
+        {
+          "id": "pixabay:1630",
+          "provider": "pixabay",
+          "assetId": "1630",
+          "title": "id-1630",
+          "sourceUrl": "https://pixabay.com/videos/id-1630/",
+          "picture": "https://cdn.pixabay.com/video/2015/12/11/1630-148614385_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "concert",
+            "light effects",
+            "cheering",
+            "audience",
+            "light beams",
+            "people",
+            "crowd",
+            "happy"
+          ],
+          "px": 2073600,
+          "duration": 15,
+          "metadataRank": 1,
+          "metaPct": 78
+        },
+        {
+          "id": "pixabay:55242",
+          "provider": "pixabay",
+          "assetId": "55242",
+          "title": "id-55242",
+          "sourceUrl": "https://pixabay.com/videos/id-55242/",
+          "picture": "https://cdn.pixabay.com/video/2020/11/07/55242-499593992_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "lights",
+            "show",
+            "music",
+            "dance",
+            "party",
+            "stage",
+            "concert",
+            "performance"
+          ],
+          "px": 2073600,
+          "duration": 46,
+          "metadataRank": 2,
+          "metaPct": 67
+        },
+        {
+          "id": "pixabay:236098",
+          "provider": "pixabay",
+          "assetId": "236098",
+          "title": "id-236098",
+          "sourceUrl": "https://pixabay.com/videos/id-236098/",
+          "picture": "https://cdn.pixabay.com/video/2024/10/12/236098_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "party",
+            "crowd",
+            "dancers",
+            "dance",
+            "lights",
+            "garba",
+            "dandiya",
+            "india"
+          ],
+          "px": 8294400,
+          "duration": 16,
+          "metadataRank": 3,
+          "metaPct": 44
+        },
+        {
+          "id": "pixabay:147800",
+          "provider": "pixabay",
+          "assetId": "147800",
+          "title": "id-147800",
+          "sourceUrl": "https://pixabay.com/videos/id-147800/",
+          "picture": "https://cdn.pixabay.com/video/2023/01/24/147800-792421768_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "trumphet",
+            "music",
+            "band",
+            "concert",
+            "performance",
+            "stage"
+          ],
+          "px": 2073600,
+          "duration": 12,
+          "metadataRank": 4,
+          "metaPct": 44
+        },
+        {
+          "id": "pixabay:136710",
+          "provider": "pixabay",
+          "assetId": "136710",
+          "title": "id-136710",
+          "sourceUrl": "https://pixabay.com/videos/id-136710/",
+          "picture": "https://cdn.pixabay.com/video/2022/10/27/136710-764955431_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "drums",
+            "drummer",
+            "music",
+            "performance",
+            "concert",
+            "stage",
+            "band",
+            "instrument"
+          ],
+          "px": 8847360,
+          "duration": 12,
+          "metadataRank": 5,
+          "metaPct": 44
+        },
+        {
+          "id": "pixabay:204007",
+          "provider": "pixabay",
+          "assetId": "204007",
+          "title": "id-204007",
+          "sourceUrl": "https://pixabay.com/videos/id-204007/",
+          "picture": "https://cdn.pixabay.com/video/2024/03/13/204007-923158633_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "band",
+            "orchestra",
+            "group",
+            "acoustic",
+            "bass",
+            "brass",
+            "character",
+            "entertainment"
+          ],
+          "px": 2073600,
+          "duration": 10,
+          "metadataRank": 6,
+          "metaPct": 33
+        },
+        {
+          "id": "pixabay:11720",
+          "provider": "pixabay",
+          "assetId": "11720",
+          "title": "id-11720",
+          "sourceUrl": "https://pixabay.com/videos/id-11720/",
+          "picture": "https://cdn.pixabay.com/video/2017/08/30/11720-231759062_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "pop",
+            "music",
+            "concert",
+            "stage",
+            "band",
+            "life",
+            "sound",
+            "light effects"
+          ],
+          "px": 2073600,
+          "duration": 11,
+          "metadataRank": 7,
+          "metaPct": 33
+        },
+        {
+          "id": "pixabay:180894",
+          "provider": "pixabay",
+          "assetId": "180894",
+          "title": "id-180894",
+          "sourceUrl": "https://pixabay.com/videos/id-180894/",
+          "picture": "https://cdn.pixabay.com/video/2023/09/16/180894-865216899_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "concert",
+            "crowd",
+            "stage",
+            "festival",
+            "city",
+            "summer",
+            "open air",
+            "lights"
+          ],
+          "px": 8294400,
+          "duration": 7,
+          "metadataRank": 8,
+          "metaPct": 44
+        }
+      ],
+      "vision": {
+        "ran": true,
+        "verdict": "SELECTED",
+        "confidence": "MEDIUM",
+        "floor": 72,
+        "why": "",
+        "tookMs": 61602,
+        "timing": {
+          "visionMs": 31852,
+          "judgeMs": 29744
+        },
+        "described": 4,
+        "legible": 4,
+        "C": {
+          "id": "pixabay:1630",
+          "provider": "pixabay",
+          "assetId": "1630",
+          "title": "id-1630",
+          "sourceUrl": "https://pixabay.com/videos/id-1630/",
+          "picture": "https://cdn.pixabay.com/video/2015/12/11/1630-148614385_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "concert",
+            "light effects",
+            "cheering",
+            "audience",
+            "light beams",
+            "people",
+            "crowd",
+            "happy"
+          ],
+          "px": 2073600,
+          "duration": 15,
+          "finalPct": 88,
+          "classification": "strong_contextual",
+          "entity": "related",
+          "sees": "A band is performing on a stage in front of a crowd, with stage lights shining down on them."
+        },
+        "judged": [
+          {
+            "id": "pixabay:1630",
+            "provider": "pixabay",
+            "assetId": "1630",
+            "title": "id-1630",
+            "sourceUrl": "https://pixabay.com/videos/id-1630/",
+            "picture": "https://cdn.pixabay.com/video/2015/12/11/1630-148614385_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "concert",
+              "light effects",
+              "cheering",
+              "audience",
+              "light beams",
+              "people",
+              "crowd",
+              "happy"
+            ],
+            "px": 2073600,
+            "duration": 15,
+            "finalPct": 88,
+            "classification": "strong_contextual",
+            "entity": "related",
+            "sees": "A band is performing on a stage in front of a crowd, with stage lights shining down on them.",
+            "sawPicture": true
+          },
+          {
+            "id": "pixabay:236098",
+            "provider": "pixabay",
+            "assetId": "236098",
+            "title": "id-236098",
+            "sourceUrl": "https://pixabay.com/videos/id-236098/",
+            "picture": "https://cdn.pixabay.com/video/2024/10/12/236098_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "party",
+              "crowd",
+              "dancers",
+              "dance",
+              "lights",
+              "garba",
+              "dandiya",
+              "india"
+            ],
+            "px": 8294400,
+            "duration": 16,
+            "finalPct": 50,
+            "classification": "weak_contextual",
+            "entity": "none",
+            "sees": "A crowd of people is gathered in a dark area, illuminated by blue and purple lights.",
+            "sawPicture": true
+          },
+          {
+            "id": "pixabay:147800",
+            "provider": "pixabay",
+            "assetId": "147800",
+            "title": "id-147800",
+            "sourceUrl": "https://pixabay.com/videos/id-147800/",
+            "picture": "https://cdn.pixabay.com/video/2023/01/24/147800-792421768_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "trumphet",
+              "music",
+              "band",
+              "concert",
+              "performance",
+              "stage"
+            ],
+            "px": 2073600,
+            "duration": 12,
+            "finalPct": 41,
+            "classification": "weak_contextual",
+            "entity": "none",
+            "sees": "A man is playing a trumpet in front of a crowd, with a person in the background playing a guitar.",
+            "sawPicture": true
+          },
+          {
+            "id": "pixabay:55242",
+            "provider": "pixabay",
+            "assetId": "55242",
+            "title": "id-55242",
+            "sourceUrl": "https://pixabay.com/videos/id-55242/",
+            "picture": "https://cdn.pixabay.com/video/2020/11/07/55242-499593992_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "lights",
+              "show",
+              "music",
+              "dance",
+              "party",
+              "stage",
+              "concert",
+              "performance"
+            ],
+            "px": 2073600,
+            "duration": 46,
+            "finalPct": 0,
+            "classification": "generic_filler",
+            "entity": "none",
+            "sees": "The image shows a blue film strip with a grid of small, colorful squares on a black background.",
+            "sawPicture": true
+          }
+        ]
+      },
+      "beat": {
+        "id": 1,
+        "name": "Blue Man Group — the arena tour",
+        "narration": "In two thousand three, the Blue Man Group embarked on their How to Be a Megastar national arena tour, a performance that would showcase the power of creativity.",
+        "intent": {
+          "concept": "The Blue Man Group performs on stage",
+          "subject": "performers on a stage",
+          "action": "playing to a packed arena",
+          "environment": "a darkened arena under coloured lights",
+          "requiredElements": [
+            "a stage",
+            "an audience"
+          ],
+          "avoid": [
+            "animals",
+            "empty landscape",
+            "a person sitting alone"
+          ],
+          "specificity": "specific_person"
+        },
+        "queries": [
+          "blue man group performing",
+          "concert stage lights crowd"
+        ],
+        "historical": "swans on water"
+      }
+    },
+    {
+      "poolSize": 30,
+      "terms": [
+        "blue",
+        "man",
+        "group",
+        "interacts",
+        "audience",
+        "participation",
+        "live",
+        "show",
+        "crowd",
+        "performance"
+      ],
+      "retrievalMs": 2492,
+      "metadataMs": 1,
+      "A": {
+        "id": "pixabay:35241",
+        "provider": "pixabay",
+        "assetId": "35241",
+        "title": "id-35241",
+        "sourceUrl": "https://pixabay.com/videos/id-35241/",
+        "picture": "https://cdn.pixabay.com/video/2020/04/07/35241-407130670_tiny.jpg",
+        "providerFrames": 0,
+        "tags": [
+          "fire show",
+          "night fire show",
+          "fire performance",
+          "fire",
+          "night",
+          "show",
+          "celebration",
+          "festival"
+        ],
+        "px": 2073600,
+        "duration": 11
+      },
+      "B": {
+        "id": "pixabay:1630",
+        "provider": "pixabay",
+        "assetId": "1630",
+        "title": "id-1630",
+        "sourceUrl": "https://pixabay.com/videos/id-1630/",
+        "picture": "https://cdn.pixabay.com/video/2015/12/11/1630-148614385_tiny.jpg",
+        "providerFrames": 0,
+        "tags": [
+          "concert",
+          "light effects",
+          "cheering",
+          "audience",
+          "light beams",
+          "people",
+          "crowd",
+          "happy"
+        ],
+        "px": 2073600,
+        "duration": 15,
+        "metaPct": 60
+      },
+      "candidates": [
+        {
+          "id": "pixabay:1630",
+          "provider": "pixabay",
+          "assetId": "1630",
+          "title": "id-1630",
+          "sourceUrl": "https://pixabay.com/videos/id-1630/",
+          "picture": "https://cdn.pixabay.com/video/2015/12/11/1630-148614385_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "concert",
+            "light effects",
+            "cheering",
+            "audience",
+            "light beams",
+            "people",
+            "crowd",
+            "happy"
+          ],
+          "px": 2073600,
+          "duration": 15,
+          "metadataRank": 1,
+          "metaPct": 60
+        },
+        {
+          "id": "pixabay:35241",
+          "provider": "pixabay",
+          "assetId": "35241",
+          "title": "id-35241",
+          "sourceUrl": "https://pixabay.com/videos/id-35241/",
+          "picture": "https://cdn.pixabay.com/video/2020/04/07/35241-407130670_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "fire show",
+            "night fire show",
+            "fire performance",
+            "fire",
+            "night",
+            "show",
+            "celebration",
+            "festival"
+          ],
+          "px": 2073600,
+          "duration": 11,
+          "metadataRank": 2,
+          "metaPct": 50
+        },
+        {
+          "id": "pixabay:3627",
+          "provider": "pixabay",
+          "assetId": "3627",
+          "title": "id-3627",
+          "sourceUrl": "https://pixabay.com/videos/id-3627/",
+          "picture": "https://cdn.pixabay.com/video/2016/06/27/3627-172488393_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "shoes",
+            "walking",
+            "feet",
+            "legs",
+            "many",
+            "crowd",
+            "people",
+            "city"
+          ],
+          "px": 2073600,
+          "duration": 16,
+          "metadataRank": 3,
+          "metaPct": 20
+        },
+        {
+          "id": "pixabay:36510",
+          "provider": "pixabay",
+          "assetId": "36510",
+          "title": "id-36510",
+          "sourceUrl": "https://pixabay.com/videos/id-36510/",
+          "picture": "https://cdn.pixabay.com/video/2020/04/18/36510-411342239_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "airport",
+            "people",
+            "crowd",
+            "busy",
+            "live wallpaper",
+            "welcome",
+            "hello"
+          ],
+          "px": 2073600,
+          "duration": 11,
+          "metadataRank": 4,
+          "metaPct": 20
+        },
+        {
+          "id": "pixabay:23258",
+          "provider": "pixabay",
+          "assetId": "23258",
+          "title": "id-23258",
+          "sourceUrl": "https://pixabay.com/videos/id-23258/",
+          "picture": "https://cdn.pixabay.com/video/2019/05/03/23258-334228230_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "seoul",
+            "people",
+            "night",
+            "city",
+            "illuminated",
+            "urban",
+            "market",
+            "tourism"
+          ],
+          "px": 8294400,
+          "duration": 18,
+          "metadataRank": 5,
+          "metaPct": 20
+        },
+        {
+          "id": "pexels:13594695",
+          "provider": "pexels",
+          "assetId": "13594695",
+          "title": "performance-in-city-at-night-13594695",
+          "sourceUrl": "https://www.pexels.com/video/performance-in-city-at-night-13594695/",
+          "picture": "https://images.pexels.com/videos/13594695/pexels-photo-13594695.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+          "providerFrames": 15,
+          "tags": [],
+          "px": 921600,
+          "duration": 15,
+          "metadataRank": 6,
+          "metaPct": 20
+        },
+        {
+          "id": "pexels:37944732",
+          "provider": "pexels",
+          "assetId": "37944732",
+          "title": "vibrant-live-concert-with-engaged-audience-37944732",
+          "sourceUrl": "https://www.pexels.com/video/vibrant-live-concert-with-engaged-audience-37944732/",
+          "picture": "https://images.pexels.com/videos/37944732/adoration-christian-concert-church-lifted-hands-37944732.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+          "providerFrames": 10,
+          "tags": [],
+          "px": 921600,
+          "duration": 11,
+          "metadataRank": 7,
+          "metaPct": 20
+        },
+        {
+          "id": "pexels:30334108",
+          "provider": "pexels",
+          "assetId": "30334108",
+          "title": "lively-night-concert-audience-cheering-30334108",
+          "sourceUrl": "https://www.pexels.com/video/lively-night-concert-audience-cheering-30334108/",
+          "picture": "https://images.pexels.com/videos/30334108/pexels-photo-30334108.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+          "providerFrames": 8,
+          "tags": [],
+          "px": 921600,
+          "duration": 9,
+          "metadataRank": 8,
+          "metaPct": 20
+        }
+      ],
+      "vision": {
+        "ran": true,
+        "verdict": "SELECTED",
+        "confidence": "MEDIUM",
+        "floor": 72,
+        "why": "",
+        "tookMs": 25133,
+        "timing": {
+          "visionMs": 10535,
+          "judgeMs": 14597
+        },
+        "described": 4,
+        "legible": 4,
+        "C": {
+          "id": "pixabay:1630",
+          "provider": "pixabay",
+          "assetId": "1630",
+          "title": "id-1630",
+          "sourceUrl": "https://pixabay.com/videos/id-1630/",
+          "picture": "https://cdn.pixabay.com/video/2015/12/11/1630-148614385_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "concert",
+            "light effects",
+            "cheering",
+            "audience",
+            "light beams",
+            "people",
+            "crowd",
+            "happy"
+          ],
+          "px": 2073600,
+          "duration": 15,
+          "finalPct": 82,
+          "classification": "strong_contextual",
+          "entity": "contextual",
+          "sees": "A crowd of people are watching a band performing on a stage with bright lights."
+        },
+        "judged": [
+          {
+            "id": "pixabay:1630",
+            "provider": "pixabay",
+            "assetId": "1630",
+            "title": "id-1630",
+            "sourceUrl": "https://pixabay.com/videos/id-1630/",
+            "picture": "https://cdn.pixabay.com/video/2015/12/11/1630-148614385_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "concert",
+              "light effects",
+              "cheering",
+              "audience",
+              "light beams",
+              "people",
+              "crowd",
+              "happy"
+            ],
+            "px": 2073600,
+            "duration": 15,
+            "finalPct": 82,
+            "classification": "strong_contextual",
+            "entity": "contextual",
+            "sees": "A crowd of people are watching a band performing on a stage with bright lights.",
+            "sawPicture": true
+          },
+          {
+            "id": "pixabay:35241",
+            "provider": "pixabay",
+            "assetId": "35241",
+            "title": "id-35241",
+            "sourceUrl": "https://pixabay.com/videos/id-35241/",
+            "picture": "https://cdn.pixabay.com/video/2020/04/07/35241-407130670_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "fire show",
+              "night fire show",
+              "fire performance",
+              "fire",
+              "night",
+              "show",
+              "celebration",
+              "festival"
+            ],
+            "px": 2073600,
+            "duration": 11,
+            "finalPct": 22,
+            "classification": "weak_contextual",
+            "entity": "none",
+            "sees": "The image shows two people performing in front of a crowd, with one person holding a flaming object and the other person holding a similar object, set against a backdrop ",
+            "sawPicture": true
+          },
+          {
+            "id": "pixabay:3627",
+            "provider": "pixabay",
+            "assetId": "3627",
+            "title": "id-3627",
+            "sourceUrl": "https://pixabay.com/videos/id-3627/",
+            "picture": "https://cdn.pixabay.com/video/2016/06/27/3627-172488393_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "shoes",
+              "walking",
+              "feet",
+              "legs",
+              "many",
+              "crowd",
+              "people",
+              "city"
+            ],
+            "px": 2073600,
+            "duration": 16,
+            "finalPct": 0,
+            "classification": "generic_filler",
+            "entity": "none",
+            "sees": "The image shows the feet of several people standing on a sidewalk, wearing sandals and sneakers.",
+            "sawPicture": true
+          },
+          {
+            "id": "pixabay:36510",
+            "provider": "pixabay",
+            "assetId": "36510",
+            "title": "id-36510",
+            "sourceUrl": "https://pixabay.com/videos/id-36510/",
+            "picture": "https://cdn.pixabay.com/video/2020/04/18/36510-411342239_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "airport",
+              "people",
+              "crowd",
+              "busy",
+              "live wallpaper",
+              "welcome",
+              "hello"
+            ],
+            "px": 2073600,
+            "duration": 11,
+            "finalPct": 0,
+            "classification": "generic_filler",
+            "entity": "none",
+            "sees": "A group of people are walking down a tiled hallway with a tiled floor and a tiled ceiling.",
+            "sawPicture": true
+          }
+        ]
+      },
+      "beat": {
+        "id": 2,
+        "name": "Blue Man Group — interacting with the audience",
+        "narration": "The Blue Man Group's interactive shows, with their emphasis on participation and improvisation, demonstrate the importance of thinking on one's feet.",
+        "intent": {
+          "concept": "The Blue Man Group interacts with the audience",
+          "subject": "a performer and a crowd",
+          "action": "audience taking part in a live show",
+          "environment": "a theatre or arena",
+          "requiredElements": [
+            "people watching or taking part"
+          ],
+          "avoid": [
+            "animals",
+            "empty scenery"
+          ],
+          "specificity": "specific_person"
+        },
+        "queries": [
+          "audience participation live show",
+          "crowd at a performance"
+        ],
+        "historical": "swans on water (again)"
+      }
+    },
+    {
+      "poolSize": 31,
+      "terms": [
+        "student",
+        "participates",
+        "pisa",
+        "assessment",
+        "taking",
+        "exam",
+        "classroom",
+        "desks",
+        "writing"
+      ],
+      "retrievalMs": 1400,
+      "metadataMs": 1,
+      "A": {
+        "id": "pixabay:43459",
+        "provider": "pixabay",
+        "assetId": "43459",
+        "title": "id-43459",
+        "sourceUrl": "https://pixabay.com/videos/id-43459/",
+        "picture": "https://cdn.pixabay.com/video/2020/06/30/43459-436106182_tiny.jpg",
+        "providerFrames": 0,
+        "tags": [
+          "girl",
+          "writing",
+          "student",
+          "female",
+          "book",
+          "school",
+          "person",
+          "woman"
+        ],
+        "px": 8294400,
+        "duration": 9
+      },
+      "B": {
+        "id": "pexels:8196796",
+        "provider": "pexels",
+        "assetId": "8196796",
+        "title": "a-student-taking-a-written-exam-8196796",
+        "sourceUrl": "https://www.pexels.com/video/a-student-taking-a-written-exam-8196796/",
+        "picture": "https://images.pexels.com/videos/8196796/pexels-photo-8196796.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+        "providerFrames": 15,
+        "tags": [],
+        "px": 921600,
+        "duration": 10,
+        "metaPct": 33
+      },
+      "candidates": [
+        {
+          "id": "pexels:8196796",
+          "provider": "pexels",
+          "assetId": "8196796",
+          "title": "a-student-taking-a-written-exam-8196796",
+          "sourceUrl": "https://www.pexels.com/video/a-student-taking-a-written-exam-8196796/",
+          "picture": "https://images.pexels.com/videos/8196796/pexels-photo-8196796.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+          "providerFrames": 15,
+          "tags": [],
+          "px": 921600,
+          "duration": 10,
+          "metadataRank": 1,
+          "metaPct": 33
+        },
+        {
+          "id": "pixabay:43459",
+          "provider": "pixabay",
+          "assetId": "43459",
+          "title": "id-43459",
+          "sourceUrl": "https://pixabay.com/videos/id-43459/",
+          "picture": "https://cdn.pixabay.com/video/2020/06/30/43459-436106182_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "girl",
+            "writing",
+            "student",
+            "female",
+            "book",
+            "school",
+            "person",
+            "woman"
+          ],
+          "px": 8294400,
+          "duration": 9,
+          "metadataRank": 2,
+          "metaPct": 22
+        },
+        {
+          "id": "pixabay:215475",
+          "provider": "pixabay",
+          "assetId": "215475",
+          "title": "id-215475",
+          "sourceUrl": "https://pixabay.com/videos/id-215475/",
+          "picture": "https://cdn.pixabay.com/video/2024/06/06/215475_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "students",
+            "class",
+            "classroom",
+            "education",
+            "school",
+            "study",
+            "knowledge",
+            "learn"
+          ],
+          "px": 8294400,
+          "duration": 10,
+          "metadataRank": 3,
+          "metaPct": 22
+        },
+        {
+          "id": "pixabay:215471",
+          "provider": "pixabay",
+          "assetId": "215471",
+          "title": "id-215471",
+          "sourceUrl": "https://pixabay.com/videos/id-215471/",
+          "picture": "https://cdn.pixabay.com/video/2024/06/06/215471_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "students",
+            "classroom",
+            "education",
+            "school",
+            "learning",
+            "children",
+            "books"
+          ],
+          "px": 8294400,
+          "duration": 9,
+          "metadataRank": 4,
+          "metaPct": 22
+        },
+        {
+          "id": "pexels:6671806",
+          "provider": "pexels",
+          "assetId": "6671806",
+          "title": "students-sitting-while-in-the-classroom-6671806",
+          "sourceUrl": "https://www.pexels.com/video/students-sitting-while-in-the-classroom-6671806/",
+          "picture": "https://images.pexels.com/videos/6671806/pexels-photo-6671806.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+          "providerFrames": 15,
+          "tags": [],
+          "px": 921600,
+          "duration": 21,
+          "metadataRank": 5,
+          "metaPct": 22
+        },
+        {
+          "id": "pexels:6672285",
+          "provider": "pexels",
+          "assetId": "6672285",
+          "title": "female-student-sitting-in-classroom-6672285",
+          "sourceUrl": "https://www.pexels.com/video/female-student-sitting-in-classroom-6672285/",
+          "picture": "https://images.pexels.com/videos/6672285/pexels-photo-6672285.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+          "providerFrames": 15,
+          "tags": [],
+          "px": 921600,
+          "duration": 10,
+          "metadataRank": 6,
+          "metaPct": 22
+        },
+        {
+          "id": "pexels:6672245",
+          "provider": "pexels",
+          "assetId": "6672245",
+          "title": "students-having-examination-6672245",
+          "sourceUrl": "https://www.pexels.com/video/students-having-examination-6672245/",
+          "picture": "https://images.pexels.com/videos/6672245/pexels-photo-6672245.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+          "providerFrames": 15,
+          "tags": [],
+          "px": 921600,
+          "duration": 11,
+          "metadataRank": 7,
+          "metaPct": 22
+        },
+        {
+          "id": "pexels:6671847",
+          "provider": "pexels",
+          "assetId": "6671847",
+          "title": "students-having-their-examination-6671847",
+          "sourceUrl": "https://www.pexels.com/video/students-having-their-examination-6671847/",
+          "picture": "https://images.pexels.com/videos/6671847/pexels-photo-6671847.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+          "providerFrames": 15,
+          "tags": [],
+          "px": 921600,
+          "duration": 13,
+          "metadataRank": 8,
+          "metaPct": 22
+        }
+      ],
+      "vision": {
+        "ran": false,
+        "verdict": "NOT_EVALUATED",
+        "confidence": null,
+        "floor": null,
+        "why": "NVIDIA NIM Error (503): {\"error\":{\"message\":\"ResourceExhausted: Worker local total request limit reached (16/16)\",\"type\":\"Service Unavailable\",\"code\":503}}",
+        "tookMs": 25680,
+        "timing": null,
+        "described": 0,
+        "legible": 0,
+        "C": null,
+        "judged": []
+      },
+      "beat": {
+        "id": 3,
+        "name": "PISA — the assessment",
+        "narration": "This is echoed in the results of the Programme for International Student Assessment, a worldwide educational assessment that evaluates the knowledge and skills of students.",
+        "intent": {
+          "concept": "A student participates in the PISA assessment",
+          "subject": "a school student",
+          "action": "working through a written exam",
+          "environment": "a classroom or exam hall",
+          "requiredElements": [
+            "a student",
+            "writing or a desk"
+          ],
+          "avoid": [
+            "animals",
+            "empty landscape",
+            "nightlife"
+          ],
+          "specificity": "general_event"
+        },
+        "queries": [
+          "student taking an exam",
+          "classroom desks writing"
+        ],
+        "historical": "a student reading at a desk"
+      }
+    },
+    {
+      "poolSize": 32,
+      "terms": [
+        "person",
+        "thinks",
+        "deeply",
+        "path",
+        "success",
+        "thinking",
+        "desk",
+        "business",
+        "planning",
+        "office"
+      ],
+      "retrievalMs": 3967,
+      "metadataMs": 1,
+      "A": {
+        "id": "pixabay:126558",
+        "provider": "pixabay",
+        "assetId": "126558",
+        "title": "id-126558",
+        "sourceUrl": "https://pixabay.com/videos/id-126558/",
+        "picture": "https://cdn.pixabay.com/video/2022/08/03/126558-736345296_tiny.jpg",
+        "providerFrames": 0,
+        "tags": [
+          "man",
+          "person",
+          "reflection",
+          "thinking",
+          "think",
+          "lifestyle"
+        ],
+        "px": 2073600,
+        "duration": 12
+      },
+      "B": {
+        "id": "pixabay:80314",
+        "provider": "pixabay",
+        "assetId": "80314",
+        "title": "id-80314",
+        "sourceUrl": "https://pixabay.com/videos/id-80314/",
+        "picture": "https://cdn.pixabay.com/video/2021/07/05/80314-572395729_tiny.jpg",
+        "providerFrames": 0,
+        "tags": [
+          "office",
+          "desk",
+          "team work",
+          "insurance",
+          "writing",
+          "facts",
+          "thinking"
+        ],
+        "px": 2073600,
+        "duration": 10,
+        "metaPct": 40
+      },
+      "candidates": [
+        {
+          "id": "pixabay:80314",
+          "provider": "pixabay",
+          "assetId": "80314",
+          "title": "id-80314",
+          "sourceUrl": "https://pixabay.com/videos/id-80314/",
+          "picture": "https://cdn.pixabay.com/video/2021/07/05/80314-572395729_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "office",
+            "desk",
+            "team work",
+            "insurance",
+            "writing",
+            "facts",
+            "thinking"
+          ],
+          "px": 2073600,
+          "duration": 10,
+          "metadataRank": 1,
+          "metaPct": 40
+        },
+        {
+          "id": "pixabay:126558",
+          "provider": "pixabay",
+          "assetId": "126558",
+          "title": "id-126558",
+          "sourceUrl": "https://pixabay.com/videos/id-126558/",
+          "picture": "https://cdn.pixabay.com/video/2022/08/03/126558-736345296_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "man",
+            "person",
+            "reflection",
+            "thinking",
+            "think",
+            "lifestyle"
+          ],
+          "px": 2073600,
+          "duration": 12,
+          "metadataRank": 2,
+          "metaPct": 30
+        },
+        {
+          "id": "pixabay:126557",
+          "provider": "pixabay",
+          "assetId": "126557",
+          "title": "id-126557",
+          "sourceUrl": "https://pixabay.com/videos/id-126557/",
+          "picture": "https://cdn.pixabay.com/video/2022/08/03/126557-736345290_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "man",
+            "person",
+            "reflection",
+            "thinking",
+            "think",
+            "lifestyle"
+          ],
+          "px": 2073600,
+          "duration": 9,
+          "metadataRank": 3,
+          "metaPct": 30
+        },
+        {
+          "id": "pixabay:35590",
+          "provider": "pixabay",
+          "assetId": "35590",
+          "title": "id-35590",
+          "sourceUrl": "https://pixabay.com/videos/id-35590/",
+          "picture": "https://cdn.pixabay.com/video/2020/04/10/35590-407701452_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "thoughtful",
+            "person",
+            "thinking",
+            "male",
+            "head",
+            "calm",
+            "idea",
+            "alone"
+          ],
+          "px": 2073600,
+          "duration": 12,
+          "metadataRank": 4,
+          "metaPct": 30
+        },
+        {
+          "id": "pixabay:39890",
+          "provider": "pixabay",
+          "assetId": "39890",
+          "title": "id-39890",
+          "sourceUrl": "https://pixabay.com/videos/id-39890/",
+          "picture": "https://cdn.pixabay.com/video/2020/05/23/39890-423345734_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "office",
+            "people",
+            "business",
+            "work",
+            "team",
+            "human",
+            "corporate",
+            "the meeting"
+          ],
+          "px": 2073600,
+          "duration": 12,
+          "metadataRank": 5,
+          "metaPct": 30
+        },
+        {
+          "id": "pixabay:268230",
+          "provider": "pixabay",
+          "assetId": "268230",
+          "title": "id-268230",
+          "sourceUrl": "https://pixabay.com/videos/id-268230/",
+          "picture": "https://cdn.pixabay.com/video/2025/03/28/268230_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "business",
+            "office",
+            "computer",
+            "man",
+            "laptop",
+            "company",
+            "corporate",
+            "meeting"
+          ],
+          "px": 8294400,
+          "duration": 12,
+          "metadataRank": 6,
+          "metaPct": 30
+        },
+        {
+          "id": "pixabay:18398",
+          "provider": "pixabay",
+          "assetId": "18398",
+          "title": "id-18398",
+          "sourceUrl": "https://pixabay.com/videos/id-18398/",
+          "picture": "https://cdn.pixabay.com/video/2018/09/24/18398-291585357_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "board",
+            "chalk",
+            "feedback",
+            "review",
+            "study",
+            "school",
+            "university",
+            "training"
+          ],
+          "px": 2073600,
+          "duration": 17,
+          "metadataRank": 7,
+          "metaPct": 30
+        },
+        {
+          "id": "pixabay:2303",
+          "provider": "pixabay",
+          "assetId": "2303",
+          "title": "id-2303",
+          "sourceUrl": "https://pixabay.com/videos/id-2303/",
+          "picture": "https://cdn.pixabay.com/video/2016/02/29/2303-157183648_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "whiteboard",
+            "sketch",
+            "planning",
+            "business",
+            "strategy",
+            "plan",
+            "office",
+            "people"
+          ],
+          "px": 2073600,
+          "duration": 15,
+          "metadataRank": 8,
+          "metaPct": 30
+        }
+      ],
+      "vision": {
+        "ran": false,
+        "verdict": "NOT_EVALUATED",
+        "confidence": null,
+        "floor": null,
+        "why": "NVIDIA NIM Error (503): {\"error\":{\"message\":\"ResourceExhausted: Worker local total request limit reached (17/16)\",\"type\":\"Service Unavailable\",\"code\":503}}",
+        "tookMs": 29752,
+        "timing": null,
+        "described": 0,
+        "legible": 0,
+        "C": null,
+        "judged": []
+      },
+      "beat": {
+        "id": 4,
+        "name": "Business — the path to success",
+        "narration": "But what can we learn from these seemingly disparate sources about the path to success in business?",
+        "intent": {
+          "concept": "A person thinks deeply about the path to success",
+          "subject": "a person at work",
+          "action": "thinking or planning",
+          "environment": "an office or workplace",
+          "requiredElements": [
+            "a person",
+            "a sense of work or thought"
+          ],
+          "avoid": [
+            "a person standing beside a fence doing nothing",
+            "empty scenery"
+          ],
+          "specificity": "metaphorical"
+        },
+        "queries": [
+          "person thinking at desk",
+          "business planning office"
+        ],
+        "historical": "a man standing by a fence"
+      }
+    },
+    {
+      "poolSize": 32,
+      "terms": [
+        "spider",
+        "man",
+        "swings",
+        "city",
+        "swinging",
+        "rooftops",
+        "aerial"
+      ],
+      "retrievalMs": 1976,
+      "metadataMs": 1,
+      "A": {
+        "id": "pixabay:133077",
+        "provider": "pixabay",
+        "assetId": "133077",
+        "title": "id-133077",
+        "sourceUrl": "https://pixabay.com/videos/id-133077/",
+        "picture": "https://cdn.pixabay.com/video/2022/09/30/133077-755975090_tiny.jpg",
+        "providerFrames": 0,
+        "tags": [
+          "building",
+          "city building",
+          "skyline",
+          "aerial",
+          "top view",
+          "spider man",
+          "drone",
+          "city view"
+        ],
+        "px": 2073600,
+        "duration": 10
+      },
+      "B": {
+        "id": "pixabay:133077",
+        "provider": "pixabay",
+        "assetId": "133077",
+        "title": "id-133077",
+        "sourceUrl": "https://pixabay.com/videos/id-133077/",
+        "picture": "https://cdn.pixabay.com/video/2022/09/30/133077-755975090_tiny.jpg",
+        "providerFrames": 0,
+        "tags": [
+          "building",
+          "city building",
+          "skyline",
+          "aerial",
+          "top view",
+          "spider man",
+          "drone",
+          "city view"
+        ],
+        "px": 2073600,
+        "duration": 10,
+        "metaPct": 57
+      },
+      "candidates": [
+        {
+          "id": "pixabay:133077",
+          "provider": "pixabay",
+          "assetId": "133077",
+          "title": "id-133077",
+          "sourceUrl": "https://pixabay.com/videos/id-133077/",
+          "picture": "https://cdn.pixabay.com/video/2022/09/30/133077-755975090_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "building",
+            "city building",
+            "skyline",
+            "aerial",
+            "top view",
+            "spider man",
+            "drone",
+            "city view"
+          ],
+          "px": 2073600,
+          "duration": 10,
+          "metadataRank": 1,
+          "metaPct": 57
+        },
+        {
+          "id": "pixabay:23353",
+          "provider": "pixabay",
+          "assetId": "23353",
+          "title": "id-23353",
+          "sourceUrl": "https://pixabay.com/videos/id-23353/",
+          "picture": "https://cdn.pixabay.com/video/2019/05/06/23353-335511588_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "spring",
+            "park",
+            "swinging bench",
+            "seat",
+            "relax",
+            "romantic",
+            "nature",
+            "bloom"
+          ],
+          "px": 8294400,
+          "duration": 16,
+          "metadataRank": 2,
+          "metaPct": 43
+        },
+        {
+          "id": "pixabay:256482",
+          "provider": "pixabay",
+          "assetId": "256482",
+          "title": "id-256482",
+          "sourceUrl": "https://pixabay.com/videos/id-256482/",
+          "picture": "https://cdn.pixabay.com/video/2025/02/04/256482_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "cityscape",
+            "aerial view",
+            "urban landscape",
+            "skyline",
+            "droneshot",
+            "city skyline",
+            "panoramic view",
+            "metropolis"
+          ],
+          "px": 3686400,
+          "duration": 16,
+          "metadataRank": 3,
+          "metaPct": 43
+        },
+        {
+          "id": "pixabay:259482",
+          "provider": "pixabay",
+          "assetId": "259482",
+          "title": "id-259482",
+          "sourceUrl": "https://pixabay.com/videos/id-259482/",
+          "picture": "https://cdn.pixabay.com/video/2025/02/19/259482_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "white-stocked",
+            "poland",
+            "cityscape",
+            "aerial view",
+            "drone footage",
+            "urban landscape",
+            "skyline",
+            "architecture"
+          ],
+          "px": 3686400,
+          "duration": 17,
+          "metadataRank": 4,
+          "metaPct": 43
+        },
+        {
+          "id": "pixabay:259479",
+          "provider": "pixabay",
+          "assetId": "259479",
+          "title": "id-259479",
+          "sourceUrl": "https://pixabay.com/videos/id-259479/",
+          "picture": "https://cdn.pixabay.com/video/2025/02/19/259479_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "poland",
+            "cityscape",
+            "white-stocked",
+            "aerial view",
+            "drone footage",
+            "urban landscape",
+            "skyline",
+            "architecture"
+          ],
+          "px": 3686400,
+          "duration": 11,
+          "metadataRank": 5,
+          "metaPct": 43
+        },
+        {
+          "id": "pixabay:256480",
+          "provider": "pixabay",
+          "assetId": "256480",
+          "title": "id-256480",
+          "sourceUrl": "https://pixabay.com/videos/id-256480/",
+          "picture": "https://cdn.pixabay.com/video/2025/02/04/256480_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "cityscape",
+            "aerial view",
+            "urban landscape",
+            "skyline",
+            "droneshot",
+            "city skyline",
+            "panoramic view",
+            "metropolis"
+          ],
+          "px": 3686400,
+          "duration": 14,
+          "metadataRank": 6,
+          "metaPct": 43
+        },
+        {
+          "id": "pixabay:262762",
+          "provider": "pixabay",
+          "assetId": "262762",
+          "title": "id-262762",
+          "sourceUrl": "https://pixabay.com/videos/id-262762/",
+          "picture": "https://cdn.pixabay.com/video/2025/03/05/262762_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "bialystok",
+            "poland",
+            "city center",
+            "urban landscape",
+            "aerial view",
+            "drone shot",
+            "cityscape",
+            "architecture"
+          ],
+          "px": 8294400,
+          "duration": 14,
+          "metadataRank": 7,
+          "metaPct": 43
+        },
+        {
+          "id": "pixabay:159158",
+          "provider": "pixabay",
+          "assetId": "159158",
+          "title": "id-159158",
+          "sourceUrl": "https://pixabay.com/videos/id-159158/",
+          "picture": "https://cdn.pixabay.com/video/2023/04/16/159158-818219660_tiny.jpg",
+          "providerFrames": 0,
+          "tags": [
+            "chicken",
+            "hen",
+            "dance",
+            "fun",
+            "3d",
+            "cartoon",
+            "party",
+            "animal"
+          ],
+          "px": 2073600,
+          "duration": 10,
+          "metadataRank": 8,
+          "metaPct": 29
+        }
+      ],
+      "vision": {
+        "ran": true,
+        "verdict": "NO_SUITABLE_ASSET",
+        "confidence": "NO_SUITABLE_ASSET",
+        "floor": 72,
+        "why": "",
+        "tookMs": 26838,
+        "timing": {
+          "visionMs": 7564,
+          "judgeMs": 19274
+        },
+        "described": 4,
+        "legible": 4,
+        "C": null,
+        "judged": [
+          {
+            "id": "pixabay:133077",
+            "provider": "pixabay",
+            "assetId": "133077",
+            "title": "id-133077",
+            "sourceUrl": "https://pixabay.com/videos/id-133077/",
+            "picture": "https://cdn.pixabay.com/video/2022/09/30/133077-755975090_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "building",
+              "city building",
+              "skyline",
+              "aerial",
+              "top view",
+              "spider man",
+              "drone",
+              "city view"
+            ],
+            "px": 2073600,
+            "duration": 10,
+            "finalPct": 32,
+            "classification": "weak_contextual",
+            "entity": "none",
+            "sees": "A city street with a road, buildings, and a cloudy sky is visible.",
+            "sawPicture": true
+          },
+          {
+            "id": "pixabay:256482",
+            "provider": "pixabay",
+            "assetId": "256482",
+            "title": "id-256482",
+            "sourceUrl": "https://pixabay.com/videos/id-256482/",
+            "picture": "https://cdn.pixabay.com/video/2025/02/04/256482_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "cityscape",
+              "aerial view",
+              "urban landscape",
+              "skyline",
+              "droneshot",
+              "city skyline",
+              "panoramic view",
+              "metropolis"
+            ],
+            "px": 3686400,
+            "duration": 16,
+            "finalPct": 20,
+            "classification": "weak_contextual",
+            "entity": "none",
+            "sees": "A large red church with two spires is visible in the middle of a city, surrounded by buildings and trees.",
+            "sawPicture": true
+          },
+          {
+            "id": "pixabay:259482",
+            "provider": "pixabay",
+            "assetId": "259482",
+            "title": "id-259482",
+            "sourceUrl": "https://pixabay.com/videos/id-259482/",
+            "picture": "https://cdn.pixabay.com/video/2025/02/19/259482_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "white-stocked",
+              "poland",
+              "cityscape",
+              "aerial view",
+              "drone footage",
+              "urban landscape",
+              "skyline",
+              "architecture"
+            ],
+            "px": 3686400,
+            "duration": 17,
+            "finalPct": 20,
+            "classification": "weak_contextual",
+            "entity": "none",
+            "sees": "A city with a mix of residential and commercial buildings, surrounded by trees and roads, is visible in this image.",
+            "sawPicture": true
+          },
+          {
+            "id": "pixabay:23353",
+            "provider": "pixabay",
+            "assetId": "23353",
+            "title": "id-23353",
+            "sourceUrl": "https://pixabay.com/videos/id-23353/",
+            "picture": "https://cdn.pixabay.com/video/2019/05/06/23353-335511588_tiny.jpg",
+            "providerFrames": 0,
+            "tags": [
+              "spring",
+              "park",
+              "swinging bench",
+              "seat",
+              "relax",
+              "romantic",
+              "nature",
+              "bloom"
+            ],
+            "px": 8294400,
+            "duration": 16,
+            "finalPct": 0,
+            "classification": "generic_filler",
+            "entity": "none",
+            "sees": "A black swing hangs from two wooden poles in a park-like setting, surrounded by lush greenery and vibrant yellow flowers.",
+            "sawPicture": true
+          }
+        ]
+      },
+      "beat": {
+        "id": 5,
+        "name": "Spider-Man — swinging through the city",
+        "narration": "Meanwhile, the Spider-Man film series, with its emphasis on determination and hard work, shows how ordinary people can achieve extraordinary success.",
+        "intent": {
+          "concept": "Spider-Man swings through the city",
+          "subject": "a figure moving above the street",
+          "action": "airborne movement between buildings",
+          "environment": "a dense city",
+          "requiredElements": [
+            "an urban environment",
+            "a sense of height or movement"
+          ],
+          "avoid": [
+            "a static skyline with nothing happening",
+            "a swinging park bench",
+            "any swinging object that is not a person"
+          ],
+          "specificity": "specific_person"
+        },
+        "queries": [
+          "spider-man swinging",
+          "city rooftops aerial"
+        ],
+        "historical": "hands resting on an open book"
+      }
+    }
+  ]
+}
