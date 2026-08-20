@@ -59,6 +59,14 @@
     try { saved = JSON.parse(localStorage.getItem(CONTROL_PREFS) || '{}'); } catch { /* defaults */ }
     const pairs = [['strategy', stockStrategyEl], ['provider', stockProviderEl],
                    ['density', densityEl]];
+    // Pacing changed meaning: it used to be a target scene length in seconds
+    // (20/15/10) and is now the shortest shot worth cutting to (7/4/2.5).
+    // Without this a saved choice just fails the options check below and
+    // silently reverts to Balanced, quietly discarding the user's setting.
+    const PACING_MIGRATION = { '20': '7', '15': '4', '10': '2.5' };
+    if (saved.density && PACING_MIGRATION[saved.density]) {
+      saved.density = PACING_MIGRATION[saved.density];
+    }
     for (const [key, el] of pairs) {
       if (!el || !saved[key]) continue;
       // Only restore a value the control still offers — the options changed
@@ -347,14 +355,32 @@
     return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
   }
 
-  // Merge adjacent subtitle cues into narrative story beats so we generate one
-  // image per beat (~targetSec of runtime) instead of one per micro-caption.
-  // targetSec <= 0 means "no merging" (one image per subtitle line).
-  function mergeCuesToBeats(rawCues, targetSec) {
-    if (!targetSec || targetSec <= 0 || rawCues.length <= 1) {
+  // Merge adjacent subtitle cues into narrative story beats.
+  //
+  // The narration decides where the cuts fall, not a target length. minShotSec
+  // is a FLOOR, not a target: a beat closes at the first sentence end AFTER it
+  // has run that long, so its duration is whatever that sentence actually took.
+  // Segments of 5.8s and 11.3s become beats of 5.8s and 11.3s.
+  //
+  // This used to be a target of 15s (Balanced), which read as a floor of 15s
+  // because a beat could not close before reaching it. Every scene therefore
+  // came out at roughly the pacing value regardless of what was being said, and
+  // sentences were glued together to reach it. The cue timings were consulted
+  // only to decide when the floor had been crossed - never to place the cut.
+  //
+  // The floor exists because a two-second sentence cannot hold a shot: it would
+  // cost a stock lookup and a download for a cut the viewer barely registers.
+  // Everything downstream - the excerpt window, the acquisition target
+  // duration, the editor's clip length - reads the beat's timestamp, so this is
+  // the single place that decides scene length for archive and modern stock
+  // alike.
+  //
+  // minShotSec <= 0 means "no merging" (one image per subtitle line).
+  function mergeCuesToBeats(rawCues, minShotSec) {
+    if (!minShotSec || minShotSec <= 0 || rawCues.length <= 1) {
       return rawCues.map((c, i) => ({ ...c, index: i + 1 }));
     }
-    const WORD_BUDGET = Math.round(targetSec * 2.6); // ~2.6 spoken words/sec
+    const WORD_BUDGET = Math.round(minShotSec * 2.6); // ~2.6 spoken words/sec
     const MAX_BEATS = 80;
     const beats = [];
     let cur = null;
@@ -365,8 +391,12 @@
         cur = { startS: start, endS: end, startTs: c.timestamp, endTs: c.timestamp, words: c.text.split(/\s+/).length, text: c.text };
         continue;
       }
-      const spanBySec = start != null && cur.startS != null ? (end ?? start) - cur.startS : null;
-      const overBySec = spanBySec != null && spanBySec >= targetSec;
+      // How long the beat ALREADY is - not how long it would be with this cue
+      // added. Measuring the candidate's end meant a two-second sentence closed
+      // as its own beat whenever the next cue happened to reach past the floor,
+      // which is how a shot far shorter than the minimum still got made.
+      const spanBySec = cur.endS != null && cur.startS != null ? cur.endS - cur.startS : null;
+      const overBySec = spanBySec != null && spanBySec >= minShotSec;
       const overByWords = spanBySec == null && cur.words >= WORD_BUDGET;
 
       // Only break where a sentence ends.
@@ -386,8 +416,11 @@
       // separates a real sentence end from a breath.
       const endsSentence = /[A-Za-z0-9)"'\]]\s*[.!?]+["')\]]?\s*$/.test(cur.text.trim());
       // Do not hold a beat open forever chasing a full stop: some subtitle
-      // tracks have none at all.
-      const wayOver = spanBySec != null && spanBySec >= targetSec * 2.5;
+      // tracks have none at all. Deliberately generous, because this is the one
+      // path that cuts mid-sentence - the failure the sentence rule exists to
+      // prevent. A real sentence almost never runs 18s, so in practice this
+      // fires only for a track with no terminal punctuation anywhere.
+      const wayOver = spanBySec != null && spanBySec >= Math.max(minShotSec * 4, 18);
 
       if ((overBySec || overByWords) && (endsSentence || wayOver)) {
         beats.push(cur);
@@ -451,9 +484,10 @@
       ctx.script = script.content;
       if (!rawCues.length) rawCues = cuesFromScript(script.content);
     }
-    // Merge into story beats per the pacing control.
-    const targetSec = densityEl ? Number(densityEl.value) : 15;
-    cues = mergeCuesToBeats(rawCues, targetSec);
+    // Merge into story beats. The pacing control sets the SHORTEST shot worth
+    // cutting to; the narration decides every cut after that.
+    const minShotSec = densityEl ? Number(densityEl.value) : 4;
+    cues = mergeCuesToBeats(rawCues, minShotSec);
     if (cues.length) {
       ctx.subtitles = cues.map((c) => `#${c.index} [${c.timestamp}] ${c.text}`).join('\n');
     }

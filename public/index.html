@@ -781,12 +781,15 @@
                 </select>
               </div>
               <div class="control">
-                <label for="sb-density">Pacing</label>
+                <label for="sb-density">Shortest shot</label>
                 <select id="sb-density">
-                  <option value="20">Sparse</option>
-                  <option value="15" selected>Balanced</option>
-                  <option value="10">Dense</option>
+                  <option value="7">Sparse — 7s minimum</option>
+                  <option value="4" selected>Balanced — 4s minimum</option>
+                  <option value="2.5">Dense — 2.5s minimum</option>
                 </select>
+                <p class="field-note">The shortest shot worth cutting to. Every cut
+                  after that follows the narration, so a 5.8s sentence gets a 5.8s
+                  shot and an 11.3s one gets 11.3s.</p>
               </div>
               <!-- What may be published. Rendered by RightsUI so there is one
                    definition of the policies, not two. -->
