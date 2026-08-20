@@ -1599,6 +1599,46 @@
     g.restore();
   }
 
+  /**
+   * Keep the last frame this shot actually drew.
+   *
+   * A video clip that stalls mid-playback had nothing to fall back to: no
+   * still is written for a footage beat, and preparedFrame is only captured by
+   * the export preparation pass, never during preview. So every frame where the
+   * decoder was momentarily not ready fell through to drawUnavailable, and the
+   * preview strobed between the shot and a red "Visual unavailable" card.
+   *
+   * The reasoning was already written down one function away, for the export
+   * path: a held frame from the right source position is a far better failure
+   * than a marker, and costs one canvas per clip. It just was not applied where
+   * people actually watch.
+   *
+   * Throttled, because this runs per rendered frame and the hold only needs to
+   * be recent, not current.
+   */
+  const HELD_FRAME_INTERVAL_MS = 500;
+
+  function holdFrame(clip) {
+    const v = clip.video;
+    if (!v || !v.videoWidth || !v.videoHeight) return;
+    const now = Date.now();
+    if (clip.heldFrame && now - (clip.heldAt || 0) < HELD_FRAME_INTERVAL_MS) return;
+    try {
+      // One canvas per clip, reused: allocating per frame would churn memory
+      // through an export.
+      if (!clip.heldFrame || clip.heldFrame.width !== v.videoWidth
+          || clip.heldFrame.height !== v.videoHeight) {
+        clip.heldFrame = document.createElement('canvas');
+        clip.heldFrame.width = v.videoWidth;
+        clip.heldFrame.height = v.videoHeight;
+      }
+      clip.heldFrame.getContext('2d').drawImage(v, 0, 0);
+      clip.heldAt = now;
+    } catch (e) {
+      // A frame that will not copy is not worth failing a render over.
+    }
+  }
+
   function renderClipVisual(g, cw, ch, clip, localMs) {
     // An LTX clip already contains real camera motion, so the Ken Burns
     // fallback is not just unnecessary — it fights the footage and reads as a
@@ -1612,6 +1652,7 @@
         driveVideo(clip.video, localMs, clip);
         if (videoDrawable(clip.video)) {
           clip.fallbackUsed = null;
+          holdFrame(clip);
           const fit = fitFor(clip, clip.video, cw, ch);
           (fit === 'contain' ? drawContain : drawCover)(g, clip.video, cw, ch, 1, 0, 0);
           return;
@@ -1619,11 +1660,14 @@
       }
     }
 
-    // Prepared frame first: it is real footage from the correct source position,
-    // which a still from elsewhere in the project is not.
-    const still = clip.preparedFrame || clip.img || clip.fallbackImg;
+    // The held frame first: it is this shot's own footage, from the most recent
+    // moment it was drawable, so a stall reads as a held picture rather than a
+    // cut to something else. Then the prepared frame, which is real footage but
+    // from the shot's in-point rather than from where playback actually is.
+    const still = clip.heldFrame || clip.preparedFrame || clip.img || clip.fallbackImg;
     if (clip.video && still) {
-      clip.fallbackUsed = clip.preparedFrame === still ? 'prepared frame'
+      clip.fallbackUsed = clip.heldFrame === still ? 'held frame'
+        : clip.preparedFrame === still ? 'prepared frame'
         : (clip.img === still ? 'still image' : 'editorial graphic');
     }
     if (!still) {
@@ -1983,6 +2027,17 @@
       await idbPut(SB_DB, SB_STORE, key, f);
       clip.sceneIndex = key;
       clip.img = await loadImage(f);
+      // Retire the footage this replaces, and everything derived from it.
+      //
+      // renderClipVisual draws the video and never reaches clip.img while one
+      // is attached, so on a footage beat Replace appeared to do nothing at
+      // all. The held and prepared frames are copies of that same retired
+      // shot, so they would go on standing in for it during a stall.
+      clip.video = null;
+      clip.heldFrame = null;
+      clip.preparedFrame = null;
+      clip.stockAsset = null;
+      clip.excerpt = null;
       saveTimeline();
       renderTimeline();
       drawFrame(0);
