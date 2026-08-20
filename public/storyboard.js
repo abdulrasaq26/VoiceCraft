@@ -2085,19 +2085,26 @@
     // Storyboard does not sit on "checking…" waiting for an unrelated request.
     const mgr = window.AIManager;
     const brain = el('div', 'sb-signal ai-provider-status');
-    if (mgr && mgr.isQwenHealthy === true) {
+    const choice = mgr && mgr.providerChoice ? mgr.providerChoice() : 'auto';
+    if (choice !== 'auto') {
+      // Chosen in Settings. Nothing to discover, and nothing to wait for.
       brain.classList.add('ok');
-      brain.innerHTML = '🟢 Qwen3.8-27B — Primary';
+    } else if (mgr && mgr.isQwenHealthy === true) {
+      brain.classList.add('ok');
     } else if (mgr && mgr.isQwenHealthy === false) {
       brain.classList.add('warn');
-      brain.innerHTML = '🟡 NVIDIA NIM — Fallback';
     } else {
-      // Nothing has asked yet — ask once, and let updateUIStatus paint the
-      // answer into this element when it lands.
       brain.innerHTML = '○ Director — checking…';
-      if (mgr && mgr.checkHealth) mgr.checkHealth().catch(() => {});
     }
     host.appendChild(brain);
+    // Let the manager write the text, so this badge cannot disagree with the
+    // one in the header about which brain is in use — it painted its own copy
+    // from isQwenHealthy, which says nothing about a provider chosen by hand.
+    if (mgr && mgr.updateUIStatus) mgr.updateUIStatus();
+    // Only worth asking when the answer decides something.
+    if (choice === 'auto' && mgr && mgr.isQwenHealthy === null && mgr.checkHealth) {
+      mgr.checkHealth().catch(() => {});
+    }
 
     // Narration timing. `stale` is the one that matters: re-recorded audio
     // leaves timings describing something that no longer exists.

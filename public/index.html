@@ -1176,6 +1176,17 @@
       <p class="field-note">Only what this build actually uses. Qwen is the brain; NVIDIA NIM catches it when the tunnel is down.</p>
 
       <fieldset style="border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px; margin-bottom:15px;">
+        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">⚙️ Which brain</legend>
+        <p class="field-note" style="margin-top:0;">Automatic checks whether Qwen is up before every task, and falls back to NIM when it is not. Pick one directly to skip that check — the choice is then used for every task, and a failure is reported rather than quietly handed to the other one.</p>
+        <select id="set-director-provider" style="width:100%; padding:8px; border-radius:6px; background:#1e1e24; color:#fff; border:1px solid rgba(255,255,255,0.2);">
+          <option value="auto">Automatic — try Qwen, fall back to NIM</option>
+          <option value="qwen">Qwen only — never use NIM</option>
+          <option value="nim">NVIDIA NIM only — never contact Qwen</option>
+        </select>
+        <p id="director-provider-note" class="field-note" style="margin-bottom:0;"></p>
+      </fieldset>
+
+      <fieldset style="border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px; margin-bottom:15px;">
         <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🧠 Qwen Brain — Primary</legend>
         <p class="field-note" style="margin-top:0;">The ngrok URL from Stage 10 of the Kaggle notebook. It changes every time that session restarts, which is why it lives here rather than in <code>.env</code>.</p>
         <label for="set-qwen-endpoint">Endpoint URL</label>

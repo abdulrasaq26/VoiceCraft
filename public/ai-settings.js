@@ -21,6 +21,8 @@
   const nimTestResult = $('nim-test-result');
   const chatModelSel = $('set-chat-model');
   const btnRefreshModels = $('btn-refresh-models');
+  const providerSel = $('set-director-provider');
+  const providerNote = $('director-provider-note');
   const fishInput = $('set-fishaudio-endpoint');
   const btnTestFish = $('btn-test-fish');
   const fishTestResult = $('fish-test-result');
@@ -54,6 +56,10 @@
 
     if (nimInput) nimInput.value = (PM.getPoolState('nim')?.keys || []).join('\n');
     if (fishInput) fishInput.value = PM.getPoolState('fishaudio')?.endpoint || '';
+    if (providerSel && window.AIManager) {
+      providerSel.value = window.AIManager.providerChoice();
+      if (providerNote) providerNote.textContent = describeChoice(providerSel.value);
+    }
     if (pixabayInput) pixabayInput.value = (PM.getPoolState('pixabay')?.keys || []).join('\n');
     if (pexelsInput) pexelsInput.value = (PM.getPoolState('pexels')?.keys || []).join('\n');
     if (objectiveSel && AI && AI.objective) objectiveSel.value = AI.objective();
@@ -354,10 +360,30 @@
     }
   }
 
+
+  // Applied on change, not on Save.
+  //
+  // This is a mode switch rather than a credential: the point of picking a
+  // brain is to stop waiting on a health check, so leaving the old behaviour
+  // running until Save would be the one thing it must not do.
+  function describeChoice(v) {
+    if (v === 'qwen') return 'Every task goes to Qwen. NIM is never used, and a Qwen failure is reported instead of being handed over.';
+    if (v === 'nim') return 'Every task goes to NIM. Qwen is not contacted at all, so nothing waits on it.';
+    return 'Qwen is checked before each task and NIM takes over when it is unreachable.';
+  }
+
+  function applyProviderChoice() {
+    if (!providerSel || !window.AIManager) return;
+    const v = window.AIManager.setProviderChoice(providerSel.value);
+    providerSel.value = v;
+    if (providerNote) providerNote.textContent = describeChoice(v);
+  }
+
   if (btnTestQwen) btnTestQwen.addEventListener('click', testQwen);
   openBtn.addEventListener('click', openModal);
   if (btnTestNim) btnTestNim.addEventListener('click', testNim);
   if (btnTestFish) btnTestFish.addEventListener('click', testFish);
+  if (providerSel) providerSel.addEventListener('change', applyProviderChoice);
   if (saveBtn) saveBtn.addEventListener('click', save);
   modal.querySelectorAll('.close-modal, [data-close]').forEach((b) => b.addEventListener('click', closeModal));
   window.addEventListener('blvck:models-updated', populateModelDropdown);

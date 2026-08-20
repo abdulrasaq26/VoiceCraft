@@ -42,8 +42,20 @@ check('and it carries the class the manager paints',
       /id="mc-gateway-name"[^>]*class="[^"]*ai-provider-status/.test(html));
 
 console.log('--- three states, not two ---');
-const at = mgr.indexOf('updateUIStatus()');
-const fn = mgr.slice(at, at + 1400);
+// Taken by brace matching, not by slicing a fixed number of characters. The
+// fixed window was 1400 chars and silently stopped covering the function when
+// the pinned-provider branches were added — every match then failed for a
+// reason that had nothing to do with what is being asserted.
+const at = mgr.indexOf('    updateUIStatus() {');
+let depth = 0, started = false, fn = '';
+for (let i = at; i < mgr.length; i++) {
+  if (mgr[i] === '{') { depth++; started = true; }
+  else if (mgr[i] === '}') {
+    depth--;
+    if (started && depth === 0) { fn = mgr.slice(at, i + 1); break; }
+  }
+}
+check('the badge painter was found at all', fn.length > 200, fn.length);
 check('healthy reads Qwen primary',
       /isQwenHealthy === true/.test(fn) && /Qwen3\.8-27B — Primary/.test(fn));
 check('unhealthy reads NIM fallback',
@@ -52,6 +64,24 @@ check('unknown reads neither', /Checking…/.test(fn));
 check('unknown is not folded into failure',
       fn.indexOf('isQwenHealthy === false') < fn.indexOf('Checking…'),
       'the null branch must be distinct from the false branch');
+
+console.log('--- a chosen provider is not a verdict ---');
+// Picking NIM by hand and NIM being pressed into service after Qwen died look
+// identical on the badge unless this holds, and the second reports a failure
+// that never happened.
+check('a pinned provider reads as chosen', /— Selected/.test(fn));
+check('and is decided before the health state is consulted',
+      fn.indexOf("choice === 'qwen'") < fn.indexOf('isQwenHealthy === true')
+      && fn.indexOf("choice === 'nim'") < fn.indexOf('isQwenHealthy === true'),
+      'a stale health verdict must not win over an explicit choice');
+// Asserted against the exact string the badge ASSIGNS, not the bare word.
+// A previous form searched the raw source for 'Fallback' and matched it inside
+// the comment EXPLAINING why the pinned branches must not say it - an
+// assertion that failed on the very prose describing the behaviour it checked.
+const pinnedRegion = fn.slice(0, fn.indexOf('isQwenHealthy === true'));
+check('the pinned branches never paint the fallback label',
+      pinnedRegion.indexOf('NVIDIA NIM — Fallback') === -1,
+      pinnedRegion.slice(-140));
 
 console.log('--- the dead metric went with it ---');
 check('chatModel is no longer computed for the badge', !/chatModel/.test(routerCode),

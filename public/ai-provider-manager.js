@@ -2,6 +2,8 @@
 // Central unified AI abstraction. Routes all requests to Qwen (Primary) or NIM (Fallback).
 
 (() => {
+  const PROVIDER_CHOICE_LS = 'blvck:director_provider';
+
   'use strict';
 
   class AIProvider {
@@ -421,7 +423,42 @@
       this.lastRawResponseStr = '';
     }
 
+    /**
+     * Which brain to use: 'auto', 'qwen' or 'nim'.
+     *
+     * Auto discovers, which costs a health check before every request and, when
+     * Qwen is down, discovers the same thing again on the next one. Someone who
+     * already knows Qwen is asleep should not pay for that on every task, and
+     * should not have a run quietly change brains underneath them either.
+     */
+    providerChoice() {
+      try {
+        const v = localStorage.getItem(PROVIDER_CHOICE_LS);
+        return (v === 'qwen' || v === 'nim') ? v : 'auto';
+      } catch (e) {
+        return 'auto';
+      }
+    }
+
+    setProviderChoice(choice) {
+      const v = (choice === 'qwen' || choice === 'nim') ? choice : 'auto';
+      try { localStorage.setItem(PROVIDER_CHOICE_LS, v); } catch (e) { /* non-fatal */ }
+      // A pin makes the cached health verdict meaningless in both directions.
+      this.isQwenHealthy = null;
+      this.lastHealthCheck = 0;
+      this.updateUIStatus();
+      if (v === 'auto') this.checkHealth().catch(() => {});
+      return v;
+    }
+
     async checkHealth() {
+      // A pinned provider is not probed. Probing Qwen to decide nothing is the
+      // waiting this setting exists to remove.
+      const choice = this.providerChoice();
+      if (choice !== 'auto') {
+        this.updateUIStatus();
+        return choice === 'qwen';
+      }
       const now = Date.now();
       if (this.isQwenHealthy !== null && (now - this.lastHealthCheck < this.HEALTH_TTL)) {
         return this.isQwenHealthy;
@@ -437,7 +474,22 @@
     // race between two components with different ideas.
     updateUIStatus() {
       const statusEls = document.querySelectorAll('.ai-provider-status, #mc-gateway-name, #gateway-status');
+      const choice = this.providerChoice();
       statusEls.forEach(el => {
+        // A pinned provider reads as chosen, not as a verdict. "Fallback" on a
+        // deliberate NIM selection would report a failure that never happened.
+        if (choice === 'qwen') {
+          el.innerHTML = '🔵 Qwen3.8-27B — Selected';
+          el.title = 'Chosen in AI Settings. NIM will not be used.';
+          el.style.color = '#60a5fa';
+          return;
+        }
+        if (choice === 'nim') {
+          el.innerHTML = '🔵 NVIDIA NIM — Selected';
+          el.title = 'Chosen in AI Settings. Qwen is not contacted at all.';
+          el.style.color = '#60a5fa';
+          return;
+        }
         if (this.isQwenHealthy === true) {
           el.innerHTML = '🟢 Qwen3.8-27B — Primary';
           el.title = 'Connected to the Kaggle Qwen Director';
@@ -457,10 +509,18 @@
     }
 
     async getProvider() {
+      const choice = this.providerChoice();
+      if (choice === 'nim') return this.nim;
+      if (choice === 'qwen') return this.qwen;
       const healthy = await this.checkHealth();
       if (healthy) return this.qwen;
       console.warn('[AIProviderManager] Qwen is offline or unreachable. Falling back to NVIDIA NIM.');
       return this.nim;
+    }
+
+    /** Whether a failure may quietly become a different provider's problem. */
+    mayFallBack() {
+      return this.providerChoice() === 'auto';
     }
 
     async chat(promptOrMessages, options = {}) {
@@ -471,6 +531,10 @@
         this.lastRawResponseStr = res;
         return res;
       } catch (e) {
+        // A pinned provider does not get silently swapped. "Use what I picked"
+        // has to mean it even when the pick fails, or a run that looked like it
+        // used Qwen quietly came from NIM.
+        if (provider === this.qwen && !this.mayFallBack()) throw e;
         if (provider === this.qwen) {
           console.warn('[AIProviderManager] Qwen request failed, falling back to NIM', e);
           this.isQwenHealthy = false;
@@ -543,6 +607,7 @@
         const res = await provider.generateJSON(endpoint, payload, options);
         return res;
       } catch (e) {
+        if (provider === this.qwen && !this.mayFallBack()) throw e;
         if (provider === this.qwen) {
           console.warn('[AIProviderManager] Qwen generateJSON failed, falling back to NIM', e);
           this.isQwenHealthy = false;
