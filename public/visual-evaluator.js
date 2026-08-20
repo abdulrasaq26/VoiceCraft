@@ -101,6 +101,8 @@
   };
   const DEFAULT_FLOOR = 0.50;
 
+  const ENTITY_MATCH = ['exact', 'related', 'contextual', 'none', 'unknown'];
+
   const CLASS_RANK = {
     direct_illustration: 4,
     strong_contextual:   3,
@@ -296,6 +298,16 @@
       'For each, ask: if this were on screen while the narrator said that',
       'sentence, would the audience feel it illustrates what they are hearing?',
       '',
+      'Separately, say whether the clip shows the SPECIFIC thing the narration',
+      'names - a named person, act, film, event, place or product:',
+      '  exact       it is demonstrably that thing',
+      '  related     the same subject in a different instance',
+      '  contextual  not that thing, but the right world around it',
+      '  none        nothing to do with the named thing',
+      '  unknown     the narration names nothing specific',
+      'A concert is not the Blue Man Group and a figure in a costume is not',
+      'Spider-Man. Never infer an identity the picture does not establish.',
+      '',
       'Classify each honestly:',
       '  direct_illustration  it shows the thing being described',
       '  strong_contextual    not the thing, but real evidence of it',
@@ -309,9 +321,9 @@
       '',
       'Reply with ONLY a JSON array, one object per candidate, like this:',
       '[{"i":1,"subject":0.9,"action":0.8,"environment":0.7,"fit":0.85,'
-        + '"contradiction":0.0,"class":"direct_illustration"},',
+        + '"contradiction":0.0,"class":"direct_illustration","entity":"none"},',
       ' {"i":2,"subject":0.1,"action":0.0,"environment":0.3,"fit":0.05,'
-        + '"contradiction":0.0,"class":"generic_filler"}]'
+        + '"contradiction":0.0,"class":"generic_filler","entity":"none"}]'
     ].join(NL);
   }
 
@@ -341,7 +353,14 @@
         fit: num(row.fit),
         contradiction: num(row.contradiction),
         classification: Object.prototype.hasOwnProperty.call(CLASS_RANK, klass)
-          ? klass : 'weak_contextual'
+          ? klass : 'weak_contextual',
+        // Recorded, NOT scored. Whether a clip is the named thing and whether
+        // it serves the beat are different questions, and collapsing them is
+        // how generic concert footage gets reported as the Blue Man Group.
+        // Measurement first; it earns a place in the ranking only once the
+        // baseline shows it deserves one.
+        entity: ENTITY_MATCH.indexOf(String(row.entity || '').trim()) >= 0
+          ? String(row.entity).trim() : 'unknown'
       });
     }
     return out.size ? out : null;
@@ -406,8 +425,10 @@
       }
       return d;
     });
+    const visionMs = Date.now() - t0;
     if (dead) {
-      return { ran: false, verdict: 'FAILED', scored: [], tookMs: Date.now() - t0,
+      return { ran: false, verdict: 'FAILED', scored: [], tookMs: visionMs,
+               timing: { visionMs, judgeMs: 0 },
                why: 'the vision service is not answering - every candidate keeps its '
                   + 'metadata rank' };
     }
@@ -422,6 +443,7 @@
     }
 
     let scoreMap = null;
+    const tJudge = Date.now();
     try {
       const answer = await withDeadline(window.LLMAdapters.nvidiaNimChat({
         model: JUDGE_MODEL,
@@ -467,6 +489,12 @@
     return {
       ran: true,
       tookMs: Date.now() - t0,
+      // Split, because looking and judging are separately replaceable and
+      // separately expensive: one is N small image requests, the other is a
+      // single text call over their descriptions.
+      timing: { visionMs, judgeMs: Date.now() - tJudge },
+      described: described.length,
+      legible: seen.length,
       floor,
       scored,
       // The order acquire() should try, best first, rejects removed.
