@@ -388,7 +388,21 @@
         ? built
         : [built.system, built.user].filter(Boolean).join('\n\n');
 
-      const text = await this.generate(prompt, options);
+      // The budget has to fit the ANSWER, not the question.
+      //
+      // chat() defaults to 1024 tokens, and a storyboard batch is ten beats of
+      // JSON - index, timestamp, subtitle, camera, summary and prompt apiece.
+      // That does not fit, so the reply was cut off mid-object, arrived with no
+      // closing brace, and surfaced as 'Failed parsing JSON from NIM output' -
+      // which reads like the model wrote nonsense rather than like it was
+      // interrupted. The Qwen path has scaled its budget to the beat count all
+      // along; this one never did.
+      const items = (payload && (Array.isArray(payload.cues) ? payload.cues.length
+                               : Array.isArray(payload.scenes) ? payload.scenes.length : 0)) || 0;
+      const budget = options.max_tokens
+        || (items ? Math.min(16384, 1200 + items * 320) : 4096);
+
+      const text = await this.generate(prompt, Object.assign({}, options, { max_tokens: budget }));
       
       if (window.BlvckPrompts && window.BlvckPrompts.parse) {
         try { return window.BlvckPrompts.parse(endpoint, payload, text); }
@@ -404,7 +418,28 @@
           try { return JSON.parse(repaired); } catch (e2) {}
         }
       }
-      throw new Error('Failed parsing JSON from NIM output.');
+      // Say what actually happened, and carry the evidence.
+      //
+      // The bare message named no cause and kept no output, so a truncated
+      // reply, an empty one, and genuine nonsense were indistinguishable - and
+      // the raw-response button had nothing to show, because `raw` was never
+      // attached to the error the storyboard reads it from.
+      const finish = (window.LLMAdapters && window.LLMAdapters.lastNimFinish
+                      && window.LLMAdapters.lastNimFinish()) || '';
+      const usage = (window.LLMAdapters && window.LLMAdapters.lastNimUsage
+                     && window.LLMAdapters.lastNimUsage()) || null;
+      const used = usage && usage.completion_tokens ? ', used ' + usage.completion_tokens : '';
+      const why = finish === 'length'
+        ? 'NIM ran out of room and was cut off mid-answer (asked for ' + budget
+          + ' tokens' + used + '). Try a denser pacing so each batch is smaller.'
+        : !String(text || '').trim()
+          ? 'NIM returned an empty response.'
+          : 'NIM replied with something that is not JSON'
+            + (finish ? ' (stopped: ' + finish + ')' : '') + '.';
+      const err = new Error(why);
+      err.raw = text || '';
+      err.category = 'nim-output';
+      throw err;
     }
 
     async director(payload) {

@@ -131,7 +131,16 @@
       return fullText;
     } else {
       const json = await res.json();
-      return json.choices?.[0]?.message?.content || '';
+      // Why the model stopped, kept where the caller can ask.
+      //
+      // It was discarded, and it is the difference between "the model wrote
+      // something unparseable" and "the model was cut off mid-sentence because
+      // the token budget ran out". Those need opposite fixes, and without this
+      // both arrive as "Failed parsing JSON from NIM output."
+      const choice = (json.choices && json.choices[0]) || {};
+      window.LLMAdapters._lastNimFinish = choice.finish_reason || '';
+      window.LLMAdapters._lastNimUsage = json.usage || null;
+      return (choice.message && choice.message.content) || '';
     }
   }
 
@@ -249,6 +258,10 @@
     nvidiaNimChat,
     openRouterChat,
     ollamaChat,
-    openaiOauthChat
+    openaiOauthChat,
+    /** Why the last NIM completion stopped: 'stop', 'length', or ''. */
+    lastNimFinish: () => window.LLMAdapters._lastNimFinish || '',
+    /** Token counts for that completion, when the service reported them. */
+    lastNimUsage: () => window.LLMAdapters._lastNimUsage || null
   };
 })();
