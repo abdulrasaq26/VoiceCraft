@@ -129,7 +129,16 @@
     instructions: 'Instructions'
   };
   const LS_KEY = 'blvck-tts:storyboard';
-  const SCENE_BATCH = 10;
+  // Beats per Director request.
+  //
+  // Ten was one all-or-nothing call. Measured against the live service a
+  // ten-beat batch takes 60-85s, so a three-fold slowdown breaches the 240s
+  // bound and takes every earlier batch down with it. Five halves the work in
+  // flight, leaves headroom for a spike, and shows progress while it runs -
+  // at the cost of one extra round of queueing latency.
+  const SCENE_BATCH = 5;
+  // A transient failure is worth exactly one more ask. See the loop below.
+  const BATCH_ATTEMPTS = 2;
   const ASPECT = '16:9';
 
   // --- IndexedDB (storyboard images) -------------------------------------
@@ -739,18 +748,41 @@
       const totalBatches = Math.max(1, Math.ceil(cues.length / SCENE_BATCH));
       for (let i = 0; i < cues.length; i += SCENE_BATCH) {
         const batchNo = Math.floor(i / SCENE_BATCH) + 1;
-        setAnalyzing(true, totalBatches > 1
+        const label = totalBatches > 1
           ? `Reading the narration — part ${batchNo} of ${totalBatches}…`
-          : 'Reading the narration…');
+          : 'Reading the narration…';
+        setAnalyzing(true, label);
         const batch = cues.slice(i, i + SCENE_BATCH);
         const prior = scenes.slice(-3).map((s) => `${s.camera}: ${s.sceneSummary}`);
-        const res = await window.AIManager.generateJSON('/api/storyboard/scenes', {
-          bible,
-          cues: batch,
-          style: ctx.style,
-          instructions: ctx.instructions,
-          priorSummaries: prior
-        }, { onAttempt, task: 'storyboard' });
+
+        // One slow moment must not discard a run that is minutes old.
+        //
+        // Measured against the live service: the same ten-beat batch came back
+        // in 60s and in 83s, while a two-token request took 26s - almost all of
+        // it queueing behind other work. The 240s bound is generous against
+        // that, but a spike still breaches it, and losing every completed batch
+        // because the last one was unlucky is the wrong trade when asking again
+        // costs about a minute.
+        //
+        // Only for transient failures. A malformed or truncated reply fails the
+        // same way twice, so retrying it just doubles the wait before the same
+        // error.
+        let res = null;
+        for (let attempt = 1; attempt <= BATCH_ATTEMPTS && !res; attempt++) {
+          try {
+            res = await window.AIManager.generateJSON('/api/storyboard/scenes', {
+              bible,
+              cues: batch,
+              style: ctx.style,
+              instructions: ctx.instructions,
+              priorSummaries: prior
+            }, { onAttempt, task: 'storyboard' });
+          } catch (e) {
+            if (attempt >= BATCH_ATTEMPTS || !(e && e.transient)) throw e;
+            console.warn(`[Storyboard] batch ${batchNo} was too slow (${e.message}); asking again`);
+            setAnalyzing(true, `${label} the service was slow, asking again`);
+          }
+        }
         (res.scenes || []).forEach((s) => scenes.push({ ...s, status: 'pending', error: null }));
         renderScenes();
       }

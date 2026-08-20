@@ -72,10 +72,18 @@
       // origin — so that attempt fails as a NetworkError and replaces a clear
       // "took too long" with a misleading one.
       if (timedOut(e)) {
-        throw new Error(
+        const err = new Error(
           `NVIDIA NIM did not respond within ${Math.round(NIM_TIMEOUT_MS / 1000)}s. `
           + 'The service is slow or unavailable right now.'
         );
+        // Marked, so a caller can tell "too slow this time" from "wrong
+        // answer". Measured against the live service, the same batch came back
+        // in 60s and 83s while a two-token request took 26s - almost all of it
+        // queueing. A bound that trips on a spike like that is worth one more
+        // ask; a malformed reply is not.
+        err.category = 'timeout';
+        err.transient = true;
+        throw err;
       }
       console.warn('[NVIDIA NIM] Local proxy failed, attempting direct fetch:', e);
       res = await fetch(directEndpoint, withBudget({
