@@ -22,6 +22,8 @@
   const chatModelSel = $('set-chat-model');
   const btnRefreshModels = $('btn-refresh-models');
   const fishInput = $('set-fishaudio-endpoint');
+  const btnTestFish = $('btn-test-fish');
+  const fishTestResult = $('fish-test-result');
   const pixabayInput = $('set-pixabay-keys');
   const pexelsInput = $('set-pexels-keys');
   const objectiveSel = $('set-objective');
@@ -271,9 +273,91 @@
     });
   }
 
+
+  // Is Fish up, and can it MEASURE?
+  //
+  // Fish does two separate jobs, and only one of them is obvious when it
+  // breaks. If it cannot speak, the Voice stage fails loudly and immediately.
+  // If it can speak but has no /v1/align, nothing fails at all - the storyboard
+  // quietly plans against estimated timing and every scene cut lands slightly
+  // off the narration. That is the failure this button exists for, so it
+  // reports the two capabilities separately rather than as one green tick.
+  //
+  // Reads the field rather than storage, so an endpoint can be checked before
+  // it is saved - the ngrok URL changes every session and testing the value you
+  // are about to keep is the whole point.
+  async function testFish() {
+    if (!fishTestResult) return;
+    const raw = (fishInput ? fishInput.value : '').trim();
+    const endpoint = raw.replace(/\/+$/, '');
+    if (!endpoint) {
+      fishTestResult.textContent = 'Add an endpoint first.';
+      return;
+    }
+    if (!/^https?:\/\//i.test(endpoint)) {
+      fishTestResult.textContent = 'That does not look like a URL — it should start with https://';
+      return;
+    }
+
+    if (btnTestFish) btnTestFish.disabled = true;
+    fishTestResult.textContent = 'Checking…';
+
+    try {
+      // Through the app's own proxy, for the same reason the NIM test is: a
+      // browser cannot reach an ngrok origin directly, and a request that never
+      // leaves reports a network error rather than the truth about the server.
+      // /aether/status is also the exact call the sync engine makes to decide
+      // whether alignment is available, so this button and the pipeline are
+      // asking one question, not two that can disagree.
+      const res = await fetch('/api/proxy/fish/aether/status', {
+        headers: { 'x-fish-endpoint': endpoint },
+        signal: AbortSignal.timeout(20000)
+      });
+
+      if (!res.ok) {
+        fishTestResult.textContent = res.status === 404
+          ? 'Reached something, but it is not an AETHER Fish server (no /aether/status).'
+          : `Endpoint answered HTTP ${res.status}. Check the notebook is still running.`;
+        return;
+      }
+
+      let body = null;
+      try { body = JSON.parse(await res.text()); } catch (e) { body = null; }
+      if (!body || typeof body !== 'object') {
+        fishTestResult.textContent = 'Reached the endpoint, but its reply was not JSON — '
+          + 'this is usually an ngrok warning page rather than the server.';
+        return;
+      }
+
+      // Extra detail when the server offers it, never depended on.
+      const bits = [];
+      const voices = Array.isArray(body.voices) ? body.voices.length
+                   : (Number.isFinite(body.voiceCount) ? body.voiceCount : null);
+      if (voices != null) bits.push(`${voices} voice${voices === 1 ? '' : 's'}`);
+      if (body.model) bits.push(String(body.model));
+      const detail = bits.length ? ` (${bits.join(', ')})` : '';
+
+      if (body.alignment === true) {
+        fishTestResult.textContent = `Live — speech and forced alignment${detail}. `
+          + 'Scene cuts will follow the measured narration.';
+      } else {
+        fishTestResult.textContent = `Live for speech${detail}, but it reports no forced alignment. `
+          + 'Storyboards will fall back to estimated timing — update the notebook to a build with /v1/align.';
+      }
+    } catch (err) {
+      const why = (err && err.name === 'TimeoutError')
+        ? 'no answer within 20s — the notebook may be asleep or the URL stale'
+        : (err && err.message) || 'unreachable';
+      fishTestResult.textContent = `Could not reach it: ${why}.`;
+    } finally {
+      if (btnTestFish) btnTestFish.disabled = false;
+    }
+  }
+
   if (btnTestQwen) btnTestQwen.addEventListener('click', testQwen);
   openBtn.addEventListener('click', openModal);
   if (btnTestNim) btnTestNim.addEventListener('click', testNim);
+  if (btnTestFish) btnTestFish.addEventListener('click', testFish);
   if (saveBtn) saveBtn.addEventListener('click', save);
   modal.querySelectorAll('.close-modal, [data-close]').forEach((b) => b.addEventListener('click', closeModal));
   window.addEventListener('blvck:models-updated', populateModelDropdown);

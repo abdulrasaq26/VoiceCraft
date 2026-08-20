@@ -1210,9 +1210,18 @@
       </fieldset>
 
       <fieldset style="border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px; margin-bottom:15px;">
-        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🐟 Fish Speech — Voice</legend>
+        <legend style="padding:0 6px; font-weight:bold; color:var(--accent, #6366f1);">🐟 Fish Speech — Voice &amp; Timing</legend>
+        <p class="field-note" style="margin-top:0;">The ngrok URL from the Fish notebook. It changes every time that session restarts. Fish does two jobs here: it speaks the narration, and it measures where each word actually falls so scene cuts follow the voice.</p>
         <label for="set-fishaudio-endpoint">Endpoint (Colab / ngrok URL)</label>
-        <input id="set-fishaudio-endpoint" type="text" placeholder="https://..." />
+        <input id="set-fishaudio-endpoint" type="text" placeholder="https://..." style="margin-bottom:10px;" />
+        <!-- Reachable and "can measure timing" are two different claims. A
+             server that speaks perfectly but has no /v1/align leaves every
+             scene on estimated timing, and nothing else in the UI says so
+             until a storyboard has already been built. -->
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="btn-test-fish" class="btn ghost small" type="button">Test connection</button>
+          <span id="fish-test-result" class="field-note" style="margin:0;"></span>
+        </div>
       </fieldset>
 
       <fieldset style="border:1px solid rgba(255,255,255,0.2); padding:12px; border-radius:8px; margin-bottom:15px;">
