@@ -1,0 +1,719 @@
+{
+  "at": "2026-08-20T17:43:33.540Z",
+  "fractions": [
+    0.1,
+    0.3,
+    0.5,
+    0.7,
+    0.9
+  ],
+  "configs": {
+    "1": [
+      2
+    ],
+    "2": [
+      0,
+      4
+    ],
+    "3": [
+      0,
+      2,
+      4
+    ],
+    "5": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  "beats": [
+    {
+      "id": 5,
+      "name": "Spider-Man \u2014 swinging through the city",
+      "intent": "Spider-Man swings through the city",
+      "baseline": {
+        "verdict": "NO_SUITABLE_ASSET"
+      },
+      "describeMs": 98118,
+      "candidates": [
+        {
+          "id": "pixabay:133077",
+          "provider": "pixabay",
+          "tags": [
+            "building",
+            "city building",
+            "skyline",
+            "aerial",
+            "top view",
+            "spider man",
+            "drone",
+            "city view"
+          ],
+          "frameSource": "decoded",
+          "frames": [
+            {
+              "fraction": 0.1,
+              "at": 1,
+              "source": "decoded",
+              "sees": "The image shows a city street with buildings on either side, taken from the perspective of a vehicle traveling down the street.",
+              "error": null
+            },
+            {
+              "fraction": 0.3,
+              "at": 3,
+              "source": "decoded",
+              "sees": "A blurry city street with buildings on either side, featuring a road with a yellow line down the middle.",
+              "error": null
+            },
+            {
+              "fraction": 0.5,
+              "at": 5,
+              "source": "decoded",
+              "sees": "A city street with buildings on either side, viewed from the perspective of a vehicle traveling down the road.",
+              "error": null
+            },
+            {
+              "fraction": 0.7,
+              "at": 7,
+              "source": "decoded",
+              "sees": "A blurry view of a city street with buildings on either side, featuring a road with a yellow line down the middle.",
+              "error": null
+            },
+            {
+              "fraction": 0.9,
+              "at": 9,
+              "source": "decoded",
+              "sees": "A city street with buildings on either side is visible, with a road in the middle.",
+              "error": null
+            }
+          ]
+        },
+        {
+          "id": "pixabay:23353",
+          "provider": "pixabay",
+          "tags": [
+            "spring",
+            "park",
+            "swinging bench",
+            "seat",
+            "relax",
+            "romantic",
+            "nature",
+            "bloom"
+          ],
+          "frameSource": "decoded",
+          "frames": [
+            {
+              "fraction": 0.1,
+              "at": 1.56,
+              "source": "decoded",
+              "sees": "A black metal swing with a backrest is suspended from two wooden poles, situated in a park-like setting.",
+              "error": null
+            },
+            {
+              "fraction": 0.3,
+              "at": 4.69,
+              "source": "decoded",
+              "sees": "A swing is visible, suspended from two wooden posts.",
+              "error": null
+            },
+            {
+              "fraction": 0.5,
+              "at": 7.82,
+              "source": "decoded",
+              "sees": "A swing is visible, suspended from two chains attached to wooden posts, with a concrete platform beneath it.",
+              "error": null
+            },
+            {
+              "fraction": 0.7,
+              "at": 10.95,
+              "source": "decoded",
+              "sees": "A black swing hangs from two wooden posts, situated in a park-like setting.",
+              "error": null
+            },
+            {
+              "fraction": 0.9,
+              "at": 14.08,
+              "source": "decoded",
+              "sees": "A black swing hangs from two wooden poles in a park-like setting, with a body of water and trees in the background.",
+              "error": null
+            }
+          ]
+        },
+        {
+          "id": "pixabay:256482",
+          "provider": "pixabay",
+          "tags": [
+            "cityscape",
+            "aerial view",
+            "urban landscape",
+            "skyline",
+            "droneshot",
+            "city skyline",
+            "panoramic view",
+            "metropolis"
+          ],
+          "frameSource": "decoded",
+          "frames": [
+            {
+              "fraction": 0.1,
+              "at": 1.6,
+              "source": "decoded",
+              "sees": "A city with a large church and many buildings is visible.",
+              "error": null
+            },
+            {
+              "fraction": 0.3,
+              "at": 4.8,
+              "source": "decoded",
+              "sees": "A city with a large church in the center is visible.",
+              "error": null
+            },
+            {
+              "fraction": 0.5,
+              "at": 8,
+              "source": "decoded",
+              "sees": "A large red church with two spires is visible in the center of a city.",
+              "error": null
+            },
+            {
+              "fraction": 0.7,
+              "at": 11.2,
+              "source": "decoded",
+              "sees": "A large red church with two steeples is visible in the foreground, set against a backdrop of a cityscape with numerous buildings and a cloudy sky.",
+              "error": null
+            },
+            {
+              "fraction": 0.9,
+              "at": 14.4,
+              "source": "decoded",
+              "sees": "A large red brick church with two tall spires is visible in the foreground, set against a backdrop of a cityscape with numerous buildings and trees.",
+              "error": null
+            }
+          ]
+        },
+        {
+          "id": "pixabay:259482",
+          "provider": "pixabay",
+          "tags": [
+            "white-stocked",
+            "poland",
+            "cityscape",
+            "aerial view",
+            "drone footage",
+            "urban landscape",
+            "skyline",
+            "architecture"
+          ],
+          "frameSource": "decoded",
+          "frames": [
+            {
+              "fraction": 0.1,
+              "at": 1.72,
+              "source": "decoded",
+              "sees": "The image shows an aerial view of a city with a mix of residential and commercial buildings, featuring a road running through the center.",
+              "error": null
+            },
+            {
+              "fraction": 0.3,
+              "at": 5.16,
+              "source": "decoded",
+              "sees": "A city with a mix of buildings, trees, and roads is visible.",
+              "error": null
+            },
+            {
+              "fraction": 0.5,
+              "at": 8.6,
+              "source": "decoded",
+              "sees": "A city with a mix of residential and commercial buildings, surrounded by trees and green spaces, with a road running through it.",
+              "error": null
+            },
+            {
+              "fraction": 0.7,
+              "at": 12.04,
+              "source": "decoded",
+              "sees": "A city with a mix of buildings, trees, and roads is visible.",
+              "error": null
+            },
+            {
+              "fraction": 0.9,
+              "at": 15.48,
+              "source": "decoded",
+              "sees": "A city with buildings and trees is visible in this image.",
+              "error": null
+            }
+          ]
+        }
+      ],
+      "runs": {
+        "1": {
+          "verdict": "NO_SUITABLE_ASSET",
+          "floor": 72,
+          "judgeMs": 82608,
+          "selected": null,
+          "table": [
+            {
+              "id": "pixabay:133077",
+              "pct": 59,
+              "classification": "weak_contextual",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:259482",
+              "pct": 9,
+              "classification": "generic_filler",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:256482",
+              "pct": 6,
+              "classification": "generic_filler",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:23353",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            }
+          ]
+        },
+        "2": {
+          "verdict": "NOT_EVALUATED",
+          "why": "NVIDIA NIM did not respond within 240s. The service is slow or unavailable right now.",
+          "judgeMs": 240014
+        },
+        "3": {
+          "verdict": "NO_SUITABLE_ASSET",
+          "floor": 72,
+          "judgeMs": 47802,
+          "selected": null,
+          "table": [
+            {
+              "id": "pixabay:133077",
+              "pct": 34,
+              "classification": "weak_contextual",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:259482",
+              "pct": 31,
+              "classification": "weak_contextual",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:256482",
+              "pct": 22,
+              "classification": "weak_contextual",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:23353",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            }
+          ]
+        },
+        "5": {
+          "verdict": "NO_SUITABLE_ASSET",
+          "floor": 72,
+          "judgeMs": 36385,
+          "selected": null,
+          "table": [
+            {
+              "id": "pixabay:133077",
+              "pct": 34,
+              "classification": "weak_contextual",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:259482",
+              "pct": 24,
+              "classification": "weak_contextual",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:256482",
+              "pct": 21,
+              "classification": "weak_contextual",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:23353",
+              "pct": 0,
+              "classification": "contradictory",
+              "entity": "none"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Blue Man Group \u2014 interacting with the audience",
+      "intent": "The Blue Man Group interacts with the audience",
+      "baseline": {
+        "verdict": "NOT_EVALUATED"
+      },
+      "describeMs": 274071,
+      "candidates": [
+        {
+          "id": "pixabay:1630",
+          "provider": "pixabay",
+          "tags": [
+            "concert",
+            "light effects",
+            "cheering",
+            "audience",
+            "light beams",
+            "people",
+            "crowd",
+            "happy"
+          ],
+          "frameSource": "decoded",
+          "frames": [
+            {
+              "fraction": 0.1,
+              "at": 1.49,
+              "source": "decoded",
+              "sees": "The image shows a crowd of people in front of a stage with bright lights shining down on them.",
+              "error": null
+            },
+            {
+              "fraction": 0.3,
+              "at": 4.48,
+              "source": "decoded",
+              "sees": "A crowd of people are standing in front of a stage with bright lights shining down on them.",
+              "error": null
+            },
+            {
+              "fraction": 0.5,
+              "at": 7.46,
+              "source": "decoded",
+              "sees": "A crowd of people are standing in front of a stage with bright lights shining down on them.",
+              "error": null
+            },
+            {
+              "fraction": 0.7,
+              "at": 10.44,
+              "source": "decoded",
+              "sees": "A crowd of people are standing in front of a stage with bright lights shining down on them.",
+              "error": null
+            },
+            {
+              "fraction": 0.9,
+              "at": 13.43,
+              "source": "decoded",
+              "sees": "A crowd of people are standing in front of a stage with bright lights shining down on them.",
+              "error": null
+            }
+          ]
+        },
+        {
+          "id": "pixabay:35241",
+          "provider": "pixabay",
+          "tags": [
+            "fire show",
+            "night fire show",
+            "fire performance",
+            "fire",
+            "night",
+            "show",
+            "celebration",
+            "festival"
+          ],
+          "frameSource": "decoded",
+          "frames": [
+            {
+              "fraction": 0.1,
+              "at": 1.09,
+              "source": "decoded",
+              "sees": "",
+              "error": "NVIDIA NIM Error (500): {\"type\":\"urn:inference-connection:problem-details:internal-server-error\", \"title\":\"Internal Server Error\", \"status\":500, \"detail\":\"Inference connection error while making inference request\"}"
+            },
+            {
+              "fraction": 0.3,
+              "at": 3.26,
+              "source": "decoded",
+              "sees": "",
+              "error": "NVIDIA NIM Error (500): {\"type\":\"urn:inference-connection:problem-details:internal-server-error\", \"title\":\"Internal Server Error\", \"status\":500, \"detail\":\"Inference connection error while making inference request\"}"
+            },
+            {
+              "fraction": 0.5,
+              "at": 5.44,
+              "source": "decoded",
+              "sees": "Two people are performing a fire show in front of a crowd of people.",
+              "error": null
+            },
+            {
+              "fraction": 0.7,
+              "at": 7.62,
+              "source": "decoded",
+              "sees": "Two people are performing with fire in a dark setting, likely an outdoor event.",
+              "error": null
+            },
+            {
+              "fraction": 0.9,
+              "at": 9.79,
+              "source": "decoded",
+              "sees": "Two people are performing a fire dance in front of a crowd of people in a city street at night.",
+              "error": null
+            }
+          ]
+        },
+        {
+          "id": "pixabay:3627",
+          "provider": "pixabay",
+          "tags": [
+            "shoes",
+            "walking",
+            "feet",
+            "legs",
+            "many",
+            "crowd",
+            "people",
+            "city"
+          ],
+          "frameSource": "decoded",
+          "frames": [
+            {
+              "fraction": 0.1,
+              "at": 1.62,
+              "source": "decoded",
+              "sees": "",
+              "error": "the describer did not answer in 25000ms"
+            },
+            {
+              "fraction": 0.3,
+              "at": 4.86,
+              "source": "decoded",
+              "sees": "The image shows the feet of several people standing on a brick sidewalk, wearing various shoes.",
+              "error": null
+            },
+            {
+              "fraction": 0.5,
+              "at": 8.1,
+              "source": "decoded",
+              "sees": "The image shows a group of people's feet standing on a brick sidewalk, wearing various shoes.",
+              "error": null
+            },
+            {
+              "fraction": 0.7,
+              "at": 11.34,
+              "source": "decoded",
+              "sees": "The image shows the feet of several people standing on a brick sidewalk, wearing various shoes.",
+              "error": null
+            },
+            {
+              "fraction": 0.9,
+              "at": 14.58,
+              "source": "decoded",
+              "sees": "The image shows the feet of several people standing on a brick sidewalk, wearing various shoes.",
+              "error": null
+            }
+          ]
+        },
+        {
+          "id": "pixabay:36510",
+          "provider": "pixabay",
+          "tags": [
+            "airport",
+            "people",
+            "crowd",
+            "busy",
+            "live wallpaper",
+            "welcome",
+            "hello"
+          ],
+          "frameSource": "decoded",
+          "frames": [
+            {
+              "fraction": 0.1,
+              "at": 1.1,
+              "source": "decoded",
+              "sees": "A group of people are walking down a tiled hallway with a tiled floor and a tiled ceiling.",
+              "error": null
+            },
+            {
+              "fraction": 0.3,
+              "at": 3.31,
+              "source": "decoded",
+              "sees": "The image shows a group of people walking down a tiled hallway with fluorescent lights on the ceiling.",
+              "error": null
+            },
+            {
+              "fraction": 0.5,
+              "at": 5.52,
+              "source": "decoded",
+              "sees": "A group of people are walking down a tiled hallway with gray walls and fluorescent lights.",
+              "error": null
+            },
+            {
+              "fraction": 0.7,
+              "at": 7.72,
+              "source": "decoded",
+              "sees": "A group of people are walking down a tiled hallway with gray walls and fluorescent lights.",
+              "error": null
+            },
+            {
+              "fraction": 0.9,
+              "at": 9.93,
+              "source": "decoded",
+              "sees": "A group of people are walking down a tiled walkway in a building with a high ceiling.",
+              "error": null
+            }
+          ]
+        }
+      ],
+      "runs": {
+        "1": {
+          "verdict": "SELECTED",
+          "floor": 72,
+          "judgeMs": 67360,
+          "selected": {
+            "id": "pixabay:1630",
+            "pct": 82,
+            "classification": "strong_contextual",
+            "entity": "contextual"
+          },
+          "table": [
+            {
+              "id": "pixabay:1630",
+              "pct": 82,
+              "classification": "strong_contextual",
+              "entity": "contextual"
+            },
+            {
+              "id": "pixabay:35241",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:3627",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:36510",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            }
+          ]
+        },
+        "2": {
+          "verdict": "SELECTED",
+          "floor": 72,
+          "judgeMs": 42439,
+          "selected": {
+            "id": "pixabay:1630",
+            "pct": 82,
+            "classification": "strong_contextual",
+            "entity": "contextual"
+          },
+          "table": [
+            {
+              "id": "pixabay:1630",
+              "pct": 82,
+              "classification": "strong_contextual",
+              "entity": "contextual"
+            },
+            {
+              "id": "pixabay:35241",
+              "pct": 1,
+              "classification": "generic_filler",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:3627",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:36510",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            }
+          ]
+        },
+        "3": {
+          "verdict": "SELECTED",
+          "floor": 72,
+          "judgeMs": 37271,
+          "selected": {
+            "id": "pixabay:1630",
+            "pct": 82,
+            "classification": "strong_contextual",
+            "entity": "contextual"
+          },
+          "table": [
+            {
+              "id": "pixabay:1630",
+              "pct": 82,
+              "classification": "strong_contextual",
+              "entity": "contextual"
+            },
+            {
+              "id": "pixabay:35241",
+              "pct": 22,
+              "classification": "weak_contextual",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:3627",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:36510",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            }
+          ]
+        },
+        "5": {
+          "verdict": "NO_SUITABLE_ASSET",
+          "floor": 72,
+          "judgeMs": 83859,
+          "selected": null,
+          "table": [
+            {
+              "id": "pixabay:1630",
+              "pct": 68,
+              "classification": "weak_contextual",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:35241",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:3627",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            },
+            {
+              "id": "pixabay:36510",
+              "pct": 0,
+              "classification": "generic_filler",
+              "entity": "none"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "note": "Beats 5 and 2 - the two action tests. N=4 shortlist. Each clip decoded once at five temporal positions; the 1/2/3/5 configurations are composed from those same descriptions so only the amount of evidence differs."
+}

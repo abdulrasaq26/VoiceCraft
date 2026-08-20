@@ -1,0 +1,174 @@
+{
+  "at": "2026-08-20T17:32:46.377Z",
+  "positions": {
+    "1": [
+      0.5
+    ],
+    "2": [
+      0.1,
+      0.9
+    ],
+    "3": [
+      0.1,
+      0.5,
+      0.9
+    ],
+    "5": [
+      0.1,
+      0.3,
+      0.5,
+      0.7,
+      0.9
+    ]
+  },
+  "results": [
+    {
+      "id": "pixabay:133077",
+      "mp4": "https://cdn.pixabay.com/video/2022/09/30/133077-755975090_tiny.mp4",
+      "ok": true,
+      "duration": 10,
+      "w": 640,
+      "h": 360,
+      "loadedMs": 1416,
+      "totalMs": 1494,
+      "frames": [
+        {
+          "at": 1,
+          "fraction": 0.1,
+          "bytes": 26811
+        },
+        {
+          "at": 3,
+          "fraction": 0.3,
+          "bytes": 26811
+        },
+        {
+          "at": 5,
+          "fraction": 0.5,
+          "bytes": 26811
+        },
+        {
+          "at": 7,
+          "fraction": 0.7,
+          "bytes": 26811
+        },
+        {
+          "at": 9,
+          "fraction": 0.9,
+          "bytes": 26811
+        }
+      ]
+    },
+    {
+      "id": "pixabay:23353",
+      "mp4": "https://cdn.pixabay.com/video/2019/05/06/23353-335511588_tiny.mp4",
+      "ok": true,
+      "duration": 15.64,
+      "w": 1280,
+      "h": 720,
+      "loadedMs": 765,
+      "totalMs": 797,
+      "frames": [
+        {
+          "at": 1.56,
+          "fraction": 0.1,
+          "bytes": 46263
+        },
+        {
+          "at": 4.69,
+          "fraction": 0.3,
+          "bytes": 46263
+        },
+        {
+          "at": 7.82,
+          "fraction": 0.5,
+          "bytes": 46263
+        },
+        {
+          "at": 10.95,
+          "fraction": 0.7,
+          "bytes": 46263
+        },
+        {
+          "at": 14.08,
+          "fraction": 0.9,
+          "bytes": 46263
+        }
+      ]
+    },
+    {
+      "id": "pixabay:256482",
+      "mp4": "https://cdn.pixabay.com/video/2025/02/04/256482_tiny.mp4",
+      "ok": true,
+      "duration": 8.33,
+      "w": 960,
+      "h": 540,
+      "loadedMs": 3470,
+      "totalMs": 3597,
+      "frames": [
+        {
+          "at": 0.83,
+          "fraction": 0.1,
+          "bytes": 51175
+        },
+        {
+          "at": 2.5,
+          "fraction": 0.3,
+          "bytes": 51175
+        },
+        {
+          "at": 4.17,
+          "fraction": 0.5,
+          "bytes": 51175
+        },
+        {
+          "at": 5.83,
+          "fraction": 0.7,
+          "bytes": 51175
+        },
+        {
+          "at": 7.5,
+          "fraction": 0.9,
+          "bytes": 51175
+        }
+      ]
+    },
+    {
+      "id": "pixabay:259482",
+      "mp4": "https://cdn.pixabay.com/video/2025/02/19/259482_tiny.mp4",
+      "ok": true,
+      "duration": 8.33,
+      "w": 960,
+      "h": 540,
+      "loadedMs": 5064,
+      "totalMs": 5238,
+      "frames": [
+        {
+          "at": 0.83,
+          "fraction": 0.1,
+          "bytes": 81255
+        },
+        {
+          "at": 2.5,
+          "fraction": 0.3,
+          "bytes": 81255
+        },
+        {
+          "at": 4.17,
+          "fraction": 0.5,
+          "bytes": 81255
+        },
+        {
+          "at": 5.83,
+          "fraction": 0.7,
+          "bytes": 81255
+        },
+        {
+          "at": 7.5,
+          "fraction": 0.9,
+          "bytes": 81255
+        }
+      ]
+    }
+  ]
+}
