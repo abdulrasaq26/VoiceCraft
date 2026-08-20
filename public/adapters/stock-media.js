@@ -434,15 +434,164 @@
     return unique.filter(a => a.type !== 'video' || a.duration >= minimumDuration);
   }
 
+  // ── Does this asset show what the beat asked for? ───────────────────
+  //
+  // Nothing used to ask. The ranker scored provider, orientation, duration,
+  // resolution and licence, and never once looked at whether the clip depicted
+  // the shot. That is survivable only if the providers return nothing when
+  // nothing matches, and they do not. Measured against the live APIs with the
+  // intent "Blue Man Group performs on stage":
+  //
+  //   Pixabay  500 hits; the top TWO are cows (tags: cow, ruminant, pasture,
+  //            meadow). Results three and four are genuinely a concert.
+  //   Pexels   8000 hits, and its top results are dancers, a podium, a band
+  //            at a concert - reasonable, and its tags array is empty.
+  //
+  // So the cows won on resolution, and a beat about a stage show got livestock
+  // presented as READY. The signal to prevent that was in the metadata the
+  // whole time.
+  //
+  // Pexels returns no tags on video, but its sourceUrl is the page slug -
+  // /video/top-view-of-musical-band-performing-at-a-concert-5431417/ - which
+  // carries the words. Archive items carry a title and description. So every
+  // source has SOMETHING to judge, and the one case that must not be punished
+  // is an asset that carries no metadata at all: absence of evidence is not
+  // evidence of a bad match.
+
+  const RELEVANCE_STOPWORDS = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'into',
+    'over', 'under', 'a', 'an', 'of', 'to', 'in', 'on', 'at', 'by', 'as', 'is', 'are', 'was', 'were',
+    'be', 'been', 'it', 'its', 'their', 'his', 'her', 'they', 'them', 'we', 'our', 'you', 'your',
+    'shot', 'footage', 'clip', 'video', 'scene', 'camera', 'shows', 'showing', 'while', 'during',
+    'some', 'more', 'most', 'very', 'one', 'two', 'up', 'out', 'about', 'through', 'across']);
+
+  /** The content words a beat is asking to see. */
+  function relevanceTerms(...sources) {
+    const out = new Set();
+    for (const src of sources) {
+      const text = Array.isArray(src) ? src.join(' ') : String(src || '');
+      for (const w of text.toLowerCase().match(/[a-z]{3,}/g) || []) {
+        if (!RELEVANCE_STOPWORDS.has(w)) out.add(w);
+      }
+    }
+    return [...out];
+  }
+
+  /** Everything this asset says about itself, as one lowercase haystack. */
+  function assetText(asset) {
+    const a = asset || {};
+    const archive = a.archive || {};
+    return [
+      (a.tags || []).join(' '),
+      // The page slug. Hyphens become spaces; the trailing id is digits and
+      // cannot match a word term.
+      String(a.sourceUrl || '').replace(/^https?:\/\/[^/]+/, '').replace(/[^a-zA-Z]+/g, ' '),
+      archive.title || '',
+      archive.description || ''
+    ].join(' ').toLowerCase();
+  }
+
+  /**
+   * Below this, the asset evidences essentially nothing the beat asked for.
+   *
+   * Deliberately low. The heavy lifting is done by relevance dominating the
+   * RANKING, which reorders every candidate; this only refuses the ones that
+   * match almost nothing, because a floor set high enough to be opinionated
+   * would start rejecting good footage that simply described itself briefly.
+   */
+  const RELEVANCE_FLOOR = 0.15;
+
+  /**
+   * Turn a shot description into something worth typing into a stock library.
+   *
+   * The two are not the same thing, and treating them as the same is what put
+   * livestock under a beat about a stage show. "The Blue Man Group performs on
+   * stage" describes a shot perfectly well and is a hopeless query: the proper
+   * nouns are the part no CC0 library can contain, and they drag the whole
+   * search toward nothing. Dropping them leaves "performs stage", which finds
+   * the concert footage that was in the results all along.
+   *
+   * Proper nouns are taken to be capitalised words that are not the first word
+   * of the description - crude, and right often enough for a fallback query.
+   */
+  function queryFromIntent(concept) {
+    const text = String(concept || '').trim();
+    if (!text) return '';
+    const words = text.split(/\s+/);
+    const usable = (w) => {
+      const bare = w.replace(/[^A-Za-z-]/g, '');
+      return bare && !RELEVANCE_STOPWORDS.has(bare.toLowerCase());
+    };
+    // Capitalised ANYWHERE, including the first word.
+    //
+    // Exempting position zero looked reasonable - a sentence starts with a
+    // capital - and let "Spider-Man swings through the city" keep the one word
+    // guaranteed to find nothing. The openers this protected are "The" and "A",
+    // which the stopword list already removes, so the exemption bought nothing
+    // and cost the case it most needed to handle.
+    const named = (w) => /^[A-Z]/.test(w.replace(/[^A-Za-z-]/g, ''));
+    let kept = words.filter((w) => usable(w) && !named(w));
+    // A description made entirely of proper nouns still has to search for
+    // something.
+    if (!kept.length) kept = words.filter(usable);
+    return kept.slice(0, 5).join(' ').toLowerCase();
+  }
+
+  /**
+   * How much of what the beat asked for this asset can evidence.
+   *
+   * `known` is false when the asset described itself too thinly to judge. That
+   * is reported rather than scored, because scoring it as a miss would reject
+   * every Pexels video and hand the whole timeline to Pixabay.
+   */
+  function relevanceOf(asset, terms) {
+    if (!terms || !terms.length) return { score: 1, known: false, matched: [] };
+    const hay = assetText(asset);
+    // Fewer than a couple of usable words is not a description.
+    if ((hay.match(/[a-z]{3,}/g) || []).length < 3) return { score: 1, known: false, matched: [] };
+
+    const matched = terms.filter((t) => {
+      if (hay.indexOf(t) >= 0) return true;
+      // Cheap stemming, so "performs" matches "performance" and "dancers"
+      // matches "dance". Deliberately crude - this decides ordering, not
+      // rights, and a missed stem costs a place in a list.
+      if (t.length > 5 && hay.indexOf(t.slice(0, t.length - 2)) >= 0) return true;
+      return false;
+    });
+    return {
+      score: matched.length / terms.length,
+      known: true,
+      matched,
+      // One incidental word is not evidence. Measured: a stock clip of cattle
+      // matched the beat "The Blue Man Group performs on stage" at 17% - above
+      // any floor worth setting - purely because its tags include the word
+      // "group". A second independent match is what separates a coincidence
+      // from a subject.
+      corroborated: matched.length >= (terms.length >= 4 ? 2 : 1)
+    };
+  }
+
   // ── StockMediaRanker ──────────────────────────────────────────────────────
 
   function scoreAsset(asset, {
     orientation = 'landscape', mediaType = 'video',
     minimumDuration = 3, targetDuration = 8,
     // How much the beat wants authenticity over polish.
-    strategy = 'auto', preferredSources = null
+    strategy = 'auto', preferredSources = null,
+    // What the beat asked to SEE. See relevanceOf() above.
+    terms = null
   } = {}, usedIds) {
     let score = 100;
+
+    // ── Does it show the thing? ─────────────────────────────────────
+    //
+    // Weighted above every quality signal below deliberately. A sharp 4K clip
+    // of the wrong subject is worse than a soft one of the right subject: the
+    // first is a mistake the viewer notices, the second is a compromise they
+    // do not. Resolution moves a score by 12 at most; this moves it by 70, so
+    // relevance decides the order and quality breaks ties within it.
+    const rel = relevanceOf(asset, terms);
+    asset.relevance = rel;
+    if (rel.known) score += Math.round(rel.score * 70) - 15;
 
     // ── Source intent ───────────────────────────────────────────────────────
     // A 1940s newsreel is grainy, 640x480 and badly lit. Judged on resolution
@@ -826,9 +975,15 @@
     if (strategy === 'photo') isPhotoScene = true;
     let mediaType = isPhotoScene ? 'photo' : 'video';
 
+    // What the beat asked to SEE, as content words. Built from the intent and
+    // the queries together: the intent carries the subject and setting, the
+    // queries carry how a stock library would phrase it, and an asset that
+    // evidences neither is not this beat's footage however good it looks.
+    const intentTerms = relevanceTerms(req.concept, req.queries);
+
     // Built after mediaType exists — it reads it.
     const rankOpts = { orientation, mediaType, minimumDuration, targetDuration,
-                       strategy: sourceStrategy, preferredSources };
+                       strategy: sourceStrategy, preferredSources, terms: intentTerms };
 
     // ── Level 1: Director-provided queries ──────────────────────────────────
     const directorQueries = Array.isArray(req.queries) && req.queries.length
@@ -845,6 +1000,20 @@
       for (let i = 0; i < ranked.length; i++) {
         const asset = ranked[i];
         if (!clearForProduction(asset, scene)) continue;
+        // Refuse a candidate that evidences nothing the beat asked for.
+        //
+        // Measured: Pixabay answered "Blue Man Group performs on stage" with
+        // cows in its top two results. Nothing downstream would ever have
+        // noticed - the clip is cleared, it downloads, and the scene reports
+        // READY. Only assets that DESCRIBED themselves are judged; one that
+        // said nothing is unproven, not disproven, and falls through to the
+        // quality ordering as before.
+        if (asset.relevance && asset.relevance.known
+            && (asset.relevance.score < RELEVANCE_FLOOR || !asset.relevance.corroborated)) {
+          console.log(`[StockMedia] scene ${scene.index}: skipping ${asset.provider}:${asset.id} `
+            + `— shows none of ${JSON.stringify(intentTerms.slice(0, 6))}`);
+          continue;
+        }
         const startedAt = Date.now();
         try {
           // Rights were settled by clearForProduction above. Only now does it
@@ -869,10 +1038,18 @@
       }
     }
 
-    // ── Level 2: Broader concept query ─────────────────────────────────────
+    // ── Level 2: Broader search, derived from the intent ───────────────────
+    //
+    // The intent used to be posted verbatim as a search query, which is the
+    // conflation this layer exists to undo: "The Blue Man Group performs on
+    // stage" is a description of a shot, not something to type into a stock
+    // library, and the proper nouns in it are precisely the part no CC0
+    // library can contain. So the retrieval step TRANSLATES it - the beat's own
+    // fallback queries first, then the intent reduced to the words that
+    // describe what is visible.
     const concept        = String(req.concept || '').trim();
     const fallbackQueries = Array.isArray(req.fallbackQueries) ? req.fallbackQueries : [];
-    const broaderQueries  = [concept, ...fallbackQueries].filter(Boolean);
+    const broaderQueries  = [...fallbackQueries, queryFromIntent(concept)].filter(Boolean);
     if (broaderQueries.length) {
       // Widen the sources too, not just the words. An archival beat that found
       // nothing in the archive is better served by modern footage than by a
@@ -1145,6 +1322,12 @@
     acquire,
     downloadAsset,
     rank,
+    // Relevance reasoning, exported so it can be tested against live provider
+    // results rather than against a fixture of what they might return.
+    _relevanceTerms: relevanceTerms,
+    _relevanceOf: relevanceOf,
+    _queryFromIntent: queryFromIntent,
+    _relevanceFloor: () => RELEVANCE_FLOOR,
     // UI helpers
     replaceClip,
     searchForBrowse,
