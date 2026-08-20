@@ -222,6 +222,14 @@
   let running = false;
   // Re-entry guard for Analyze specifically. See analyzeAndGenerate().
   let analyzing = false;
+  // The provider's raw reply from the last failure, for the "show raw response"
+  // button. It was never declared: under 'use strict' the assignment in the
+  // catch below threw a ReferenceError INSIDE the error handler, which
+  // destroyed the real provider error and replaced it with a message about a
+  // variable. Before Analyze had an outer catch, that turned every failed run
+  // into an unhandled rejection - spinner still turning, nothing reported, no
+  // way to tell a dead provider from a slow one.
+  let lastRaw = '';
   let paused = false;
   let cancelRequested = false;
   const durations = [];
@@ -753,8 +761,19 @@
       }
       saveProject();
     } catch (err) {
-      lastRaw = (err && err.raw) || (window.AIManager.lastRawResponse && window.AIManager.lastRawResponse()) || '';
+      // Nothing in here may throw, or the handler loses the failure it exists
+      // to report. Reading lastRawResponse goes through the provider manager,
+      // which is exactly the subsystem that has just failed.
+      try {
+        lastRaw = (err && err.raw)
+          || (window.AIManager && window.AIManager.lastRawResponse && window.AIManager.lastRawResponse())
+          || '';
+      } catch (e) {
+        lastRaw = '';
+      }
+      if (rawBtn) rawBtn.hidden = !lastRaw;
       const cat = err && err.category ? ` [${err.category}]` : '';
+      console.error('[Storyboard] Reading the narration failed:', err);
       showStatus(`${err.message}${cat}${lastRaw ? ' — check console for details.' : ''}`);
       setAnalyzing(false);
       return;
