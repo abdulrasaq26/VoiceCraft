@@ -1189,6 +1189,14 @@ input[type="range"]:disabled {
   width: 100%;
   aspect-ratio: 16 / 9;
   height: auto;
+  /* Bound the preview by the VIEWPORT, not only by the column.
+     width:100% alone makes a 16:9 frame as tall as the column is wide, so on a
+     wide window the picture ran past the bottom of the screen and the transport
+     under it had to be scrolled to. Capping the WIDTH by the height available
+     keeps the aspect ratio intact - capping max-height instead would squash the
+     canvas bitmap, because a canvas scales its contents to its box. */
+  max-width: max(320px, calc((100vh - 300px) * 16 / 9));
+  margin-inline: auto;
   border-radius: 10px;
   border: 1px solid var(--card-border);
   background: #000;

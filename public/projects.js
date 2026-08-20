@@ -471,15 +471,23 @@
     if (name === null) return;
     createProject(name.trim());
   });
-  searchEl.addEventListener('input', render);
-  sortEl.addEventListener('change', render);
-  archivedEl.addEventListener('change', render);
-  modal.addEventListener('click', (e) => {
-    if (e.target.closest('[data-close]')) closeModal();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modal.hidden) closeModal();
-  });
+  // Guarded, because #proj-sort and #proj-archived have no markup in the page.
+  // Unguarded, the throw on the first missing one aborted the rest of this
+  // block - so the modal never closed on a backdrop click, Escape did nothing,
+  // and the title field stopped renaming the project. None of that looks like
+  // a null reference; it looks like three unrelated features quietly not
+  // working, on every single page load.
+  if (searchEl) searchEl.addEventListener('input', render);
+  if (sortEl) sortEl.addEventListener('change', render);
+  if (archivedEl) archivedEl.addEventListener('change', render);
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target.closest('[data-close]')) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.hidden) closeModal();
+    });
+  }
 
   // Keep the active project's name in sync when the title field changes.
   const titleInput = $('title-input');

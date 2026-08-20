@@ -682,6 +682,11 @@
 
         clips.push({
           sceneIndex: s.index,
+          // Which cut of a split beat this is. Saved because the storyboard
+          // stores the parts under clip:N, clip:N:1, clip:N:2 - without it a
+          // reopened project cannot tell them apart and every part of the beat
+          // would come back as the first one.
+          part,
           // The subtitle belongs to the beat, not the cut; repeating it on
           // every part would stutter the caption.
           subtitle: part === 0 ? (s.subtitle || s.sceneSummary || '') : '',
@@ -1778,6 +1783,80 @@
 
   // --- Timeline UI -------------------------------------------------------
 
+  /**
+   * Put a frame of the actual footage on the scene card.
+   *
+   * The card used to draw clip.img and nothing else, which is wrong for every
+   * beat that is a video: clip.img is either absent, or - worse - a stale
+   * placeholder. fallbackCard() persists its title card into the storyboard's
+   * still store under String(index), so a project assembled once before its
+   * footage had been acquired keeps that card on disk permanently. The next
+   * assemble then finds it under the still key while the real clip sits under
+   * clip:N, so the canvas plays the footage and the strip underneath shows the
+   * narration as text. One clip, two different pictures, and the strip is the
+   * one that is lying.
+   *
+   * Drawn from the decoded element rather than re-read from storage, because
+   * the element is already loaded and is the same source the canvas draws.
+   */
+  function paintPoster(imgEl, clip) {
+    const v = clip.video;
+    if (!v) return;
+
+    const paint = () => {
+      const w = v.videoWidth;
+      const h = v.videoHeight;
+      if (!w || !h) return false;
+      const c = document.createElement('canvas');
+      const scale = Math.min(1, 320 / w);
+      c.width = Math.max(1, Math.round(w * scale));
+      c.height = Math.max(1, Math.round(h * scale));
+      try {
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+        imgEl.src = c.toDataURL('image/jpeg', 0.72);
+        return true;
+      } catch (e) {
+        return false;   // keep whatever the still gave us
+      }
+    };
+
+    // An archival excerpt is a window into a longer film, so frame zero is
+    // usually leader or a slate rather than the shot the Director chose.
+    const inPoint = (clip.excerpt && Number.isFinite(Number(clip.excerpt.sourceIn)))
+      ? Math.max(0, Number(clip.excerpt.sourceIn))
+      : 0;
+    // Seek rather than draw whatever is there. readyState >= 2 says a frame is
+    // DECODABLE, not that one has been presented, and drawing a paused element
+    // straight after load intermittently gives a black rectangle. A seek always
+    // decodes and presents the frame at the position asked for, and 'seeked'
+    // fires when it has. requestVideoFrameCallback looks like the right tool
+    // and is not: it waits for a frame to be PRESENTED, which for an element
+    // that is paused and never played does not happen.
+    const target = inPoint > 0.05 ? inPoint : 0.05;
+
+    // Safe on a playing clip too: drawFrame reasserts currentTime on the active
+    // clip every frame, so a card repositioning an element cannot desync it.
+    if (Math.abs((v.currentTime || 0) - target) > 0.02) {
+      let done = false;
+      const settle = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        v.removeEventListener('seeked', settle);
+        paint();
+      };
+      const timer = setTimeout(settle, 2000);
+      v.addEventListener('seeked', settle);
+      try {
+        v.currentTime = Math.min(target, Math.max(0, (v.duration || 1e9) - 0.05));
+      } catch (e) {
+        settle();
+      }
+      return;
+    }
+    paint();
+  }
+
   function renderTimeline() {
     timelineEl.innerHTML = '';
     clips.forEach((clip, i) => {
@@ -1789,7 +1868,9 @@
       num.innerHTML = `<span>Scene ${i + 1}</span><span>${clip.camera || ''}</span>`;
 
       const img = document.createElement('img');
+      // The still is only the fallback here. See posterFor().
       if (clip.img) img.src = clip.img.src;
+      paintPoster(img, clip);
 
       const durLabel = document.createElement('label');
       durLabel.textContent = 'Seconds';
@@ -1914,6 +1995,7 @@
   function serialiseClip(c) {
     return {
       sceneIndex: c.sceneIndex,
+      part: c.part || 0,
       subtitle: c.subtitle,
       camera: c.camera,
       durationSec: c.durationSec,
@@ -1996,10 +2078,28 @@
       const blob = await idbGet(SB_DB, SB_STORE, String(c.sceneIndex));
       const clip = { ...c, img: blob ? await loadImage(blob) : null };
 
+      // Footage first, from where the storyboard actually wrote it.
+      //
+      // This used to go only through the stock cache below, which recovers a
+      // clip solely from stockAsset.provider + id. A beat rendered by the video
+      // generator, or acquired before that field was carried, has no such pair —
+      // so its footage was silently dropped on reload and the scene fell back to
+      // whatever sat under the still key. When that still is a placeholder card
+      // left by fallbackCard(), a reopened project quietly replaces its video
+      // with the narration as text.
+      const part = Number(c.part) || 0;
+      try {
+        const own = await idbGet(SB_DB, SB_STORE,
+          part === 0 ? `clip:${c.sceneIndex}` : `clip:${c.sceneIndex}:${part}`);
+        if (own && own.size > 0) clip.video = await loadVideo(own);
+      } catch (e) {
+        console.warn(`[Editor] stored clip for scene ${c.sceneIndex} would not decode: ${e.message}`);
+      }
+
       // Rehydrate footage from the stock cache. It is keyed provider:id, and
       // both halves survive in stockAsset — so a reopened project keeps its
       // archive excerpt as playable video rather than degrading to a still.
-      if (c.stockAsset && c.stockAsset.provider && c.stockAsset.id) {
+      if (!clip.video && c.stockAsset && c.stockAsset.provider && c.stockAsset.id) {
         const key = `${c.stockAsset.provider}:${c.stockAsset.id}`;
         try {
           const media = await idbGet('blvck-stock-cache', 'assets', key);
@@ -2245,14 +2345,28 @@
 
   // --- Sub controls ------------------------------------------------------
 
+  /**
+   * Push the current subtitle style onto the controls.
+   *
+   * Guarded, because two of these controls are not in the page: #ed-sub-pos and
+   * #ed-crossfade have no markup, so $() returns null for both. Every LISTENER
+   * below already guards for exactly that; this function did not, so it threw
+   * TypeError on the first missing one.
+   *
+   * That mattered far beyond the subtitle controls. restoreTimeline() calls
+   * this before it rebuilds the clips, so the throw aborted the restore — and a
+   * reopened project came back with an EMPTY editor no matter what had been
+   * assembled into it. It only ever fired when a saved timeline existed, which
+   * is why the editor looked fine right up until you reloaded the page.
+   */
   function applySubControls() {
-    subFont.value = subStyle.font;
-    subSize.value = subStyle.size;
-    subSizeVal.textContent = subStyle.size;
-    subPos.value = subStyle.pos;
-    subColor.value = subStyle.color;
-    subOn.checked = subStyle.on;
-    crossfadeToggle.checked = transitionsOn;
+    if (subFont) subFont.value = subStyle.font;
+    if (subSize) subSize.value = subStyle.size;
+    if (subSizeVal) subSizeVal.textContent = subStyle.size;
+    if (subPos) subPos.value = subStyle.pos;
+    if (subColor) subColor.value = subStyle.color;
+    if (subOn) subOn.checked = subStyle.on;
+    if (crossfadeToggle) crossfadeToggle.checked = transitionsOn;
   }
 
   // --- Events ------------------------------------------------------------
