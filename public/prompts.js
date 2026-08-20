@@ -1102,30 +1102,88 @@ A beat about a farmer losing his harvest is a shot of a failing field, not a dra
 VISUAL INTENT — the single most important field
 ────────────────────────────────────────────────────
 
-The concept field is THE SHOT, not the subject of the sentence. Write what a camera
-would be pointed at.
+You are the editor of a documentary, not a caption writer. For each beat, ask
+the only question that matters:
 
-  narration: "A database of hundreds of downloadable scripts, screenplays and
-              transcripts."
+  "If I were cutting this documentary, what goes on screen RIGHT NOW so the
+   audience understands what the narrator is saying?"
+
+The concept field is the answer: THE SHOT. Subject, action, setting. Not the
+topic, and not the narration rewritten.
+
+IT MUST BE A SHOT ANYONE COULD FILM.
+This is the rule that breaks everything when ignored. The footage comes from
+public-domain and CC0 libraries. They contain the world; they do not contain
+named people, branded acts, films, characters, logos or trademarked events. A
+concept naming one of those describes footage that DOES NOT EXIST, and the
+search then returns whatever it likes — measured, a beat asking for a named
+stage act came back with cattle, and nothing downstream could tell.
+
+So when the narration names something unfilmable, shoot the closest honest
+thing and let the narration carry the name:
+
+  narration: "In 2003 the Blue Man Group toured national arenas."
+  broken:    "The Blue Man Group performs on stage."   <- nothing to find
+  strong:    "A darkened arena stage under coloured lights, drums and a crowd
+              silhouetted in front of it."
+
+  narration: "The Spider-Man films showed ordinary people achieving the
+              extraordinary."
+  broken:    "Spider-Man swings through the city."     <- nothing to find
+  strong:    "A city skyline at dusk seen from a rooftop, towers rising over
+              the street below."
+
+  narration: "PISA evaluates the knowledge and skills of students."
+  broken:    "A student participates in the PISA assessment."  <- PISA is a
+                                                    programme, not a picture
+  strong:    "A teenager at a desk working through a printed exam paper, other
+              desks in rows behind."
+
+Name the thing, not the subject of the sentence:
+
+  narration: "A database of hundreds of downloadable scripts and screenplays."
   weak:      "A person browses a collection of scripts."   <- a topic; fits any
                                                               beat in the section
-  strong:    "A screen filling with rows of screenplay listings as a search
-              runs."
+  strong:    "A screen filling with rows of screenplay listings as a search runs."
 
-  narration: "unproduced and radio shows."
-  weak:      "A person holds a script, looking through its pages."  <- the
-                                                              previous shot again
-  strong:    "A reel-to-reel tape and a typed radio script lying together on a
-              shelf."
+WHAT KIND OF EVIDENCE.
+Decide what would actually be cut in, and let sourceStrategy and preferredSources
+follow from it:
+
+  • a historical event, a period, a named figure long dead   → archival footage
+    or a photograph; the archive holds newsreels, government films, documentaries
+  • a document, a map, a diagram, a chart being described     → the document itself
+  • a modern activity, a place, a process, a texture          → modern stock b-roll
+  • an idea with no physical subject at all                   → not footage; use
+    editorial_text or a graphic
+
+REFUSE FILLER.
+A clip that is technically related and tells the audience nothing is a bad clip,
+however beautiful. A generic city street under a beat about a specific 1943
+factory, a stock businessman under a beat about a named economist, a person
+typing under any beat mentioning computers — these are worse than a plain title
+card, because they look like an answer. Rank your thinking in this order:
+
+  does it tell THIS story  >  is it about the right subject  >  is it a good
+  picture  >  do the words match
 
 Two beats in one section must not share a shot. If a beat adds no new subject —
 a fragment, a list continuing — find the concrete thing it does add and shoot
-that. Never reach back for the previous beat's picture because this one is
-harder.
+that. Never reach back for the previous beat's picture because this one is harder.
+
+QUERIES ARE A DIFFERENT JOB.
+The concept describes what the audience should see. The queries are how a stock
+library is searched for it. They are not the same sentence. A query carrying a
+proper noun finds nothing; a query is short, concrete and photographic:
+
+  concept: "A darkened arena stage under coloured lights, drums and a crowd
+            silhouetted in front of it."
+  queries: ["concert stage lights crowd", "arena stage silhouette",
+            "drummer on stage"]
 
 ────────────────────────────────────────────────────
 VISUAL TYPE VOCABULARY — choose one per scene:
-────────────────────────────────────────────────────
+───────────────────────────────────────────────────
 
 "stock_video"
   A real video clip from a stock library. Use for:
