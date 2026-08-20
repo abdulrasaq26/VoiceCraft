@@ -1438,6 +1438,18 @@ Respond ONLY with JSON:
         "concept": string,   // the shot, not the topic — see VISUAL INTENT below
         "queries": [string],
         "fallbackQueries": [string],
+        // The shot taken apart, and how you expect to source it. Optional, but
+        // the evaluator checks a retrieved clip against these one at a time and
+        // a single sentence cannot say which part failed.
+        "subject": string,        // "a drummer", "wartime factory workers"
+        "action": string,         // "playing to a crowd", "assembling an aircraft"
+        "environment": string,    // "a darkened arena", "a 1940s factory floor"
+        "narrativeRole": string,  // why this beat needs a picture at all
+        "requiredElements": [string],  // 2-4 things that MUST be visible
+        "avoid": [string],        // 2-4 near misses to reject
+        "specificity": string,    // "exact_event" | "specific_person" | "specific_place" |
+                                  // "historical_event" | "general_event" | "concept" | "metaphorical"
+        "assetStrategy": string,  // "exact" | "conceptual" | "contextual" | "metaphorical"
         "subjectCategory": string,
         "minimumDuration": number,
         "sourceStrategy": string,      // "archival" | "modern_stock" | "auto"

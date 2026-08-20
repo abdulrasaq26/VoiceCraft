@@ -79,6 +79,26 @@ for (const [what, phrase] of STEPS) {
 check('NIM  names the substitution deliberately', NIM.indexOf(flat('assetStrategy')) >= 0);
 check('Qwen names the substitution deliberately', QWEN.indexOf(flat('assetStrategy')) >= 0);
 
+// The prompt carries TWO schema listings and the model follows the last one -
+// the block headed "Respond ONLY with JSON". Fields added only to the
+// explanatory listing came back empty on all five beats of a live run.
+console.log('');
+console.log('--- the authoritative contract asks for the structured fields ---');
+// Scoped to VIDEO_PLAN_SYSTEM, and to the marker INSIDE it.
+// A plain indexOf finds the first of six 'Respond ONLY with JSON' markers in
+// this file - one belonging to an entirely different route - and slicing from
+// there covers almost the whole file, so the assertion passed on the
+// explanatory listing and proved nothing. Caught by checking that the
+// explanatory block fell outside the slice; it did not.
+const VPS = nim.slice(nim.indexOf('const VIDEO_PLAN_SYSTEM'),
+                      nim.indexOf('function videoPlanPrompt'));
+const FINAL = VPS.slice(VPS.indexOf('Respond ONLY with JSON'));
+for (const f of ['subject', 'action', 'environment', 'narrativeRole',
+                 'requiredElements', 'avoid', 'specificity', 'assetStrategy']) {
+  check(`the JSON block the model obeys asks for ${f}`,
+        FINAL.indexOf('"' + f + '"') >= 0, f);
+}
+
 console.log('\n--- describing a shot and searching for one are different jobs ---');
 check('NIM  separates the two', NIM.indexOf(flat('queries are a different job')) >= 0);
 check('Qwen separates the two', QWEN.indexOf(flat('queries are a different job')) >= 0);
