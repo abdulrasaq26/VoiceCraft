@@ -72,7 +72,13 @@
   const JUDGE_TIMEOUT_MS = 60000;
   // Enough parallelism that the pass feels free, few enough not to look like a
   // burst to the provider.
-  const CONCURRENCY = 4;
+  //
+  // Lowered from four after watching the endpoint degrade across a long run of
+  // back-to-back beats: durations climbed from 44s to 152s as retries began
+  // grinding, which is the shape of a service being pushed rather than a
+  // service that is down. Two at a time is still eight candidates in about the
+  // time four would take once retries are counted, and it stays welcome.
+  const CONCURRENCY = 2;
   // Beyond this the cost stops buying accuracy: the metadata pass has already
   // ordered them, and the eighth is rarely right when the first seven were wrong.
   const MAX_JUDGED = 8;
@@ -376,7 +382,35 @@
     if (!available()) return { ran: false, why: 'no evaluator configured', scored: [], verdict: 'NOT_EVALUATED' };
 
     const t0 = Date.now();
-    const described = await pooled(pool, CONCURRENCY, (asset) => describe(asset));
+
+    // Give up on the endpoint early, not candidate by candidate.
+    //
+    // When the vision service is down, every describe burns three attempts
+    // against a 25s deadline, and eight candidates at four abreast took 140s to
+    // establish something the first two calls already knew. That is not a
+    // pause, it is a beat's whole budget spent learning nothing - and it made a
+    // provider outage look like slow reasoning.
+    //
+    // So the first pair is a probe. If both fail outright the service is
+    // treated as unavailable, the rest are not attempted, and the beat falls
+    // back to metadata in seconds. Failing to describe is not the same as
+    // describing something unusable: only hard failures count here.
+    let dead = false;
+    let failures = 0;
+    const described = await pooled(pool, CONCURRENCY, async (asset, i) => {
+      if (dead) return { asset, sees: '', sawPicture: false, skipped: true };
+      const d = await describe(asset);
+      if (d.error) {
+        failures++;
+        if (failures >= 2 && i < CONCURRENCY) dead = true;
+      }
+      return d;
+    });
+    if (dead) {
+      return { ran: false, verdict: 'FAILED', scored: [], tookMs: Date.now() - t0,
+               why: 'the vision service is not answering - every candidate keeps its '
+                  + 'metadata rank' };
+    }
     // Only frames that actually showed something get judged. A title card
     // taught us nothing about the clip behind it, so that candidate stays
     // unproven and keeps the place metadata gave it.

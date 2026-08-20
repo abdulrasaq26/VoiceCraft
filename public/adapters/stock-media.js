@@ -1033,7 +1033,18 @@
         + '— falling back to the metadata order');
       return off;
     }
-    if (!out || !out.ran) return off;
+    // FAILED and NOT_EVALUATED mean the same thing to the caller: no visual
+    // evidence was obtained, so the metadata order stands untouched. Neither is
+    // ever allowed to become NO_SUITABLE_ASSET - an outage must not look like a
+    // considered refusal.
+    if (!out || !out.ran) {
+      if (out && out.why) {
+        console.log(`[Evaluator] scene ${scene.index}: ${out.verdict} - ${out.why}`);
+      }
+      scene.visualEvaluation = { verdict: (out && out.verdict) || 'NOT_EVALUATED',
+                                 confidence: 'UNKNOWN', why: (out && out.why) || '' };
+      return off;
+    }
 
     for (const x of out.scored) {
       const j = x.judgement;

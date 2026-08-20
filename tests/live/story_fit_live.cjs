@@ -26,6 +26,7 @@ const envGet = (k) => {
 };
 
 const fails = [];
+const BASELINE = [];
 const check = (name, cond, detail) => {
   console.log((cond ? '    PASS  ' : '    FAIL  ') + name + (cond ? '' : '  <- ' + JSON.stringify(detail)));
   if (!cond) fails.push(name);
@@ -180,7 +181,10 @@ const BEATS = [
                                     klass: out.selected.judgement.classification },
         table: (out.scored || []).slice(0, 5).map((x) => ({
           id: `${x.asset.provider}:${x.asset.id}`, pct: Math.round(x.score * 100),
-          klass: x.judgement.classification, sees: x.judgement.sees, says: says(x.asset)
+          klass: x.judgement.classification, sees: x.judgement.sees, says: says(x.asset),
+          // The URL actually handed to the vision model.
+          picture: x.asset.thumbnailUrl || x.asset.previewUrl || '(none)',
+          frames: (x.asset.frames || []).length
         }))
       };
     }, beat);
@@ -190,11 +194,25 @@ const BEATS = [
     console.log(`  by metadata        ${r.metadata ? `${r.metadata.id}  ${r.metadata.pct}%  "${r.metadata.says}"` : '—'}`);
     console.log(`  by what is SEEN    ${r.selected ? `${r.selected.id}  ${r.selected.pct}%  ${r.selected.klass}` : `— ${r.verdict}`}`);
     if (r.selected) console.log(`                     the evaluator sees: "${r.selected.sees}"`);
-    console.log('\n  every candidate it looked at:');
+    console.log('');
+    console.log('  every candidate it looked at:');
     for (const t of r.table) {
       console.log(`    ${String(t.pct).padStart(3)}%  ${t.klass.padEnd(20)} "${t.sees}"`);
-      console.log(`          library said: "${t.says}"`);
+      console.log(`          library said : "${t.says}"`);
+      // The URL actually handed to the vision model. Logged because the
+      // reason this baseline is being rebuilt is that the previous one
+      // inspected uploader avatars - no description could have revealed
+      // that, only the address could.
+      console.log(`          inspected    : ${t.picture.slice(0, 76)}`
+                + (t.frames ? `   (+${t.frames} provider frames)` : ''));
     }
+    BASELINE.push({ beat: beat.name, verdict: r.verdict,
+                    picked: r.selected ? r.selected.id : null,
+                    klass: r.selected ? r.selected.klass : null,
+                    pct: r.selected ? r.selected.pct : null,
+                    sees: r.selected ? r.selected.sees : null,
+                    metadataPick: r.metadata ? r.metadata.id : null,
+                    qualityPick: r.quality ? r.quality.id : null });
 
     // ── What must be true ──────────────────────────────────────────────────
     if (r.selected) {
@@ -212,7 +230,8 @@ const BEATS = [
       // the metadata order rather than stop. What must still hold is that the
       // fallback is safe - the beat does not get livestock.
       check('an unavailable evaluator degrades instead of breaking',
-            r.verdict === 'NOT_EVALUATED' || r.verdict === 'NO_CANDIDATES', r.verdict);
+            r.verdict === 'NOT_EVALUATED' || r.verdict === 'NO_CANDIDATES'
+            || r.verdict === 'FAILED', r.verdict);
       check('and the metadata order it falls back to is not forbidden footage',
             !r.metadata || !beat.bannedTop.test(r.metadata.says),
             r.metadata);
@@ -222,6 +241,16 @@ const BEATS = [
           r.table[0]);
   }
 
+  console.log('');
+  console.log('='.repeat(74));
+  console.log('BASELINE - corrected imagery, no new semantic work');
+  console.log('');
+  for (const b of BASELINE) {
+    const line = b.picked ? `${b.klass} ${b.pct}%  ${b.picked}` : b.verdict;
+    console.log(`  ${b.beat.padEnd(44)} ${line}`);
+    if (b.sees) console.log(`  ${' '.repeat(44)} sees: "${b.sees.slice(0, 66)}"`);
+  }
+  console.log('');
   check('nothing threw throughout', pageErrors.length === 0, pageErrors.slice(0, 3));
 
   console.log('\n' + (fails.length ? `FAILED (${fails.length}): ${fails.join(', ')}`
