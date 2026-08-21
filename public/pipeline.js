@@ -14,6 +14,9 @@
     { key: 'voice', label: 'Voice', icon: '🎙️', target: null }, // main voice studio (no id)
     { key: 'storyboard', label: 'Storyboard', icon: '🎬', target: 'storyboard-card' },
     { key: 'images', label: 'Stock Footage', icon: '🎥', target: 'image-card' },
+    // Between the footage and the cut: what goes ON the picture, decided after
+    // the picture exists. See renderer.js.
+    { key: 'renderer', label: 'Renderer', icon: '✨', target: 'renderer-card' },
     { key: 'video', label: 'Video', icon: '🎞️', target: 'editor-card' },
     { key: 'youtube', label: 'YouTube', icon: '🎯', target: 'youtube-card' }
   ];

@@ -40,7 +40,8 @@
   /* ---- Project Metrics -------------------------------------------- */
   function computeProjectMetrics() {
     const st = (window.BlvckAssets && window.BlvckAssets.status) ? window.BlvckAssets.status() : {};
-    const stages = ['research', 'script', 'voice', 'storyboard', 'images', 'video', 'youtube'];
+    const stages = ['research', 'script', 'voice', 'storyboard', 'images',
+                    'renderer', 'video', 'youtube'];
     let completedCount = 0;
     stages.forEach(k => { if (st[k]) completedCount++; });
     const completionPct = Math.round((completedCount / stages.length) * 100);

@@ -708,8 +708,11 @@
           treatment: (s.stockAsset && s.stockAsset.treatment) || s.treatment || null,
           stockAsset: s.stockAsset || null,
           // Only the first part of a split beat carries the overlay: repeating
-          // a statistic card on every cut of the same beat would flash it.
+          // a statistic card on every cut of the same beat would flash it. The
+          // Renderer's list travels under the same rule and for the same
+          // reason.
           editorialOverlay: part === 0 ? (s.editorialOverlay || null) : null,
+          rendererElements: part === 0 ? (s.rendererElements || null) : null,
           img: part === 0 ? img : null,
           video: videos[part] || null
         });
@@ -1530,18 +1533,63 @@
     title: 'title'
   };
 
-  function overlayActiveAt(clip, ms) {
-    const ov = clip && clip.editorialOverlay;
-    if (!ov || !ov.enabled) return null;
-    const start = Number(ov.start);
-    const end = Number(ov.end);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
-    const t = ms / 1000;
-    return (t >= start && t < end) ? ov : null;
+  /**
+   * Every renderer element on this clip, whichever shape it was saved in.
+   *
+   * The Renderer stage plans a LIST - a statistic and a lower third can share a
+   * beat - while everything written before it planned exactly one
+   * editorialOverlay. Both must keep working: a project saved last week has the
+   * singular field and no array, and it has to open and export unchanged.
+   *
+   * The array wins when present; otherwise the old field is read as a list of
+   * one. Nothing is deleted, and nothing downstream needs to know which shape
+   * it came from.
+   */
+  function elementsOf(clip) {
+    if (!clip) return [];
+    const list = clip.rendererElements;
+    if (Array.isArray(list) && list.length) return list;
+    return clip.editorialOverlay ? [clip.editorialOverlay] : [];
   }
 
+  /** Those whose window contains this moment, in the order they were planned. */
+  function activeElements(clip, ms) {
+    const t = ms / 1000;
+    return elementsOf(clip).filter((e) => {
+      if (!e || !e.enabled) return false;
+      const start = Number(e.start);
+      const end = Number(e.end);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false;
+      // Half open, as it has always been: on at start, off at end. A closed
+      // window makes two consecutive elements overlap by a frame.
+      return t >= start && t < end;
+    });
+  }
+
+  // The first active element. Kept because callers and tests depend on this
+  // exact contract, and because "is anything showing" is still a fair question.
+  function overlayActiveAt(clip, ms) {
+    return activeElements(clip, ms)[0] || null;
+  }
+
+  /**
+   * Draw every element whose window contains this moment.
+   *
+   * They are drawn in the order the Renderer planned them, so a later element
+   * sits above an earlier one - which is what lets a lower third share a beat
+   * with a statistic without the two fighting over who is on top.
+   */
   function drawEditorialOverlay(g, cw, ch, clip, ms) {
-    const ov = overlayActiveAt(clip, ms);
+    const active = activeElements(clip, ms);
+    if (!active.length) return false;
+    let drew = false;
+    for (const el of active) {
+      if (drawOneElement(g, cw, ch, el, ms)) drew = true;
+    }
+    return drew;
+  }
+
+  function drawOneElement(g, cw, ch, ov, ms) {
     if (!ov) return false;
 
     const G = window.BlvckGraphic;
@@ -2108,8 +2156,11 @@
       // terms.
       stockAsset: c.stockAsset || null,
 
-      // The editorial card and the moment it was anchored to.
+      // The editorial card and the moment it was anchored to. Both shapes are
+      // persisted: an old project has only the singular field, a Renderer
+      // project has the list, and neither may be dropped on save.
       editorialOverlay: c.editorialOverlay || null,
+      rendererElements: c.rendererElements || null,
 
       // Presenter layout, when the Director placed the host in this beat.
       hostLayout: c.hostLayout || null,
@@ -2562,6 +2613,8 @@
     drawContain,
     fitFor,
     overlayActiveAt,
+    elementsOf,
+    activeElements,
     drawEditorialOverlay,
     renderTo,
     totalMs,
