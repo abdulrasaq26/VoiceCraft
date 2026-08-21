@@ -294,14 +294,203 @@
     return decision;
   }
 
+  // ── The stage ────────────────────────────────────────────────────────────
+
+  const SB_LS = 'blvck-tts:storyboard';
+
+  /**
+   * The shot's own window, in seconds.
+   *
+   * A measured project carries timelineStart/End, placed against the aligned
+   * recording. An estimated one carries only the timestamp string the scene was
+   * built with. Either way the window comes from where the scene already sits -
+   * this is not the Renderer deciding when anything happens, it is the Renderer
+   * reading what was decided upstream, so that an element whose phrase was never
+   * spoken still has the shot to fall back to.
+   */
+  function shotWindowOf(scene) {
+    const s = Number(scene && scene.timelineStart);
+    const e = Number(scene && scene.timelineEnd);
+    if (Number.isFinite(s) && Number.isFinite(e) && e > s) return { timelineStart: s, timelineEnd: e };
+
+    const m = String(scene && scene.timestamp || '')
+      .match(/(\d+):(\d+):(\d+)\s*[-–]\s*(\d+):(\d+):(\d+)/);
+    if (!m) return null;
+    const a = (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]);
+    const b = (+m[4]) * 3600 + (+m[5]) * 60 + (+m[6]);
+    return b > a ? { timelineStart: a, timelineEnd: b } : null;
+  }
+
+  /**
+   * Should this beat even be asked about?
+   *
+   * A beat the storyboard routed to the canvas is ALREADY a graphic - a chart
+   * beat renders a full-frame chart card. Laying a panel over it would be a
+   * card on a card. And a beat with no picture has nothing for an element to
+   * sit on.
+   */
+  function eligible(scene) {
+    if (!str(scene && scene.subtitle)) return { ok: false, why: 'no narration on this beat' };
+    if (window.BlvckLTX && window.BlvckLTX.rendersOnCanvas
+        && window.BlvckLTX.rendersOnCanvas(scene)) {
+      return { ok: false, why: 'this beat is already a full-frame graphic' };
+    }
+    if (!scene.stockAsset && scene.status !== 'done') {
+      return { ok: false, why: 'no picture has been chosen yet' };
+    }
+    if (!shotWindowOf(scene)) return { ok: false, why: 'this beat has no place on the timeline' };
+    return { ok: true, why: '' };
+  }
+
+  /** What the acquisition step already learned about the chosen picture. */
+  function pictureContext(scene) {
+    const asset = scene.stockAsset || {};
+    const ev = scene.visualEvaluation || {};
+    return {
+      // The vision model already looked at this asset when it was being chosen.
+      // Asking again would cost another call to say the same thing.
+      mediaDescription: (ev.best && ev.best.sees) || '',
+      mediaSays: (asset.archive && asset.archive.title)
+                 || (Array.isArray(asset.queriesUsed) ? asset.queriesUsed.join(', ') : '')
+    };
+  }
+
+  /**
+   * Decide for every beat in a project.
+   *
+   * Sequential on purpose. NIM answers 503 ResourceExhausted when its shared
+   * worker pool is full - measured during the live smoke test - and firing a
+   * whole storyboard at it in parallel is the reliable way to see that. The
+   * cost is real and worth stating: roughly 12-30s a beat.
+   *
+   * Never throws. A beat that cannot be decided keeps whatever it had.
+   */
+  async function decideForScenes({ scenes, transcript, force = false,
+                                   onProgress, signal, decider } = {}) {
+    const list = Array.isArray(scenes) ? scenes : [];
+    // The stage walks beats, applies eligibility and persists answers; it does
+    // not care who produces them. Naming the decider makes that separation real
+    // rather than implied, and lets the plumbing be exercised without spending
+    // twenty seconds a beat on the provider to learn nothing about plumbing.
+    const ask = typeof decider === 'function' ? decider : decide;
+    const summary = { considered: 0, decided: 0, added: 0, nothing: 0,
+                      skipped: 0, failed: 0, stopped: false, beats: [] };
+
+    for (const scene of list) {
+      if (signal && signal.aborted) { summary.stopped = true; break; }
+
+      const fit = eligible(scene);
+      if (!fit.ok) {
+        summary.skipped++;
+        summary.beats.push({ index: scene.index, skipped: fit.why });
+        if (onProgress) onProgress({ scene, skipped: fit.why, summary });
+        continue;
+      }
+      // Already decided, and not being asked again. A re-run should not spend
+      // ten minutes reproducing answers that are already on the scenes.
+      if (!force && scene.rendererDecision && scene.rendererDecision.ran) {
+        summary.skipped++;
+        summary.beats.push({ index: scene.index, skipped: 'already decided' });
+        if (onProgress) onProgress({ scene, skipped: 'already decided', summary });
+        continue;
+      }
+
+      summary.considered++;
+      if (onProgress) onProgress({ scene, working: true, summary });
+
+      const { mediaDescription, mediaSays } = pictureContext(scene);
+      let decision;
+      try {
+        decision = await ask({
+          narration: scene.subtitle,
+          intent: scene.sceneSummary || scene.camera || '',
+          mediaDescription, mediaSays,
+          shot: shotWindowOf(scene),
+          transcript
+        });
+      } catch (err) {
+        // decide() is written not to throw, but this stage must survive it if
+        // that ever stops being true.
+        decision = { needed: false, reason: 'the Renderer stage failed: ' + err.message,
+                     elements: [], rejected: [], ran: false };
+      }
+
+      if (decision.ran) summary.decided++; else summary.failed++;
+      if (decision.needed && decision.elements.length) {
+        scene.rendererElements = decision.elements;
+        summary.added += decision.elements.length;
+      } else {
+        // An honest no clears any previous yes, or a re-run would leave a card
+        // the Director has since decided against.
+        scene.rendererElements = null;
+        if (decision.ran) summary.nothing++;
+      }
+      // Why, kept on the scene. The workspace shows it, and a beat with no card
+      // should be able to say whether that was a judgement or an outage.
+      scene.rendererDecision = { ran: decision.ran, needed: decision.needed,
+                                 reason: decision.reason, at: Date.now(),
+                                 rejected: (decision.rejected || []).map((r) => r.why) };
+
+      summary.beats.push({ index: scene.index, needed: decision.needed,
+                           ran: decision.ran, reason: decision.reason,
+                           kinds: (decision.elements || []).map((e) => e.kind) });
+      if (onProgress) onProgress({ scene, decision, summary });
+    }
+    return summary;
+  }
+
+  /**
+   * Run the stage over the project the app currently holds.
+   *
+   * Writes onto the storyboard's OWN scene objects where it can. The storyboard
+   * rebuilds its stored scenes from that in-memory array on every save, so a
+   * decision written only into localStorage would be erased the next time
+   * anything else saved - which is exactly how the transcript used to vanish.
+   */
+  async function runStage(opts = {}) {
+    const SBM = window.BlvckStoryboard;
+    let stored = null;
+    try { stored = JSON.parse(localStorage.getItem(SB_LS) || 'null'); } catch (e) { stored = null; }
+
+    const live = SBM && SBM.scenes ? SBM.scenes() : null;
+    const scenes = (live && live.length) ? live : ((stored && stored.scenes) || []);
+    if (!scenes.length) {
+      return { considered: 0, decided: 0, added: 0, nothing: 0, skipped: 0,
+               failed: 0, stopped: false, beats: [], why: 'there are no scenes yet' };
+    }
+
+    const summary = await decideForScenes(Object.assign({}, opts, {
+      scenes, transcript: (stored && stored.transcript) || null
+    }));
+
+    if (live && live.length && SBM.save) {
+      SBM.save();
+    } else if (stored) {
+      try {
+        stored.scenes = scenes;
+        localStorage.setItem(SB_LS, JSON.stringify(stored));
+        window.dispatchEvent(new CustomEvent('blvck-storyboard-updated'));
+      } catch (e) { /* quota — the decisions stay in memory */ }
+    }
+    return summary;
+  }
+
   window.BlvckRenderer = {
     decide,
+    // The stage: every beat in the project, written onto the scenes the
+    // storyboard is holding so the next save carries them rather than
+    // overwriting them.
+    runStage,
+    decideForScenes,
     available,
     SUPPORTED_KINDS: SUPPORTED,
     PANEL_KINDS, TEXT_KINDS, PLACEMENTS, MAX_ELEMENTS,
     // Exported so the contract can be tested without a provider.
     _parseDecision: parseDecision,
     _applyTiming: applyTiming,
-    _decisionPrompt: decisionPrompt
+    _decisionPrompt: decisionPrompt,
+    _eligible: eligible,
+    _shotWindowOf: shotWindowOf,
+    _pictureContext: pictureContext
   };
 })();

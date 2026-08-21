@@ -2934,6 +2934,16 @@
   // taken seconds.
   window.BlvckStoryboard = {
     assetMode: () => assetMode,
+    /** The live scene list.
+     *
+     *  A later stage - the Renderer decides what goes ON a beat once its
+     *  picture exists - has to write onto THESE objects, not onto a copy read
+     *  out of localStorage. saveProject() rebuilds the stored scenes from this
+     *  array every time, so anything written only to storage is erased by the
+     *  next save from anywhere. That is how the transcript used to disappear. */
+    scenes: () => scenes,
+    /** Persist what a later stage just wrote onto those scenes. */
+    save: () => saveProject(),
     /** What this specific scene should produce: 'image' or 'video'. */
     assetTypeFor: (scene) => sceneAssetType(scene || {}),
     /** Render one scene's still (or canvas card) exactly as the storyboard does. */
