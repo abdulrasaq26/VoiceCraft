@@ -130,6 +130,57 @@ const LEGACY = { enabled: true, start: 2, end: 6, text: '40%',
   check('and the panel still covers the lower-right',
         pct(mixed.q.footage.br, mixed.q.total.br) < 70, mixed.q.footage);
 
+  // ── A card that cannot be drawn must not take the frame with it ─────────
+  //
+  // The parser refuses these now, but the compositor is the last line: an
+  // element can also reach it from a saved project, a hand edit, or a future
+  // caller. drawChart throws on items with no numbers, and this runs once per
+  // frame - unguarded, one bad card stops the preview and truncates an export.
+  console.log('\n=== a card the drawer refuses ===');
+  const contained = await page.evaluate(() => {
+    const BAD = { enabled: true, start: 2, end: 6, kind: 'chart',
+                  label: 'Fuel Efficiency', items: ['3g/km', '20', '500'],
+                  placement: 'lower_right', animation: 'none' };
+
+    // Non-vacuity: the content must genuinely be undrawable, or this measures
+    // nothing. drawChart throws on it; drawPanel is expected to refuse it
+    // first, so the throw is never reached.
+    const verdict = window.BlvckGraphic.canDrawPanel(BAD);
+    const c = document.createElement('canvas');
+    c.width = 640; c.height = 360;
+    let direct = '', returned = null;
+    try {
+      returned = window.BlvckGraphic.drawPanel(c.getContext('2d'), window.BlvckGraphic.THEMES.dark,
+        window.BlvckGraphic.panelSpecOf(BAD), 'lower_right', 640, 360);
+    } catch (e) { direct = e.message; }
+
+    window.__load([BAD]);
+    let frameThrew = '';
+    let q = null;
+    try { q = window.__quads(4000); } catch (e) { frameThrew = e.message; }
+    return { verdict, direct, returned, frameThrew, q };
+  });
+  console.log(`  drawn directly : ${contained.direct || 'refused, returning ' + contained.returned}`);
+  console.log(`  through a frame: ${contained.frameThrew || 'survived'}`);
+  check('the drawer genuinely cannot typeset it', contained.verdict.ok === false, contained.verdict);
+  check('drawPanel refuses it rather than throwing', !contained.direct, contained.direct);
+  check('and refuses it BEFORE painting a backing plate, so no empty box appears',
+        contained.q && pct(contained.q.footage.br, contained.q.total.br) > 95, contained.q);
+  check('a frame containing it still renders', !contained.frameThrew, contained.frameThrew);
+
+  // A good card beside a bad one still draws: the skip is per element.
+  const survivor = await page.evaluate((chart) => {
+    window.__load([{ enabled: true, start: 2, end: 6, kind: 'chart', label: 'Bad',
+                     items: ['3g/km'], placement: 'upper_left' }, chart]);
+    return window.__quads(4000);
+  }, CHART);
+  console.log(`  good card beside bad: tl ${pct(survivor.footage.tl, survivor.total.tl)}%  `
+    + `br ${pct(survivor.footage.br, survivor.total.br)}%`);
+  check('the bad card in the upper-left drew nothing',
+        pct(survivor.footage.tl, survivor.total.tl) > 95, survivor.footage);
+  check('while the good card beside it still drew',
+        pct(survivor.footage.br, survivor.total.br) < 70, survivor.footage);
+
   // ── An honest limit ─────────────────────────────────────────────────────
   console.log('\n=== what panel mode will not do ===');
   const limits = await page.evaluate(() => {

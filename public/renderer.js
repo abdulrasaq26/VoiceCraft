@@ -63,34 +63,61 @@
       'WHAT IS VISIBLE IN IT: ' + (str(mediaDescription) || '(not inspected)'),
       'WHAT THE LIBRARY CALLS IT: ' + (str(mediaSays) || '(nothing)'),
       '',
-      'Decide whether adding a graphic would materially help the viewer',
-      'understand this sentence. Most shots need nothing. Add something only',
-      'when the narration carries information the picture does not:',
-      '  a figure the footage cannot show     -> stat',
-      '  a trend or comparison between values -> chart',
-      '  dated events in sequence             -> timeline',
-      '  a set of named steps or parts        -> checklist',
-      '  a line worth reading as text         -> quote, headline or label',
+      'Ask ONE question: does this sentence carry information the picture',
+      'cannot show?',
       '',
-      'Say no when the footage already carries the meaning. A card that repeats',
-      'what the viewer can already see is clutter, and clutter costs attention.',
+      'Not "is the picture related to the sentence" - it almost always is,',
+      'because the footage was chosen for this sentence. The subject is not the',
+      'information. A picture can show a place, a person, a thing, an action. It',
+      'cannot show a quantity, a date, a proper name, an order of events, or a',
+      'comparison between two things. If the sentence carries any of those, the',
+      'picture is not carrying them, however well it matches the topic.',
       '',
-      'ANCHOR each element to the words it belongs to - the exact phrase from',
-      'the narration above, copied verbatim. Do NOT give times: the anchor is',
-      'matched against the measured recording, which knows when those words were',
-      'actually spoken.',
+      'Then choose the form that fits the information:',
+      '  ONE figure standing alone            -> stat',
+      '  TWO OR MORE values compared          -> chart, one item per value',
+      '  events tied to dates or years        -> timeline, one item per event',
+      '  named steps, parts or conditions     -> checklist, one item per entry',
+      '  wording worth reading as text        -> quote, headline or label',
       '',
+      'A stat holds a single number. Several numbers packed into one stat is a',
+      'chart that was mislabelled: use chart, and give each value its own item.',
+      '',
+      'Say no when the sentence adds nothing to what is on screen - description,',
+      'mood, weather, atmosphere, an action the viewer is already watching. A',
+      'card that repeats what the viewer can see is clutter, and clutter costs',
+      'attention.',
+      '',
+      'ANCHOR each element to the words it belongs to: a SHORT phrase of two to',
+      'five words, copied verbatim from the narration above, marking the moment',
+      'the element should appear. Not a whole sentence - an anchor is a point,',
+      'not a passage. Do NOT give times: the anchor is matched against the',
+      'measured recording, which knows when those words were actually spoken.',
+      '',
+      // Deliberately a shape, not a worked example. A filled-in example gets
+      // copied: measured once, against a beat that happened to resemble it, the
+      // model returned that example byte for byte and every contract assertion
+      // passed on an answer it had not thought about. A template has nothing to
+      // lift, and it does not bias the choice of kind toward whichever one the
+      // example happened to use.
       'Reply with ONLY this JSON:',
-      '{"needed":true,"reason":"<one sentence>","elements":[',
-      ' {"kind":"stat","content":"40%","label":"switch brands because of price",',
-      '  "anchor":"forty percent","placement":"lower_right"}]}',
+      '{"needed":true,"reason":"<one sentence, about THIS shot>","elements":[',
+      ' {"kind":"<one of the kinds below>","content":"<the single value, if any>",',
+      '  "label":"<a short caption>","items":["<see the item format below>"],',
+      '  "anchor":"<two to five words from the narration>","placement":"<one below>"}]}',
       '',
       'or, when nothing is warranted:',
       '{"needed":false,"reason":"<why the footage is already enough>","elements":[]}',
       '',
       'kind must be one of: ' + SUPPORTED.join(', ') + '.',
       'chart, timeline and checklist must also carry "items": a list of short',
-      'strings holding the actual content to typeset.',
+      'strings holding the actual content to typeset. The colon matters, and',
+      'what goes on each side of it differs by kind:',
+      '  chart     "Label: number"        e.g. "Region A: 41"  - a bare number',
+      '                                   cannot be plotted, nothing labels the bar',
+      '  timeline  "When: what happened"  e.g. "1912: the yard opened"  - the',
+      '                                   date goes FIRST, it marks the rail',
+      '  checklist "One short line"   no colon needed',
       'placement must be one of: ' + PLACEMENTS.join(', ') + '.',
       'At most ' + MAX_ELEMENTS + ' elements, in the order they should be layered.'
     ].join(NL);
@@ -151,7 +178,7 @@
       const placement = PLACEMENTS.indexOf(str(row.placement).toLowerCase()) >= 0
         ? str(row.placement).toLowerCase() : 'lower_right';
 
-      elements.push({
+      const el = {
         kind, content, label, items, placement,
         // The phrase this belongs to. Timing is decided downstream from the
         // measured recording; anything the model said about start or end is
@@ -159,7 +186,21 @@
         anchor: str(row.anchor) || label || content,
         animation: str(row.animation) || 'none',
         enabled: true
-      });
+      };
+
+      // Ask the compositor whether it could actually draw this, rather than
+      // assuming a supported kind with a non-empty items array is enough. It
+      // is not: a chart of ["3g/km", "20", "500"] passes both those checks and
+      // makes drawChart throw, which inside a render loop breaks the frame and
+      // during an export breaks the recording. Measured against live NIM, not
+      // imagined.
+      if (PANEL_KINDS.indexOf(kind) >= 0 && window.BlvckGraphic
+          && window.BlvckGraphic.canDrawPanel) {
+        const verdict = window.BlvckGraphic.canDrawPanel(el);
+        if (!verdict.ok) { rejected.push({ why: verdict.why, row }); continue; }
+      }
+
+      elements.push(el);
     }
 
     if (!elements.length) {

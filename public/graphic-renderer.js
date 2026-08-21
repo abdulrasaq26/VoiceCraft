@@ -1080,10 +1080,74 @@
    * Returns false rather than throwing for a kind that cannot be drawn per
    * frame, so a caller in a render loop can simply skip it.
    */
+  // A Renderer element, as the Director produces it, expressed as the spec the
+  // panel drawers expect. It lives here rather than at either call site so the
+  // "can this be drawn?" question and the drawing itself cannot disagree about
+  // what is being asked for.
+  function panelSpecOf(ov = {}) {
+    return {
+      kind: String(ov.kind || '').toLowerCase(),
+      title: ov.label || ov.text || '',
+      value: ov.content || ov.text || '',
+      items: Array.isArray(ov.items) ? ov.items.filter(Boolean) : [],
+      subtitle: ov.subtitle || ''
+    };
+  }
+
+  /**
+   * Would drawPanel succeed on this element, or throw?
+   *
+   * The drawers refuse content they cannot typeset - drawChart throws outright
+   * on items with no numbers in them. Inside a render loop that throw does not
+   * degrade to a missing card, it breaks the frame, and during an export it
+   * breaks the recording. So the preconditions are stated once, here, next to
+   * the drawers that hold them, and the Director's parser consults them before
+   * an element is ever accepted.
+   *
+   * Measured: NIM asked for a chart of ["3g/km", "20", "500"]. Every item fails
+   * parseSeries, leaving no numeric points, and drawChart throws. The element
+   * satisfied every check the parser had - a supported kind, a non-empty items
+   * array - and would still have taken the export down.
+   */
+  function canDrawPanel(ov) {
+    return canDrawSpec(panelSpecOf(ov));
+  }
+
+  // The same question asked of an already-mapped spec, which is what drawPanel
+  // holds. Split so drawPanel can ask it without mapping a spec a second time.
+  function canDrawSpec(spec) {
+    const draw = PANEL_KINDS[String(spec && spec.kind || '').toLowerCase()];
+    if (!draw) return { ok: false, why: 'there is no panel drawer for "' + (spec && spec.kind) + '"' };
+    const items = Array.isArray(spec.items) ? spec.items.filter(Boolean) : [];
+
+    if (draw === drawChart) {
+      const points = parseSeries(items).filter((d) => Number.isFinite(d.value));
+      if (!points.length) {
+        return { ok: false, why: 'a chart needs items carrying numbers, written '
+                                 + '"label: value" - none of these parse' };
+      }
+    } else if (draw === drawTimeline) {
+      if (!parseSeries(items).length) return { ok: false, why: 'a timeline needs items' };
+    } else if (draw === drawChecklist) {
+      if (!items.length) return { ok: false, why: 'a checklist needs items' };
+    } else if (draw === drawStat) {
+      if (!String(spec.value || spec.title || '').trim()) return { ok: false, why: 'a stat needs a value' };
+    } else if (draw === drawWhiteboard) {
+      if (!items.length) return { ok: false, why: 'a whiteboard needs items' };
+    }
+    return { ok: true, why: '' };
+  }
   function drawPanel(ctx, t, spec = {}, placement = 'lower_right', cw = W, ch = H) {
     const kind = String(spec.kind || 'title').toLowerCase();
     const draw = PANEL_KINDS[kind];
     if (!draw) return false;
+
+    // Asked BEFORE any ink. The backing plate is painted first and the drawer
+    // throws afterwards, so a card that cannot be typeset would otherwise leave
+    // an empty dark box sitting over the footage - which is exactly what
+    // drawChart refuses to do when it throws rather than drawing an apology.
+    const verdict = canDrawSpec(Object.assign({ kind }, spec));
+    if (!verdict.ok) return false;
 
     const rect = panelRect(placement, cw, ch);
     ctx.save();
@@ -1481,6 +1545,10 @@
     // Contained data cards, for the Renderer: the same drawers as render()
     // uses, transformed into part of the frame instead of filling it.
     drawPanel, PANEL_PLACEMENTS, PANEL_KINDS,
+    // What a panel drawer will actually accept, asked before it is asked to
+    // draw. A drawer that throws inside a render loop breaks the frame, not
+    // just the card.
+    canDrawPanel, canDrawSpec, panelSpecOf,
     // presenter cut-out
     prepareFace, saveFace, getFace, clearFace, drawFace, stripBackground,
     // typography

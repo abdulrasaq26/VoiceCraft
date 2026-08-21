@@ -1589,6 +1589,10 @@
     return drew;
   }
 
+  // Warned once per kind+anchor: this runs every frame, and a card that
+  // cannot be drawn would otherwise fill the console thirty times a second.
+  const warnedPanels = new Set();
+
   function drawOneElement(g, cw, ch, ov, ms) {
     if (!ov) return false;
 
@@ -1624,15 +1628,28 @@
       g.globalAlpha = Math.max(0, Math.min(1, alpha));
       try {
         // drawPanel works in canvas coordinates and scales the 1280x720 stage
-        // into its own rect, so it must NOT be pre-scaled here.
-        G.drawPanel(g, theme, {
-          kind: panelKind,
-          title: ov.label || ov.text || '',
+        // into its own rect, so it must NOT be pre-scaled here. The spec comes
+        // from BlvckGraphic so that what canDrawPanel was asked about and what
+        // gets drawn are the same object.
+        const spec = G.panelSpecOf ? G.panelSpecOf(ov) : {
+          kind: panelKind, title: ov.label || ov.text || '',
           value: ov.content || ov.text || '',
-          label: ov.label || '',
-          items: Array.isArray(ov.items) ? ov.items : [],
-          subtitle: ov.subtitle || ''
-        }, ov.placement || 'lower_right', cw, ch);
+          items: Array.isArray(ov.items) ? ov.items : [], subtitle: ov.subtitle || ''
+        };
+        spec.label = ov.label || '';
+        G.drawPanel(g, theme, spec, ov.placement || 'lower_right', cw, ch);
+      } catch (err) {
+        // The drawers refuse content they cannot typeset by throwing, and this
+        // runs once per frame: unguarded, one unplottable card stops the
+        // preview and truncates a MediaRecorder export. A missing card is a
+        // normal beat; a dead frame is a lost render. Warned rather than
+        // swallowed, because an element that silently never appears is the
+        // other failure this stage was built to avoid.
+        if (!warnedPanels.has(panelKind + ':' + (ov.anchor || ''))) {
+          warnedPanels.add(panelKind + ':' + (ov.anchor || ''));
+          console.warn(`[editor] a ${panelKind} could not be drawn and was skipped: ${err.message}`);
+        }
+        return false;
       } finally {
         g.restore();
       }

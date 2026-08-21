@@ -41,14 +41,16 @@ const check = (name, cond, detail) => {
 // because the picture already carries the sentence.
 const BEATS = [
   { name: 'a sequence of dated events',
-    expect: 'something, probably a timeline',
+    expect: 'a timeline - the shot cannot show three years',
+    wants: true, preferKinds: ['timeline'],
     narration: 'Surveying started in nineteen thirty-three, the towers were topped out '
              + 'two years later, and the first cars crossed in nineteen thirty-seven.',
     intent: 'A long suspension bridge standing in fog',
     queries: ['suspension bridge fog', 'golden gate bridge'] },
 
   { name: 'a comparison between values',
-    expect: 'something, probably a chart',
+    expect: 'a chart - three values compared, each its own item',
+    wants: true, preferKinds: ['chart'],
     narration: 'A cargo ship moves a tonne of freight on about three grams of fuel '
              + 'per kilometre. A lorry needs roughly twenty. A plane, five hundred.',
     intent: 'A container ship at sea seen from above',
@@ -56,6 +58,7 @@ const BEATS = [
 
   { name: 'a sentence the picture already carries',
     expect: 'nothing - the footage IS the sentence',
+    wants: false, preferKinds: [],
     narration: 'The waves break against the rocks over and over in the grey light before dawn.',
     intent: 'Waves crashing on dark rocks at dawn',
     queries: ['waves crashing rocks', 'ocean waves rocks dawn'] }
@@ -189,9 +192,29 @@ const BEATS = [
 
     // The one thing every beat must prove: it is not the prompt's example
     // coming back. If it is, this beat measured nothing.
-    check(`${N}: the answer is not the prompt's worked example`,
-          !/forty percent|switch brands because of price/i.test(String(run.raw || '')),
+    check(`${N}: the answer is not an example from the prompt coming back`,
+          !/forty percent|switch brands because of price|Region A|the yard opened/i
+            .test(String(run.raw || '')),
           String(run.raw || '').slice(0, 160));
+    check(`${N}: no placeholder from the JSON template was left in`,
+          !(d.elements || []).some((e) => /^<|>$/.test(e.kind + e.content + e.placement)),
+          d.elements);
+
+    // ── The judgement, not the contract ────────────────────────────────────
+    // These can fail while every contract assertion passes. That is the whole
+    // reason they are here: the first live run produced a drawable element that
+    // was editorially wrong, and nothing in the contract could notice.
+    check(`${N}: judged correctly whether a graphic is warranted`,
+          d.needed === beat.wants,
+          { decided: d.needed, expected: beat.wants, because: d.reason });
+    if (beat.wants && d.needed) {
+      const kinds = (d.elements || []).map((e) => e.kind);
+      check(`${N}: chose a fitting form (wanted ${beat.preferKinds.join(' or ')})`,
+            kinds.some((k) => beat.preferKinds.indexOf(k) >= 0), kinds);
+      check(`${N}: every anchor is a point, not a passage`,
+            (d.elements || []).every((e) => e.anchor.split(/\s+/).length <= 6),
+            (d.elements || []).map((e) => `${e.anchor.split(/\s+/).length}w: ${e.anchor}`));
+    }
 
     for (const e of (d.elements || [])) {
       check(`${N}: "${e.kind}" is a kind the compositor can draw`, SUPPORTED.indexOf(e.kind) >= 0, e.kind);

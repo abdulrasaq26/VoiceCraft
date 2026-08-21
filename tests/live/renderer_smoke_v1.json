@@ -1,10 +1,14 @@
 {
-  "at": "2026-08-21T10:52:09.884Z",
+  "at": "2026-08-21T11:13:33.927Z",
   "results": [
     {
       "beat": {
         "name": "a sequence of dated events",
-        "expect": "something, probably a timeline",
+        "expect": "a timeline - the shot cannot show three years",
+        "wants": true,
+        "preferKinds": [
+          "timeline"
+        ],
         "narration": "Surveying started in nineteen thirty-three, the towers were topped out two years later, and the first cars crossed in nineteen thirty-seven.",
         "intent": "A long suspension bridge standing in fog",
         "queries": [
@@ -18,26 +22,49 @@
         "says": "golden gate bridge, fog, foggy, bridge, san francisco, clouds, live wallpaper"
       },
       "vision": {
-        "sees": "A red suspension bridge is visible through a thick layer of fog, with a boat traveling in the water below.",
+        "sees": "A red structure is visible through a thick layer of fog, with a boat in the distance.",
         "sawPicture": true,
         "error": null
       },
-      "raw": "{\"needed\":false,\"reason\":\"The footage already carries the meaning of a bridge, which is the subject of the narration, and no additional information is required to understand the sentence.\",\"elements\":[]}",
+      "raw": "{\"needed\":true,\"reason\":\"The sentence carries specific dates and events that the picture cannot show\",\"elements\":[{\"kind\":\"timeline\",\"content\":\"\",\"label\":\"Construction Timeline\",\"items\":[\"1933: Surveying started\",\"1935: Towers topped out\",\"1937: First cars crossed\"],\"anchor\":\"Surveying started\",\"placement\":\"lower_third\"}]}",
       "decision": {
-        "needed": false,
-        "reason": "The footage already carries the meaning of a bridge, which is the subject of the narration, and no additional information is required to understand the sentence.",
-        "elements": [],
+        "needed": true,
+        "reason": "The sentence carries specific dates and events that the picture cannot show",
+        "elements": [
+          {
+            "kind": "timeline",
+            "content": "",
+            "label": "Construction Timeline",
+            "items": [
+              "1933: Surveying started",
+              "1935: Towers topped out",
+              "1937: First cars crossed"
+            ],
+            "placement": "lower_third",
+            "anchor": "Surveying started",
+            "animation": "none",
+            "enabled": true,
+            "start": 0,
+            "end": 1.2,
+            "anchoredTo": "Surveying started",
+            "spokenAt": 0
+          }
+        ],
         "rejected": [],
         "ran": true
       },
-      "ms": 12603,
+      "ms": 15121,
       "attempts": 1,
-      "promptChars": 2146
+      "promptChars": 3417
     },
     {
       "beat": {
         "name": "a comparison between values",
-        "expect": "something, probably a chart",
+        "expect": "a chart - three values compared, each its own item",
+        "wants": true,
+        "preferKinds": [
+          "chart"
+        ],
         "narration": "A cargo ship moves a tonne of freight on about three grams of fuel per kilometre. A lorry needs roughly twenty. A plane, five hundred.",
         "intent": "A container ship at sea seen from above",
         "queries": [
@@ -51,41 +78,47 @@
         "says": "container terminal, container ship, cargo, shipping, port, logistics, export, loading, hong kong, hyperlapse, night, lighting, busy, metropolis, harbor, buildings, aerial, transportation, dock"
       },
       "vision": {
-        "sees": "A city skyline with a large body of water and a bridge in the foreground, featuring a bustling port area with numerous boats and ships.",
+        "sees": "A city skyline is visible at night, with a large body of water in the foreground and a bridge spanning it.",
         "sawPicture": true,
         "error": null
       },
-      "raw": "{\"needed\":true,\"reason\":\"The narration mentions specific fuel consumption values that are not visible in the footage, making it harder for the viewer to understand the comparison.\",\"elements\":[\n{\"kind\":\"stat\",\"content\":\"3g/km, 20g/km, 500g/km\",\"label\":\"fuel consumption per km\",\"anchor\":\"three grams of fuel per kilometre. A lorry needs roughly twenty. A plane, five hundred\",\"placement\":\"lower_right\"}]}",
+      "raw": "{\"needed\":true,\"reason\":\"The sentence carries a comparison between quantities.\",\"elements\":[{\"kind\":\"chart\",\"content\":\"\",\"label\":\"Fuel efficiency\",\"items\":[\"Cargo ship: 3g/km\",\"Lorry: 20g/km\",\"Plane: 500g/km\"],\"anchor\":\"A cargo ship\",\"placement\":\"lower_third\"}]}",
       "decision": {
         "needed": true,
-        "reason": "The narration mentions specific fuel consumption values that are not visible in the footage, making it harder for the viewer to understand the comparison.",
+        "reason": "The sentence carries a comparison between quantities.",
         "elements": [
           {
-            "kind": "stat",
-            "content": "3g/km, 20g/km, 500g/km",
-            "label": "fuel consumption per km",
-            "items": [],
-            "placement": "lower_right",
-            "anchor": "three grams of fuel per kilometre. A lorry needs roughly twenty. A plane, five hundred",
+            "kind": "chart",
+            "content": "",
+            "label": "Fuel efficiency",
+            "items": [
+              "Cargo ship: 3g/km",
+              "Lorry: 20g/km",
+              "Plane: 500g/km"
+            ],
+            "placement": "lower_third",
+            "anchor": "A cargo ship",
             "animation": "none",
             "enabled": true,
-            "start": 3.85,
-            "end": 10,
-            "anchoredTo": "three grams of fuel per kilometre A lorry needs roughly twenty A plane five hundred",
-            "spokenAt": 4
+            "start": 0,
+            "end": 1.2,
+            "anchoredTo": "A cargo ship",
+            "spokenAt": 0
           }
         ],
         "rejected": [],
         "ran": true
       },
-      "ms": 75517,
-      "attempts": 2,
-      "promptChars": 2283
+      "ms": 14936,
+      "attempts": 1,
+      "promptChars": 3546
     },
     {
       "beat": {
         "name": "a sentence the picture already carries",
         "expect": "nothing - the footage IS the sentence",
+        "wants": false,
+        "preferKinds": [],
         "narration": "The waves break against the rocks over and over in the grey light before dawn.",
         "intent": "Waves crashing on dark rocks at dawn",
         "queries": [
@@ -99,21 +132,21 @@
         "says": "ocean, beach, crashing, waves, rock formations, rocks, sea, seascape, shore, splashing"
       },
       "vision": {
-        "sees": "A rocky shoreline with water is visible in the image.",
+        "sees": "The image shows a rocky shoreline with water in the background.",
         "sawPicture": true,
         "error": null
       },
-      "raw": "{\"needed\":false,\"reason\":\"The footage already shows the waves crashing on the rocks, so no additional graphic is needed to understand the narration.\",\"elements\":[]}",
+      "raw": "{\"needed\":false,\"reason\":\"the sentence describes the scene, adding no additional information that isn't visible in the shot\",\"elements\":[]}",
       "decision": {
         "needed": false,
-        "reason": "The footage already shows the waves crashing on the rocks, so no additional graphic is needed to understand the narration.",
+        "reason": "the sentence describes the scene, adding no additional information that isn't visible in the shot",
         "elements": [],
         "rejected": [],
         "ran": true
       },
-      "ms": 47312,
+      "ms": 16589,
       "attempts": 1,
-      "promptChars": 2036
+      "promptChars": 3338
     }
   ]
 }

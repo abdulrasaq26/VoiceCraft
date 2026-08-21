@@ -11,6 +11,7 @@ const PROJECT = 'C:/Users/abdul/.gemini/antigravity/scratch/Blvck-TTS - Pic n Vi
 const puppeteer = require(PROJECT + '/node_modules/puppeteer');
 
 const PORT = process.argv[2] || '3491';
+const chr10 = String.fromCharCode(10);
 const fails = [];
 const check = (name, cond, detail) => {
   console.log((cond ? '  PASS  ' : '  FAIL  ') + name + (cond ? '' : '  <- ' + JSON.stringify(detail)));
@@ -90,6 +91,46 @@ const check = (name, cond, detail) => {
     needed: true, reason: 'x', elements: [{ kind: 'chart', label: 'Revenue', anchor: 'grew' }] }));
   check('a chart with no items is refused',
         empty.needed === false && empty.rejected.some((r) => /no items/.test(r.why)), empty);
+
+  // Nor a data card whose data cannot be typeset. This is not hypothetical:
+  // live NIM asked for exactly this chart, and it satisfied every check the
+  // parser had - supported kind, non-empty items - while drawChart throws on
+  // it, which inside a render loop breaks the frame.
+  console.log(chr10 + '=== items that look like data but are not ===');
+  const unplottable = await P(JSON.stringify({
+    needed: true, reason: 'fuel per tonne-kilometre',
+    elements: [{ kind: 'chart', label: 'Fuel Efficiency',
+                 items: ['3g/km', '20', '500'], anchor: 'three grams' }] }));
+  console.log(`  needed ${unplottable.needed} · refused: ${(unplottable.rejected[0] || {}).why}`);
+  check('a chart of bare numbers is refused, not accepted and drawn',
+        unplottable.needed === false, unplottable);
+  check('and the refusal says what the drawer actually needs',
+        unplottable.rejected.some((r) => /label: value/.test(r.why)), unplottable.rejected);
+
+  // Non-vacuity: the element must genuinely be undrawable, or the check above
+  // is measuring nothing.
+  const wouldThrow = await page.evaluate(async () => {
+    const el = { kind: 'chart', label: 'Fuel Efficiency', items: ['3g/km', '20', '500'] };
+    const verdict = window.BlvckGraphic.canDrawPanel(el);
+    // Proved against render(), the full-frame path, which has no guard in front
+    // of it. drawPanel now refuses this content before drawing, so asking IT to
+    // throw would only measure the guard I just added.
+    let threw = '';
+    try {
+      await window.BlvckGraphic.render({ kind: 'chart', title: 'Fuel Efficiency',
+        items: ['3g/km', '20', '500'] });
+    } catch (e) { threw = e.message; }
+    // The same items written properly must pass, or the rule is simply "no".
+    const proper = window.BlvckGraphic.canDrawPanel({ kind: 'chart',
+      items: ['Ship: 3', 'Lorry: 20', 'Plane: 500'] });
+    return { verdict, threw, proper };
+  });
+  console.log(`  render() on it: ${wouldThrow.threw || 'did NOT throw'}`);
+  console.log(`  written properly: ok=${wouldThrow.proper.ok}`);
+  check('the refused content really is undrawable — render() throws on it',
+        !!wouldThrow.threw, wouldThrow);
+  check('while the same values written "label: value" are accepted',
+        wouldThrow.proper.ok === true, wouldThrow.proper);
 
   // ── 2. A considered no ──────────────────────────────────────────────────
   console.log('\n=== 2. needed: false ===');
