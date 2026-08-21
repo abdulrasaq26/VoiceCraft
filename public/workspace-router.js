@@ -12,6 +12,7 @@
     { id: 'voice',      label: 'Voices',       icon: '🎙️', group: 'Production'   },
     { id: 'storyboard', label: 'Storyboards',  icon: '🎬', group: 'Production'   },
     { id: 'images',     label: 'Images',       icon: '🎨', group: 'Production'   },
+    { id: 'renderer',   label: 'Renderer',     icon: '✨', group: 'Production'   },
     { id: 'video',      label: 'Videos',       icon: '🎞️', group: 'Production'   },
     { id: 'thumbnail',  label: 'Thumbnails',   icon: '🖼️', group: 'Production'   },
     { id: 'youtube',    label: 'Publish',      icon: '🚀', group: 'Production'   },
@@ -80,6 +81,7 @@
       { key: 'voice',      label: 'Voice'      },
       { key: 'storyboard', label: 'Storyboard' },
       { key: 'images',     label: 'Images'     },
+      { key: 'renderer',   label: 'Renderer'   },
       { key: 'video',      label: 'Video'      },
       { key: 'youtube',    label: 'Publish'    }
     ];

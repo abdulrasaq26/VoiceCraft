@@ -31,6 +31,7 @@
         <button class="sidebar-nav-item" data-workspace="voice" type="button"><span class="nav-icon">🎙️</span> <span class="nav-text">Voices</span></button>
         <button class="sidebar-nav-item" data-workspace="storyboard" type="button"><span class="nav-icon">🎬</span> <span class="nav-text">Storyboards</span></button>
         <button class="sidebar-nav-item" data-workspace="images" type="button"><span class="nav-icon">🎨</span> <span class="nav-text">Images</span></button>
+        <button class="sidebar-nav-item" data-workspace="renderer" type="button"><span class="nav-icon">✨</span> <span class="nav-text">Renderer</span></button>
         <button class="sidebar-nav-item" data-workspace="video" type="button"><span class="nav-icon">🎞️</span> <span class="nav-text">Videos</span></button>
         <button class="sidebar-nav-item" data-workspace="thumbnail" type="button"><span class="nav-icon">🖼️</span> <span class="nav-text">Thumbnails</span></button>
         <button class="sidebar-nav-item" data-workspace="youtube" type="button"><span class="nav-icon">🚀</span> <span class="nav-text">Publish</span></button>
@@ -927,7 +928,57 @@
           </section>
         </div>
 
-        <!-- 8. VIDEOS WORKSPACE -->
+        <!-- 8. RENDERER WORKSPACE — what goes ON the footage, once it exists -->
+        <div id="workspace-renderer" class="workspace-page" hidden>
+          <div class="copilot-card card">
+            <div class="input-header">
+              <label>🎬 AI Director Co-Pilot</label>
+              <span class="badge elite copilot-completion-val">0%</span>
+            </div>
+            <div class="copilot-stage-checklist"></div>
+          </div>
+
+          <section id="renderer-card" class="card">
+            <div class="input-header">
+              <label>✨ Renderer</label>
+              <div class="input-header-actions">
+                <span id="renderer-provider" class="badge standard">⏳ Checking the Director…</span>
+                <button id="renderer-clear" class="btn ghost small" type="button">🗑 Clear decisions</button>
+              </div>
+            </div>
+
+            <p style="color:var(--muted);font-size:.85rem;margin:.5rem 0 0">
+              The footage is chosen. This decides what belongs <em>on</em> it —
+              a figure the picture cannot show, a comparison, a sequence of dates.
+              Most beats need nothing, and saying so is a real answer.
+              Timing is never decided here: each card is anchored to the words it
+              belongs to and placed from the measured narration.
+            </p>
+
+            <section class="controls" style="margin-top:1rem">
+              <div class="control">
+                <label for="renderer-scope">Beats to decide</label>
+                <select id="renderer-scope">
+                  <option value="new">Only beats not yet decided</option>
+                  <option value="all">Every beat, again</option>
+                </select>
+              </div>
+              <div class="control" style="align-self:end">
+                <button id="renderer-run" class="btn primary" type="button">✨ Decide what to layer</button>
+              </div>
+              <div class="control" style="align-self:end">
+                <button id="renderer-stop" class="btn ghost" type="button" hidden>■ Stop</button>
+              </div>
+            </section>
+
+            <div id="renderer-status" class="status" hidden></div>
+
+            <div id="renderer-summary" style="margin-top:1rem;color:var(--muted);font-size:.85rem"></div>
+            <div id="renderer-beats" style="margin-top:1rem;display:flex;flex-direction:column;gap:.5rem"></div>
+          </section>
+        </div>
+
+        <!-- 9. VIDEOS WORKSPACE -->
         <div id="workspace-video" class="workspace-page" hidden>
           <div class="copilot-card card">
             <div class="input-header">
@@ -1425,6 +1476,7 @@
   <script src="ltx-video.js"></script>
   <script src="retention.js"></script>
   <script src="ltx-ui.js"></script>
+  <script src="renderer-ui.js"></script><!-- The Renderer workspace: runs the stage, shows what it decided and why -->
   <script src="editor.js"></script>
   <script src="youtube.js"></script>
   <script src="projects.js"></script>

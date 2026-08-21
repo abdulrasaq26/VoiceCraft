@@ -118,6 +118,11 @@
         voice: this.hasAudio(),
         storyboard: scenes.length > 0,
         images: scenes.some((s) => s.status === 'done'),
+        // The Renderer has run once every beat it could decide has been
+        // decided. A project where the honest answer was "nothing needed"
+        // everywhere is still a finished stage - so this asks whether decisions
+        // exist, not whether cards do.
+        renderer: scenes.some((s) => s.rendererDecision && s.rendererDecision.ran),
         video: !!this.editor(),
         youtube: !!this.seo()
       };
