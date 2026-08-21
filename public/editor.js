@@ -1613,6 +1613,32 @@
       ? Math.min(1, Math.min(into / fade, (span - into) / fade))
       : 1;
 
+    // A data card - a chart, a timeline, a checklist - is a PANEL: the same
+    // drawer render() uses, contained in part of the frame so the footage keeps
+    // playing underneath. Recognised by carrying a `kind`, which the legacy
+    // editorialOverlay never does; it carries a `style` and falls through to
+    // the text primitives below unchanged.
+    const panelKind = String(ov.kind || '').toLowerCase();
+    if (panelKind && G.drawPanel && G.PANEL_KINDS && G.PANEL_KINDS[panelKind]) {
+      g.save();
+      g.globalAlpha = Math.max(0, Math.min(1, alpha));
+      try {
+        // drawPanel works in canvas coordinates and scales the 1280x720 stage
+        // into its own rect, so it must NOT be pre-scaled here.
+        G.drawPanel(g, theme, {
+          kind: panelKind,
+          title: ov.label || ov.text || '',
+          value: ov.content || ov.text || '',
+          label: ov.label || '',
+          items: Array.isArray(ov.items) ? ov.items : [],
+          subtitle: ov.subtitle || ''
+        }, ov.placement || 'lower_right', cw, ch);
+      } finally {
+        g.restore();
+      }
+      return true;
+    }
+
     g.save();
     g.globalAlpha = Math.max(0, Math.min(1, alpha));
     // The primitives are written against a fixed 1280x720 stage; scale rather

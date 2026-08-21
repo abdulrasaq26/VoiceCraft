@@ -1021,6 +1021,94 @@
 
   // spec: { kind: 'title'|'checklist'|'stat'|'chart'|'timeline'|'whiteboard'|'map',
   //         title, subtitle, items[], value, label, theme: 'dark'|'light' }
+  // ── Contained panels: a data card that sits ON footage ───────────────────
+  //
+  // render() draws a fully opaque 1280x720 card, which is why a chart beat
+  // REPLACES its footage. The Renderer needs the other thing: the same chart,
+  // occupying part of the frame, over a clip that keeps playing underneath.
+  //
+  // Nothing about the existing drawers changes. They are written against a
+  // fixed 1280x720 stage, so containing one is a transform - translate to the
+  // panel, scale the stage down to it, and call the drawer untouched. That is
+  // also why this cannot drift from the full-frame look: it IS the full-frame
+  // look, smaller.
+  //
+  // compositeOverlay is not this. It bakes footage plus a full-frame 60% scrim
+  // into a Blob for stock_text beats; a panel must not scrim the whole picture
+  // and must draw per frame.
+  const PANEL_PLACEMENTS = {
+    lower_third: { x: 0.05, y: 0.60, w: 0.90, h: 0.32 },
+    lower_right: { x: 0.52, y: 0.52, w: 0.44, h: 0.40 },
+    lower_left:  { x: 0.04, y: 0.52, w: 0.44, h: 0.40 },
+    upper_right: { x: 0.52, y: 0.08, w: 0.44, h: 0.40 },
+    upper_left:  { x: 0.04, y: 0.08, w: 0.44, h: 0.40 },
+    center:      { x: 0.16, y: 0.18, w: 0.68, h: 0.64 }
+  };
+
+  // Drawn per frame, so every kind here must be synchronous. renderMap is not -
+  // it awaits geography data - so a map is not a panel kind today. Saying so is
+  // better than an await inside a render loop.
+  const PANEL_KINDS = {
+    chart: drawChart, graph: drawChart, bar: drawChart,
+    timeline: drawTimeline,
+    checklist: drawChecklist, list: drawChecklist,
+    stat: drawStat, number: drawStat,
+    whiteboard: drawWhiteboard,
+    title: drawTitle
+  };
+
+  function panelRect(placement, cw, ch) {
+    const r = PANEL_PLACEMENTS[String(placement || 'lower_right').toLowerCase()]
+           || PANEL_PLACEMENTS.lower_right;
+    return { x: r.x * cw, y: r.y * ch, w: r.w * cw, h: r.h * ch };
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  /**
+   * Draw one data card inside part of the frame, over whatever is already there.
+   *
+   * Returns false rather than throwing for a kind that cannot be drawn per
+   * frame, so a caller in a render loop can simply skip it.
+   */
+  function drawPanel(ctx, t, spec = {}, placement = 'lower_right', cw = W, ch = H) {
+    const kind = String(spec.kind || 'title').toLowerCase();
+    const draw = PANEL_KINDS[kind];
+    if (!draw) return false;
+
+    const rect = panelRect(placement, cw, ch);
+    ctx.save();
+    // A backing, not a scrim: enough for text to hold against moving footage,
+    // and only where the card actually is.
+    ctx.fillStyle = t.panel || 'rgba(11,13,16,0.82)';
+    roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, Math.min(24, rect.h * 0.12));
+    ctx.fill();
+    ctx.strokeStyle = t.rule || 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Clip first: a drawer written for the full stage will happily paint past
+    // the panel otherwise.
+    ctx.clip();
+    ctx.translate(rect.x, rect.y);
+    ctx.scale(rect.w / W, rect.h / H);
+    try {
+      draw(ctx, t, spec);
+    } finally {
+      ctx.restore();
+    }
+    return true;
+  }
+
   async function compositeOverlay(stockBlob, spec = {}) {
     const canvas = document.createElement('canvas');
     canvas.width = W;
@@ -1390,6 +1478,9 @@
     // scale the context first (see OVERLAY_STAGE).
     OVERLAY_STAGE: { w: W, h: H },
     drawStatOverlay, drawQuoteOverlay, drawEditorialBar, drawTitle,
+    // Contained data cards, for the Renderer: the same drawers as render()
+    // uses, transformed into part of the frame instead of filling it.
+    drawPanel, PANEL_PLACEMENTS, PANEL_KINDS,
     // presenter cut-out
     prepareFace, saveFace, getFace, clearFace, drawFace, stripBackground,
     // typography
