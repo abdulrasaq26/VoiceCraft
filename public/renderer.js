@@ -119,6 +119,9 @@
       '                                   date goes FIRST, it marks the rail',
       '  checklist "One short line"   no colon needed',
       'placement must be one of: ' + PLACEMENTS.join(', ') + '.',
+      'lower_third is a wide strip, for a LINE OF TEXT. A chart, timeline,',
+      'checklist or stat is a card and needs a card-shaped slot: one of the',
+      'four corners, or center.',
       'At most ' + MAX_ELEMENTS + ' elements, in the order they should be layered.'
     ].join(NL);
   }
@@ -175,8 +178,15 @@
         rejected.push({ why: 'nothing to show', row });
         continue;
       }
-      const placement = PLACEMENTS.indexOf(str(row.placement).toLowerCase()) >= 0
+      let placement = PLACEMENTS.indexOf(str(row.placement).toLowerCase()) >= 0
         ? str(row.placement).toLowerCase() : 'lower_right';
+      // lower_third is a strip: 90% of the width and under a third of the
+      // height. That is the right shape for a line of text and the wrong shape
+      // for a card, because a 16:9 card fitted into it can only be as tall as
+      // the strip. Measured on a real export: the Director asked for a chart
+      // there and the bars came out a third the size they needed to be. Text
+      // keeps the strip; data cards are moved to a slot shaped like a card.
+      if (PANEL_KINDS.indexOf(kind) >= 0 && placement === 'lower_third') placement = 'lower_right';
 
       const el = {
         kind, content, label, items, placement,

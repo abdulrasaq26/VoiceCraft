@@ -1149,7 +1149,23 @@
     const verdict = canDrawSpec(Object.assign({ kind }, spec));
     if (!verdict.ok) return false;
 
-    const rect = panelRect(placement, cw, ch);
+    const slot = panelRect(placement, cw, ch);
+
+    // UNIFORMLY, and this is not a detail. Every drawer is written against a
+    // 1280x720 stage, so scaling x and y independently into the slot stretches
+    // the type: lower_third is 0.90 wide by 0.32 high, which crushes everything
+    // vertically by nearly three to one. Measured on a real export, the bar
+    // labels of a chart came out unreadable while every numeric assertion about
+    // the card still passed - the card was present, and illegible.
+    //
+    // So the 16:9 stage is fitted inside the slot at one scale and centred, and
+    // the backing is drawn around THAT box rather than around the slot. A plate
+    // wider than its contents is just a bar with a card floating in it.
+    const k = Math.min(slot.w / W, slot.h / H);
+    const rect = { w: W * k, h: H * k,
+                   x: slot.x + (slot.w - W * k) / 2,
+                   y: slot.y + (slot.h - H * k) / 2 };
+
     ctx.save();
     // A backing, not a scrim: enough for text to hold against moving footage,
     // and only where the card actually is.
@@ -1164,7 +1180,17 @@
     // the panel otherwise.
     ctx.clip();
     ctx.translate(rect.x, rect.y);
-    ctx.scale(rect.w / W, rect.h / H);
+    ctx.scale(k, k);
+
+    // The drawers were written for a canvas of their own and assume the default
+    // text state; cardChrome, for one, calls fillText(l, 100, y) and never sets
+    // textAlign. On a shared canvas that assumption is false. The editor's
+    // subtitle pass sets textAlign to 'center', and save/restore preserves the
+    // caller's state rather than resetting it - so on the very next frame a
+    // card title centred itself on x=100 and had its left half clipped off.
+    // Measured on a real export: "Fuel Efficiency" rendered as "l Efficiency".
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     try {
       draw(ctx, t, spec);
     } finally {
@@ -1549,6 +1575,15 @@
     // draw. A drawer that throws inside a render loop breaks the frame, not
     // just the card.
     canDrawPanel, canDrawSpec, panelSpecOf,
+    // Where a panel actually lands, after the uniform fit. Exported so a test
+    // can measure the card the compositor drew rather than reimplement the
+    // geometry and slowly drift from it.
+    panelBox: (placement, cw, ch) => {
+      const slot = panelRect(placement, cw, ch);
+      const k = Math.min(slot.w / W, slot.h / H);
+      return { x: slot.x + (slot.w - W * k) / 2, y: slot.y + (slot.h - H * k) / 2,
+               w: W * k, h: H * k };
+    },
     // presenter cut-out
     prepareFace, saveFace, getFace, clearFace, drawFace, stripBackground,
     // typography

@@ -1,0 +1,189 @@
+{
+  "at": "2026-08-21T12:29:40.459Z",
+  "scene": {
+    "index": 1,
+    "timestamp": "00:00:00 - 00:00:08",
+    "subtitle": "A cargo ship moves a tonne of freight on about three grams of fuel per kilometre. A lorry needs roughly twenty. A plane, five hundred.",
+    "sceneSummary": "A container ship at sea, seen from above",
+    "camera": "aerial wide",
+    "duration": 8,
+    "status": "pending",
+    "visualType": "stock_video",
+    "stockRequirements": {
+      "concept": "A container ship at sea seen from above",
+      "queries": [
+        "container ship aerial ocean",
+        "cargo ship sea aerial"
+      ],
+      "orientation": "landscape",
+      "minimumDuration": 3
+    }
+  },
+  "acquired": {
+    "ms": 67698,
+    "bytes": 9891621,
+    "type": "video/mp4",
+    "asset": {
+      "provider": "pexels",
+      "id": "2943126",
+      "type": "video",
+      "orientation": "landscape",
+      "duration": 26,
+      "width": 1280,
+      "height": 720,
+      "thumbnailUrl": "https://images.pexels.com/videos/2943126/free-video-2943126.jpg?auto=compress&cs=tinysrgb&fit=crop&h=630&w=1200",
+      "sourceUrl": "https://www.pexels.com/video/aerial-footage-of-a-cargo-ship-at-sea-loaded-with-containers-2943126/",
+      "queriesUsed": [
+        "container ship aerial ocean",
+        "cargo ship sea aerial"
+      ],
+      "fallback": null,
+      "acquiredAt": 1787315133039,
+      "license": null,
+      "archive": null,
+      "attribution": null,
+      "excerpt": {
+        "required": true,
+        "applied": true,
+        "start": 10,
+        "end": 18,
+        "duration": 8,
+        "sourceDuration": 26,
+        "selectionIntent": "",
+        "method": "heuristic_window",
+        "reviewSuggested": true,
+        "note": "Start point estimated, not chosen by watching the footage. Check it covers the moment you want."
+      },
+      "rightsStatus": null
+    },
+    "evaluation": {
+      "verdict": "SELECTED",
+      "confidence": "HIGH",
+      "floor": 0.5,
+      "considered": 4,
+      "best": {
+        "id": "pexels:2943126",
+        "score": 0.81,
+        "classification": "direct_illustration",
+        "sees": "The image shows a large cargo ship with several shipping containers on its deck, floating on the water."
+      },
+      "rejected": [
+        {
+          "id": "pixabay:24255",
+          "classification": "weak_contextual",
+          "sees": "A city skyline is visible at night, with a large body of water in the foreground and a bridge spanning it."
+        }
+      ]
+    }
+  },
+  "decided": {
+    "ms": 230264,
+    "summary": {
+      "considered": 1,
+      "decided": 1,
+      "added": 1,
+      "nothing": 0,
+      "skipped": 0,
+      "failed": 0,
+      "stopped": false,
+      "beats": [
+        {
+          "index": 1,
+          "needed": true,
+          "ran": true,
+          "reason": "The sentence carries a comparison between fuel efficiencies of different vehicles.",
+          "kinds": [
+            "chart"
+          ]
+        }
+      ]
+    },
+    "attempts": 4,
+    "transient": [
+      "the Director failed: the Director did not answer in 60000ms",
+      "the Director failed: the Director did not answer in 60000ms",
+      "the Director failed: the Director did not answer in 60000ms"
+    ],
+    "elements": [
+      {
+        "kind": "chart",
+        "content": "",
+        "label": "Fuel Efficiency",
+        "items": [
+          "Cargo Ship: 3g/km",
+          "Lorry: 20g/km",
+          "Plane: 500g/km"
+        ],
+        "placement": "lower_right",
+        "anchor": "A cargo ship",
+        "animation": "none",
+        "enabled": true,
+        "start": 0.1,
+        "end": 7.9,
+        "anchoredTo": "",
+        "spokenAt": null
+      }
+    ],
+    "decision": {
+      "ran": true,
+      "needed": true,
+      "reason": "The sentence carries a comparison between fuel efficiencies of different vehicles.",
+      "at": 1787315363334,
+      "rejected": []
+    },
+    "measured": false
+  },
+  "film": {
+    "carried": 1,
+    "hasVideo": true,
+    "withCard": {
+      "ok": true,
+      "bytes": 1943072,
+      "type": "video/webm",
+      "sampledAt": 4,
+      "duration": 7.96,
+      "w": 1280,
+      "h": 720,
+      "panel": {
+        "luma": 39,
+        "bright": 48,
+        "ink": 438,
+        "ground": 4189,
+        "n": 4697
+      },
+      "control": {
+        "luma": 106,
+        "bright": 117,
+        "ink": 14469,
+        "ground": 285,
+        "n": 16160
+      },
+      "status": "Video exported (WebM). Saved to your downloads!"
+    },
+    "withoutCard": {
+      "ok": true,
+      "bytes": 2063664,
+      "type": "video/webm",
+      "sampledAt": 4,
+      "duration": 7.94,
+      "w": 1280,
+      "h": 720,
+      "panel": {
+        "luma": 76,
+        "bright": 10,
+        "ink": 578,
+        "ground": 141,
+        "n": 4697
+      },
+      "control": {
+        "luma": 105,
+        "bright": 122,
+        "ink": 14391,
+        "ground": 326,
+        "n": 16160
+      },
+      "status": "Video exported (WebM). Saved to your downloads!"
+    }
+  },
+  "note": "estimated clock — the Fish alignment endpoint was offline, so the element correctly holds the whole shot window rather than measured words. That is why presence is proved by a counterfactual export rather than by sampling inside and outside the element window."
+}

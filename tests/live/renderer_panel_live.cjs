@@ -181,6 +181,51 @@ const LEGACY = { enabled: true, start: 2, end: 6, text: '40%',
   check('while the good card beside it still drew',
         pct(survivor.footage.br, survivor.total.br) < 70, survivor.footage);
 
+  // ── The canvas belongs to somebody else ─────────────────────────────────
+  //
+  // The drawers assume the default text state, because they were written for a
+  // canvas of their own. The editor's subtitle pass sets textAlign to 'center'
+  // and save/restore preserves the caller's state rather than resetting it, so
+  // a card drawn on the next frame inherited it: cardChrome calls
+  // fillText(title, 100, y), which then centres on x=100 and loses its left
+  // half to the clip. On a real export "Fuel Efficiency" came out as
+  // "l Efficiency".
+  console.log(String.fromCharCode(10) + "=== a canvas left in someone else's text state ===");
+  const inherited = await page.evaluate(() => {
+    const draw = (prime) => {
+      const c = document.createElement('canvas');
+      c.width = 640; c.height = 360;
+      const g = c.getContext('2d');
+      g.fillStyle = '#c00000'; g.fillRect(0, 0, c.width, c.height);
+      if (prime) { g.textAlign = 'center'; g.textBaseline = 'middle'; }
+      window.BlvckGraphic.drawPanel(g, window.BlvckGraphic.THEMES.dark,
+        { kind: 'chart', title: 'Fuel Efficiency',
+          items: ['Cargo ship: 3', 'Lorry: 20', 'Plane: 500'] },
+        'lower_right', 640, 360);
+      // The HEADER band of the card, where cardChrome writes the title. The
+      // whole card is far too coarse a measure: the title is a small part of
+      // it, and losing half the title moved the total by 1.5% - inside any
+      // sane tolerance. This test passed on the broken build until it was
+      // pointed at the pixels that actually change.
+      const box = window.BlvckGraphic.panelBox('lower_right', 640, 360);
+      const x0 = Math.round(box.x), y0 = Math.round(box.y + box.h * 0.10);
+      const x1 = Math.round(box.x + box.w * 0.62), y1 = Math.round(box.y + box.h * 0.30);
+      const d = g.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+      let ink = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if ((d[i] + d[i + 1] + d[i + 2]) / 3 > 90) ink++;
+      }
+      return ink;
+    };
+    return { clean: draw(false), primed: draw(true) };
+  });
+  console.log(`  title ink on a clean canvas: ${inherited.clean}  ·  `
+    + `with textAlign=center: ${inherited.primed}`);
+  check('a panel draws its title the same whatever text state the caller left behind',
+        inherited.clean > 100
+        && Math.abs(inherited.clean - inherited.primed) <= inherited.clean * 0.05,
+        inherited);
+
   // ── An honest limit ─────────────────────────────────────────────────────
   console.log('\n=== what panel mode will not do ===');
   const limits = await page.evaluate(() => {

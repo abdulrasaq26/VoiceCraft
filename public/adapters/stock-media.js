@@ -1326,6 +1326,31 @@
     };
   }
 
+  /**
+   * The in and out points of an excerpt, whichever way it was written.
+   *
+   * There are two shapes in circulation and they were never reconciled.
+   * planExcerpt and ArchiveExcerpt produce {start, end}; an excerpt a producer
+   * sets by hand in the storyboard produces {sourceIn, sourceOut}. storyboard.js
+   * has always read both defensively. editor.js read only the second, so every
+   * AUTOMATICALLY excerpted clip - which is any stock video meaningfully longer
+   * than its beat - failed the export gate with "sourceIn=undefined is not a
+   * usable window", and would have rendered a frozen frame had the gate not
+   * refused it.
+   *
+   * The shape belongs to whoever creates it, so the reader lives here rather
+   * than being written out a third time at a third call site.
+   *
+   * @returns {{in:number,out:number}|null} null when there is no usable window.
+   */
+  function excerptWindow(ex) {
+    if (!ex) return null;
+    const inn  = Number(ex.sourceIn  != null ? ex.sourceIn  : ex.start);
+    const out  = Number(ex.sourceOut != null ? ex.sourceOut : ex.end);
+    if (!Number.isFinite(inn) || !Number.isFinite(out) || out <= inn) return null;
+    return { in: inn, out };
+  }
+
   // Pick the excerpt window. Prefers real analysis of the archive item's own
   // sampled frames, and falls back to the blind heuristic only when that is
   // unavailable — so the result always reports which one actually decided.
@@ -1494,6 +1519,7 @@
     isConfigured,
     planExcerpt,
     chooseExcerpt,
+    excerptWindow,
     planTreatment,
     formatTimecode,
     clearForProduction,

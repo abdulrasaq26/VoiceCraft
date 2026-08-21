@@ -857,7 +857,7 @@
     // Archival keeps its tighter rule: in period material the edges are
     // routinely the subject, so even a small crop is a real loss.
     const isArchive = !!(clip && ((clip.stockAsset && clip.stockAsset.provider === 'archive_org')
-                                   || (clip.excerpt && clip.excerpt.sourceIn != null)));
+                                   || (clip.excerpt && excerptWindow(clip.excerpt))));
     const iw = img.naturalWidth || img.videoWidth || img.width;
     const ih = img.naturalHeight || img.videoHeight || img.height;
     if (!iw || !ih) return 'cover';
@@ -1091,16 +1091,13 @@
   function driveVideo(v, localMs, clip) {
     if (!v || !v.duration || Number.isNaN(v.duration)) return;
 
-    const ex = (clip && clip.excerpt) || null;
-    const hasWindow = ex
-      && Number.isFinite(Number(ex.sourceIn))
-      && Number.isFinite(Number(ex.sourceOut))
-      && Number(ex.sourceOut) > Number(ex.sourceIn);
+    const win = excerptWindow((clip && clip.excerpt) || null);
+    const hasWindow = !!win;
 
     // The file is the final authority on what exists: a sourceOut past the end
     // of the decoded media would seek nowhere and freeze on a blank frame.
-    const inPoint = hasWindow ? Math.max(0, Math.min(Number(ex.sourceIn), v.duration - 0.001)) : 0;
-    const outPoint = hasWindow ? Math.min(Number(ex.sourceOut), v.duration) : v.duration;
+    const inPoint = hasWindow ? Math.max(0, Math.min(win.in, v.duration - 0.001)) : 0;
+    const outPoint = hasWindow ? Math.min(win.out, v.duration) : v.duration;
 
     const want = Math.max(inPoint, Math.min(outPoint - 0.001, inPoint + localMs / 1000));
 
@@ -1252,11 +1249,13 @@
       // error, so it is worth catching before recording rather than after.
       const ex = clip.excerpt;
       if (ex && ex.applied) {
-        const inP = Number(ex.sourceIn), outP = Number(ex.sourceOut);
-        if (!Number.isFinite(inP) || !Number.isFinite(outP) || outP <= inP) {
-          note('bad_excerpt', `sourceIn=${ex.sourceIn} sourceOut=${ex.sourceOut} is not a usable window`);
+        const w = excerptWindow(ex);
+        if (!w) {
+          note('bad_excerpt', `in=${ex.sourceIn != null ? ex.sourceIn : ex.start} `
+            + `out=${ex.sourceOut != null ? ex.sourceOut : ex.end} is not a usable window`);
           continue;
         }
+        const inP = w.in, outP = w.out;
         if (outP > dur + 0.25) {
           note('excerpt_past_end',
             `excerpt ends at ${outP.toFixed(1)}s but the file is only ${dur.toFixed(1)}s`);
@@ -1286,8 +1285,7 @@
       clip.entrySnapshot = null;
       clip.rebufferCount = 0;
       clip.rebufferFailed = false;
-      const inPoint = (clip.excerpt && Number.isFinite(Number(clip.excerpt.sourceIn)))
-        ? Number(clip.excerpt.sourceIn) : 0;
+      const inPoint = excerptIn(clip);
 
       const startedAt = performance.now();
       let pollCount = 0;
@@ -1401,8 +1399,7 @@
     }
     if (clip.rebuffering) return false;      // one seek per episode, not per frame
 
-    const inPoint = (clip.excerpt && Number.isFinite(Number(clip.excerpt.sourceIn)))
-      ? Number(clip.excerpt.sourceIn) : 0;
+    const inPoint = excerptIn(clip);
 
     clip.rebuffering = true;
     clip.rebufferCount = (clip.rebufferCount || 0) + 1;
@@ -1441,8 +1438,8 @@
       scene: c.sceneIndex,
       timelineStart: c.timelineStart,
       timelineEnd: c.timelineEnd,
-      sourceIn: c.excerpt ? c.excerpt.sourceIn : null,
-      sourceOut: c.excerpt ? c.excerpt.sourceOut : null,
+      sourceIn: (excerptWindow(c.excerpt) || {}).in != null ? excerptWindow(c.excerpt).in : null,
+      sourceOut: (excerptWindow(c.excerpt) || {}).out != null ? excerptWindow(c.excerpt).out : null,
       // Captured at the first render call of the shot, not read back now.
       shotEntryReady: c.entrySnapshot ? c.entrySnapshot.ready : null,
       shotEntryReadyState: c.entrySnapshot ? c.entrySnapshot.readyState : null,
@@ -1579,21 +1576,62 @@
    * sits above an earlier one - which is what lets a lower third share a beat
    * with a statistic without the two fighting over who is on top.
    */
+  /**
+   * How much of the frame the captions will take, as a fraction to keep clear.
+   *
+   * Only when there is actually something to caption. A beat with no subtitle
+   * text has no caption band, and shrinking the usable frame for a band that
+   * will not be drawn would move every card up for no reason.
+   */
+  function captionBand(clip) {
+    if (!subStyle.on) return 1;
+    if (!String((clip && clip.subtitle) || '').trim()) return 1;
+    if (subStyle.pos === 'top' || subStyle.pos === 'center') return 1;
+    return 0.76;
+  }
+
   function drawEditorialOverlay(g, cw, ch, clip, ms) {
     const active = activeElements(clip, ms);
     if (!active.length) return false;
+    const band = captionBand(clip);
     let drew = false;
     for (const el of active) {
-      if (drawOneElement(g, cw, ch, el, ms)) drew = true;
+      if (drawOneElement(g, cw, ch, el, ms, band)) drew = true;
     }
     return drew;
   }
+
+  /**
+   * The excerpt's in/out points, read through the module that owns the shape.
+   *
+   * There are two shapes in circulation: {start, end} from planExcerpt and
+   * ArchiveExcerpt, and {sourceIn, sourceOut} from an excerpt set by hand in
+   * the storyboard. This file only ever understood the second, so every
+   * automatically excerpted clip - any stock video meaningfully longer than its
+   * beat - failed the export gate with "sourceIn=undefined is not a usable
+   * window". The fallback below keeps that working if StockMedia has not
+   * loaded, but the authority is StockMedia.excerptWindow.
+   */
+  function excerptWindow(ex) {
+    const SM = window.StockMedia;
+    if (SM && SM.excerptWindow) return SM.excerptWindow(ex);
+    if (!ex) return null;
+    const inn = Number(ex.sourceIn != null ? ex.sourceIn : ex.start);
+    const out = Number(ex.sourceOut != null ? ex.sourceOut : ex.end);
+    if (!Number.isFinite(inn) || !Number.isFinite(out) || out <= inn) return null;
+    return { in: inn, out };
+  }
+
+  const excerptIn = (clip) => {
+    const w = excerptWindow(clip && clip.excerpt);
+    return w ? w.in : 0;
+  };
 
   // Warned once per kind+anchor: this runs every frame, and a card that
   // cannot be drawn would otherwise fill the console thirty times a second.
   const warnedPanels = new Set();
 
-  function drawOneElement(g, cw, ch, ov, ms) {
+  function drawOneElement(g, cw, ch, ov, ms, band = 1) {
     if (!ov) return false;
 
     const G = window.BlvckGraphic;
@@ -1637,7 +1675,16 @@
           items: Array.isArray(ov.items) ? ov.items : [], subtitle: ov.subtitle || ''
         };
         spec.label = ov.label || '';
-        G.drawPanel(g, theme, spec, ov.placement || 'lower_right', cw, ch);
+        // Cards stay out of the caption band. The layering here is deliberate -
+        // subtitles draw last so they can never be covered - which means a card
+        // placed where the captions live does not win, it just gets written
+        // over. Measured on a real export: a lower_third chart came out with
+        // the burned-in subtitle straight across it.
+        //
+        // So the panel is laid out against a shorter frame when captions will
+        // occupy the bottom. Every placement moves up together, and nothing
+        // lands under the words.
+        G.drawPanel(g, theme, spec, ov.placement || 'lower_right', cw, ch * band);
       } catch (err) {
         // The drawers refuse content they cannot typeset by throwing, and this
         // runs once per frame: unguarded, one unplottable card stops the
@@ -1991,9 +2038,7 @@
 
     // An archival excerpt is a window into a longer film, so frame zero is
     // usually leader or a slate rather than the shot the Director chose.
-    const inPoint = (clip.excerpt && Number.isFinite(Number(clip.excerpt.sourceIn)))
-      ? Math.max(0, Number(clip.excerpt.sourceIn))
-      : 0;
+    const inPoint = Math.max(0, excerptIn(clip));
     // Seek rather than draw whatever is there. readyState >= 2 says a frame is
     // DECODABLE, not that one has been presented, and drawing a paused element
     // straight after load intermittently gives a black rectangle. A seek always
@@ -2671,7 +2716,10 @@
       if (typeof t === 'string') timingSource = t;
       if (typeof r === 'boolean') realtime = r;
     },
-    _getState: () => ({ clips, audio, timingSource, realtime })
+    _getState: () => ({ clips, audio, timingSource, realtime }),
+    // How much of the frame the captions claim on this clip. Exported so a
+    // test can ask where a card will land instead of guessing.
+    captionBand
   };
 
   // --- Init --------------------------------------------------------------
