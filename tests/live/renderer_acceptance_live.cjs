@@ -262,24 +262,51 @@ const SCENE = {
       const box = rectOf(element ? element.placement : 'lower_right', s.width, s.height);
       const stats = (x0, y0, x1, y1) => {
         const d = g.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)).data;
-        let sum = 0, n = 0, bright = 0, accent = 0;
+        let sum = 0, n = 0, bright = 0;
         for (let i = 0; i < d.length; i += 4 * 4) {
-          const r = d[i], gn = d[i + 1], b = d[i + 2];
-          const l = (r + gn + b) / 3;
+          const l = (d[i] + d[i + 1] + d[i + 2]) / 3;
           sum += l; n++;
           if (l > 205) bright++;
-          // The brand amber, #f5b301. A panel has no backing any more - only
-          // the marks are drawn, so the footage keeps playing behind them -
-          // which means the old discriminator, a near-black card ground
-          // appearing in the middle of a bright sea, no longer exists. The
-          // accent does: open water and a container ship contain essentially
-          // no saturated amber, and the chart's bars are made of it.
-          if (r > 170 && gn > 110 && gn < 210 && b < 90) accent++;
         }
-        return { luma: Math.round(sum / n), bright, accent, n };
+        return { luma: Math.round(sum / n), bright, n };
       };
+
+      // Does the frame actually CARRY THE CARD'S OWN PIXELS?
+      //
+      // Colour is not a safe discriminator and this test learned that the hard
+      // way twice. First the card's near-black ground, which stopped existing
+      // when the backing was removed. Then the brand amber of the bars - until
+      // a run drew a ship stacked with orange containers, and the footage
+      // WITHOUT the card scored more amber than the footage with it.
+      //
+      // The card's own artwork does not have that problem. It is deterministic,
+      // so it can be redrawn here and compared pixel for pixel wherever it is
+      // opaque. Footage matching the exact colour of the exact marks at the
+      // exact positions is not something a container ship can do by accident.
+      const artMatch = () => {
+        if (!element) return null;
+        const a = document.createElement('canvas');
+        a.width = s.width; a.height = s.height;
+        const ag = a.getContext('2d');
+        window.BlvckGraphic.drawPanel(ag, window.BlvckGraphic.THEMES.dark,
+          window.BlvckGraphic.panelSpecOf(element), element.placement,
+          s.width, s.height * window.BlvckEditorTiming.captionBand(clip));
+        const art = ag.getImageData(0, 0, s.width, s.height).data;
+        const frame = g.getImageData(0, 0, s.width, s.height).data;
+        let marks = 0, hit = 0;
+        for (let i = 0; i < art.length; i += 4) {
+          if (art[i + 3] < 240) continue;          // solid marks only, not the halo
+          marks++;
+          if (Math.abs(art[i] - frame[i]) < 46
+           && Math.abs(art[i + 1] - frame[i + 1]) < 46
+           && Math.abs(art[i + 2] - frame[i + 2]) < 46) hit++;
+        }
+        return { marks, hit, pct: marks ? Math.round((hit / marks) * 100) : 0 };
+      };
+
       return { ok: true, bytes: captured.size, type: captured.type, sampledAt: t,
                duration: Math.round(v.duration * 100) / 100, w: v.videoWidth, h: v.videoHeight,
+               art: artMatch(),
                panel: stats(box.x + 4, box.y + 4, box.x + box.w - 4, box.y + box.h - 4),
                // A strip along the top, which no lower placement ever touches.
                control: stats(0, 0, s.width, Math.round(s.height * 0.28)),
@@ -310,6 +337,8 @@ const SCENE = {
     console.log(`   without         : ${(b.bytes / 1024).toFixed(0)}KB  ${b.duration}s`);
     console.log(`   the clip carried ${film.carried} renderer element(s), real video: ${film.hasVideo}`);
     console.log(`   sampled at t=${a.sampledAt.toFixed(2)}s`);
+    console.log(`     the card's own pixels present: with ${a.art && a.art.pct}% `
+      + `· without ${b.art && b.art.pct}%  (of ${a.art && a.art.marks} marks)`);
     console.log(`     panel   with ${JSON.stringify(a.panel)}`);
     console.log(`     panel   w/o  ${JSON.stringify(b.panel)}`);
     console.log(`     control with ${JSON.stringify(a.control)}`);
@@ -325,14 +354,12 @@ const SCENE = {
     check('the counterfactual export also succeeded', !b.error && b.bytes > 0, b);
 
     // The card is in the file. There is no plate to look for - that is the
-    // point of a panel - so presence is proved by the marks themselves: the
-    // brand amber of the bars, which open water does not contain.
-    check('the card IS in the exported file — its bars appear in that rectangle',
-          a.panel.accent > b.panel.accent * 4 + 40,
-          { with: a.panel.accent, without: b.panel.accent });
-    check('and typeset text with them — it is a chart, not a stray mark',
-          a.panel.bright > b.panel.bright + 20,
-          { with: a.panel.bright, without: b.panel.bright });
+    // point of a panel - so presence is proved against the card's own artwork,
+    // redrawn and compared where it is opaque.
+    check('the card IS in the exported file — the frame carries its actual pixels',
+          a.art && a.art.pct > 70, { with: a.art, without: b.art });
+    check('and the counterfactual does NOT — the footage cannot fake the marks',
+          b.art && b.art.pct < 25, { with: a.art, without: b.art });
     // The requirement that made panel mode worth having: the shot the beat was
     // chosen for is still playing underneath. A card that blacked out its
     // corner would be a smaller full-frame card.
@@ -342,8 +369,9 @@ const SCENE = {
     check('the footage elsewhere is untouched — it is a panel, not a full-frame card',
           Math.abs(a.control.luma - b.control.luma) < 25,
           { with: a.control, without: b.control });
-    check('and no amber appears where no card was asked for',
-          a.control.accent < a.control.n * 0.02, a.control);
+    check('and nothing was drawn outside the card',
+          Math.abs(a.control.bright - b.control.bright) < 120,
+          { with: a.control, without: b.control });
   }
 
   // The frames go beside the JSON as real files, and out of it, so the record

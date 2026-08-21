@@ -1036,13 +1036,28 @@
   // compositeOverlay is not this. It bakes footage plus a full-frame 60% scrim
   // into a Blob for stock_text beats; a panel must not scrim the whole picture
   // and must draw per frame.
+  // Sized for a panel that has NO backing. When the card was an opaque plate
+  // its size was the amount of picture it destroyed, so it had to stay small
+  // and the type went with it. Now only the marks are drawn, so a bigger slot
+  // costs nothing but reach - and reach is what the labels needed: a chart bar
+  // annotated at 0.30 scale is legible on a monitor and gone on a phone.
+  //
+  // The slots are also shaped to fit. Every drawer works on a 16:9 stage and
+  // drawPanel fits it uniformly, so a slot of some other aspect just wastes its
+  // long side: the old corners were 0.44 wide by 0.40 high, which after the
+  // caption band made height the binding constraint at 0.304 and left a fifth
+  // of the width empty. These corners come out square in the banded frame and
+  // near-square without it, so almost nothing is wasted either way.
   const PANEL_PLACEMENTS = {
+    // Kept as it was: a wide strip is the right shape for a line of text and
+    // the wrong one for a card, which is why renderer.js re-places data cards
+    // away from it.
     lower_third: { x: 0.05, y: 0.60, w: 0.90, h: 0.32 },
-    lower_right: { x: 0.52, y: 0.52, w: 0.44, h: 0.40 },
-    lower_left:  { x: 0.04, y: 0.52, w: 0.44, h: 0.40 },
-    upper_right: { x: 0.52, y: 0.08, w: 0.44, h: 0.40 },
-    upper_left:  { x: 0.04, y: 0.08, w: 0.44, h: 0.40 },
-    center:      { x: 0.16, y: 0.18, w: 0.68, h: 0.64 }
+    lower_right: { x: 0.52, y: 0.38, w: 0.46, h: 0.60 },
+    lower_left:  { x: 0.02, y: 0.38, w: 0.46, h: 0.60 },
+    upper_right: { x: 0.52, y: 0.02, w: 0.46, h: 0.60 },
+    upper_left:  { x: 0.02, y: 0.02, w: 0.46, h: 0.60 },
+    center:      { x: 0.13, y: 0.12, w: 0.74, h: 0.76 }
   };
 
   // Drawn per frame, so every kind here must be synchronous. renderMap is not -
