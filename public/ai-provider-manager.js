@@ -653,6 +653,88 @@
       }
     }
     
+    /**
+     * Which moment of a long film shows what this beat asked for?
+     *
+     * archive-excerpt.js has called this since it was written and nothing ever
+     * defined it, so visionRank() returned null on the first line every time.
+     * The consequence was quiet and total: every archival excerpt has been
+     * chosen on pixel features alone - brightness, motion, avoiding titles and
+     * black frames - and the selectionIntent the Director works to produce was
+     * read, passed down, and discarded. Measured on a real 640s film: method
+     * "visual_features", confidence 0.39, relevance null on all 22 candidates.
+     *
+     * Implemented by mounting the visual evaluator rather than opening a second
+     * vision path. That keeps the separation the measurements justified: the
+     * describer is never told the intent, because a describer that knows the
+     * answer agrees with it - measured, it reported seeing a named stage act in
+     * three clips including one whose tags read "band, orchestra, brass".
+     *
+     * Returns null rather than throwing when vision is unavailable, so the
+     * caller keeps the pixel-feature ranking it already had.
+     */
+    async rankFrames({ intent, frames } = {}) {
+      const E = window.BlvckVisualEvaluator;
+      if (!E || !E.available || !E.available()) return null;
+      const list = (frames || []).filter((f) => f && f.url);
+      if (!intent || !list.length) return null;
+
+      // Spread rather than truncate. A film's frame index is evenly sampled
+      // already, so taking the first N would judge only the opening - which for
+      // archival film is the title card.
+      const MAX = 8;
+      const step = Math.max(1, Math.ceil(list.length / MAX));
+      const picked = list.filter((_, i) => i % step === 0).slice(0, MAX);
+
+      // The service fetches the image itself, so the address has to be one it
+      // can reach. Archive frames arrive as /api/proxy/archive/... - a path on
+      // OUR server - and sending that returns
+      //   400 The URL must be either a HTTP, data or file URL
+      // while the same frame as https://archive.org/... describes fine.
+      const publicUrl = (u) => String(u || '').startsWith('/api/proxy/archive')
+        ? 'https://archive.org' + String(u).replace('/api/proxy/archive', '')
+        : u;
+
+      try {
+        // Two at a time, not all eight. Archive frames take ~20s each against
+        // ~2s for a stock thumbnail, and firing the set at once is the shape
+        // that degraded this endpoint earlier in the day.
+        const seen = [];
+        let next = 0;
+        await Promise.all([0, 1].map(async () => {
+          for (;;) {
+            const i = next++;
+            if (i >= picked.length) return;
+            const f = picked[i];
+            const d = await E._describe({ thumbnailUrl: publicUrl(f.url) });
+            seen[i] = { t: f.t, sees: (d && d.sees) || '', status: d && d.status };
+          }
+        }));
+        const legible = seen.filter((x) => x && x.sees);
+        if (!legible.length) return null;
+
+        // One judge call over all the descriptions, the same shape the
+        // candidate evaluator uses: judged together, the model can see which
+        // moment is the strongest rather than rating each in isolation.
+        const described = legible.map((x) => ({ asset: { tags: [], sourceUrl: '' }, sees: x.sees }));
+        const answer = await window.LLMAdapters.nvidiaNimChat({
+          model: E.JUDGE_MODEL,
+          messages: [{ role: 'user', content: E._judgePrompt(
+            'This moment has to show: ' + intent, { concept: intent }, described, 'general_event') }],
+          temperature: 0.1, max_tokens: 700
+        });
+        const scores = E._parseScores(answer);
+        if (!scores) return null;
+        return legible.map((x, i) => {
+          const j = scores.get(i + 1);
+          return { t: x.t, relevance: j ? j.fit : null };
+        }).filter((x) => x.relevance != null);
+      } catch (err) {
+        console.warn('[AIProviderManager] rankFrames unavailable: ' + err.message);
+        return null;
+      }
+    }
+
     lastRawResponse() {
       return this.lastRawResponseStr;
     }

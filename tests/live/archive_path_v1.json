@@ -1,0 +1,305 @@
+{
+  "at": "2026-08-21T00:24:13.314Z",
+  "beat": {
+    "narration": "Factories across America began producing weapons at an unprecedented scale.",
+    "intent": {
+      "concept": "Workers on a wartime factory floor assembling machinery",
+      "subject": "factory workers",
+      "action": "assembling machinery on a production line",
+      "environment": "a 1940s American industrial plant",
+      "requiredElements": [
+        "workers",
+        "machinery or a production line"
+      ],
+      "avoid": [
+        "a modern office",
+        "empty scenery"
+      ],
+      "specificity": "historical_event",
+      "assetStrategy": "exact"
+    },
+    "queries": [
+      "wartime factory production",
+      "factory workers assembly line"
+    ],
+    "archiveQueries": [
+      "1940s American war production newsreel",
+      "wartime factory workers"
+    ],
+    "timePeriod": {
+      "from": 1939,
+      "to": 1949,
+      "label": "1940s"
+    }
+  },
+  "wiring": {
+    "adapter": true,
+    "licence": true,
+    "excerpt": true,
+    "enabledFlag": null,
+    "policy": null,
+    "defaultPolicy": "cleared_plus_by",
+    "providerPref": null
+  },
+  "reachable": true,
+  "search": {
+    "ms": 98552,
+    "n": 8,
+    "assets": [
+      {
+        "id": "MyJapan1945",
+        "title": "My Japan",
+        "collection": null,
+        "w": 640,
+        "h": 480,
+        "duration": 963.46,
+        "downloadUrl": "/api/proxy/archive/download/MyJapan1945/MyJapan1945.mp4",
+        "thumbnailUrl": "/api/proxy/archive/services/img/MyJapan1945",
+        "licence": {
+          "tier": "public_domain",
+          "licenseUrl": "http://creativecommons.org/licenses/publicdomain/",
+          "rights": "",
+          "basis": "licenseurl",
+          "requiresAttribution": false,
+          "monetisationSafe": true,
+          "label": "Public domain",
+          "detail": "No rights reserved. Free to use commercially, including monetised video."
+        },
+        "tags": [
+          "prelinger"
+        ],
+        "frames": 0
+      },
+      {
+        "id": "OurEnemy1943",
+        "title": "Our Enemy: The Japanese",
+        "collection": null,
+        "w": 640,
+        "h": 480,
+        "duration": 1191.86,
+        "downloadUrl": "/api/proxy/archive/download/OurEnemy1943/OurEnemy1943.mp4",
+        "thumbnailUrl": "/api/proxy/archive/services/img/OurEnemy1943",
+        "licence": {
+          "tier": "public_domain",
+          "licenseUrl": "http://creativecommons.org/licenses/publicdomain/",
+          "rights": "",
+          "basis": "licenseurl",
+          "requiresAttribution": false,
+          "monetisationSafe": true,
+          "label": "Public domain",
+          "detail": "No rights reserved. Free to use commercially, including monetised video."
+        },
+        "tags": [
+          "prelinger"
+        ],
+        "frames": 0
+      },
+      {
+        "id": "nazi_concentration_camps",
+        "title": "Nazi Concentration Camps",
+        "collection": null,
+        "w": 640,
+        "h": 480,
+        "duration": 3556.03,
+        "downloadUrl": "/api/proxy/archive/download/nazi_concentration_camps/nazi_concentration_camps.mp4",
+        "thumbnailUrl": "/api/proxy/archive/services/img/nazi_concentration_camps",
+        "licence": {
+          "tier": "public_domain",
+          "licenseUrl": "http://creativecommons.org/licenses/publicdomain/",
+          "rights": "",
+          "basis": "licenseurl",
+          "requiresAttribution": false,
+          "monetisationSafe": true,
+          "label": "Public domain",
+          "detail": "No rights reserved. Free to use commercially, including monetised video."
+        },
+        "tags": [
+          "feature_films_unsorted",
+          "feature_films",
+          "moviesandfilms"
+        ],
+        "frames": 0
+      },
+      {
+        "id": "TheFirstOfTheFew",
+        "title": "The First of the Few",
+        "collection": null,
+        "w": 640,
+        "h": 480,
+        "duration": 6825.9,
+        "downloadUrl": "/api/proxy/archive/download/TheFirstOfTheFew/MoviePowderPresentsTheFirstOfTheFew.mp4",
+        "thumbnailUrl": "/api/proxy/archive/services/img/TheFirstOfTheFew",
+        "licence": {
+          "tier": "public_domain",
+          "licenseUrl": "http://creativecommons.org/licenses/publicdomain/",
+          "rights": "",
+          "basis": "licenseurl",
+          "requiresAttribution": false,
+          "monetisationSafe": true,
+          "label": "Public domain",
+          "detail": "No rights reserved. Free to use commercially, including monetised video."
+        },
+        "tags": [
+          "feature_films_unsorted",
+          "feature_films",
+          "moviesandfilms"
+        ],
+        "frames": 0
+      },
+      {
+        "id": "Conquerb1943",
+        "title": "Conquer by the Clock",
+        "collection": null,
+        "w": 640,
+        "h": 480,
+        "duration": 640.47,
+        "downloadUrl": "/api/proxy/archive/download/Conquerb1943/Conquerb1943.mp4",
+        "thumbnailUrl": "/api/proxy/archive/services/img/Conquerb1943",
+        "licence": {
+          "tier": "public_domain",
+          "licenseUrl": "http://creativecommons.org/licenses/publicdomain/",
+          "rights": "",
+          "basis": "licenseurl",
+          "requiresAttribution": false,
+          "monetisationSafe": true,
+          "label": "Public domain",
+          "detail": "No rights reserved. Free to use commercially, including monetised video."
+        },
+        "tags": [
+          "prelinger"
+        ],
+        "frames": 0
+      },
+      {
+        "id": "Wastageo1947",
+        "title": "Wastage of Human Resources",
+        "collection": null,
+        "w": 640,
+        "h": 480,
+        "duration": 617.32,
+        "downloadUrl": "/api/proxy/archive/download/Wastageo1947/Wastageo1947.mp4",
+        "thumbnailUrl": "/api/proxy/archive/services/img/Wastageo1947",
+        "licence": {
+          "tier": "public_domain",
+          "licenseUrl": "http://creativecommons.org/licenses/publicdomain/",
+          "rights": "",
+          "basis": "licenseurl",
+          "requiresAttribution": false,
+          "monetisationSafe": true,
+          "label": "Public domain",
+          "detail": "No rights reserved. Free to use commercially, including monetised video."
+        },
+        "tags": [
+          "prelinger"
+        ],
+        "frames": 0
+      },
+      {
+        "id": "ToMarket1942",
+        "title": "To Market, To Market (Part I)",
+        "collection": null,
+        "w": 640,
+        "h": 480,
+        "duration": 1210.41,
+        "downloadUrl": "/api/proxy/archive/download/ToMarket1942/ToMarket1942.mp4",
+        "thumbnailUrl": "/api/proxy/archive/services/img/ToMarket1942",
+        "licence": {
+          "tier": "public_domain",
+          "licenseUrl": "http://creativecommons.org/licenses/publicdomain/",
+          "rights": "",
+          "basis": "licenseurl",
+          "requiresAttribution": false,
+          "monetisationSafe": true,
+          "label": "Public domain",
+          "detail": "No rights reserved. Free to use commercially, including monetised video."
+        },
+        "tags": [
+          "prelinger"
+        ],
+        "frames": 0
+      },
+      {
+        "id": "ToMarket1942_2",
+        "title": "To Market, To Market (Part II)",
+        "collection": null,
+        "w": 640,
+        "h": 480,
+        "duration": 277.58,
+        "downloadUrl": "/api/proxy/archive/download/ToMarket1942_2/ToMarket1942_2.mp4",
+        "thumbnailUrl": "/api/proxy/archive/services/img/ToMarket1942_2",
+        "licence": {
+          "tier": "public_domain",
+          "licenseUrl": "http://creativecommons.org/licenses/publicdomain/",
+          "rights": "",
+          "basis": "licenseurl",
+          "requiresAttribution": false,
+          "monetisationSafe": true,
+          "label": "Public domain",
+          "detail": "No rights reserved. Free to use commercially, including monetised video."
+        },
+        "tags": [
+          "prelinger"
+        ],
+        "frames": 0
+      }
+    ]
+  },
+  "rights": [
+    {
+      "id": "MyJapan1945",
+      "licence": "Public domain",
+      "requiresAttribution": false,
+      "cleared": true,
+      "why": ""
+    },
+    {
+      "id": "OurEnemy1943",
+      "licence": "Public domain",
+      "requiresAttribution": false,
+      "cleared": true,
+      "why": ""
+    },
+    {
+      "id": "nazi_concentration_camps",
+      "licence": "Public domain",
+      "requiresAttribution": false,
+      "cleared": true,
+      "why": ""
+    },
+    {
+      "id": "TheFirstOfTheFew",
+      "licence": "Public domain",
+      "requiresAttribution": false,
+      "cleared": true,
+      "why": ""
+    },
+    {
+      "id": "Conquerb1943",
+      "licence": "Public domain",
+      "requiresAttribution": false,
+      "cleared": true,
+      "why": ""
+    },
+    {
+      "id": "Wastageo1947",
+      "licence": "Public domain",
+      "requiresAttribution": false,
+      "cleared": true,
+      "why": ""
+    },
+    {
+      "id": "ToMarket1942",
+      "licence": "Public domain",
+      "requiresAttribution": false,
+      "cleared": true,
+      "why": ""
+    },
+    {
+      "id": "ToMarket1942_2",
+      "licence": "Public domain",
+      "requiresAttribution": false,
+      "cleared": true,
+      "why": ""
+    }
+  ]
+}
