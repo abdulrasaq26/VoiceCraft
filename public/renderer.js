@@ -234,8 +234,47 @@
    * element whose phrase was never spoken falls back to the shot's own window,
    * which is the same rule overlayForShot already follows.
    */
+  /**
+   * How long this element has to stay up to be read.
+   *
+   * Reading is not instantaneous and a card is not a subtitle: the viewer has
+   * to find it, take in a heading, then read three labelled values. Broadcast
+   * practice is roughly a beat to notice it plus a beat per thing to read, and
+   * the numbers below are that rule made explicit rather than a preference.
+   */
+  function minDwellFor(el) {
+    const words = [el.content, el.label].concat(el.items || [])
+      .join(' ').trim().split(/\s+/).filter(Boolean).length;
+    return Math.min(9, 1.4 + words * 0.42);
+  }
+
+  /**
+   * Turn anchors into windows using the measured narration.
+   *
+   * TWO SEPARATE QUESTIONS, and only one of them belongs to the anchor.
+   *
+   * WHEN it appears is the anchor's, and Timing.anchorOverlay is the authority.
+   * That is measured from the recording and nothing here second-guesses it.
+   *
+   * HOW LONG it stays is not. anchorOverlay returns a window the length of the
+   * SPOKEN PHRASE, which is the right answer to "when were these words said"
+   * and the wrong answer to "how long should this card be on screen":
+   * measured live, the anchor "forty percent" gave 0.35s to 1.55s. A chart is
+   * unreadable in 1.2s. So the card is held to the end of the shot it belongs
+   * to - the footage cuts there anyway, and an element only draws while its own
+   * clip is on screen - and if the phrase is spoken so late that the remaining
+   * shot is too short to read in, it comes up EARLY rather than being flashed.
+   *
+   * Neither number is invented. The moment comes from the transcript and the
+   * limit comes from where the shot already sits.
+   */
   function applyTiming(elements, shot, transcript) {
     const T = window.Timing;
+    const shotStart = Number(shot && shot.timelineStart);
+    const shotEnd   = Number(shot && shot.timelineEnd);
+    const placed = Number.isFinite(shotStart) && Number.isFinite(shotEnd) && shotEnd > shotStart;
+    const round = (v) => Math.round(v * 100) / 100;
+
     const out = [];
     for (const el of (elements || [])) {
       let win = null;
@@ -243,19 +282,57 @@
         try { win = T.anchorOverlay(transcript, el.anchor, { shot }); } catch (e) { win = null; }
       }
       if (!win) {
-        const s = Number(shot && shot.timelineStart);
-        const e = Number(shot && shot.timelineEnd);
-        if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) continue;  // nothing to hang it on
-        win = { start: Math.round((s + 0.1) * 100) / 100,
-                end: Math.round((e - 0.1) * 100) / 100, anchoredTo: '', spokenAt: null };
+        if (!placed) continue;                       // nothing to hang it on
+        win = { start: round(shotStart + 0.1), end: round(shotEnd - 0.1),
+                anchoredTo: '', spokenAt: null };
       }
-      if (!(win.end > win.start)) continue;
+
+      let start = win.start;
+      let end = win.end;
+      if (placed) {
+        // Hold it. The shot is the natural limit: past its end the picture has
+        // changed and the card belongs to a different beat.
+        end = Math.max(end, round(shotEnd - 0.1));
+        const need = minDwellFor(el);
+        if (end - start < need) start = Math.max(round(shotStart + 0.1), round(end - need));
+      }
+
+      if (!(end > start)) continue;
       out.push(Object.assign({}, el, {
-        start: win.start, end: win.end,
-        anchoredTo: win.anchoredTo || '', spokenAt: win.spokenAt == null ? null : win.spokenAt
+        start: round(start), end: round(end),
+        // What the words actually gave, kept beside the window that was used.
+        // The two are different on purpose and the difference should be
+        // visible rather than buried.
+        anchoredTo: win.anchoredTo || '',
+        spokenAt: win.spokenAt == null ? null : win.spokenAt,
+        heldFor: round(end - start),
+        dwellWanted: round(minDwellFor(el))
       }));
     }
-    return out;
+
+    // Two cards in the same corner would now be drawn on top of one another,
+    // because holding everything to the end of the shot means their windows
+    // overlap by construction. A beat may legitimately want two - a stat and a
+    // timeline, say - but not stacked. Within one placement the later card
+    // takes over, and the earlier one ends where it begins.
+    const byPlacement = new Map();
+    for (const el of out) {
+      const list = byPlacement.get(el.placement) || [];
+      list.push(el);
+      byPlacement.set(el.placement, list);
+    }
+    for (const list of byPlacement.values()) {
+      if (list.length < 2) continue;
+      list.sort((a, b) => a.start - b.start);
+      for (let i = 0; i < list.length - 1; i++) {
+        if (list[i].end > list[i + 1].start) {
+          list[i].end = round(list[i + 1].start);
+          list[i].heldFor = round(list[i].end - list[i].start);
+        }
+      }
+    }
+    // Anything squeezed to nothing by that handover never had a window.
+    return out.filter((el) => el.end > el.start);
   }
 
   // ── The call ─────────────────────────────────────────────────────────────
@@ -501,6 +578,7 @@
     // Exported so the contract can be tested without a provider.
     _parseDecision: parseDecision,
     _applyTiming: applyTiming,
+    _minDwellFor: minDwellFor,
     _decisionPrompt: decisionPrompt,
     _eligible: eligible,
     _shotWindowOf: shotWindowOf,

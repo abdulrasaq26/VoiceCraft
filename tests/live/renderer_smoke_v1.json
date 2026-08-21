@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-21T11:13:33.927Z",
+  "at": "2026-08-21T14:29:20.086Z",
   "results": [
     {
       "beat": {
@@ -26,10 +26,10 @@
         "sawPicture": true,
         "error": null
       },
-      "raw": "{\"needed\":true,\"reason\":\"The sentence carries specific dates and events that the picture cannot show\",\"elements\":[{\"kind\":\"timeline\",\"content\":\"\",\"label\":\"Construction Timeline\",\"items\":[\"1933: Surveying started\",\"1935: Towers topped out\",\"1937: First cars crossed\"],\"anchor\":\"Surveying started\",\"placement\":\"lower_third\"}]}",
+      "raw": "{\"needed\":true,\"reason\":\"The sentence carries specific dates and events that cannot be shown in the picture.\",\"elements\":[{\"kind\":\"timeline\",\"content\":\"\",\"label\":\"Construction Timeline\",\"items\":[\"1933: Surveying started\",\"1935: Towers topped out\",\"1937: First cars crossed\"],\"anchor\":\"Surveying started\",\"placement\":\"lower_third\"}]}",
       "decision": {
         "needed": true,
-        "reason": "The sentence carries specific dates and events that the picture cannot show",
+        "reason": "The sentence carries specific dates and events that cannot be shown in the picture.",
         "elements": [
           {
             "kind": "timeline",
@@ -40,22 +40,24 @@
               "1935: Towers topped out",
               "1937: First cars crossed"
             ],
-            "placement": "lower_third",
+            "placement": "lower_right",
             "anchor": "Surveying started",
             "animation": "none",
             "enabled": true,
             "start": 0,
-            "end": 1.2,
+            "end": 8.3,
             "anchoredTo": "Surveying started",
-            "spokenAt": 0
+            "spokenAt": 0,
+            "heldFor": 8.3,
+            "dwellWanted": 6.86
           }
         ],
         "rejected": [],
         "ran": true
       },
-      "ms": 15121,
+      "ms": 29039,
       "attempts": 1,
-      "promptChars": 3417
+      "promptChars": 3785
     },
     {
       "beat": {
@@ -82,7 +84,7 @@
         "sawPicture": true,
         "error": null
       },
-      "raw": "{\"needed\":true,\"reason\":\"The sentence carries a comparison between quantities.\",\"elements\":[{\"kind\":\"chart\",\"content\":\"\",\"label\":\"Fuel efficiency\",\"items\":[\"Cargo ship: 3g/km\",\"Lorry: 20g/km\",\"Plane: 500g/km\"],\"anchor\":\"A cargo ship\",\"placement\":\"lower_third\"}]}",
+      "raw": "{\"needed\":true,\"reason\":\"The sentence carries a comparison between quantities.\",\"elements\":[{\"kind\":\"chart\",\"content\":\"\",\"label\":\"Fuel Efficiency\",\"items\":[\"Cargo Ship: 3g/km\",\"Lorry: 20g/km\",\"Plane: 500g/km\"],\"anchor\":\"A cargo ship\",\"placement\":\"lower_third\"}]}",
       "decision": {
         "needed": true,
         "reason": "The sentence carries a comparison between quantities.",
@@ -90,28 +92,30 @@
           {
             "kind": "chart",
             "content": "",
-            "label": "Fuel efficiency",
+            "label": "Fuel Efficiency",
             "items": [
-              "Cargo ship: 3g/km",
+              "Cargo Ship: 3g/km",
               "Lorry: 20g/km",
               "Plane: 500g/km"
             ],
-            "placement": "lower_third",
+            "placement": "lower_right",
             "anchor": "A cargo ship",
             "animation": "none",
             "enabled": true,
             "start": 0,
-            "end": 1.2,
+            "end": 9.9,
             "anchoredTo": "A cargo ship",
-            "spokenAt": 0
+            "spokenAt": 0,
+            "heldFor": 9.9,
+            "dwellWanted": 5.18
           }
         ],
         "rejected": [],
         "ran": true
       },
-      "ms": 14936,
+      "ms": 31012,
       "attempts": 1,
-      "promptChars": 3546
+      "promptChars": 3914
     },
     {
       "beat": {
@@ -132,21 +136,21 @@
         "says": "ocean, beach, crashing, waves, rock formations, rocks, sea, seascape, shore, splashing"
       },
       "vision": {
-        "sees": "The image shows a rocky shoreline with water in the background.",
+        "sees": "A rocky shoreline is visible, with waves crashing against it.",
         "sawPicture": true,
         "error": null
       },
-      "raw": "{\"needed\":false,\"reason\":\"the sentence describes the scene, adding no additional information that isn't visible in the shot\",\"elements\":[]}",
+      "raw": "{\"needed\":false,\"reason\":\"the sentence only describes the scene, adding no additional information that isn't visible in the shot\",\"elements\":[]}",
       "decision": {
         "needed": false,
-        "reason": "the sentence describes the scene, adding no additional information that isn't visible in the shot",
+        "reason": "the sentence only describes the scene, adding no additional information that isn't visible in the shot",
         "elements": [],
         "rejected": [],
         "ran": true
       },
-      "ms": 16589,
-      "attempts": 1,
-      "promptChars": 3338
+      "ms": 49567,
+      "attempts": 2,
+      "promptChars": 3704
     }
   ]
 }

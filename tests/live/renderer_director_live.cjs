@@ -218,7 +218,38 @@ const check = (name, cond, detail) => {
     const els = [{ kind: 'stat', content: '40%', anchor: 'forty percent',
                    items: [], placement: 'lower_right', enabled: true }];
     const out = window.BlvckRenderer._applyTiming(els, shot, transcript);
-    return { n: out.length, first: out[0] || null };
+
+    // A chart carries far more to read than a stat, and anchors late.
+    const late = window.BlvckRenderer._applyTiming(
+      [{ kind: 'chart', label: 'Fuel efficiency', anchor: 'price',
+         items: ['Cargo ship: 3', 'Lorry: 20', 'Plane: 500'],
+         placement: 'lower_right', enabled: true }], shot, transcript);
+
+    // A shot too short to hold it for as long as it wants.
+    const cramped = window.BlvckRenderer._applyTiming(
+      [{ kind: 'chart', label: 'Fuel efficiency', anchor: 'price',
+         items: ['Cargo ship: 3', 'Lorry: 20', 'Plane: 500'],
+         placement: 'lower_right', enabled: true }],
+      { timelineStart: 0, timelineEnd: 3 }, transcript);
+
+    // Two cards in the SAME corner, and two in different corners.
+    const stacked = window.BlvckRenderer._applyTiming([
+      { kind: 'stat', content: '40%', anchor: 'forty percent', items: [],
+        placement: 'lower_right', enabled: true },
+      { kind: 'stat', content: '£12', anchor: 'price', items: [],
+        placement: 'lower_right', enabled: true }
+    ], shot, transcript);
+    const sideBySide = window.BlvckRenderer._applyTiming([
+      { kind: 'stat', content: '40%', anchor: 'forty percent', items: [],
+        placement: 'lower_right', enabled: true },
+      { kind: 'stat', content: '£12', anchor: 'price', items: [],
+        placement: 'upper_left', enabled: true }
+    ], shot, transcript);
+
+    return { n: out.length, first: out[0] || null,
+             late: late[0] || null, cramped: cramped[0] || null,
+             stacked, sideBySide,
+             rawWindow: window.Timing.anchorOverlay(transcript, 'forty percent', { shot }) };
   });
   console.log(`  ${JSON.stringify(anchored.first)}`);
   check('the anchor became a window', !!anchored.first && anchored.first.end > anchored.first.start, anchored);
@@ -226,6 +257,57 @@ const check = (name, cond, detail) => {
         anchored.first && anchored.first.spokenAt > 0, anchored.first);
   check('recording which words it was anchored to',
         anchored.first && !!anchored.first.anchoredTo, anchored.first);
+
+  // ── Long enough to read ─────────────────────────────────────────────────
+  //
+  // anchorOverlay answers "when were these words spoken", and its window is
+  // the length of the PHRASE. That is the right answer to its own question and
+  // the wrong one for how long a card should be on screen: measured live, the
+  // anchor "forty percent" gave 1.2s, and nobody reads a chart in 1.2s.
+  console.log(chr10 + '=== held long enough to read ===');
+  const raw = anchored.rawWindow;
+  console.log(`  the phrase itself : ${raw.start}s–${raw.end}s `
+    + `(${Math.round((raw.end - raw.start) * 100) / 100}s)`);
+  console.log(`  the stat is held  : ${anchored.first.start}s–${anchored.first.end}s `
+    + `(${anchored.first.heldFor}s, wanted ${anchored.first.dwellWanted}s)`);
+  console.log(`  a chart anchored late: ${anchored.late.start}s–${anchored.late.end}s `
+    + `(${anchored.late.heldFor}s, wanted ${anchored.late.dwellWanted}s)`);
+  console.log(`  the same chart in a 3s shot: ${anchored.cramped.start}s–${anchored.cramped.end}s `
+    + `(${anchored.cramped.heldFor}s)`);
+
+  check('the card is held far longer than the phrase that anchors it',
+        anchored.first.heldFor > (raw.end - raw.start) * 2,
+        { phrase: raw.end - raw.start, held: anchored.first.heldFor });
+  check('it still appears when the words are spoken, not at the shot start',
+        anchored.first.start > 0.2 && anchored.first.spokenAt > 0, anchored.first);
+  check('and stays to the end of the shot it belongs to',
+        Math.abs(anchored.first.end - 7.9) < 0.01, anchored.first);
+  check('a chart wants longer on screen than a stat',
+        anchored.late.dwellWanted > anchored.first.dwellWanted,
+        { chart: anchored.late.dwellWanted, stat: anchored.first.dwellWanted });
+  check('a card anchored too late to be read comes up EARLY rather than flashing',
+        anchored.late.heldFor >= anchored.late.dwellWanted - 0.01
+        && anchored.late.start < 4.5, anchored.late);
+  check('but never before the shot it belongs to',
+        anchored.late.start >= 0.1, anchored.late);
+  // Not 2.9: anchorOverlay clamps its own window to the shot end, so the held
+  // window runs to the cut exactly. activeElements uses half-open windows, so
+  // the card is already gone at that instant and cannot bleed into the next
+  // shot.
+  console.log('  two in one corner : '
+    + anchored.stacked.map((e) => `${e.content} ${e.start}-${e.end}`).join('  |  '));
+  console.log('  two in two corners: '
+    + anchored.sideBySide.map((e) => `${e.content} ${e.placement} ${e.start}-${e.end}`).join('  |  '));
+  check('two cards in the same corner hand over rather than stacking',
+        anchored.stacked.length === 2
+        && anchored.stacked[0].end <= anchored.stacked[1].start + 0.01, anchored.stacked);
+  check('but two in different corners may share the screen',
+        anchored.sideBySide.length === 2
+        && anchored.sideBySide[0].end > anchored.sideBySide[1].start, anchored.sideBySide);
+
+  check('and a shot too short to hold it simply holds it for the whole shot',
+        anchored.cramped.start <= 0.11 && anchored.cramped.end >= 2.89
+        && anchored.cramped.end <= 3.0, anchored.cramped);
 
   // ── The three kind lists must agree ─────────────────────────────────────
   console.log('\n=== the contract matches the compositor ===');
