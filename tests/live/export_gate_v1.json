@@ -1,0 +1,41 @@
+{
+  "at": "2026-08-21T00:58:03.711Z",
+  "clipSeconds": 6,
+  "overlay": {
+    "enabled": true,
+    "start": 2,
+    "end": 4,
+    "text": "40%",
+    "emphasis": "switch brands",
+    "style": "stat",
+    "anchoredTo": "forty percent",
+    "spokenAt": 2.1
+  },
+  "result": {
+    "ok": true,
+    "bytes": 147414,
+    "type": "video/webm",
+    "tookMs": 6176,
+    "duration": 5.93,
+    "w": 1280,
+    "h": 720,
+    "frames": [
+      {
+        "t": 1,
+        "footage": 28800,
+        "card": 0
+      },
+      {
+        "t": 3,
+        "footage": 26984,
+        "card": 1410
+      },
+      {
+        "t": 5,
+        "footage": 28800,
+        "card": 0
+      }
+    ],
+    "status": "Video exported (WebM). Saved to your downloads!"
+  }
+}
