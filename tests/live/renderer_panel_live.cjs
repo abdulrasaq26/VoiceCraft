@@ -95,12 +95,17 @@ const LEGACY = { enabled: true, start: 2, end: 6, text: '40%',
   check('the picture is whole before the panel is due',
         pct(panel.off.footage.tl, panel.off.total.tl) > 95
         && pct(panel.off.footage.br, panel.off.total.br) > 95, panel.off.footage);
-  check('the panel covers part of the lower-right',
-        pct(panel.on.footage.br, panel.on.total.br) < 70, panel.on.footage);
+  check('the card marks the lower-right',
+        pct(panel.on.footage.br, panel.on.total.br) < 97, panel.on.footage);
   check('and the upper-left is untouched — it is contained, not full-frame',
         pct(panel.on.footage.tl, panel.on.total.tl) > 95, panel.on.footage);
-  check('the lower-right still shows some footage around the card',
-        panel.on.footage.br > 0, panel.on.footage);
+  // The point of a panel. There is no backing plate: only the numbers, the
+  // bars and the type are drawn, so the shot the beat was chosen for keeps
+  // playing behind them. A card that blacked out its corner would be a
+  // smaller version of the full-frame card, which is the thing panel mode
+  // exists to avoid.
+  check('and the footage keeps playing under it — marks, not a plate',
+        pct(panel.on.footage.br, panel.on.total.br) > 75, panel.on.footage);
 
   // ── Placement actually moves it ─────────────────────────────────────────
   console.log('\n=== placement ===');
@@ -110,8 +115,10 @@ const LEGACY = { enabled: true, start: 2, end: 6, text: '40%',
   }, CHART);
   console.log(`  upper_left  tl ${pct(moved.footage.tl, moved.total.tl)}%  `
     + `br ${pct(moved.footage.br, moved.total.br)}%`);
-  check('a panel placed upper-left covers the upper-left',
-        pct(moved.footage.tl, moved.total.tl) < 70, moved.footage);
+  check('a panel placed upper-left marks the upper-left',
+        pct(moved.footage.tl, moved.total.tl) < 97, moved.footage);
+  check('without blacking it out',
+        pct(moved.footage.tl, moved.total.tl) > 75, moved.footage);
   check('and leaves the lower-right alone',
         pct(moved.footage.br, moved.total.br) > 95, moved.footage);
 
@@ -127,8 +134,8 @@ const LEGACY = { enabled: true, start: 2, end: 6, text: '40%',
   check('both elements are active', mixed.active === 2, mixed.active);
   check('the legacy stat still marks the centre',
         pct(mixed.q.footage.tl, mixed.q.total.tl) < 100, mixed.q.footage);
-  check('and the panel still covers the lower-right',
-        pct(mixed.q.footage.br, mixed.q.total.br) < 70, mixed.q.footage);
+  check('and the panel still marks the lower-right',
+        pct(mixed.q.footage.br, mixed.q.total.br) < 97, mixed.q.footage);
 
   // ── A card that cannot be drawn must not take the frame with it ─────────
   //
@@ -164,8 +171,8 @@ const LEGACY = { enabled: true, start: 2, end: 6, text: '40%',
   console.log(`  through a frame: ${contained.frameThrew || 'survived'}`);
   check('the drawer genuinely cannot typeset it', contained.verdict.ok === false, contained.verdict);
   check('drawPanel refuses it rather than throwing', !contained.direct, contained.direct);
-  check('and refuses it BEFORE painting a backing plate, so no empty box appears',
-        contained.q && pct(contained.q.footage.br, contained.q.total.br) > 95, contained.q);
+  check('and draws nothing at all where it would have been',
+        contained.q && pct(contained.q.footage.br, contained.q.total.br) > 99, contained.q);
   check('a frame containing it still renders', !contained.frameThrew, contained.frameThrew);
 
   // A good card beside a bad one still draws: the skip is per element.
@@ -179,7 +186,7 @@ const LEGACY = { enabled: true, start: 2, end: 6, text: '40%',
   check('the bad card in the upper-left drew nothing',
         pct(survivor.footage.tl, survivor.total.tl) > 95, survivor.footage);
   check('while the good card beside it still drew',
-        pct(survivor.footage.br, survivor.total.br) < 70, survivor.footage);
+        pct(survivor.footage.br, survivor.total.br) < 97, survivor.footage);
 
   // ── The canvas belongs to somebody else ─────────────────────────────────
   //
@@ -240,6 +247,8 @@ const LEGACY = { enabled: true, start: 2, end: 6, text: '40%',
         ['chart', 'timeline', 'checklist'].every((k) => limits.kinds.indexOf(k) >= 0), limits.kinds);
   check('a map is NOT a panel kind — renderMap awaits geography data, and a '
       + 'render loop cannot await', limits.mapIsPanel === false, limits);
+  check('nor is a whiteboard — it paints its own opaque ground, which is exactly '
+      + 'what a panel must not do', limits.kinds.indexOf('whiteboard') < 0, limits.kinds);
 
   check('nothing threw', pageErrors.length === 0, pageErrors.slice(0, 3));
   console.log('\n' + (fails.length ? `FAILED (${fails.length}): ${fails.join(', ')}`

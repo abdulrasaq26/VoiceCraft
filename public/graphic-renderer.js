@@ -1053,8 +1053,10 @@
     timeline: drawTimeline,
     checklist: drawChecklist, list: drawChecklist,
     stat: drawStat, number: drawStat,
-    whiteboard: drawWhiteboard,
     title: drawTitle
+    // whiteboard is deliberately NOT here. It paints its own opaque ground -
+    // that is what a whiteboard is - and a panel exists so the footage keeps
+    // playing behind it. It remains available full-frame through render().
   };
 
   function panelRect(placement, cw, ch) {
@@ -1132,8 +1134,6 @@
       if (!items.length) return { ok: false, why: 'a checklist needs items' };
     } else if (draw === drawStat) {
       if (!String(spec.value || spec.title || '').trim()) return { ok: false, why: 'a stat needs a value' };
-    } else if (draw === drawWhiteboard) {
-      if (!items.length) return { ok: false, why: 'a whiteboard needs items' };
     }
     return { ok: true, why: '' };
   }
@@ -1166,37 +1166,84 @@
                    x: slot.x + (slot.w - W * k) / 2,
                    y: slot.y + (slot.h - H * k) / 2 };
 
+    // The marks are drawn once onto their own transparent canvas, then
+    // composited over the footage with a halo. Two reasons it is not drawn
+    // straight onto the frame:
+    //
+    // A halo, not a plate. Once the backing is gone the type has to hold
+    // against whatever the footage is doing - measured against a bright sky,
+    // white text on a soft shadow was simply unreadable. Compositing the whole
+    // panel as an image means every mark any drawer produced gets the same dark
+    // outline, in device pixels rather than in stage units shrunk by the panel
+    // scale, without touching a single drawer.
+    //
+    // And it is cached. Panel content is static for the life of the element -
+    // the drawers take a theme, not a time - so this runs once per element
+    // rather than thirty times a second.
+    const art = panelArt(draw, t, spec, Math.round(rect.w), Math.round(rect.h), k);
+    if (!art) return false;
+
     ctx.save();
-    // A backing, not a scrim: enough for text to hold against moving footage,
-    // and only where the card actually is.
-    ctx.fillStyle = t.panel || 'rgba(11,13,16,0.82)';
-    roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, Math.min(24, rect.h * 0.12));
-    ctx.fill();
-    ctx.strokeStyle = t.rule || 'rgba(255,255,255,0.15)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Clip first: a drawer written for the full stage will happily paint past
-    // the panel otherwise.
-    ctx.clip();
-    ctx.translate(rect.x, rect.y);
-    ctx.scale(k, k);
-
-    // The drawers were written for a canvas of their own and assume the default
-    // text state; cardChrome, for one, calls fillText(l, 100, y) and never sets
-    // textAlign. On a shared canvas that assumption is false. The editor's
-    // subtitle pass sets textAlign to 'center', and save/restore preserves the
-    // caller's state rather than resetting it - so on the very next frame a
-    // card title centred itself on x=100 and had its left half clipped off.
-    // Measured on a real export: "Fuel Efficiency" rendered as "l Efficiency".
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    try {
-      draw(ctx, t, spec);
-    } finally {
-      ctx.restore();
-    }
+    const x = Math.round(rect.x), y = Math.round(rect.y);
+    // Two shadow passes, because one is not enough over a bright sky and the
+    // alternative is the plate we just removed.
+    ctx.shadowColor = 'rgba(0,0,0,0.92)';
+    ctx.shadowBlur = 7;
+    ctx.drawImage(art, x, y);
+    ctx.drawImage(art, x, y);
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.drawImage(art, x, y);
+    ctx.restore();
     return true;
+  }
+
+  // The panel's marks, on transparency, at the size they will be composited.
+  // Keyed on everything that changes the picture, so a beat's card is drawn
+  // once and then blitted for the rest of its window.
+  const panelArtCache = new Map();
+  const PANEL_ART_CACHE_MAX = 24;
+
+  function panelArt(draw, t, spec, w, h, k) {
+    if (!(w > 0 && h > 0)) return null;
+    const key = [spec.kind, spec.title, spec.value, spec.subtitle,
+                 (spec.items || []).join('|'), w, h, t.accent, t.ink].join('');
+    const hit = panelArtCache.get(key);
+    if (hit) return hit;
+
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+
+    // The drawers can no longer rely on a dark ground under them. They were
+    // written for an opaque card: t.rule is #2a2f3a and t.dim a mid grey, both
+    // of which vanish against bright footage, and drawChart paints its
+    // non-hero bars in t.rule. Those are lifted to translucent white here.
+    // ink and accent already read over anything.
+    const overFootage = Object.assign({}, t, {
+      rule:  'rgba(255,255,255,0.72)',
+      dim:   'rgba(255,255,255,0.92)',
+      panel: 'rgba(0,0,0,0.45)'
+    });
+
+    g.scale(k, k);
+    // The drawers assume the default text state; cardChrome, for one, calls
+    // fillText(l, 100, y) and never sets textAlign. This canvas is fresh, so
+    // that assumption holds here by construction - which is exactly why the
+    // bug it caused on the shared frame canvas could not happen on this one.
+    g.textAlign = 'left';
+    g.textBaseline = 'alphabetic';
+    try {
+      draw(g, overFootage, spec);
+    } catch (err) {
+      return null;
+    }
+
+    if (panelArtCache.size >= PANEL_ART_CACHE_MAX) {
+      panelArtCache.delete(panelArtCache.keys().next().value);
+    }
+    panelArtCache.set(key, c);
+    return c;
   }
 
   async function compositeOverlay(stockBlob, spec = {}) {

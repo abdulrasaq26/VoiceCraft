@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-21T12:29:40.459Z",
+  "at": "2026-08-21T13:03:25.150Z",
   "scene": {
     "index": 1,
     "timestamp": "00:00:00 - 00:00:08",
@@ -20,7 +20,7 @@
     }
   },
   "acquired": {
-    "ms": 67698,
+    "ms": 65212,
     "bytes": 9891621,
     "type": "video/mp4",
     "asset": {
@@ -38,7 +38,7 @@
         "cargo ship sea aerial"
       ],
       "fallback": null,
-      "acquiredAt": 1787315133039,
+      "acquiredAt": 1787317229449,
       "license": null,
       "archive": null,
       "attribution": null,
@@ -63,21 +63,21 @@
       "considered": 4,
       "best": {
         "id": "pexels:2943126",
-        "score": 0.81,
-        "classification": "direct_illustration",
-        "sees": "The image shows a large cargo ship with several shipping containers on its deck, floating on the water."
+        "score": 0.73,
+        "classification": "strong_contextual",
+        "sees": "A large ship is visible in the water, with several containers on its deck."
       },
       "rejected": [
         {
           "id": "pixabay:24255",
           "classification": "weak_contextual",
-          "sees": "A city skyline is visible at night, with a large body of water in the foreground and a bridge spanning it."
+          "sees": "A cityscape at night with a large body of water and a bridge, featuring a bustling port area with numerous boats and ships."
         }
       ]
     }
   },
   "decided": {
-    "ms": 230264,
+    "ms": 158699,
     "summary": {
       "considered": 1,
       "decided": 1,
@@ -91,16 +91,15 @@
           "index": 1,
           "needed": true,
           "ran": true,
-          "reason": "The sentence carries a comparison between fuel efficiencies of different vehicles.",
+          "reason": "The sentence carries a comparison between fuel efficiencies.",
           "kinds": [
             "chart"
           ]
         }
       ]
     },
-    "attempts": 4,
+    "attempts": 3,
     "transient": [
-      "the Director failed: the Director did not answer in 60000ms",
       "the Director failed: the Director did not answer in 60000ms",
       "the Director failed: the Director did not answer in 60000ms"
     ],
@@ -127,8 +126,8 @@
     "decision": {
       "ran": true,
       "needed": true,
-      "reason": "The sentence carries a comparison between fuel efficiencies of different vehicles.",
-      "at": 1787315363334,
+      "reason": "The sentence carries a comparison between fuel efficiencies.",
+      "at": 1787317388176,
       "rejected": []
     },
     "measured": false
@@ -138,48 +137,44 @@
     "hasVideo": true,
     "withCard": {
       "ok": true,
-      "bytes": 1943072,
+      "bytes": 1993110,
       "type": "video/webm",
       "sampledAt": 4,
-      "duration": 7.96,
+      "duration": 7.97,
       "w": 1280,
       "h": 720,
       "panel": {
-        "luma": 39,
-        "bright": 48,
-        "ink": 438,
-        "ground": 4189,
+        "luma": 83,
+        "bright": 98,
+        "accent": 296,
         "n": 4697
       },
       "control": {
         "luma": 106,
-        "bright": 117,
-        "ink": 14469,
-        "ground": 285,
+        "bright": 119,
+        "accent": 0,
         "n": 16160
       },
       "status": "Video exported (WebM). Saved to your downloads!"
     },
     "withoutCard": {
       "ok": true,
-      "bytes": 2063664,
+      "bytes": 2032048,
       "type": "video/webm",
       "sampledAt": 4,
-      "duration": 7.94,
+      "duration": 7.93,
       "w": 1280,
       "h": 720,
       "panel": {
         "luma": 76,
         "bright": 10,
-        "ink": 578,
-        "ground": 141,
+        "accent": 0,
         "n": 4697
       },
       "control": {
         "luma": 105,
-        "bright": 122,
-        "ink": 14391,
-        "ground": 326,
+        "bright": 123,
+        "accent": 0,
         "n": 16160
       },
       "status": "Video exported (WebM). Saved to your downloads!"

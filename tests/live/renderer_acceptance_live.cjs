@@ -262,23 +262,21 @@ const SCENE = {
       const box = rectOf(element ? element.placement : 'lower_right', s.width, s.height);
       const stats = (x0, y0, x1, y1) => {
         const d = g.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)).data;
-        let sum = 0, n = 0, bright = 0, ground = 0, ink = 0;
+        let sum = 0, n = 0, bright = 0, accent = 0;
         for (let i = 0; i < d.length; i += 4 * 4) {
-          const l = (d[i] + d[i + 1] + d[i + 2]) / 3;
+          const r = d[i], gn = d[i + 1], b = d[i + 2];
+          const l = (r + gn + b) / 3;
           sum += l; n++;
           if (l > 205) bright++;
-          // The card's own ground is #171a21 - luma about 27 - and it is
-          // OPAQUE, so nothing of the footage survives underneath it. Counting
-          // near-black pixels is therefore a discriminator that does not depend
-          // on what the footage happens to look like.
-          if (l < 45) ground++;
-          // Ink is anything clearly above that ground. NOT near-white: the
-          // chart's bars are the brand amber #f5b301, luma about 142, and an
-          // earlier version of this test counted only pixels over 205 and so
-          // reported a perfectly good chart as a blank plate.
-          if (l > 90) ink++;
+          // The brand amber, #f5b301. A panel has no backing any more - only
+          // the marks are drawn, so the footage keeps playing behind them -
+          // which means the old discriminator, a near-black card ground
+          // appearing in the middle of a bright sea, no longer exists. The
+          // accent does: open water and a container ship contain essentially
+          // no saturated amber, and the chart's bars are made of it.
+          if (r > 170 && gn > 110 && gn < 210 && b < 90) accent++;
         }
-        return { luma: Math.round(sum / n), bright, ink, ground, n };
+        return { luma: Math.round(sum / n), bright, accent, n };
       };
       return { ok: true, bytes: captured.size, type: captured.type, sampledAt: t,
                duration: Math.round(v.duration * 100) / 100, w: v.videoWidth, h: v.videoHeight,
@@ -326,24 +324,26 @@ const SCENE = {
           Math.abs(a.duration - SECONDS) <= 1.5, { got: a.duration, want: SECONDS });
     check('the counterfactual export also succeeded', !b.error && b.bytes > 0, b);
 
-    // The card is in the file. Bright pixels are NOT the discriminator here and
-    // assuming they were is what the first version got wrong: this footage is
-    // bright ocean and sky, and an opaque card ground covers more bright pixels
-    // than its text adds, so the count falls. What cannot happen by accident is
-    // the card's own near-black ground appearing in the middle of a bright sea.
-    check('the card IS in the exported file — its opaque ground replaces that rectangle',
-          a.panel.ground > b.panel.ground * 3 + 200,
-          { with: a.panel.ground, without: b.panel.ground });
-    check('and the rectangle darkens accordingly',
-          a.panel.luma < b.panel.luma - 15,
+    // The card is in the file. There is no plate to look for - that is the
+    // point of a panel - so presence is proved by the marks themselves: the
+    // brand amber of the bars, which open water does not contain.
+    check('the card IS in the exported file — its bars appear in that rectangle',
+          a.panel.accent > b.panel.accent * 4 + 40,
+          { with: a.panel.accent, without: b.panel.accent });
+    check('and typeset text with them — it is a chart, not a stray mark',
+          a.panel.bright > b.panel.bright + 20,
+          { with: a.panel.bright, without: b.panel.bright });
+    // The requirement that made panel mode worth having: the shot the beat was
+    // chosen for is still playing underneath. A card that blacked out its
+    // corner would be a smaller full-frame card.
+    check('and the footage is still playing behind it — no backing covers the shot',
+          Math.abs(a.panel.luma - b.panel.luma) < 30,
           { with: a.panel.luma, without: b.panel.luma });
-    check('typeset ink sits on that ground — it is a chart, not a blank plate',
-          a.panel.ink > 150, a.panel);
     check('the footage elsewhere is untouched — it is a panel, not a full-frame card',
           Math.abs(a.control.luma - b.control.luma) < 25,
           { with: a.control, without: b.control });
-    check('and the frame outside the card is still moving footage, not a card ground',
-          a.control.ground < a.control.n * 0.1, a.control);
+    check('and no amber appears where no card was asked for',
+          a.control.accent < a.control.n * 0.02, a.control);
   }
 
   // The frames go beside the JSON as real files, and out of it, so the record
