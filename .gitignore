@@ -43,3 +43,6 @@ test_cross_domain.js
 kaggle_director/tmp_director/
 __pycache__/
 *.pyc
+
+# HyperFrame render scratch — per-job dirs and staged ffmpeg binaries
+.hyperframe-jobs/

@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-21T14:32:49.656Z",
+  "at": "2026-08-24T08:50:38.718Z",
   "clipSeconds": 6,
   "overlay": {
     "enabled": true,
@@ -13,10 +13,10 @@
   },
   "result": {
     "ok": true,
-    "bytes": 215285,
+    "bytes": 215888,
     "type": "video/webm",
-    "tookMs": 6066,
-    "duration": 5.83,
+    "tookMs": 6058,
+    "duration": 5.84,
     "w": 1280,
     "h": 720,
     "frames": [
@@ -27,8 +27,8 @@
       },
       {
         "t": 3,
-        "footage": 26987,
-        "card": 1411
+        "footage": 26986,
+        "card": 1412
       },
       {
         "t": 5,

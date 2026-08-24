@@ -5,6 +5,7 @@ import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { renderComposition, renderReadiness } from './hyperframe-render.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -990,6 +991,95 @@ const server = http.createServer((req, res) => {
       });
 
       proxyReq.end();
+    });
+    return;
+  }
+
+  // ── HyperFrame rendering ────────────────────────────────────────────────
+  //
+  // The only route that runs a subprocess. Everything about the isolation - a
+  // per-job directory, a minimal env with none of this machine's keys in it, a
+  // wall-clock kill - lives in hyperframe-render.mjs rather than here, so the
+  // rules are in one readable place instead of spread through a request
+  // handler.
+  if (req.url.startsWith('/api/hyperframe/status')) {
+    const state = renderReadiness();
+    res.writeHead(state.ready ? 200 : 503, {
+      'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', ...NO_CACHE
+    });
+    res.end(JSON.stringify(state));
+    return;
+  }
+
+  if (req.url.startsWith('/api/hyperframe/render')) {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
+      res.end();
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: 'POST a composition to render it.' }));
+      return;
+    }
+
+    // A render can take minutes; the default socket timeout would cut it off
+    // partway and leave the caller unable to tell a slow render from a dead one.
+    const RENDER_SOCKET_MS = 11 * 60 * 1000;
+    req.setTimeout(RENDER_SOCKET_MS);
+    res.setTimeout(RENDER_SOCKET_MS);
+
+    const chunks = [];
+    let bytes = 0;
+    let refused = false;
+    req.on('data', (c) => {
+      if (refused) return;
+      bytes += c.length;
+      // 96MB: a composition plus its assets. Past that something is wrong.
+      if (bytes > 96 * 1024 * 1024) {
+        refused = true;
+        res.writeHead(413, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: 'The composition and its assets are too large to render.' }));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', async () => {
+      if (refused) return;
+      let job;
+      try {
+        job = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: 'The render request was not JSON.' }));
+        return;
+      }
+      try {
+        const out = await renderComposition(job);
+        console.log(`🎞️  HyperFrame ${out.jobId}: ${(out.buffer.length / 1024).toFixed(0)}KB `
+          + `${job.format || 'mp4'} in ${(out.ms / 1000).toFixed(1)}s`);
+        res.writeHead(200, {
+          'Content-Type': out.mime,
+          'Content-Length': out.buffer.length,
+          'X-Render-Ms': String(out.ms),
+          'X-Job-Id': out.jobId,
+          'Access-Control-Expose-Headers': 'X-Render-Ms, X-Job-Id',
+          'Access-Control-Allow-Origin': '*',
+          ...NO_CACHE
+        });
+        res.end(out.buffer);
+      } catch (err) {
+        console.warn(`⚠️  HyperFrame render failed: ${err.message}`);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      }
     });
     return;
   }
