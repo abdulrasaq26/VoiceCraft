@@ -877,7 +877,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     // ElevenLabs runs client-side; fetch the sample as a blob then play.
     // Previews use the LIVE voice_settings so users hear their own tuning.
     const phrase = 'Hello! This is a preview of my voice.';
-    window.BlvckAI.speak(phrase, v.id, { voice_settings: collectVoiceSettings(), instructions: instructionsInput.value.trim(), params: currentGenParams() })
+    speakAtPace(phrase, v.id, { voice_settings: collectVoiceSettings(), instructions: instructionsInput.value.trim(), params: currentGenParams() })
       .then((blob) => {
         if (previewVoiceId !== voiceId) return;
         if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -1244,7 +1244,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   }
 
   async function synthesizeChunk(item, s) {
-    return window.BlvckAI.speak(item.text, s.voiceId, {
+    return speakAtPace(item.text, s.voiceId, {
       voice_settings: s.voice_settings,
       instructions: s.instructions,
       model: s.ttsModel,
@@ -2197,6 +2197,42 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
   // The params actually sent for a run. Returns {} for engines with no
   // sampling controls, so nothing meaningless is forwarded.
+  // --- Narration pace ----------------------------------------------------
+  //
+  // The Speech Speed slider drove nothing. Nothing passed `speed` into speak(),
+  // so Kokoro's `options.speed || 1.0` was always 1.0, and buildTtsOptions -
+  // where ctx.speed was meant to be assembled - is called from nowhere at all.
+  // For Fish the slider was hidden outright, correctly, because the engine has
+  // no speed parameter and a control that silently does nothing is worse than
+  // no control.
+  //
+  // Now there are two honest routes and the engine decides which:
+  //   engines with a speed parameter  - it is passed to them
+  //   engines without one             - BlvckPace re-times the audio afterwards
+  //                                     without moving its pitch
+  //
+  // Either way it happens BEFORE the chunk is stored, so forced alignment
+  // measures the audio that exists and every scene cut follows it.
+  function engineHasSpeed() {
+    const def = window.getTtsProvider ? window.getTtsProvider(window.BlvckAI.ttsProvider()) : null;
+    return !((def && def.caps || {}).speed === false);
+  }
+
+  function narrationSpeed() {
+    const el = document.getElementById('speech-speed-slider');
+    const v = el ? parseFloat(el.value) : 1;
+    return Number.isFinite(v) && v > 0 ? v : 1;
+  }
+
+  /** speak(), with the pace applied by whichever route this engine allows. */
+  async function speakAtPace(text, voiceId, opts = {}) {
+    const speed = narrationSpeed();
+    const blob = await window.BlvckAI.speak(text, voiceId,
+      engineHasSpeed() ? { ...opts, speed } : opts);
+    if (!blob || engineHasSpeed() || !window.BlvckPace) return blob;
+    return window.BlvckPace.stretch(blob, speed);
+  }
+
   function currentGenParams() {
     const def = window.getTtsProvider ? window.getTtsProvider(window.BlvckAI.ttsProvider()) : null;
     if (!def || !def.caps || !def.caps.genParams) return {};
@@ -2271,7 +2307,30 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     const caps = (def && def.caps) || {};
     if (genEls.panel) genEls.panel.hidden = !caps.genParams;
     const speedWrap = document.getElementById('speech-speed-wrap');
-    if (speedWrap) speedWrap.style.display = caps.speed === false ? 'none' : '';
+    const slider = document.getElementById('speech-speed-slider');
+    const note = document.getElementById('speech-speed-note');
+    // An engine without a speed parameter is no longer a reason to hide it:
+    // BlvckPace re-times the audio afterwards. It IS a reason to narrow the
+    // range, because the stretch is transparent to about 0.75x and starts
+    // smearing consonants past that, and a control that can quietly produce a
+    // bad take is the thing this slider used to be.
+    const post = caps.speed === false && !!window.BlvckPace;
+    if (speedWrap) speedWrap.style.display = (caps.speed === false && !post) ? 'none' : '';
+    if (slider) {
+      slider.min = post ? String(window.BlvckPace.MIN) : '0.5';
+      slider.max = post ? String(window.BlvckPace.MAX) : '2.0';
+      const v = parseFloat(slider.value);
+      if (v < Number(slider.min)) slider.value = slider.min;
+      if (v > Number(slider.max)) slider.value = slider.max;
+    }
+    if (note) {
+      note.textContent = post
+        ? 'This engine has no speed setting, so AETHER re-times the narration after '
+          + 'it is generated — the pitch does not change. Scene cuts follow the '
+          + 'measured result.'
+        : '';
+      note.hidden = !post;
+    }
   }
 
   // --- Speech Director Studio Controls Binding --------------------------
@@ -2286,6 +2345,22 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   const toggleDates = document.getElementById('toggle-naturalize-dates');
   const toggleCurrencies = document.getElementById('toggle-naturalize-currencies');
   const directorStatus = document.getElementById('speech-director-status');
+
+  // The slider persists through BlvckPace, which is also what applies it, so
+  // there is one stored value rather than a UI copy and an engine copy that can
+  // disagree.
+  (() => {
+    const el = document.getElementById('speech-speed-slider');
+    const out = document.getElementById('speech-speed-val');
+    if (!el) return;
+    if (window.BlvckPace) el.value = String(window.BlvckPace.get());
+    const paint = () => { if (out) out.value = Number(el.value).toFixed(2) + 'x'; };
+    paint();
+    el.addEventListener('input', () => {
+      paint();
+      if (window.BlvckPace) window.BlvckPace.set(el.value);
+    });
+  })();
 
   function updateSpeechAnalytics() {
     if (!window.BlvckSpeechDirector) return;
@@ -2467,7 +2542,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       btnPreviewSelection.disabled = true;
       showStatus(`Synthesizing ${sel.split(/\s+/).length} word(s)…`, 'info');
       try {
-        const blob = await window.BlvckAI.speak(sel, v.id, { params: currentGenParams() });
+        const blob = await speakAtPace(sel, v.id, { params: currentGenParams() });
         if (!blob || !blob.size) throw new Error('the engine returned no audio');
         if (audioEl) {
           if (audioEl.dataset.url) URL.revokeObjectURL(audioEl.dataset.url);

@@ -545,6 +545,7 @@
                 <div id="speech-speed-wrap">
                   <label for="speech-speed-slider">Speech Speed <output id="speech-speed-val">1.0x</output></label>
                   <input id="speech-speed-slider" type="range" min="0.5" max="2.0" step="0.05" value="1.0" style="width:100%;" />
+                  <p id="speech-speed-note" class="field-note" style="margin:2px 0 0;" hidden></p>
                 </div>
 
                 <div>
@@ -1451,6 +1452,7 @@
   <script src="renderer.js"></script><!-- Decides what goes ON a chosen shot; timing stays with Timing.anchorOverlay -->
   <script src="voice-styles.js"></script>
   <script src="voice-cloning.js"></script>
+  <script src="voice-pace.js"></script><!-- Pitch-preserving narration pace; Fish has no speed parameter -->
   <script src="voice-cloning-ui.js"></script>
   <script src="adapters/direct-adapters.js"></script>
   <script src="provider-dashboard.js"></script>
