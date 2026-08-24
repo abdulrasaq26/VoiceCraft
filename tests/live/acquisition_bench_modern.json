@@ -1,0 +1,132 @@
+{
+  "at": "2026-08-24T22:21:50.225Z",
+  "provider": "modern",
+  "beats": [
+    {
+      "index": 1,
+      "ok": true,
+      "wallMs": 65364,
+      "asset": {
+        "provider": "pixabay",
+        "id": "135",
+        "duration": 12,
+        "measured": null,
+        "claimed": null
+      },
+      "error": null,
+      "groups": [
+        {
+          "kind": "other",
+          "n": 9,
+          "ms": 60719,
+          "bytes": 0,
+          "failed": 1,
+          "slowest": 45529
+        },
+        {
+          "kind": "pixabay search",
+          "n": 3,
+          "ms": 5966,
+          "bytes": 0,
+          "failed": 0,
+          "slowest": 3111
+        },
+        {
+          "kind": "download (proxy)",
+          "n": 1,
+          "ms": 1303,
+          "bytes": 0,
+          "failed": 0,
+          "slowest": 1303
+        }
+      ],
+      "requests": 13,
+      "netSummedMs": 67988,
+      "netSpanMs": 55569
+    },
+    {
+      "index": 2,
+      "ok": true,
+      "wallMs": 33357,
+      "asset": {
+        "provider": "pixabay",
+        "id": "12543",
+        "duration": 17,
+        "measured": null,
+        "claimed": null
+      },
+      "error": null,
+      "groups": [
+        {
+          "kind": "other",
+          "n": 8,
+          "ms": 22727,
+          "bytes": 0,
+          "failed": 1,
+          "slowest": 9521
+        },
+        {
+          "kind": "pixabay search",
+          "n": 3,
+          "ms": 11170,
+          "bytes": 0,
+          "failed": 0,
+          "slowest": 4891
+        },
+        {
+          "kind": "download (proxy)",
+          "n": 1,
+          "ms": 877,
+          "bytes": 0,
+          "failed": 0,
+          "slowest": 877
+        }
+      ],
+      "requests": 12,
+      "netSummedMs": 34774,
+      "netSpanMs": 25026
+    },
+    {
+      "index": 3,
+      "ok": true,
+      "wallMs": 127385,
+      "asset": {
+        "provider": "pexels",
+        "id": "17226133",
+        "duration": 7.64,
+        "measured": null,
+        "claimed": null
+      },
+      "error": null,
+      "groups": [
+        {
+          "kind": "other",
+          "n": 8,
+          "ms": 26517,
+          "bytes": 0,
+          "failed": 0,
+          "slowest": 12207
+        },
+        {
+          "kind": "pixabay search",
+          "n": 3,
+          "ms": 5155,
+          "bytes": 0,
+          "failed": 0,
+          "slowest": 1822
+        },
+        {
+          "kind": "download (proxy)",
+          "n": 1,
+          "ms": 3650,
+          "bytes": 0,
+          "failed": 0,
+          "slowest": 3650
+        }
+      ],
+      "requests": 12,
+      "netSummedMs": 35322,
+      "netSpanMs": 24777
+    }
+  ]
+}

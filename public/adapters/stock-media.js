@@ -789,8 +789,15 @@
    * fails, so the caller never falls through to the next provider or the next
    * level, and the queue sits at 0% indefinitely. A search returns a page of
    * JSON, so ten seconds is already slow.
+   *
+   * It was 20s, which this comment already argued against. Measured with every
+   * request the page makes during a real acquisition: a Pixabay search hung and
+   * came back as an error at exactly 20.01s, delaying that beat by the full
+   * ceiling. Searches run abreast, so the slowest one gates the whole phase —
+   * the ceiling is the cost, and it should be the number the reasoning above
+   * actually supports.
    */
-  const SEARCH_TIMEOUT_MS = 20000;
+  const SEARCH_TIMEOUT_MS = 10000;
 
   /**
    * How long one media download may take.
@@ -1065,7 +1072,7 @@
    * metadata order, unchanged. A storyboard that stops because the judge is
    * out is worse than one judged only on metadata.
    */
-  async function judgeCandidates(scene, req, ranked, sourceStrategy) {
+  async function judgeCandidates(scene, req, ranked, sourceStrategy, budgetMs) {
     const off = { ran: false, verdict: 'NOT_EVALUATED', accepted: [] };
     const E = window.BlvckVisualEvaluator;
     if (!E || !E.available || !E.available()) return off;
@@ -1092,7 +1099,8 @@
         narration: scene.subtitle || scene.sceneSummary || '',
         intent,
         candidates: ranked,
-        specificity
+        specificity,
+        budgetMs
       });
     } catch (err) {
       console.warn(`[StockMedia] scene ${scene.index}: the evaluator failed (${err.message}) `
@@ -1128,6 +1136,12 @@
       confidence: out.confidence,
       floor: out.floor,
       considered: out.scored.length,
+      // A verdict reached on part of the shortlist is not the same as one
+      // reached on all of it. When the budget cut the looking short, the pick
+      // may simply be the best of what there was time to see, and a scene that
+      // does not say so presents a rushed choice as a considered one.
+      partial: !!(out.cost && out.cost.overBudget),
+      cost: out.cost || null,
       best: out.scored[0] && {
         id: `${out.scored[0].asset.provider}:${out.scored[0].asset.id}`,
         score: Math.round(out.scored[0].score * 100) / 100,
@@ -1589,6 +1603,7 @@
     isConfigured,
     planExcerpt,
     chooseExcerpt,
+    _judgeCandidates: judgeCandidates,
     reconcileExcerpt,
     measuredDuration,
     excerptWindow,

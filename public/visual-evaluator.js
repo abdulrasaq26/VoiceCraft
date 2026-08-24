@@ -196,9 +196,75 @@
     + 'sentence. Say what a person would see: subjects, what they are doing, the setting. '
     + 'Do not guess at names, brands or events.';
 
+  // What a clip looks like does not change.
+  //
+  // Measured with every request the page makes during a real acquisition: three
+  // beats cost 176s, and 119s of that was model calls — four descriptions and a
+  // judge per beat, at 2 to 24 seconds each. The descriptions are the half that
+  // never needed repeating: `pexels:17226133` shows what it shows, today and
+  // next week, for every beat that ever shortlists it. Kept in IndexedDB and
+  // keyed by the picture that was actually described, so a provider that
+  // changes its thumbnail gets looked at again.
+  const SEEN_DB = 'blvck-vision-cache';
+  const SEEN_STORE = 'described';
+  const SEEN_TTL_MS = 90 * 24 * 3600 * 1000;
+
+  function seenOpen() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) return reject(new Error('no IndexedDB'));
+      const rq = indexedDB.open(SEEN_DB, 1);
+      rq.onupgradeneeded = () => {
+        if (!rq.result.objectStoreNames.contains(SEEN_STORE)) rq.result.createObjectStore(SEEN_STORE);
+      };
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error);
+    });
+  }
+
+  const seenKey = (asset, picture) => `${asset.provider}:${asset.id}|${picture.slice(-64)}`;
+
+  async function seenGet(key) {
+    try {
+      const db = await seenOpen();
+      const v = await new Promise((res, rej) => {
+        const tx = db.transaction(SEEN_STORE, 'readonly');
+        const rq = tx.objectStore(SEEN_STORE).get(key);
+        rq.onsuccess = () => res(rq.result || null);
+        rq.onerror = () => rej(rq.error);
+      });
+      db.close();
+      if (!v || !v.sees) return null;
+      if (Date.now() - (v.at || 0) > SEEN_TTL_MS) return null;
+      return v;
+    } catch (e) { return null; }
+  }
+
+  async function seenPut(key, sees) {
+    try {
+      const db = await seenOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction(SEEN_STORE, 'readwrite');
+        tx.objectStore(SEEN_STORE).put({ sees, at: Date.now() }, key);
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+      db.close();
+    } catch (e) { /* the cache is an optimisation, never a requirement */ }
+  }
+
+  let cacheHits = 0, cacheMisses = 0;
+
   async function describe(asset) {
     const picture = asset.thumbnailUrl || asset.previewUrl || '';
     if (!picture) return { asset, sees: '', sawPicture: false };
+
+    const key = seenKey(asset, picture);
+    const kept = await seenGet(key);
+    if (kept) {
+      cacheHits++;
+      return { asset, sees: kept.sees, sawPicture: true, fromCache: true };
+    }
+    cacheMisses++;
     const content = [{ type: 'text', text: DESCRIBE },
                      { type: 'image_url', image_url: { url: picture } }];
     // Retried more than once, and cheaply, because the failure is transient and
@@ -219,7 +285,10 @@
           max_tokens: 90
         }), LOOK_TIMEOUT_MS, 'the describer');
         const sees = String(text || '').trim().replace(/\s+/g, ' ').slice(0, 170);
-        if (sees) return { asset, sees, sawPicture: true };
+        if (sees) {
+          await seenPut(key, sees);
+          return { asset, sees, sawPicture: true };
+        }
       } catch (err) {
         lastErr = err.message;
       }
@@ -411,12 +480,27 @@
    * outcome that is not a confident judgement reports itself as such, and
    * acquire() falls back to the metadata order it already had.
    */
-  async function evaluate({ narration, intent, candidates, specificity } = {}) {
+  // What judging one beat is allowed to cost.
+  //
+  // Worst case before this existed: four descriptions at a 25s deadline, two
+  // abreast, then a judge at 60s — 110 seconds for one beat, on top of the
+  // searches and the download. A Phase 10 acceptance run lost its footage beat
+  // to exactly that, blowing a three-minute acquisition budget and falling
+  // back to a stand-in. The evaluation is worth paying for, but not without a
+  // ceiling: past it the metadata order stands and the scene records that it
+  // was never judged, which is the honest outcome rather than a slow one.
+  const EVALUATION_BUDGET_MS = 45000;
+
+  async function evaluate({ narration, intent, candidates, specificity, budgetMs } = {}) {
     const pool = (candidates || []).slice(0, MAX_JUDGED);
     if (!pool.length) return { ran: false, why: 'no candidates', scored: [], verdict: 'NO_CANDIDATES' };
     if (!available()) return { ran: false, why: 'no evaluator configured', scored: [], verdict: 'NOT_EVALUATED' };
 
     const t0 = Date.now();
+    const budget = Number(budgetMs) > 0 ? Number(budgetMs) : EVALUATION_BUDGET_MS;
+    const spent = () => Date.now() - t0;
+    const left = () => budget - spent();
+    cacheHits = 0; cacheMisses = 0;
 
     // Give up on the endpoint early, not candidate by candidate.
     //
@@ -432,8 +516,12 @@
     // describing something unusable: only hard failures count here.
     let dead = false;
     let failures = 0;
+    let overBudget = false;
     const described = await pooled(pool, CONCURRENCY, async (asset, i) => {
       if (dead) return { asset, sees: '', sawPicture: false, skipped: true };
+      // Checked before starting one rather than after: a description begun at
+      // the budget's edge can still run for its full deadline.
+      if (left() < 6000) { overBudget = true; return { asset, sees: '', sawPicture: false, skipped: true }; }
       const d = await describe(asset);
       if (d.error) {
         failures++;
@@ -460,13 +548,17 @@
 
     let scoreMap = null;
     const tJudge = Date.now();
+    // Whatever is left of the beat's budget, and never more than the judge's
+    // own deadline. Spending sixty seconds deciding an order is not an
+    // improvement on shipping the metadata order.
+    const judgeBudget = Math.max(4000, Math.min(JUDGE_TIMEOUT_MS, left()));
     try {
       const answer = await withDeadline(window.LLMAdapters.nvidiaNimChat({
         model: JUDGE_MODEL,
         messages: [{ role: 'user', content: judgePrompt(narration, intent, seen, specificity) }],
         temperature: 0.1,
         max_tokens: 700
-      }), JUDGE_TIMEOUT_MS, 'the judge');
+      }), judgeBudget, 'the judge');
       scoreMap = parseScores(answer);
     } catch (err) {
       return { ran: false, verdict: 'NOT_EVALUATED', scored: [], tookMs: Date.now() - t0,
@@ -477,6 +569,7 @@
                why: 'the judge did not answer in the shape asked for' };
     }
 
+    const cost = { cacheHits, cacheMisses, overBudget, spentMs: spent(), budgetMs: budget };
     const scored = seen.map((d, i) => {
       const j = scoreMap.get(i + 1);
       if (!j) return null;
@@ -509,6 +602,9 @@
       // separately expensive: one is N small image requests, the other is a
       // single text call over their descriptions.
       timing: { visionMs, judgeMs: Date.now() - tJudge },
+      // What it cost and what it saved, so a run that is suddenly slow can be
+      // read rather than guessed at.
+      cost,
       described: described.length,
       legible: seen.length,
       floor,
