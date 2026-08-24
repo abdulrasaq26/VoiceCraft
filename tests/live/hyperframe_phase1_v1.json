@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T09:19:20.128Z",
+  "at": "2026-08-24T10:25:32.432Z",
   "seconds": 3,
   "accent": {
     "r": 233,
@@ -7,8 +7,8 @@
     "b": 160
   },
   "rendered": {
-    "wallMs": 30495,
-    "renderMs": 30341,
+    "wallMs": 21559,
+    "renderMs": 21445,
     "seconds": 3,
     "bytes": 135009,
     "type": "video/mp4",
@@ -17,9 +17,9 @@
       "status": "ready",
       "renderedKey": "clip:1",
       "durationSec": 3,
-      "renderMs": 30341,
+      "renderMs": 21445,
       "bytes": 135009,
-      "at": 1787563155666,
+      "at": 1787567128119,
       "failure": null
     },
     "hasStockAsset": false,
@@ -28,14 +28,14 @@
   },
   "film": {
     "ok": true,
-    "bytes": 71657,
+    "bytes": 76882,
     "duration": 2.95,
     "w": 1280,
     "h": 720,
     "mid": {
       "t": 2.0999999999999996,
-      "accentPx": 1993,
-      "bright": 998,
+      "accentPx": 1992,
+      "bright": 1002,
       "n": 57600
     },
     "status": "Video exported (WebM). Saved to your downloads!"

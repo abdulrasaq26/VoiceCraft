@@ -1,0 +1,78 @@
+{
+  "at": "2026-08-24T10:10:35.171Z",
+  "narration": "By the time you reach executive leadership, you are no longer judged by what you can do yourself, but by what the people below you can do without you.",
+  "gate": {
+    "kept": [
+      "image:stock_pixabay_1"
+    ],
+    "refused": [
+      "\"https://example.com/logo.png\" is not an approved asset for this scene",
+      "\"some_asset_i_made_up\" is not an approved asset for this scene",
+      "there is no component called \"hologram\"",
+      "a progression needs at least two items"
+    ]
+  },
+  "intent": {
+    "concept": "Leaders are judged by their team's performance, not individual abilities",
+    "anchorPhrase": "without you",
+    "conveys": [
+      "shift in judgement criteria at executive level",
+      "importance of team performance"
+    ],
+    "assetNeeds": [
+      "hierarchical org charts",
+      "images of teams working together"
+    ]
+  },
+  "elements": [
+    {
+      "kind": "title",
+      "text": "Leading at the Top",
+      "kicker": "A New Standard"
+    },
+    {
+      "kind": "stat",
+      "value": "90%",
+      "label": "of executive performance evaluated on team achievements"
+    },
+    {
+      "kind": "progression",
+      "items": [
+        "Individual Contributor",
+        "Team Lead",
+        "Executive Leader"
+      ]
+    }
+  ],
+  "manifest": [],
+  "hyperFrame": {
+    "mode": "FULL_FRAME",
+    "status": "ready",
+    "renderedKey": "clip:1",
+    "durationSec": 6,
+    "renderMs": 25240,
+    "bytes": 407510,
+    "at": 1787566228084,
+    "failure": null,
+    "elements": [
+      "title",
+      "stat",
+      "progression"
+    ],
+    "rejected": [],
+    "reason": "This combination effectively conveys the shift in judgement criteria at executive level and the importance of team performance in a concise manner.",
+    "anchorPhrase": "without you"
+  },
+  "renderMs": 25240,
+  "film": {
+    "ok": true,
+    "bytes": 390735,
+    "duration": 5.95,
+    "w": 1280,
+    "h": 720,
+    "accent": 288,
+    "ink": 1848,
+    "n": 57600
+  },
+  "sourceChars": 4015
+}
