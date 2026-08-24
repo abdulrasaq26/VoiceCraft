@@ -139,7 +139,43 @@
   // `segments` (optional) is [{text, reference_id}] from BlvckVoiceStyles —
   // per-passage emotion, where each stretch of script is voiced by a different
   // reference of the same speaker. When absent the whole script uses `voice`.
-  async function textToSpeech({ input, voice = 'default', params = {}, segments = null, onProgress }) {
+  /**
+   * Speak a passage.
+   *
+   * `signal` aborts the request that is in flight, so Cancel means now rather
+   * than "after this piece", which on a slow engine is a minute away.
+   *
+   * `resume` is what makes an interrupted run cheap. A long passage is spoken
+   * as many small pieces, and until now a failure on the last one threw away
+   * every finished piece before it — on a tunnel that drops, that is several
+   * minutes of GPU time lost per attempt, repeatedly. Given a resume store,
+   * each finished piece is kept the moment it arrives and a later attempt picks
+   * up at the first one missing:
+   *
+   *   resume.seed        the seed a previous attempt used, so the voice of the
+   *                      kept pieces and the new ones is the same take
+   *   resume.onSeed(n)   called once with the seed in force, to be stored
+   *   resume.get(i)      a finished piece, or null
+   *   resume.put(i, buf) keep one
+   */
+  /** The shape a caller checks for with err.name === 'AbortError'. */
+  function abortError() {
+    const e = new Error('the request was cancelled');
+    e.name = 'AbortError';
+    return e;
+  }
+
+  function joinBuffers(list) {
+    if (list.length === 1) return list[0];
+    const total = list.reduce((n, b) => n + b.byteLength, 0);
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const b of list) { out.set(new Uint8Array(b), at); at += b.byteLength; }
+    return out.buffer;
+  }
+
+  async function textToSpeech({ input, voice = 'default', params = {}, segments = null,
+                                onProgress, signal, resume = null }) {
     if (!input || !input.trim()) return null;
 
     const ep = getFishEndpoint();
@@ -223,9 +259,17 @@
     // exactly. Otherwise one is drawn here, once, and reused for every chunk:
     // runs still differ from each other, but a single run is internally
     // consistent, which is the property that was missing.
+    // A resumed run MUST keep the seed of the attempt whose pieces it is
+    // reusing. Fish samples afresh per request, so finishing a passage under a
+    // new seed would splice two different takes of the same voice together and
+    // the join would be audible.
+    if (gen.seed == null && resume && resume.seed != null) gen.seed = Number(resume.seed);
     if (gen.seed == null) {
       gen.seed = Math.floor(Math.random() * 2147483647);
       if (onProgress) onProgress(`Voice seed ${gen.seed} (same take across the whole script)`);
+    }
+    if (resume && typeof resume.onSeed === 'function') {
+      try { resume.onSeed(gen.seed); } catch (e) { /* storing it is best effort */ }
     }
     console.log(`[Fish] seed ${gen.seed} for ${work.length} chunk(s), reference `
       + `${JSON.stringify([...new Set(work.map((w) => w.reference_id))])}`);
@@ -269,10 +313,12 @@
         text: item.text.slice(0, 48)
       });
 
+      if (signal && signal.aborted) throw abortError();
       const res = await fetch(`/api/proxy/fish/v1/tts`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal
       });
 
       if (res.ok) return [await res.arrayBuffer()];
@@ -300,14 +346,45 @@
       throw new Error(`Fish Audio API error (${res.status}): ${err}`);
     }
 
+    let reused = 0;
     for (let i = 0; i < work.length; i++) {
+      if (signal && signal.aborted) throw abortError();
       const item = work[i];
+
+      // Already spoken on an earlier attempt. Said out loud rather than
+      // silently skipped, because "resuming" that quietly re-ran everything is
+      // exactly the bug this is here to prevent.
+      if (resume && typeof resume.get === 'function') {
+        let kept = null;
+        try { kept = await resume.get(i); } catch (e) { kept = null; }
+        if (kept && kept.byteLength) {
+          allAudioBuffers.push(kept);
+          reused++;
+          if (onProgress) onProgress(`Piece ${i + 1} of ${work.length} — kept from the last attempt`);
+          continue;
+        }
+      }
+
+      // "Piece", not "part": a part is one file in the producer's queue and a
+      // piece is one request inside it. Both counted from one, both called
+      // "part", was unreadable in the queue — a row named "Part 4" reporting
+      // "Generating part 3 of 9".
       if (onProgress) {
         onProgress(item.style
-          ? `Generating part ${i + 1} of ${work.length} (${item.style})...`
-          : `Generating part ${i + 1} of ${work.length}...`);
+          ? `Piece ${i + 1} of ${work.length} (${item.style})…`
+          : `Piece ${i + 1} of ${work.length}…`);
       }
-      allAudioBuffers.push(...await renderOne(item));
+      const buffers = await renderOne(item);
+      allAudioBuffers.push(...buffers);
+      if (resume && typeof resume.put === 'function') {
+        // One piece may have been halved and re-halved by the OOM retry above,
+        // so what is kept is the whole piece, joined.
+        try { await resume.put(i, joinBuffers(buffers)); }
+        catch (e) { console.warn('[Fish] could not keep piece ' + (i + 1) + ': ' + e.message); }
+      }
+    }
+    if (reused && onProgress) {
+      onProgress(`Resumed: ${reused} of ${work.length} piece(s) were already spoken.`);
     }
 
     if (onProgress) onProgress('Finalizing audio...');

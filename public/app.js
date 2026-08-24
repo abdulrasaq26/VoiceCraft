@@ -1211,6 +1211,12 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   let batch = null; // { id, project, ext, audioFormat, settings, items[] }
   let running = false;
   let paused = false;
+  // The request in flight, so Cancel reaches it rather than waiting out a part
+  // that may be a minute from finishing.
+  let currentAbort = null;
+  // What this run has already tried. A part retried from its own row is removed
+  // from it and gets picked up again without waiting for the run to end.
+  const attempted = new Set();
   let cancelRequested = false;
   const durations = []; // ms per completed part, for ETA
   const selected = new Set(); // selected item indices
@@ -1244,7 +1250,59 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     rowAudio.pause();
   }
 
-  async function synthesizeChunk(item, s) {
+  // ── Surviving an interruption ───────────────────────────────────────────
+  //
+  // A part is not one request. The engine speaks it as a series of small
+  // pieces, and a long part can be nine or more. Until now a failure on any one
+  // of them threw away every finished piece before it, so a tunnel that dropped
+  // three quarters of the way through a part cost the whole part — minutes of
+  // GPU time, and again on every retry.
+  //
+  // So finished pieces are kept as they arrive, under a signature of what
+  // produced them. Resuming reuses them; changing the voice, the text or the
+  // sampling parameters changes the signature and throws them away, because
+  // half a part in one voice joined to half in another is worse than starting
+  // over.
+
+  function signatureOf(item, s, params) {
+    const src = JSON.stringify([s.voiceId, s.instructions || '', item.text,
+                                narrationSpeed(), params]);
+    let h = 5381;
+    for (let i = 0; i < src.length; i++) h = ((h * 33) ^ src.charCodeAt(i)) >>> 0;
+    return h.toString(36) + '-' + src.length;
+  }
+
+  const pieceKey = (item, i) => `${batch.id}:${item.index}:p${i}`;
+
+  function resumeStoreFor(item, sig) {
+    const usable = item.sig === sig;
+    return {
+      // The seed of the attempt whose pieces are being reused. Without it the
+      // engine samples a fresh take and the join is audible.
+      seed: usable ? (item.seed ?? null) : null,
+      onSeed: (n) => { item.seed = n; item.sig = sig; persistBatch(); },
+      get: async (i) => (item.sig === sig ? await idbGet(pieceKey(item, i)) : null),
+      put: async (i, buf) => {
+        await idbPut(pieceKey(item, i), buf);
+        item.pieces = Math.max(item.pieces || 0, i + 1);
+        persistBatch();
+      }
+    };
+  }
+
+  async function forgetPieces(item) {
+    await idbDeletePrefix(`${batch.id}:${item.index}:p`);
+    delete item.pieces;
+    delete item.seed;
+    delete item.sig;
+  }
+
+  async function synthesizeChunk(item, s, signal) {
+    const params = currentGenParams();
+    const sig = signatureOf(item, s, params);
+    // Anything kept under different settings is not this part any more.
+    if (item.sig && item.sig !== sig) await forgetPieces(item);
+
     return speakAtPace(item.text, s.voiceId, {
       voice_settings: s.voice_settings,
       instructions: s.instructions,
@@ -1252,7 +1310,9 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       // Engine sampling parameters ({} for engines that have none). Chunks of
       // one script share these, so a locked seed keeps the whole run on the
       // same take instead of drifting between chunks.
-      params: currentGenParams(),
+      params,
+      signal,
+      resume: resumeStoreFor(item, sig),
       onProgress: (msg) => {
         item.progressMsg = msg;
         renderQueue();
@@ -1309,22 +1369,39 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     runQueue();
   }
 
+  // A failure that is about the connection rather than about this part. The
+  // engine reaches AETHER down an ngrok tunnel that drops, and when it is gone
+  // it is gone for every part — marching the remaining eight into the same wall
+  // turns one failure into nine and wastes minutes doing it.
+  const OFFLINE = new RegExp([
+    'Failed to fetch', 'NetworkError', 'network error', 'ERR_NGROK', 'ngrok',
+    'gateway', '\\b(502|503|504)\\b', 'ECONNREFUSED', 'ETIMEDOUT',
+    'not reachable', 'offline', 'tunnel'
+  ].join('|'), 'i');
+
   async function runQueue() {
     if (running || !batch) return;
     running = true;
     paused = false;
     cancelRequested = false;
+    attempted.clear();
     speakBtn.disabled = true;
     speakLabel.textContent = 'Generating…';
     speakSpinner.hidden = false;
     updateControls();
 
-    for (const item of batch.items) {
-      if (cancelRequested) break;
-      if (item.status === 'done') continue;
+    let halted = null;
 
+    // Re-scanned each time rather than walked once, so a part retried from its
+    // own row while the queue is still running gets picked up in this run
+    // instead of waiting for the next one.
+    while (!cancelRequested) {
       while (paused && !cancelRequested) await sleep(200);
       if (cancelRequested) break;
+
+      const item = batch.items.find((i) => i.status !== 'done' && !attempted.has(i.index));
+      if (!item) break;
+      attempted.add(item.index);
 
       item.status = 'generating';
       item.error = null;
@@ -1332,23 +1409,44 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       renderQueue();
 
       const t0 = performance.now();
+      currentAbort = new AbortController();
       try {
-        const blob = await synthesizeChunk(item, batch.settings);
+        const blob = await synthesizeChunk(item, batch.settings, currentAbort.signal);
         memBlobs.set(item.index, blob);
         if (urls.has(item.index)) URL.revokeObjectURL(urls.get(item.index));
         urls.set(item.index, URL.createObjectURL(blob));
         await idbPut(`${batch.id}:${item.index}`, blob);
         item.status = 'done';
+        item.progressMsg = null;
         durations.push(performance.now() - t0);
+        // The part is whole; the pieces it was built from are just weight now.
+        await forgetPieces(item);
       } catch (err) {
+        item.progressMsg = null;
+        if (err && err.name === 'AbortError') {
+          // Cancelled, not broken. It goes back in the queue with whatever
+          // pieces it had finished, so continuing costs only what is left.
+          item.status = 'pending';
+          persistBatch();
+          renderQueue();
+          break;
+        }
         item.status = 'error';
         item.error = err.message;
+        if (OFFLINE.test(err.message || '')) halted = item;
+      } finally {
+        currentAbort = null;
       }
       persistBatch();
       renderQueue();
+
+      // Everything after this point would fail the same way. Stop, and leave
+      // the rest queued rather than burning them against a dead endpoint.
+      if (halted) break;
     }
 
     running = false;
+    currentAbort = null;
     speakBtn.disabled = false;
     speakLabel.textContent = 'Generate speech';
     speakSpinner.hidden = true;
@@ -1362,13 +1460,21 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       }
     }).catch(() => {});
 
-    const remaining = batch.items.filter((i) => i.status !== 'done').length;
+    const done = batch.items.filter((i) => i.status === 'done').length;
     const errors = batch.items.filter((i) => i.status === 'error').length;
-    if (cancelRequested) {
-      showStatus(`Cancelled. ${batch.items.length - remaining} of ${batch.items.length} parts completed.`, 'info');
+    const left = batch.items.length - done;
+    if (halted) {
+      const kept = halted.pieces || 0;
+      showStatus(`The voice engine went away at ${partName(batch.project, halted.part)}`
+        + `${kept ? ` (${kept} piece(s) of it are saved)` : ''}. `
+        + `${left} part(s) are still queued — nothing after it was attempted. `
+        + 'Press Continue when the engine is back and it picks up exactly here.');
+    } else if (cancelRequested) {
+      showStatus(`Cancelled. ${done} of ${batch.items.length} part(s) complete; `
+        + 'the part in progress kept the pieces it had finished.', 'info');
     } else if (errors) {
-      showStatus(`${errors} part(s) failed. Use “Retry failed” to try them again.`);
-    } else if (!remaining) {
+      showStatus(`${errors} part(s) failed. Retry one from its own row, or “Retry failed”.`);
+    } else if (!left) {
       showStatus(`All ${batch.items.length} part(s) generated.`, 'info');
     }
   }
@@ -1409,13 +1515,18 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   function updateControls() {
     const hasDone = batch && batch.items.some((i) => i.status === 'done');
     const hasError = batch && batch.items.some((i) => i.status === 'error');
-    const hasPending = batch && batch.items.some((i) => i.status === 'pending');
+    // Anything not finished is work Continue can pick up, a part that failed
+    // included — the runner retries errors, so hiding Continue when only errors
+    // remained left the producer with no way forward but a scroll to the top.
+    const hasWork = batch && batch.items.some((i) => i.status !== 'done');
 
     pauseBtn.hidden = !(running && !paused);
-    resumeBtn.hidden = !((running && paused) || (!running && hasPending));
+    resumeBtn.hidden = !((running && paused) || (!running && hasWork));
     resumeBtn.textContent = running ? 'Resume' : 'Continue';
     cancelBtn.hidden = !running;
-    retryBtn.hidden = !(!running && hasError);
+    // Offered while running too: a part that failed at the top of a long queue
+    // should not have to wait for the bottom of it.
+    retryBtn.hidden = !hasError;
     clearBtn.hidden = !batch;
 
     zipBtn.disabled = !hasDone;
@@ -1481,6 +1592,22 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       dl.addEventListener('click', () => downloadItem(item));
       actions.append(playBtn, dl);
 
+      // Retrying one part belongs on that part. The batch-level button is at
+      // the top of a list that can be forty rows long, and it is hidden while
+      // the queue is running — which is exactly when a failure is on screen.
+      if (item.status === 'error' || item.status === 'pending') {
+        const again = document.createElement('button');
+        again.type = 'button';
+        again.textContent = '↻';
+        const kept = item.pieces || 0;
+        again.title = item.status === 'error'
+          ? (kept ? `Try this part again. ${kept} piece(s) of it are already spoken and will be kept.`
+                  : 'Try this part again.')
+          : 'Generate this part next.';
+        again.addEventListener('click', () => retryItem(item));
+        actions.appendChild(again);
+      }
+
       row.append(check, info, badge, actions);
       queueList.appendChild(row);
     }
@@ -1495,6 +1622,24 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   }
 
   // --- Playback + downloads ----------------------------------------------
+
+  /**
+   * Put one part back in the queue.
+   *
+   * Its finished pieces are left alone, so a part that died on its last piece
+   * costs one request to complete rather than nine.
+   */
+  function retryItem(item) {
+    if (!batch) return;
+    item.status = 'pending';
+    item.error = null;
+    item.progressMsg = null;
+    attempted.delete(item.index);
+    persistBatch();
+    renderQueue();
+    clearStatus();
+    if (!running) runQueue();
+  }
 
   function playItem(item) {
     const url = urls.get(item.index);
@@ -1615,7 +1760,13 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     renderQueue();
     const pending = batch.items.filter((i) => i.status !== 'done').length;
     if (pending) {
-      showStatus(`Restored a batch with ${pending} part(s) left. Click “Continue” to finish.`, 'info');
+      // Pieces are stored under the batch id, so they outlive a reload too: a
+      // part interrupted three quarters of the way through is still three
+      // quarters done after the browser is closed and reopened.
+      const kept = batch.items.reduce((n, i) => n + (i.status !== 'done' ? (i.pieces || 0) : 0), 0);
+      showStatus(`Restored a batch with ${pending} part(s) left`
+        + (kept ? `, ${kept} piece(s) of them already spoken` : '')
+        + '. Click “Continue” to finish.', 'info');
     }
   }
 
@@ -2014,7 +2165,11 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   pauseBtn.addEventListener('click', () => {
     paused = true;
     updateControls();
-    showStatus('Paused. The current part finishes, then generation waits.', 'info');
+    const now = batch && batch.items.find((i) => i.status === 'generating');
+    showStatus(now
+      ? `Pausing after ${partName(batch.project, now.part)} — it is already being spoken, `
+        + 'so it is finished rather than thrown away. Press Cancel to stop it now.'
+      : 'Paused.', 'info');
   });
   resumeBtn.addEventListener('click', () => {
     if (running) {
@@ -2029,15 +2184,20 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   cancelBtn.addEventListener('click', () => {
     cancelRequested = true;
     paused = false;
+    // The loop only looks between parts, and a part can be a minute from
+    // finishing. Aborting the request in flight is what makes Cancel mean now.
+    if (currentAbort) currentAbort.abort();
+    showStatus('Stopping… the part in progress keeps the pieces it finished.', 'info');
   });
   retryBtn.addEventListener('click', () => {
     if (!batch) return;
     batch.items.forEach((i) => {
-      if (i.status === 'error') i.status = 'pending';
+      if (i.status === 'error') { i.status = 'pending'; attempted.delete(i.index); }
     });
     persistBatch();
     clearStatus();
-    runQueue();
+    renderQueue();
+    if (!running) runQueue();
   });
   clearBtn.addEventListener('click', async () => {
     if (running) return;
@@ -2728,6 +2888,37 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       }
     });
   }
+
+  // What a test can drive.
+  //
+  // A thin window onto the real queue — the same batch, the same runner, the
+  // same buttons — because the behaviour worth testing here is what happens
+  // when the ENGINE misbehaves, and a real tunnel cannot be told to drop on its
+  // fifth piece of part two.
+  window.BlvckVoiceQueue = {
+    _state: () => ({
+      running, paused,
+      status: statusBox.hidden ? '' : statusBox.textContent,
+      items: batch ? batch.items.map((i) => ({
+        part: i.part, index: i.index, status: i.status, error: i.error,
+        pieces: i.pieces || 0, seed: i.seed ?? null, progressMsg: i.progressMsg || ''
+      })) : []
+    }),
+    _setBatch: (chunks) => {
+      const v = currentVoice() || { id: 'default', name: 'default' };
+      batch = buildBatch(v, chunks, chunks.join(' '));
+      persistBatch();
+      queueSection.hidden = false;
+      renderQueue();
+      return batch.items.length;
+    },
+    _run: () => runQueue(),
+    _clearBatch: () => clearBatch(),
+    _retry: (part) => {
+      const item = batch && batch.items.find((i) => i.part === part);
+      if (item) retryItem(item);
+    }
+  };
 
   // --- Init --------------------------------------------------------------
 

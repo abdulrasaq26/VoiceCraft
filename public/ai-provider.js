@@ -201,7 +201,11 @@
             voice,
             params: options.params || {},
             segments,
-            onProgress: options.onProgress
+            onProgress: options.onProgress,
+            // Threaded through so Cancel reaches the request in flight, and so
+            // an interrupted passage can pick up at the piece it stopped on.
+            signal: options.signal,
+            resume: options.resume
           });
           if (audioUrl) return await urlToBlob(audioUrl);
         } catch (e) {
