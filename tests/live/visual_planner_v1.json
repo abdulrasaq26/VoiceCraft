@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T11:46:46.693Z",
+  "at": "2026-08-24T12:56:36.149Z",
   "legacy": {
     "mode": "FOOTAGE",
     "planned": false,
@@ -126,7 +126,7 @@
       "expect": "FOOTAGE",
       "plan": {
         "mode": "FOOTAGE",
-        "reason": "The sentence describes a real event, a fish market at first light, with boats coming back in and a market on the quay, which can be recorded by a camera.",
+        "reason": "The sentence describes a specific, observable scene of boats coming back in and a market on the quay being loud with buyers, which can be directly recorded by a camera.",
         "confidence": 0.9,
         "ran": true
       }
@@ -136,7 +136,7 @@
       "expect": "HYPERFRAME",
       "plan": {
         "mode": "HYPERFRAME",
-        "reason": "The sentence describes a chain of authority and a quota set by people who have never been to sea, which are abstract concepts that cannot be directly recorded by a camera.",
+        "reason": "The sentence describes a chain of authority and a quota set by people who have never been to sea, which is an abstract concept that cannot be directly recorded by a camera.",
         "confidence": 0.9,
         "ran": true
       }

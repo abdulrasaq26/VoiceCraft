@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T11:42:47.647Z",
+  "at": "2026-08-24T13:01:13.323Z",
   "seconds": 4,
   "sourceSecs": 20,
   "mediaStart": 12,
@@ -7,8 +7,8 @@
     "FULL_FRAME": {
       "r": {
         "ok": true,
-        "ms": 32919,
-        "renderMs": 32857,
+        "ms": 29047,
+        "renderMs": 28981,
         "bytes": 114300,
         "type": "video/mp4",
         "hyperFrame": {
@@ -16,9 +16,9 @@
           "status": "ready",
           "renderedKey": "clip:1",
           "durationSec": 4,
-          "renderMs": 32857,
+          "renderMs": 28981,
           "bytes": 114300,
-          "at": 1787571673275,
+          "at": 1787576362132,
           "failure": null
         },
         "mediaStart": null,
@@ -27,11 +27,11 @@
       },
       "film": {
         "ok": true,
-        "bytes": 112093,
-        "duration": 3.96,
+        "bytes": 125535,
+        "duration": 3.94,
         "band0": 0,
-        "band3": 1,
-        "anyBand": 61,
+        "band3": 0,
+        "anyBand": 59,
         "accent": 167,
         "dark": 56487,
         "n": 57600,
@@ -42,18 +42,18 @@
     "HYBRID": {
       "r": {
         "ok": true,
-        "ms": 45598,
-        "renderMs": 45491,
-        "bytes": 168694,
+        "ms": 48072,
+        "renderMs": 47959,
+        "bytes": 179245,
         "type": "video/mp4",
         "hyperFrame": {
           "mode": "HYBRID",
           "status": "ready",
           "renderedKey": "clip:1",
           "durationSec": 4,
-          "renderMs": 45491,
-          "bytes": 168694,
-          "at": 1787571724430,
+          "renderMs": 47959,
+          "bytes": 179245,
+          "at": 1787576415793,
           "failure": null
         },
         "mediaStart": 12,
@@ -62,13 +62,13 @@
       },
       "film": {
         "ok": true,
-        "bytes": 466188,
-        "duration": 3.97,
+        "bytes": 473809,
+        "duration": 3.96,
         "band0": 0,
-        "band3": 23225,
-        "anyBand": 24350,
+        "band3": 23257,
+        "anyBand": 24364,
         "accent": 170,
-        "dark": 26661,
+        "dark": 26638,
         "n": 57600,
         "hasOverlayOnClip": false,
         "hasVideoOnClip": true
@@ -77,8 +77,8 @@
     "OVERLAY": {
       "r": {
         "ok": true,
-        "ms": 32419,
-        "renderMs": 32368,
+        "ms": 46983,
+        "renderMs": 46932,
         "bytes": 134172,
         "type": "video/webm",
         "hyperFrame": {
@@ -86,9 +86,9 @@
           "status": "ready",
           "overlayKey": "hfov:1",
           "durationSec": 4,
-          "renderMs": 32368,
+          "renderMs": 46932,
           "bytes": 134172,
-          "at": 1787571762264,
+          "at": 1787576468250,
           "failure": null
         },
         "mediaStart": null,
@@ -97,13 +97,13 @@
       },
       "film": {
         "ok": true,
-        "bytes": 478416,
-        "duration": 3.96,
+        "bytes": 479455,
+        "duration": 3.97,
         "band0": 0,
-        "band3": 45,
-        "anyBand": 55124,
-        "accent": 194,
-        "dark": 566,
+        "band3": 55063,
+        "anyBand": 55140,
+        "accent": 167,
+        "dark": 574,
         "n": 57600,
         "hasOverlayOnClip": true,
         "hasVideoOnClip": true

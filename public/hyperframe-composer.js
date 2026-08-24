@@ -123,7 +123,7 @@
 
   // ── The Composer ─────────────────────────────────────────────────────────
 
-  function composePrompt({ narration, intent, assetLines, unmet, hasFootage }) {
+  function composePrompt({ narration, intent, assetLines, unmet, hasFootage, revision }) {
     const NL = String.fromCharCode(10);
     const C = window.BlvckHyperFrameComponents;
     const lines = [
@@ -155,6 +155,8 @@
       lines.push('ASKED FOR AND NOT AVAILABLE: ' + unmet.join(', ')
                  + '. Design around the absence rather than pretending it is there.', '');
     }
+
+    if (revision) lines.push(revision, '');
 
     return lines.concat([
       'Say nothing about position, size, colour, font or animation. Those are',
@@ -222,14 +224,14 @@
   }
 
   /** Turn an intent into a buildable scene plan. Never throws. */
-  async function composeScene({ narration, intent, manifest, hasFootage } = {}) {
+  async function composeScene({ narration, intent, manifest, hasFootage, revision } = {}) {
     if (!available()) return { ok: false, why: 'the composer is not reachable' };
     const R = window.BlvckAssetRegistry;
     const assetLines = manifest && manifest.assets && manifest.assets.length
       ? R.describeForPrompt(manifest) : '';
     let raw;
     try {
-      raw = await ask(composePrompt({ narration, intent, assetLines, hasFootage,
+      raw = await ask(composePrompt({ narration, intent, assetLines, hasFootage, revision,
                                       unmet: (manifest && manifest.unmet) || [] }),
                       { maxTokens: 700, timeoutMs: COMPOSER_TIMEOUT_MS });
     } catch (err) {
@@ -301,8 +303,8 @@
 
     // 3. Which components carry it?
     say('composing the scene');
-    const plan = await composeScene({ narration: scene.subtitle, intent: d.intent, manifest,
-                                      hasFootage: !!shot });
+    let plan = await composeScene({ narration: scene.subtitle, intent: d.intent, manifest,
+                                    hasFootage: !!shot });
     if (!plan.ok) return fail('composer', plan.why);
 
     // The shot is not the Composer's to request or to leave out: if this beat
@@ -319,13 +321,46 @@
     if (!win) return fail('timing', 'this scene has no place on the timeline yet');
     const seconds = Math.round((win.timelineEnd - win.timelineStart) * 100) / 100;
 
+    const build = (els) => C.compose({ elements: els, seconds, project,
+                                       transparent: HF_MODE === 'OVERLAY' });
     let source;
-    try {
-      source = C.compose({ elements: plan.elements, seconds, project,
-                           transparent: HF_MODE === 'OVERLAY' });
-    } catch (err) {
-      return fail('compose', err.message);
+    try { source = build(plan.elements); }
+    catch (err) { return fail('compose', err.message); }
+
+    // 4b. Look at the layout BEFORE spending thirty seconds rendering it.
+    //
+    // ONE revision, and only for problems a different set of components could
+    // fix. A pipeline that regenerates until it approves of its own work will
+    // regenerate forever on the beat it cannot do, so the second answer is
+    // taken whether or not it is better, and what is still wrong is recorded
+    // rather than hidden.
+    const EV = window.BlvckHyperFrameEvaluator;
+    let layout = EV ? await EV.inspectLayout(source) : { ok: true, problems: [] };
+
+    if (EV && !layout.ok && layout.problems.some((x) => x.fixable)) {
+      say('the layout has problems — composing once more');
+      const note = EV.revisionNote({ fixable: layout.problems.filter((x) => x.fixable) });
+      const second = await composeScene({ narration: scene.subtitle, intent: d.intent,
+                                          manifest, hasFootage: !!shot, revision: note });
+      if (second.ok) {
+        if (shot) {
+          second.elements = second.elements.filter((e) => e.kind !== 'footage');
+          second.elements.unshift({ kind: 'footage', file: shot.fileName, mediaStart: shot.mediaStart });
+        }
+        try {
+          const retrySource = build(second.elements);
+          const retryLayout = await EV.inspectLayout(retrySource);
+          // Kept only if it is actually better. A revision that trades one
+          // problem for two is not a revision.
+          if (retryLayout.problems.length < layout.problems.length) {
+            plan = second; source = retrySource; layout = retryLayout;
+          }
+        } catch (err) { /* keep the first attempt */ }
+      }
+      scene.hyperFrameRevised = true;
     }
+    scene.hyperFrameLayout = { ok: layout.ok, density: layout.density,
+                               problems: layout.problems.map((x) => x.why) };
     scene.hyperFrameSource = source;
 
     // 5. Render, and become this scene's clip.
@@ -339,6 +374,23 @@
             source, assets, vendor: [{ name: 'gsap.min.js', text: gsapText }] })
         : await window.BlvckHyperFrame.renderScene(scene, {
             source, assets, vendor: [{ name: 'gsap.min.js', text: gsapText }] });
+      // 6. Does the picture say what the beat needed it to say? Recorded, not
+      // enforced: a describer using different words is not a reason to rebuild
+      // a scene that is structurally sound.
+      let reading = { ran: false, why: 'not evaluated' };
+      if (EV) {
+        say('reading the rendered frame');
+        try { reading = await EV.readsAsIntended(out.blob, d.intent); }
+        catch (err) { reading = { ran: false, why: 'the read failed: ' + err.message }; }
+      }
+      scene.hyperFrameEvaluation = {
+        layout: scene.hyperFrameLayout,
+        reading: { ran: reading.ran, sees: reading.sees || '', overlap: reading.overlap ?? null,
+                   why: reading.why || '' },
+        revised: !!scene.hyperFrameRevised,
+        at: Date.now()
+      };
+
       scene.hyperFrame = Object.assign({}, scene.hyperFrame, {
         mode: HF_MODE,
         elements: plan.elements.map((e) => e.kind),
@@ -347,6 +399,7 @@
         anchorPhrase: d.intent.anchorPhrase
       });
       return { ok: true, seconds: out.seconds, renderMs: out.renderMs,
+               evaluation: scene.hyperFrameEvaluation,
                elements: plan.elements, rejected: plan.rejected,
                intent: d.intent, manifest: scene.assetManifest };
     } catch (err) {
