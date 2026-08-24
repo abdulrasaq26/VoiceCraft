@@ -19,6 +19,7 @@
   const statusEl = $('clone-status');
   const listEl = $('clone-list');
   const refreshBtn = $('clone-refresh');
+  const audioEl = $('clone-audio');
 
   let prepared = null;      // result of VC.prepare()
   let previewUrl = null;
@@ -94,6 +95,7 @@
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       previewUrl = URL.createObjectURL(p.wav);
       previewBtn.hidden = false;
+      if (audioEl) { audioEl.src = previewUrl; audioEl.hidden = false; audioEl.load(); }
       // A failing source is never uploadable — a bad reference produces a bad
       // voice permanently, so this is a block rather than a warning.
       uploadBtn.disabled = !p.verdict.ok;
@@ -114,26 +116,28 @@
 
   // Playing the processed clip back.
   //
-  // The old handler was one line: new Audio(previewUrl).play().catch(() => {}).
-  // Three things were wrong with it and all three read as "the button does
-  // nothing". The element was never kept, so it could not be stopped and every
-  // click stacked another overlapping playback on the last. There was no sign
-  // it had started - no label change, no status - so a clip that WAS playing
-  // looked identical to one that was not. And the catch swallowed the reason:
-  // a browser that blocks audio for the site (Firefox's per-site autoplay
-  // setting will) rejects play() with NotAllowedError, and the user was told
-  // nothing at all.
+  // A real <audio controls> element in the page, not a detached Audio object.
+  //
+  // The original handler was `new Audio(url).play().catch(() => {})`: nothing
+  // held the element, so it could not be stopped and clicks stacked; nothing
+  // showed it had started, so a clip that WAS playing looked identical to one
+  // that was not; and the catch discarded the reason when a browser refused.
+  //
+  // Retaining the element fixed the first two, and it still left the case that
+  // matters most unanswerable - play() resolves, the page says "Playing…", and
+  // the listener hears nothing. A detached element gives no way to tell a clip
+  // that is silently progressing from one that is stuck at zero. The native
+  // player answers it: a moving position means the audio is fine and the sound
+  // is being lost after us (a muted tab, the wrong output device); a position
+  // frozen at 0:00 means it never really started. It also brings its own volume
+  // control, which is one more thing that no longer has to be guessed at.
   let previewAudio = null;
 
   function stopClipPreview() {
     const was = previewAudio;
-    if (previewAudio) {
-      previewAudio.pause();
-      previewAudio = null;
-    }
-    if (previewBtn) previewBtn.textContent = '▶ Preview processed clip';
-    // Put the readiness line back. Leaving "Playing…" up after it has stopped
-    // is a status line telling the truth about a moment that has passed.
+    if (audioEl) { try { audioEl.pause(); } catch (e) { /* nothing loaded */ } }
+    previewAudio = null;
+    if (previewBtn) previewBtn.textContent = '▶ Play';
     if (was && prepared) {
       say(prepared.verdict.ok ? 'Ready — add a name and the transcript.'
                               : 'Recording quality is too low to clone well.',
@@ -141,32 +145,42 @@
     }
   }
 
+  if (audioEl) {
+    audioEl.addEventListener('play', () => {
+      previewAudio = audioEl;
+      if (previewBtn) previewBtn.textContent = '■ Stop';
+    });
+    audioEl.addEventListener('pause', stopClipPreview);
+    audioEl.addEventListener('ended', stopClipPreview);
+    // Position, so a silent-but-advancing clip is distinguishable from a stuck
+    // one without asking the user to guess.
+    audioEl.addEventListener('timeupdate', () => {
+      if (!previewAudio || !Number.isFinite(audioEl.duration)) return;
+      say(`Playing — ${audioEl.currentTime.toFixed(1)}s of ${audioEl.duration.toFixed(1)}s`);
+    });
+    audioEl.addEventListener('error', () => {
+      stopClipPreview();
+      const code = audioEl.error ? audioEl.error.code : 0;
+      say(`The processed clip could not be decoded for playback (media error ${code}).`, 'error');
+    });
+    audioEl.addEventListener('stalled', () => say('Playback stalled reading the clip.', 'error'));
+  }
+
   if (previewBtn) {
     previewBtn.addEventListener('click', () => {
-      if (previewAudio) { stopClipPreview(); return; }   // a second click stops it
-      if (!previewUrl) {
+      if (!audioEl || !previewUrl) {
         say('Nothing to preview yet — choose or record a clip first.', 'error');
         return;
       }
-      const a = new Audio(previewUrl);
-      previewAudio = a;
-      a.addEventListener('ended', stopClipPreview);
-      a.addEventListener('error', () => {
+      if (!audioEl.paused) { audioEl.pause(); return; }
+      audioEl.play().catch((err) => {
         stopClipPreview();
-        say('The processed clip could not be decoded for playback.', 'error');
+        const why = String((err && err.message) || err);
+        say(err && err.name === 'NotAllowedError'
+          ? 'The browser blocked audio for this site — allow autoplay/audio for localhost, then press play on the bar.'
+          : `Could not play the processed clip: ${why.slice(0, 200)}`, 'error');
+        console.warn('[Voice Studio] clip preview: ' + why);
       });
-      previewBtn.textContent = '■ Stop';
-      a.play().then(
-        () => { if (previewAudio === a) say(`Playing the processed ${prepared ? prepared.seconds.toFixed(1) + 's' : ''} clip…`); },
-        (err) => {
-          stopClipPreview();
-          const why = String((err && err.message) || err);
-          say(err && err.name === 'NotAllowedError'
-            ? 'The browser blocked audio playback for this site — allow autoplay/audio for localhost and try again.'
-            : `Could not play the processed clip: ${why.slice(0, 200)}`, 'error');
-          console.warn('[Voice Studio] clip preview: ' + why);
-        }
-      );
     });
   }
 
