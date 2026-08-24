@@ -46,6 +46,7 @@
   const zipBtn = $('zip-btn');
   const zipSelectedBtn = $('zip-selected-btn');
   const downloadEachBtn = $('download-each-btn');
+  const mergeBtn = $('merge-btn');
   const selectAllToggle = $('select-all');
   const queueList = $('queue-list');
   const rowAudio = $('row-audio');
@@ -1419,6 +1420,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
     zipBtn.disabled = !hasDone;
     downloadEachBtn.disabled = !hasDone;
+    if (mergeBtn) mergeBtn.disabled = !hasDone;
     zipSelectedBtn.disabled = selected.size === 0;
   }
 
@@ -1521,6 +1523,49 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     for (const item of done) {
       downloadItem(item);
       await sleep(400); // stagger so browsers don't block the batch
+    }
+  }
+
+  /**
+   * Every finished part, in order, as one file.
+   *
+   * The parts are read the same way zipDownload reads them and in the same
+   * index order the editor uses to build the video's audio, so the download is
+   * the same recording rather than a second assembly of it that could drift.
+   */
+  async function mergeDownload() {
+    if (!batch || !window.BlvckAudioMerge) return;
+    const items = batch.items.filter((i) => i.status === 'done')
+      .sort((a, b) => a.index - b.index);
+    if (!items.length) { showStatus('Nothing has finished generating yet.'); return; }
+
+    mergeBtn.disabled = true;
+    const label = mergeBtn.textContent;
+    mergeBtn.textContent = 'Joining…';
+    showStatus(`Joining ${items.length} part(s) into one track…`, 'info');
+    try {
+      const blobs = [];
+      for (const item of items) {
+        const blob = memBlobs.get(item.index) || (await idbGet(`${batch.id}:${item.index}`));
+        if (blob) blobs.push(blob);
+      }
+      const res = await window.BlvckAudioMerge.merge(blobs);
+      const url = URL.createObjectURL(res.blob);
+      downloadBlobUrl(url, `${batch.project}.wav`);
+      setTimeout(() => URL.revokeObjectURL(url), 20000);
+
+      const mins = Math.floor(res.seconds / 60);
+      const secs = Math.round(res.seconds % 60);
+      const size = (res.blob.size / (1024 * 1024)).toFixed(1);
+      showStatus(
+        `Joined ${res.parts} part(s) into one ${mins}m ${secs}s track (${size} MB WAV).`
+        + (res.skipped ? ` ${res.skipped} part(s) could not be decoded and were left out.` : ''),
+        res.skipped ? 'warn' : 'success');
+    } catch (err) {
+      showStatus(`Could not join the narration: ${err.message}`);
+    } finally {
+      mergeBtn.textContent = label;
+      mergeBtn.disabled = false;
     }
   }
 
@@ -2010,6 +2055,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   downloadEachBtn.addEventListener('click', () => {
     if (batch) downloadEach();
   });
+  if (mergeBtn) mergeBtn.addEventListener('click', mergeDownload);
   selectAllToggle.addEventListener('change', () => {
     if (!batch) return;
     const doneItems = batch.items.filter((i) => i.status === 'done');

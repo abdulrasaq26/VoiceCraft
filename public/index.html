@@ -714,6 +714,7 @@
                 <div class="queue-downloads">
                   <button id="zip-btn" class="btn primary small" type="button" disabled>Download all as ZIP</button>
                   <button id="zip-selected-btn" class="btn ghost small" type="button" disabled>Download selected</button>
+                  <button id="merge-btn" class="btn ghost small" type="button" disabled>Download as one track</button>
                   <button id="download-each-btn" class="btn ghost small" type="button" disabled>Download each</button>
                   <label class="select-all-label"><input type="checkbox" id="select-all" /> Select all</label>
                 </div>
@@ -1453,6 +1454,7 @@
   <script src="voice-styles.js"></script>
   <script src="voice-cloning.js"></script>
   <script src="voice-pace.js"></script><!-- Pitch-preserving narration pace; Fish has no speed parameter -->
+  <script src="audio-merge.js"></script><!-- Joins the narration chunks into one track -->
   <script src="voice-cloning-ui.js"></script>
   <script src="adapters/direct-adapters.js"></script>
   <script src="provider-dashboard.js"></script>
