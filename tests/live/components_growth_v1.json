@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T20:35:01.349Z",
+  "at": "2026-08-24T22:58:58.316Z",
   "kinds": [
     "title",
     "stat",
@@ -108,9 +108,11 @@
   },
   "rendered": {
     "bytes": 36899,
-    "renderMs": 38525,
+    "renderMs": 34477,
     "seconds": 5,
     "at": 3,
+    "frameW": 1920,
+    "frameH": 1080,
     "bands": [
       9,
       12,

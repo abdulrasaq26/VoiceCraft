@@ -256,40 +256,18 @@ const check = (name, cond, detail) => {
     } catch (err) { return { error: err.message }; }
 
     // Read a frame late in the clip, when the bars have grown.
-    const url = URL.createObjectURL(out.blob);
-    const v = document.createElement('video');
-    v.muted = true; v.src = url;
-    const ok = await new Promise((res) => {
-      v.onloadeddata = () => res(true); v.onerror = () => res(false);
-      setTimeout(() => res(v.readyState >= 2), 20000);
-    });
-    if (!ok) return { error: 'the render would not decode', bytes: out.blob.size };
-    // Seeking into one of these renders sometimes hands back a black frame —
-    // observed repeatedly at the tail, and occasionally elsewhere, on a file
-    // that reads correctly a moment either side. So more than one instant is
-    // tried and the first frame with anything painted on it is used. The motion
-    // settles at 1.3s, measured, so every instant here is past the end of it.
-    // Read at the frame's own resolution. Halving it put the smallest bar —
-    // three pixels wide, which is the whole point of the minimum — under the
-    // measurement's own noise floor.
-    const c = document.createElement('canvas');
-    c.width = 1920; c.height = 1080;
-    const g = c.getContext('2d');
-    const dur = v.duration || 5;
-    let d = null, at = null;
-    for (const frac of [0.6, 0.5, 0.7, 0.4, 0.8]) {
-      await new Promise((res) => {
-        v.onseeked = () => res();
-        try { v.currentTime = dur * frac; } catch (e) { res(); }
-        setTimeout(res, 8000);
-      });
-      g.drawImage(v, 0, 0, c.width, c.height);
-      const px = g.getImageData(0, 0, c.width, c.height).data;
-      let lit = 0;
-      for (let i = 0; i < px.length; i += 40) if (px[i] > 40 || px[i + 1] > 40 || px[i + 2] > 40) lit++;
-      if (lit > 200) { d = px; at = Math.round(v.currentTime * 100) / 100; break; }
-    }
-    if (!d) return { error: 'every frame read back blank', bytes: out.blob.size };
+    //
+    // Through the frame service, not through a <video>. Measured on a clip
+    // whose content at every instant was known exactly: seeking an element and
+    // drawing it to a canvas got SIX OF EIGHT instants wrong, each one a whole
+    // second stale, while reporting the currentTime that had been asked for.
+    // onseeked fires before the new frame is painted, so the canvas receives
+    // whatever was there before. Everything geometric this file asserts would
+    // have been measured on the wrong frame.
+    const frame = await window.BlvckFrames.one(out.blob, 3.0);
+    const d = frame.data;
+    const c = { width: frame.width, height: frame.height };
+    const at = frame.actualAt;
 
     // The accent is the bar — but the figures are painted in the accent too, so
     // counting accent PIXELS per row would measure "3g/km" as if it were bar.
@@ -313,8 +291,8 @@ const check = (name, cond, detail) => {
       else { if (run) bands.push(run); run = { from: y, to: y, max: rowInk[y] }; }
     }
     if (run) bands.push(run);
-    URL.revokeObjectURL(url);
     return { bytes: out.blob.size, renderMs: Date.now() - t0, seconds: out.seconds, at,
+             frameW: frame.width, frameH: frame.height,
              bands: bands.filter((x) => x.to - x.from >= 4).map((x) => x.max) };
   });
 
@@ -322,9 +300,12 @@ const check = (name, cond, detail) => {
     check('a comparison renders to a real file', false, rendered);
   } else {
     console.log(`  ${(rendered.bytes / 1024).toFixed(0)}KB in ${(rendered.renderMs / 1000).toFixed(1)}s`);
-    console.log(`  at ${rendered.at}s the bars in the file are ${rendered.bands.join(' / ')} px long`);
+    console.log(`  at ${rendered.at}s (${rendered.frameW}x${rendered.frameH}) the bars in the `
+      + `file are ${rendered.bands.join(' / ')} px long`);
     record.rendered = rendered;
     check('a comparison renders to a real file', rendered.bytes > 0, rendered);
+    check('and the frame was read at the file’s own resolution',
+          rendered.frameW === 1920 && rendered.frameH === 1080, rendered);
     check('and three bars of three different lengths are in the video',
           rendered.bands.length >= 3
           && Math.max(...rendered.bands) > Math.min(...rendered.bands) * 8, rendered.bands);

@@ -1,0 +1,148 @@
+{
+  "at": "2026-08-24T22:57:58.251Z",
+  "meta": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "frames": 240,
+    "codec": "h264",
+    "duration": 8
+  },
+  "extractor": [
+    {
+      "at": 0.5,
+      "actualAt": 0.5,
+      "ok": true,
+      "w": 1920,
+      "h": 1080,
+      "colour": "#d52310",
+      "expected": "#c81e1e"
+    },
+    {
+      "at": 1.5,
+      "actualAt": 1.5,
+      "ok": true,
+      "w": 1920,
+      "h": 1080,
+      "colour": "#067ac7",
+      "expected": "#1e8ac8"
+    },
+    {
+      "at": 2.52,
+      "actualAt": 2.5,
+      "ok": true,
+      "w": 1920,
+      "h": 1080,
+      "colour": "#04ac4f",
+      "expected": "#1ec85a"
+    },
+    {
+      "at": 3.5,
+      "actualAt": 3.5,
+      "ok": true,
+      "w": 1920,
+      "h": 1080,
+      "colour": "#c8ab0a",
+      "expected": "#c8b81e"
+    },
+    {
+      "at": 4.5,
+      "actualAt": 4.5,
+      "ok": true,
+      "w": 1920,
+      "h": 1080,
+      "colour": "#8926ca",
+      "expected": "#8a1ec8"
+    },
+    {
+      "at": 5.5,
+      "actualAt": 5.5,
+      "ok": true,
+      "w": 1920,
+      "h": 1080,
+      "colour": "#03b1b4",
+      "expected": "#1ec8b8"
+    },
+    {
+      "at": 6.5,
+      "actualAt": 6.5,
+      "ok": true,
+      "w": 1920,
+      "h": 1080,
+      "colour": "#d1570c",
+      "expected": "#c85a1e"
+    },
+    {
+      "at": 7.5,
+      "actualAt": 7.5,
+      "ok": true,
+      "w": 1920,
+      "h": 1080,
+      "colour": "#5320cb",
+      "expected": "#5a1ec8"
+    }
+  ],
+  "browser": [
+    {
+      "at": 0.5,
+      "landed": 0.5,
+      "colour": "#000000",
+      "expected": "#c81e1e"
+    },
+    {
+      "at": 1.5,
+      "landed": 1.5,
+      "colour": "#1483cc",
+      "expected": "#1e8ac8"
+    },
+    {
+      "at": 2.5,
+      "landed": 2.5,
+      "colour": "#1483cc",
+      "expected": "#1ec85a"
+    },
+    {
+      "at": 3.5,
+      "landed": 3.5,
+      "colour": "#11b259",
+      "expected": "#c8b81e"
+    },
+    {
+      "at": 4.5,
+      "landed": 4.5,
+      "colour": "#cbb017",
+      "expected": "#8a1ec8"
+    },
+    {
+      "at": 5.5,
+      "landed": 5.5,
+      "colour": "#9032ce",
+      "expected": "#1ec8b8"
+    },
+    {
+      "at": 6.5,
+      "landed": 6.5,
+      "colour": "#d3611a",
+      "expected": "#c85a1e"
+    },
+    {
+      "at": 7.5,
+      "landed": 7.5,
+      "colour": "#d3611a",
+      "expected": "#5a1ec8"
+    }
+  ],
+  "browserWrong": 6,
+  "browserBlank": 1,
+  "browserDupes": 2,
+  "marker": {
+    "full": {
+      "w": 1920,
+      "run": 2
+    },
+    "half": {
+      "w": 960,
+      "run": 1
+    }
+  }
+}

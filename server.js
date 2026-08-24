@@ -6,6 +6,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { renderComposition, renderReadiness } from './hyperframe-render.mjs';
+import os from 'os';
+import { extractFrames, extractReadiness } from './frame-extract.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1002,6 +1004,95 @@ const server = http.createServer((req, res) => {
   // wall-clock kill - lives in hyperframe-render.mjs rather than here, so the
   // rules are in one readable place instead of spread through a request
   // handler.
+  // ── Measurement-grade frames ────────────────────────────────────────────
+  //
+  // POST a video and a list of instants, get back the frames genuinely on
+  // screen at those instants, decoded by ffmpeg at the file's own resolution
+  // and each stamped with the timestamp it actually landed on.
+  //
+  // This exists because the browser is not a measuring instrument: seeking a
+  // <video> with currentTime returned blank frames three times in this project
+  // and, on one occasion, handed back the same frame for two different times.
+  // Anything asserting on pixels should come through here.
+  if (req.url.startsWith('/api/frames/status')) {
+    const state = extractReadiness();
+    res.writeHead(state.ready ? 200 : 503, {
+      'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', ...NO_CACHE
+    });
+    res.end(JSON.stringify(state));
+    return;
+  }
+
+  if (req.url.startsWith('/api/frames/extract')) {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
+      res.end();
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: 'POST a video and the instants to read from it.' }));
+      return;
+    }
+
+    const EXTRACT_SOCKET_MS = 3 * 60 * 1000;
+    req.setTimeout(EXTRACT_SOCKET_MS);
+    res.setTimeout(EXTRACT_SOCKET_MS);
+
+    const chunks = [];
+    let bytes = 0;
+    let refused = false;
+    req.on('data', (c) => {
+      if (refused) return;
+      bytes += c.length;
+      if (bytes > 220 * 1024 * 1024) {
+        refused = true;
+        res.writeHead(413, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: 'That video is too large to measure.' }));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', async () => {
+      if (refused) return;
+      let job;
+      try { job = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+      catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: 'The request was not JSON.' }));
+        return;
+      }
+
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-measure-'));
+      const file = path.join(dir, 'in' + (job.ext && /^[a-z0-9]{2,5}$/i.test(job.ext) ? '.' + job.ext : '.mp4'));
+      try {
+        if (!job.video) throw new Error('there is no video to measure');
+        fs.writeFileSync(file, Buffer.from(String(job.video), 'base64'));
+        const times = Array.isArray(job.times) ? job.times : [];
+        const out = await extractFrames(file, times, { scale: job.scale || null });
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', ...NO_CACHE });
+        res.end(JSON.stringify({
+          meta: out.meta,
+          frames: out.frames.map((f) => (f.ok
+            ? { at: f.at, ok: true, actualAt: f.actualAt, width: f.width, height: f.height,
+                scale: f.scale, png: f.png.toString('base64') }
+            : { at: f.at, ok: false, why: f.why }))
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: err.message }));
+      } finally {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* a temp dir */ }
+      }
+    });
+    return;
+  }
+
   if (req.url.startsWith('/api/hyperframe/status')) {
     const state = renderReadiness();
     res.writeHead(state.ready ? 200 : 503, {

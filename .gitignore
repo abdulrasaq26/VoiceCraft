@@ -46,3 +46,4 @@ __pycache__/
 
 # HyperFrame render scratch — per-job dirs and staged ffmpeg binaries
 .hyperframe-jobs/
+.frame-jobs/
