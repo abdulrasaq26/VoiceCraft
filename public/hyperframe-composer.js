@@ -123,7 +123,7 @@
 
   // ── The Composer ─────────────────────────────────────────────────────────
 
-  function composePrompt({ narration, intent, assetLines, unmet }) {
+  function composePrompt({ narration, intent, assetLines, unmet, hasFootage }) {
     const NL = String.fromCharCode(10);
     const C = window.BlvckHyperFrameComponents;
     const lines = [
@@ -135,6 +135,12 @@
     ];
     if (intent.conveys.length) lines.push('IT MUST GET ACROSS: ' + intent.conveys.join('; '));
 
+    if (hasFootage) {
+      lines.push('', 'THIS BEAT ALREADY HAS FOOTAGE, and it will fill the frame behind',
+                 'whatever you add. Do not ask for it — it is placed for you. Build only',
+                 'what the shot cannot say by itself, and keep it sparse: everything you',
+                 'add costs the viewer some of the picture.');
+    }
     lines.push('', 'COMPONENTS YOU MAY USE — there are no others:', C.vocabulary(), '');
 
     if (assetLines) {
@@ -216,14 +222,14 @@
   }
 
   /** Turn an intent into a buildable scene plan. Never throws. */
-  async function composeScene({ narration, intent, manifest } = {}) {
+  async function composeScene({ narration, intent, manifest, hasFootage } = {}) {
     if (!available()) return { ok: false, why: 'the composer is not reachable' };
     const R = window.BlvckAssetRegistry;
     const assetLines = manifest && manifest.assets && manifest.assets.length
       ? R.describeForPrompt(manifest) : '';
     let raw;
     try {
-      raw = await ask(composePrompt({ narration, intent, assetLines,
+      raw = await ask(composePrompt({ narration, intent, assetLines, hasFootage,
                                       unmet: (manifest && manifest.unmet) || [] }),
                       { maxTokens: 700, timeoutMs: COMPOSER_TIMEOUT_MS });
     } catch (err) {
@@ -243,11 +249,19 @@
    * reason and leaves the scene usable — the pipeline continues with a beat
    * that has no visual rather than stopping.
    */
-  async function runRoute(scene, { project, onProgress, force = false } = {}) {
+  async function runRoute(scene, { project, onProgress, force = false, mode } = {}) {
+    // FULL_FRAME  the composition is the whole picture; no footage anywhere
+    // HYBRID      the shot becomes an element INSIDE the composition and the
+    //             graphics are built around it; one clip comes out
+    // OVERLAY     the composition renders transparent and AETHER's compositor
+    //             draws it over the footage clip
+    const HF_MODE = ['FULL_FRAME', 'HYBRID', 'OVERLAY'].indexOf(String(mode || '').toUpperCase()) >= 0
+      ? String(mode).toUpperCase()
+      : ((scene.hyperFrame && scene.hyperFrame.mode) || 'FULL_FRAME');
     const say = (s) => { if (onProgress) onProgress(s); };
     const fail = (stage, why) => {
       scene.hyperFrame = Object.assign({}, scene.hyperFrame,
-        { mode: 'FULL_FRAME', status: 'failed', failure: { stage, why }, at: Date.now() });
+        { mode: HF_MODE, status: 'failed', failure: { stage, why }, at: Date.now() });
       return { ok: false, stage, why };
     };
 
@@ -276,10 +290,28 @@
       description: a.description, fileName: a.fileName
     }));
 
+    // 2b. The shot itself, for the modes that use one.
+    let shot = null;
+    if (HF_MODE === 'HYBRID') {
+      say('reading the selected footage');
+      try { shot = await window.BlvckAssetRegistry.footageFor(scene); }
+      catch (err) { return fail('footage', 'the footage could not be read: ' + err.message); }
+      if (!shot) return fail('footage', 'HYBRID needs footage this scene does not have');
+    }
+
     // 3. Which components carry it?
     say('composing the scene');
-    const plan = await composeScene({ narration: scene.subtitle, intent: d.intent, manifest });
+    const plan = await composeScene({ narration: scene.subtitle, intent: d.intent, manifest,
+                                      hasFootage: !!shot });
     if (!plan.ok) return fail('composer', plan.why);
+
+    // The shot is not the Composer's to request or to leave out: if this beat
+    // is HYBRID the footage IS the background, so it is placed here rather than
+    // being hoped for in the model's answer.
+    if (shot) {
+      plan.elements = plan.elements.filter((e) => e.kind !== 'footage');
+      plan.elements.unshift({ kind: 'footage', file: shot.fileName, mediaStart: shot.mediaStart });
+    }
 
     // 4. Source, from vetted templates rather than from the model.
     const C = window.BlvckHyperFrameComponents;
@@ -289,7 +321,8 @@
 
     let source;
     try {
-      source = C.compose({ elements: plan.elements, seconds, project });
+      source = C.compose({ elements: plan.elements, seconds, project,
+                           transparent: HF_MODE === 'OVERLAY' });
     } catch (err) {
       return fail('compose', err.message);
     }
@@ -299,11 +332,15 @@
     say('rendering');
     try {
       const assets = await window.BlvckAssetRegistry.toRenderAssets(manifest);
+      if (shot) assets.push(...await window.BlvckAssetRegistry.toRenderAssets({ assets: [shot] }));
       const gsapText = await window.BlvckHyperFrame.gsap();
-      const out = await window.BlvckHyperFrame.renderScene(scene, {
-        source, assets, vendor: [{ name: 'gsap.min.js', text: gsapText }]
-      });
+      const out = HF_MODE === 'OVERLAY'
+        ? await window.BlvckHyperFrame.renderOverlay(scene, {
+            source, assets, vendor: [{ name: 'gsap.min.js', text: gsapText }] })
+        : await window.BlvckHyperFrame.renderScene(scene, {
+            source, assets, vendor: [{ name: 'gsap.min.js', text: gsapText }] });
       scene.hyperFrame = Object.assign({}, scene.hyperFrame, {
+        mode: HF_MODE,
         elements: plan.elements.map((e) => e.kind),
         rejected: (plan.rejected || []).map((r) => r.why),
         reason: plan.reason || d.intent.concept,

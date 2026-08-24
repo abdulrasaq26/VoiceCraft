@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T10:10:35.171Z",
+  "at": "2026-08-24T11:48:41.715Z",
   "narration": "By the time you reach executive leadership, you are no longer judged by what you can do yourself, but by what the people below you can do without you.",
   "gate": {
     "kept": [
@@ -20,7 +20,7 @@
       "importance of team performance"
     ],
     "assetNeeds": [
-      "hierarchical org charts",
+      "hierarchical organization charts",
       "images of teams working together"
     ]
   },
@@ -28,20 +28,12 @@
     {
       "kind": "title",
       "text": "Leading at the Top",
-      "kicker": "A New Standard"
+      "kicker": "A New Standard of Measurement"
     },
     {
       "kind": "stat",
-      "value": "90%",
-      "label": "of executive performance evaluated on team achievements"
-    },
-    {
-      "kind": "progression",
-      "items": [
-        "Individual Contributor",
-        "Team Lead",
-        "Executive Leader"
-      ]
+      "value": "100%",
+      "label": "of executives judged by team performance"
     }
   ],
   "manifest": [],
@@ -50,29 +42,28 @@
     "status": "ready",
     "renderedKey": "clip:1",
     "durationSec": 6,
-    "renderMs": 25240,
-    "bytes": 407510,
-    "at": 1787566228084,
+    "renderMs": 31699,
+    "bytes": 338950,
+    "at": 1787572114153,
     "failure": null,
     "elements": [
       "title",
-      "stat",
-      "progression"
+      "stat"
     ],
     "rejected": [],
-    "reason": "This combination effectively conveys the shift in judgement criteria at executive level and the importance of team performance in a concise manner.",
+    "reason": "This design effectively conveys the shift in judgement criteria at executive level through a simple and clear title and statistic.",
     "anchorPhrase": "without you"
   },
-  "renderMs": 25240,
+  "renderMs": 31699,
   "film": {
     "ok": true,
-    "bytes": 390735,
+    "bytes": 387160,
     "duration": 5.95,
     "w": 1280,
     "h": 720,
-    "accent": 288,
-    "ink": 1848,
+    "accent": 352,
+    "ink": 2002,
     "n": 57600
   },
-  "sourceChars": 4015
+  "sourceChars": 3208
 }

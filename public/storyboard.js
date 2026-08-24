@@ -3033,6 +3033,21 @@
   // taken seconds.
   window.BlvckStoryboard = {
     assetMode: () => assetMode,
+    /**
+     * Store a transparent HyperFrame overlay beside a scene's footage.
+     *
+     * Its own key, because clip:N is the footage and an overlay is not a
+     * replacement for it. The editor loads both and the compositor draws one
+     * over the other.
+     */
+    putOverlay: async (scene, blob) => {
+      await idbPut('hfov:' + scene.index, blob);
+      const s = scenes.find((x) => x.index === scene.index);
+      if (s) s.hasOverlay = true;
+      scene.hasOverlay = true;
+      saveProject();
+    },
+
     /** The live scene list.
      *
      *  A later stage - the Renderer decides what goes ON a beat once its

@@ -643,6 +643,15 @@
       }
       const video = videos[0] || null;
 
+      // A transparent HyperFrame overlay, if this beat has one. Its own key,
+      // because clip:N is the footage and the overlay is drawn over it rather
+      // than instead of it.
+      let overlayVideo = null;
+      try {
+        const ob = await idbGet(SB_DB, SB_STORE, `hfov:${s.index}`);
+        if (ob) overlayVideo = await loadVideo(ob);
+      } catch (e) { /* an overlay that will not decode is simply not drawn */ }
+
       if (!img && !video) {
         // Draw one rather than skipping the beat.
         //
@@ -701,7 +710,19 @@
           // The excerpt window, so driveVideo knows where the shot's zero is
           // inside a long archival source. Carried per clip because a replaced
           // clip must not inherit the previous one's in-point.
-          excerpt: (s.stockAsset && s.stockAsset.excerpt) || s.excerpt || null,
+          // The excerpt window, so driveVideo knows where the shot's zero is
+          // inside a long archival source.
+          //
+          // NOT when the visual is a HyperFrame render. In HYBRID the footage
+          // is an element INSIDE the composition and its in-point was applied
+          // there, by data-media-start, so the file that comes out is already
+          // the excerpt. Carrying the source window onto that clip asks the
+          // compositor to cut seconds 12 to 16 out of a four second file — and
+          // the export gate caught exactly that: "excerpt ends at 16.0s but the
+          // file is only 4.0s".
+          excerpt: (s.hyperFrame && s.hyperFrame.renderedKey === `clip:${s.index}`)
+            ? null
+            : ((s.stockAsset && s.stockAsset.excerpt) || s.excerpt || null),
           // How to fit the frame. From the asset's own treatment when the
           // acquisition layer chose one; otherwise fitFor() falls back to the
           // aspect, so archival material is never cropped by default.
@@ -714,7 +735,11 @@
           editorialOverlay: part === 0 ? (s.editorialOverlay || null) : null,
           rendererElements: part === 0 ? (s.rendererElements || null) : null,
           img: part === 0 ? img : null,
-          video: videos[part] || null
+          video: videos[part] || null,
+          // Carried on the first part only, for the same reason the
+          // renderer elements are: repeating it on every cut of one beat
+          // would restart the animation mid-sentence.
+          overlayVideo: part === 0 ? overlayVideo : null
         });
       }
       heldSec = 0;
@@ -1850,6 +1875,25 @@
     // layout (the Director decides when the presenter is on screen), falling
     // back to the channel default.
     drawHostOverlay(g, cw, ch, at.clip.hostLayout);
+
+    // A transparent HyperFrame, drawn over the shot.
+    //
+    // This is the OVERLAY mode, and it is the one case HYBRID-in-HyperFrame
+    // cannot serve: a graphic that has to outlive the shot it started on, or
+    // span a cut. The composition rendered with an unpainted ground, so its
+    // alpha is intact and the footage shows through everywhere it drew nothing
+    // — measured, not assumed: 54108 of 57600 sampled pixels kept the ground
+    // behind a transparent WebM drawn with drawImage, and none came back black.
+    //
+    // Driven on the clip's own local clock, because the composition was
+    // rendered for exactly this shot's length.
+    if (at.clip.overlayVideo) {
+      const ov = at.clip.overlayVideo;
+      try {
+        driveVideo(ov, at.localMs, { excerpt: null });
+        if (ov.readyState >= 2) g.drawImage(ov, 0, 0, cw, ch);
+      } catch (e) { /* a bad overlay must not cost the frame */ }
+    }
 
     // Editorial overlay above the footage and the host, below the captions —
     // it is a graphic element, so it may cover the picture, but it must never

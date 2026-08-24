@@ -204,7 +204,7 @@
    * promising a file that is not there produces a composition referencing a
    * missing image, which the renderer refuses under --no-best-effort.
    */
-  async function manifestFor({ wanted = [], limit = 6 } = {}) {
+  async function manifestFor({ wanted = [], limit = 6, allowVideo = false } = {}) {
     const pool = await approved();
     const needs = (Array.isArray(wanted) ? wanted : []).map(str).filter(Boolean);
 
@@ -227,9 +227,7 @@
       const store = a.source === 'stock' ? STOCK_STORE : SB_STORE;
       const blob = await get(dbName, store, a.storeKey);
       if (!blob || !blob.size) { missing.push(a.assetId); continue; }
-      // Only images travel into a composition for now. A video asset inside a
-      // HyperFrame is the HYBRID route and is not this phase.
-      if (!/^image\//.test(blob.type || '') && a.type !== 'image') continue;
+      if (a.type !== 'image' && !allowVideo) continue;
       picked.push(Object.assign({}, a, { blob, bytes: blob.size, fileName: fileNameFor(a, blob) }));
     }
 
@@ -246,9 +244,38 @@
   }
 
   function fileNameFor(a, blob) {
-    const ext = /png/.test(blob.type) ? 'png' : /webp/.test(blob.type) ? 'webp'
-              : /gif/.test(blob.type) ? 'gif' : 'jpg';
+    const t = String(blob.type || '');
+    const ext = /webm/.test(t) ? 'webm' : /quicktime|mov/.test(t) ? 'mov'
+              : /mp4|video/.test(t) ? 'mp4'
+              : /png/.test(t) ? 'png' : /webp/.test(t) ? 'webp'
+              : /gif/.test(t) ? 'gif' : 'jpg';
     return a.assetId + '.' + ext;
+  }
+
+  /**
+   * The footage a scene has already been given, as a render asset.
+   *
+   * Rights are not re-litigated here — acquisition already cleared this clip
+   * and wrote its provenance onto the scene. This reads the cached bytes and
+   * carries the excerpt window across, because a composition that starts a
+   * thirteen minute film at zero is showing the wrong nine seconds.
+   */
+  async function footageFor(scene) {
+    const a = scene && scene.stockAsset;
+    if (!a || !a.provider || !a.id) return null;
+    const key = `${a.provider}:${a.id}`;
+    const blob = await get(STOCK_DB, STOCK_STORE, key);
+    if (!blob || !blob.size) return null;
+    const win = (window.StockMedia && window.StockMedia.excerptWindow)
+      ? window.StockMedia.excerptWindow(a.excerpt) : null;
+    return {
+      assetId: 'footage_' + key.replace(/[^\w]/g, '_'),
+      type: 'video', source: 'stock', storeKey: key, blob, bytes: blob.size,
+      fileName: 'footage.' + (/webm/.test(blob.type || '') ? 'webm' : 'mp4'),
+      mediaStart: win ? win.in : 0,
+      description: describeStock(a, key),
+      rights: rightsOf('stock', a)
+    };
   }
 
   /** The manifest as the render endpoint wants it: names and base64. */
@@ -274,6 +301,7 @@
   }
 
   window.BlvckAssetRegistry = {
-    catalogue, approved, manifestFor, toRenderAssets, describeForPrompt, rightsOf
+    catalogue, approved, manifestFor, toRenderAssets, describeForPrompt,
+    rightsOf, footageFor
   };
 })();

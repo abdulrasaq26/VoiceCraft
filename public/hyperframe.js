@@ -149,8 +149,42 @@
     return { blob, seconds, renderMs: blob.renderMs };
   }
 
+  /**
+   * Render a transparent composition and keep it beside the footage.
+   *
+   * OVERLAY does not become the scene's clip - the footage still is. The
+   * transparent WebM is stored under its own key and the compositor draws it
+   * over the shot, which is the case HYBRID-in-HyperFrame cannot serve: a
+   * graphic that has to span a cut, or outlive the shot it started on.
+   *
+   * Measured before this was built: a transparent WebM decoded into a <video>
+   * and drawn with drawImage keeps its alpha - 54108 of 57600 sampled pixels
+   * showed the ground through, and none came back black. That is why this is a
+   * WebM and not an RGBA png-sequence.
+   */
+  async function renderOverlay(scene, { source, assets = [], vendor = [] } = {}) {
+    const win = window.BlvckRenderer && window.BlvckRenderer._shotWindowOf
+      ? window.BlvckRenderer._shotWindowOf(scene) : null;
+    if (!win) throw new Error('this scene has no place on the timeline yet');
+    const seconds = Math.round((win.timelineEnd - win.timelineStart) * 100) / 100;
+
+    const blob = await render({ source, seconds, format: 'webm', assets, vendor });
+
+    const SBM = window.BlvckStoryboard;
+    if (!SBM || !SBM.putOverlay) throw new Error('the storyboard cannot store an overlay');
+    await SBM.putOverlay(scene, blob);
+
+    scene.hyperFrame = Object.assign({}, scene.hyperFrame, {
+      mode: 'OVERLAY', status: 'ready',
+      overlayKey: 'hfov:' + scene.index,
+      durationSec: seconds, renderMs: blob.renderMs, bytes: blob.size,
+      at: Date.now(), failure: null
+    });
+    return { blob, seconds, renderMs: blob.renderMs };
+  }
+
   window.BlvckHyperFrame = {
-    available, render, renderScene, gsap,
+    available, render, renderScene, renderOverlay, gsap,
     RENDER_TIMEOUT_MS
   };
 })();

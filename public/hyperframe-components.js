@@ -113,6 +113,33 @@
       };
     },
 
+    /**
+     * The shot itself, inside the composition.
+     *
+     * This is what HYBRID means here: rather than laying graphics over a video
+     * in our compositor and hoping the two agree, the footage becomes an
+     * element of the scene and the graphics are built around it. The renderer
+     * composes both and hands back one clip.
+     *
+     * data-media-start is the source in-point, which is how a nine second beat
+     * takes seconds 567.8 to 576.8 of a thirteen minute film without anything
+     * being trimmed first. It is the excerpt window the acquisition layer
+     * already chose, passed through unchanged.
+     */
+    footage(spec, t, i) {
+      const id = 'shot' + i;
+      const at = Number(spec.mediaStart);
+      return {
+        html: `<video id="${id}" class="clip hf-shot" data-start="0" data-duration="{{D}}"
+       data-track-index="0"${Number.isFinite(at) && at > 0 ? ` data-media-start="${at}"` : ''}
+       src="assets/${esc(spec.file)}" muted playsinline></video>`,
+        column: 'background',
+        css: `.hf-shot{position:absolute;inset:0;width:1920px;height:1080px;object-fit:cover}
+.hf-scrim{position:absolute;inset:0;background:linear-gradient(90deg,${t.bg}ee 0%,${t.bg}cc 42%,transparent 72%)}`,
+        timeline: ''
+      };
+    },
+
     /** An approved image, given room and a caption. */
     image(spec, t, i) {
       const id = 'img' + i;
@@ -139,7 +166,8 @@
     title: (s) => !!String(s.text || '').trim(),
     stat: (s) => !!String(s.value || '').trim(),
     progression: (s) => Array.isArray(s.items) && s.items.filter(Boolean).length >= 2,
-    image: (s) => !!String(s.file || '').trim()
+    image: (s) => !!String(s.file || '').trim(),
+    footage: (s) => !!String(s.file || '').trim()
   };
 
   function canDraw(spec) {
@@ -147,7 +175,8 @@
     if (KINDS.indexOf(kind) < 0) return { ok: false, why: `there is no component called "${kind || '(none)'}"` };
     if (!NEEDS[kind](spec)) {
       return { ok: false, why: `a ${kind} needs ${kind === 'progression' ? 'at least two items'
-        : kind === 'stat' ? 'a value' : kind === 'image' ? 'an asset' : 'text'}` };
+        : kind === 'stat' ? 'a value' : (kind === 'image' || kind === 'footage')
+        ? 'an asset' : 'text'}` };
     }
     return { ok: true, why: '' };
   }
@@ -161,7 +190,8 @@
    * AETHER. What happens inside those seconds is the composition's own affair
    * and is written here, in the components' timelines.
    */
-  function compose({ elements = [], seconds, project, gsapSrc = './vendor/gsap.min.js' } = {}) {
+  function compose({ elements = [], seconds, project, transparent = false,
+                     gsapSrc = './vendor/gsap.min.js' } = {}) {
     const t = tokensFor(project);
     const d = Number(seconds);
     if (!Number.isFinite(d) || d <= 0) throw new Error('a composition needs its scene window');
@@ -179,7 +209,8 @@
     // Components now declare which column they belong to and the columns lay
     // themselves out, so two things cannot land in the same place.
     const NL = String.fromCharCode(10);
-    const left  = built.filter((b) => b.column !== 'right');
+    const back  = built.filter((b) => b.column === 'background');
+    const left  = built.filter((b) => b.column !== 'right' && b.column !== 'background');
     const right = built.filter((b) => b.column === 'right');
     const put = (list) => list.map((b) => b.html.split(DUR).join(String(d)))
       .join(NL + '        ');
@@ -190,7 +221,12 @@
                 + '--hf-stat:' + (right.length > 1 ? 132 : 190) + 'px;';
 
     const css = [...new Set(built.map((b) => b.css))].join(NL);
-    const html = '<div class=\"hf-col hf-col-left\">' + NL + '        ' + put(left)
+    // The shot goes behind everything, with a scrim over it so typography on
+    // the left stays readable against whatever the footage happens to be doing.
+    const bg = back.length
+      ? put(back) + NL + '      <div class=\"hf-scrim\"></div>' + NL + '      '
+      : '';
+    const html = bg + '<div class=\"hf-col hf-col-left\">' + NL + '        ' + put(left)
                + NL + '      </div>' + NL + '      <div class=\"hf-col hf-col-right\">' + NL
                + '        ' + put(right) + NL + '      </div>';
     const timeline = built.map((b) => b.timeline).join(NL + '  ');
@@ -203,7 +239,10 @@
     <script src="${gsapSrc}"><\/script>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
-      html,body{width:1920px;height:1080px;overflow:hidden;background:${t.bg}}
+      /* An OVERLAY renders transparent, so html and body are left unpainted:
+         the rendering guide is explicit that any opaque full-frame ground is
+         encoded as visible pixels and the alpha is lost. */
+      html,body{width:1920px;height:1080px;overflow:hidden;background:${transparent ? 'transparent' : t.bg}}
       /* The compositor burns subtitles over this video afterwards, so the
          bottom ${Math.round(t.safeBottom * 100)}% of the frame is left clear. */
       #root{position:relative;width:1920px;height:1080px;
@@ -241,7 +280,9 @@ ${css.split('\n').map((l) => '      ' + l).join('\n')}
       'progression  two to five stages that lead to one another',
       '             { "kind":"progression", "items":["…","…","…"] }',
       'image        an approved asset, by its id, with a caption',
-      '             { "kind":"image", "assetId":"…", "caption":"…" }'
+      '             { "kind":"image", "assetId":"…", "caption":"…" }',
+      'footage      the shot this beat already has, as the background',
+      '             { "kind":"footage" }'
     ].join('\n');
   }
 

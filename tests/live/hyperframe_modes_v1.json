@@ -1,0 +1,113 @@
+{
+  "at": "2026-08-24T11:42:47.647Z",
+  "seconds": 4,
+  "sourceSecs": 20,
+  "mediaStart": 12,
+  "results": {
+    "FULL_FRAME": {
+      "r": {
+        "ok": true,
+        "ms": 32919,
+        "renderMs": 32857,
+        "bytes": 114300,
+        "type": "video/mp4",
+        "hyperFrame": {
+          "mode": "FULL_FRAME",
+          "status": "ready",
+          "renderedKey": "clip:1",
+          "durationSec": 4,
+          "renderMs": 32857,
+          "bytes": 114300,
+          "at": 1787571673275,
+          "failure": null
+        },
+        "mediaStart": null,
+        "sourceHasMediaStart": false,
+        "transparentGround": false
+      },
+      "film": {
+        "ok": true,
+        "bytes": 112093,
+        "duration": 3.96,
+        "band0": 0,
+        "band3": 1,
+        "anyBand": 61,
+        "accent": 167,
+        "dark": 56487,
+        "n": 57600,
+        "hasOverlayOnClip": false,
+        "hasVideoOnClip": true
+      }
+    },
+    "HYBRID": {
+      "r": {
+        "ok": true,
+        "ms": 45598,
+        "renderMs": 45491,
+        "bytes": 168694,
+        "type": "video/mp4",
+        "hyperFrame": {
+          "mode": "HYBRID",
+          "status": "ready",
+          "renderedKey": "clip:1",
+          "durationSec": 4,
+          "renderMs": 45491,
+          "bytes": 168694,
+          "at": 1787571724430,
+          "failure": null
+        },
+        "mediaStart": 12,
+        "sourceHasMediaStart": true,
+        "transparentGround": false
+      },
+      "film": {
+        "ok": true,
+        "bytes": 466188,
+        "duration": 3.97,
+        "band0": 0,
+        "band3": 23225,
+        "anyBand": 24350,
+        "accent": 170,
+        "dark": 26661,
+        "n": 57600,
+        "hasOverlayOnClip": false,
+        "hasVideoOnClip": true
+      }
+    },
+    "OVERLAY": {
+      "r": {
+        "ok": true,
+        "ms": 32419,
+        "renderMs": 32368,
+        "bytes": 134172,
+        "type": "video/webm",
+        "hyperFrame": {
+          "mode": "OVERLAY",
+          "status": "ready",
+          "overlayKey": "hfov:1",
+          "durationSec": 4,
+          "renderMs": 32368,
+          "bytes": 134172,
+          "at": 1787571762264,
+          "failure": null
+        },
+        "mediaStart": null,
+        "sourceHasMediaStart": false,
+        "transparentGround": true
+      },
+      "film": {
+        "ok": true,
+        "bytes": 478416,
+        "duration": 3.96,
+        "band0": 0,
+        "band3": 45,
+        "anyBand": 55124,
+        "accent": 194,
+        "dark": 566,
+        "n": 57600,
+        "hasOverlayOnClip": true,
+        "hasVideoOnClip": true
+      }
+    }
+  }
+}
