@@ -1,0 +1,155 @@
+{
+  "at": "2026-08-24T09:16:27.174Z",
+  "legacy": {
+    "mode": "FOOTAGE",
+    "planned": false,
+    "noScene": "FOOTAGE",
+    "junk": "FOOTAGE"
+  },
+  "contract": {
+    "good": {
+      "mode": "HYPERFRAME",
+      "reason": "The sentence is about a hierarchy.",
+      "confidence": 0.88,
+      "ran": true
+    },
+    "over": {
+      "mode": "HYPERFRAME",
+      "reason": "x",
+      "confidence": 0.9,
+      "ran": true
+    },
+    "bad": {
+      "unknownMode": {
+        "mode": "FOOTAGE",
+        "reason": "the planner asked for an unknown medium \"ANIMATION\"",
+        "confidence": 0,
+        "ran": false
+      },
+      "prose": {
+        "mode": "FOOTAGE",
+        "reason": "the planner did not answer in JSON",
+        "confidence": 0,
+        "ran": false
+      },
+      "broken": {
+        "mode": "FOOTAGE",
+        "reason": "the planner did not answer in JSON",
+        "confidence": 0,
+        "ran": false
+      },
+      "empty": {
+        "mode": "FOOTAGE",
+        "reason": "the planner did not answer in JSON",
+        "confidence": 0,
+        "ran": false
+      },
+      "wrongShape": {
+        "mode": "FOOTAGE",
+        "reason": "the planner did not answer in JSON",
+        "confidence": 0,
+        "ran": false
+      },
+      "noMode": {
+        "mode": "FOOTAGE",
+        "reason": "the planner asked for an unknown medium \"(none)\"",
+        "confidence": 0,
+        "ran": false
+      }
+    }
+  },
+  "down": {
+    "noKey": {
+      "mode": "FOOTAGE",
+      "reason": "the planner is not reachable",
+      "confidence": 0,
+      "ran": false
+    },
+    "threw": {
+      "mode": "FOOTAGE",
+      "reason": "the planner failed: 503 ResourceExhausted",
+      "confidence": 0,
+      "ran": false
+    },
+    "garbage": {
+      "mode": "FOOTAGE",
+      "reason": "the planner did not answer in JSON",
+      "confidence": 0,
+      "ran": false
+    },
+    "hung": {
+      "mode": "FOOTAGE",
+      "reason": "the planner failed: the planner did not answer in 45000ms",
+      "confidence": 0,
+      "ran": false
+    },
+    "noNarration": {
+      "mode": "FOOTAGE",
+      "reason": "there is no narration for this beat",
+      "confidence": 0,
+      "ran": false
+    }
+  },
+  "staged": {
+    "considered": 2,
+    "planned": 2,
+    "failed": 0,
+    "skipped": 1,
+    "stopped": false,
+    "modes": {
+      "HYPERFRAME": 2
+    },
+    "beats": [
+      {
+        "index": 1,
+        "mode": "HYPERFRAME",
+        "ran": true,
+        "confidence": 0.7,
+        "reason": "stubbed"
+      },
+      {
+        "index": 2,
+        "skipped": "no narration on this beat"
+      },
+      {
+        "index": 3,
+        "mode": "HYPERFRAME",
+        "ran": true,
+        "confidence": 0.7,
+        "reason": "stubbed"
+      }
+    ]
+  },
+  "live": [
+    {
+      "beat": "a place a camera could stand in",
+      "expect": "FOOTAGE",
+      "plan": {
+        "mode": "FOOTAGE",
+        "reason": "The sentence describes a real event, a fish market at first light, with boats coming back in and a market on the quay, which can be recorded by a camera.",
+        "confidence": 0.9,
+        "ran": true
+      }
+    },
+    {
+      "beat": "a structure no camera ever saw",
+      "expect": "HYPERFRAME",
+      "plan": {
+        "mode": "HYPERFRAME",
+        "reason": "The sentence describes a chain of authority and a quota set by people who have never been to sea, which are abstract concepts that cannot be directly recorded by a camera.",
+        "confidence": 0.9,
+        "ran": true
+      }
+    },
+    {
+      "beat": "a real thing plus a figure it cannot show",
+      "expect": "HYBRID",
+      "plan": {
+        "mode": "HYBRID",
+        "reason": "The sentence describes a filmable event of weighing the catch on the dock, but also includes a non-filmable comparison of the quantity to a previous year's catch.",
+        "confidence": 0.8,
+        "ran": true
+      }
+    }
+  ]
+}

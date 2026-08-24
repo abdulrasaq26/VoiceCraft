@@ -72,10 +72,21 @@
     else if (d && d.ran)               { mark = '—'; tone = 'var(--muted)';        verdict = 'nothing needed'; }
     else if (d && !d.ran)              { mark = '!'; tone = 'var(--warn,#e0a030)'; verdict = 'the Director did not answer'; }
 
+    // Which medium the beat is made of. FOOTAGE is the default and the quiet
+    // case, so only a decided non-default strategy earns a chip - a row full of
+    // "FOOTAGE" badges would be noise on a project nobody has planned yet.
+    const P = window.BlvckVisualPlanner;
+    const mode = P ? P.strategyOf(scene) : 'FOOTAGE';
+    const decided = P ? P.planned(scene) : false;
+    const chip = (decided && mode !== 'FOOTAGE')
+      ? `<span class="badge standard" title="${esc((scene.visualStrategy || {}).reason || '')}"
+              style="font-size:.68rem">${esc(mode)}</span>` : '';
+
     row.innerHTML =
       `<div style="display:flex;gap:.6rem;align-items:baseline">
          <span style="color:${tone};font-weight:700;min-width:1.2em">${mark}</span>
          <span style="font-weight:600">Scene ${esc(scene.index)}</span>
+         ${chip}
          <span style="color:${tone};font-size:.8rem">${esc(verdict)}</span>
        </div>
        <div style="color:var(--muted);font-size:.8rem;margin:.25rem 0 0 1.8em">
