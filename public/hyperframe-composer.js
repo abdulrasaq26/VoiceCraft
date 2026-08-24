@@ -398,7 +398,8 @@
         ? await window.BlvckHyperFrame.renderOverlay(scene, {
             source, assets, vendor: [{ name: 'gsap.min.js', text: gsapText }] })
         : await window.BlvckHyperFrame.renderScene(scene, {
-            source, assets, vendor: [{ name: 'gsap.min.js', text: gsapText }] });
+            source, assets, seconds,
+            vendor: [{ name: 'gsap.min.js', text: gsapText }] });
       // 6. Does the picture say what the beat needed it to say? Recorded, not
       // enforced: a describer using different words is not a reason to rebuild
       // a scene that is structurally sound.

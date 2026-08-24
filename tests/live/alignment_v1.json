@@ -1,0 +1,202 @@
+{
+  "at": "2026-08-24T23:35:58.757Z",
+  "narration": "Authority does not travel upward. Every level you rise is a level that can act without you.",
+  "speech": {
+    "ok": true,
+    "seconds": 5.666,
+    "bytes": 57274,
+    "sampleRate": 48000,
+    "ms": 23845
+  },
+  "decision": {
+    "strategy": "HYPERFRAME",
+    "planRan": true,
+    "planReason": "The sentence describes an abstract concept of authority and hierarchy, with no tangible object or scene that a camera could point at.",
+    "res": {
+      "ok": true,
+      "seconds": 5.67,
+      "renderMs": 29332,
+      "evaluation": {
+        "layout": {
+          "ok": true,
+          "density": 0.24,
+          "problems": []
+        },
+        "reading": {
+          "ran": true,
+          "sees": "The image is a black graphic with white and yellow text, featuring the phrase \"THE HIGHER YOU RISE\" in yellow at the top left, followed by \"Authority Decreases with Rank\"",
+          "overlap": 0.33,
+          "why": ""
+        },
+        "revised": false,
+        "at": 1787614723472
+      },
+      "elements": [
+        {
+          "kind": "title",
+          "text": "Authority Decreases with Rank",
+          "kicker": "The Higher You Rise"
+        },
+        {
+          "kind": "stat",
+          "value": "40%",
+          "label": "of decisions made without input from lower levels"
+        }
+      ],
+      "rejected": [],
+      "intent": {
+        "concept": "Authority decreases as you move up a hierarchy",
+        "anchorPhrase": "Authority does not",
+        "conveys": [
+          "thinly distributed power",
+          "reduced influence with higher rank"
+        ],
+        "assetNeeds": [
+          "organizational charts",
+          "hierarchical diagrams"
+        ]
+      },
+      "manifest": []
+    },
+    "steps": [
+      "deciding what the beat should convey",
+      "gathering approved assets",
+      "composing the scene",
+      "rendering",
+      "reading the rendered frame"
+    ],
+    "intent": {
+      "concept": "Authority decreases as you move up a hierarchy",
+      "anchorPhrase": "Authority does not",
+      "conveys": [
+        "thinly distributed power",
+        "reduced influence with higher rank"
+      ],
+      "assetNeeds": [
+        "organizational charts",
+        "hierarchical diagrams"
+      ]
+    },
+    "hyperFrame": {
+      "mode": "FULL_FRAME",
+      "status": "ready",
+      "renderedKey": "clip:1",
+      "durationSec": 5.67,
+      "renderMs": 29332,
+      "bytes": 330864,
+      "at": 1787614719559,
+      "failure": null,
+      "style": "broadcast-brief",
+      "elements": [
+        "title",
+        "stat"
+      ],
+      "rejected": [],
+      "reason": "This combination effectively conveys the idea that authority decreases as you move up a hierarchy, using a clear title and a supporting statistic to illustrate the point.",
+      "anchorPhrase": "Authority does not"
+    },
+    "declared": {
+      "ok": true,
+      "density": 0.24,
+      "problems": [],
+      "elements": [
+        {
+          "id": "title0",
+          "tag": "div",
+          "x": 173,
+          "y": 204,
+          "w": 747,
+          "h": 412
+        },
+        {
+          "id": "stat1",
+          "tag": "div",
+          "x": 1000,
+          "y": 284,
+          "w": 747,
+          "h": 253
+        }
+      ],
+      "bandTop": 821
+    },
+    "sourceKinds": [
+      "title",
+      "stat"
+    ]
+  },
+  "measured": {
+    "meta": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "frames": 171,
+      "codec": "h264",
+      "duration": 5.7
+    },
+    "ok": true,
+    "width": 1920,
+    "height": 1080,
+    "actualAt": 2,
+    "boxes": [
+      {
+        "id": "title0",
+        "box": {
+          "id": "title0",
+          "tag": "div",
+          "x": 173,
+          "y": 204,
+          "w": 747,
+          "h": 412
+        },
+        "ink": {
+          "share": 0.089,
+          "pixels": 27413,
+          "total": 307764
+        }
+      },
+      {
+        "id": "stat1",
+        "box": {
+          "id": "stat1",
+          "tag": "div",
+          "x": 1000,
+          "y": 284,
+          "w": 747,
+          "h": 253
+        },
+        "ink": {
+          "share": 0.088,
+          "pixels": 16645,
+          "total": 188991
+        }
+      }
+    ],
+    "band": {
+      "share": 0,
+      "pixels": 0,
+      "total": 497280
+    },
+    "corner": {
+      "share": 0,
+      "pixels": 0,
+      "total": 14400
+    },
+    "first": {
+      "actualAt": 0.2
+    }
+  },
+  "anchor": {
+    "measuredWords": true,
+    "why": "",
+    "hit": {
+      "start": 0,
+      "end": 1.2,
+      "anchoredTo": "Authority does not",
+      "spokenAt": 0
+    },
+    "inNarration": true,
+    "phrase": "Authority does not",
+    "wordCount": 17,
+    "lastWordEnds": 5.46
+  }
+}

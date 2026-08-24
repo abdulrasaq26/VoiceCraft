@@ -122,11 +122,22 @@
    * Stored under clip:N through the storyboard's own writer, which is what
    * makes the rest of the pipeline indifferent to where the video came from.
    */
-  async function renderScene(scene, { source, format = 'mp4', assets = [], vendor = [] } = {}) {
+  /**
+   * `seconds` is the length the COMPOSITION was built for, when the caller has
+   * one. Two places used to compute this window independently — here, and in
+   * the route that bakes data-duration into the source — and only the second
+   * governs the file, because that is what the renderer reads. They agreed, so
+   * nothing showed it; a probe that lengthened the composition by a second
+   * produced a file of 8s carrying a scene that recorded 7s, which the
+   * workspace would have reported as the truth. One number now.
+   */
+  async function renderScene(scene, { source, format = 'mp4', assets = [], vendor = [], seconds: given } = {}) {
     const win = window.BlvckRenderer && window.BlvckRenderer._shotWindowOf
       ? window.BlvckRenderer._shotWindowOf(scene) : null;
-    if (!win) throw new Error('this scene has no place on the timeline yet');
-    const seconds = Math.round((win.timelineEnd - win.timelineStart) * 100) / 100;
+    if (!win && !(Number(given) > 0)) throw new Error('this scene has no place on the timeline yet');
+    const seconds = Number(given) > 0
+      ? Number(given)
+      : Math.round((win.timelineEnd - win.timelineStart) * 100) / 100;
 
     const blob = await render({ source, seconds, format, assets, vendor });
 

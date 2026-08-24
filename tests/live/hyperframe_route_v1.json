@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T20:42:13.049Z",
+  "at": "2026-08-24T23:26:37.403Z",
   "narration": "By the time you reach executive leadership, you are no longer judged by what you can do yourself, but by what the people below you can do without you.",
   "gate": {
     "kept": [
@@ -42,9 +42,9 @@
     "status": "ready",
     "renderedKey": "clip:1",
     "durationSec": 6,
-    "renderMs": 47345,
-    "bytes": 309402,
-    "at": 1787604117493,
+    "renderMs": 33523,
+    "bytes": 308274,
+    "at": 1787613979973,
     "failure": null,
     "style": "broadcast-brief",
     "elements": [
@@ -52,18 +52,18 @@
       "stat"
     ],
     "rejected": [],
-    "reason": "This combination effectively conveys the shift in judgement criteria at the executive level and emphasizes the importance of team performance.",
+    "reason": "This combination effectively conveys the shift in judgement criteria at the executive level and the importance of team performance in a clear and concise manner.",
     "anchorPhrase": "without you"
   },
-  "renderMs": 47345,
+  "renderMs": 33523,
   "film": {
     "ok": true,
-    "bytes": 429237,
-    "duration": 5.92,
+    "bytes": 447439,
+    "duration": 5.97,
     "w": 1280,
     "h": 720,
-    "accent": 336,
-    "ink": 2051,
+    "accent": 337,
+    "ink": 2053,
     "n": 57600
   },
   "sourceChars": 3210
