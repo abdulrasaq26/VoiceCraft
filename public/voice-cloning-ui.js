@@ -82,6 +82,7 @@
     prepared = null;
     uploadBtn.disabled = true;
     previewBtn.hidden = true;
+    stopClipPreview();          // a new clip replaces whatever is playing
     say('Analysing…');
     try {
       const p = await VC.prepare(blob);
@@ -111,9 +112,61 @@
     });
   }
 
+  // Playing the processed clip back.
+  //
+  // The old handler was one line: new Audio(previewUrl).play().catch(() => {}).
+  // Three things were wrong with it and all three read as "the button does
+  // nothing". The element was never kept, so it could not be stopped and every
+  // click stacked another overlapping playback on the last. There was no sign
+  // it had started - no label change, no status - so a clip that WAS playing
+  // looked identical to one that was not. And the catch swallowed the reason:
+  // a browser that blocks audio for the site (Firefox's per-site autoplay
+  // setting will) rejects play() with NotAllowedError, and the user was told
+  // nothing at all.
+  let previewAudio = null;
+
+  function stopClipPreview() {
+    const was = previewAudio;
+    if (previewAudio) {
+      previewAudio.pause();
+      previewAudio = null;
+    }
+    if (previewBtn) previewBtn.textContent = '▶ Preview processed clip';
+    // Put the readiness line back. Leaving "Playing…" up after it has stopped
+    // is a status line telling the truth about a moment that has passed.
+    if (was && prepared) {
+      say(prepared.verdict.ok ? 'Ready — add a name and the transcript.'
+                              : 'Recording quality is too low to clone well.',
+          prepared.verdict.ok ? 'good' : 'error');
+    }
+  }
+
   if (previewBtn) {
     previewBtn.addEventListener('click', () => {
-      if (previewUrl) new Audio(previewUrl).play().catch(() => {});
+      if (previewAudio) { stopClipPreview(); return; }   // a second click stops it
+      if (!previewUrl) {
+        say('Nothing to preview yet — choose or record a clip first.', 'error');
+        return;
+      }
+      const a = new Audio(previewUrl);
+      previewAudio = a;
+      a.addEventListener('ended', stopClipPreview);
+      a.addEventListener('error', () => {
+        stopClipPreview();
+        say('The processed clip could not be decoded for playback.', 'error');
+      });
+      previewBtn.textContent = '■ Stop';
+      a.play().then(
+        () => { if (previewAudio === a) say(`Playing the processed ${prepared ? prepared.seconds.toFixed(1) + 's' : ''} clip…`); },
+        (err) => {
+          stopClipPreview();
+          const why = String((err && err.message) || err);
+          say(err && err.name === 'NotAllowedError'
+            ? 'The browser blocked audio playback for this site — allow autoplay/audio for localhost and try again.'
+            : `Could not play the processed clip: ${why.slice(0, 200)}`, 'error');
+          console.warn('[Voice Studio] clip preview: ' + why);
+        }
+      );
     });
   }
 
