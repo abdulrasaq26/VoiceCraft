@@ -171,6 +171,10 @@
         renderList();
       } catch (e) {
         say(e.message, 'error');
+      } finally {
+        // Re-enabled either way. It was only re-enabled in the catch, so a
+        // SUCCESSFUL upload left the button dead and a second voice could not
+        // be added without reloading the page.
         uploadBtn.disabled = false;
       }
     });

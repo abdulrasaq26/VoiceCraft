@@ -40,12 +40,51 @@ const GLOBALS = new Set(['window', 'document', 'console', 'localStorage', 'index
   'NaN', 'Infinity', 'AudioContext', 'webkitAudioContext', 'Response', 'Headers', 'FormData', 'Intl']);
 
 /** Line and block comments removed, so prose never counts as code. */
+// Comment removal that knows what a string is.
+//
+// The first version was two regexes, and a string literal containing comment
+// punctuation fooled both. storyboard.js sets file.accept = 'image/*', and the
+// /* inside that string opened a block comment that ran for FIFTY-EIGHT lines
+// until it found a real */ - deleting `let previewEl = null;` along with the
+// rest of closePreview. The scan then reported previewEl as an undeclared
+// assignment, which was false, and for as long as that span was swallowed it
+// was also not scanning any of the code inside it, which is the more serious
+// half: a stripper that eats code hides offenders as readily as it invents
+// them.
+//
+// So this walks the source instead, tracking quotes and template literals.
+// Newlines inside block comments are kept so reported line numbers still match
+// the real file.
 function stripComments(src) {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split(String.fromCharCode(10))
-    .map((l) => { const i = l.indexOf('//'); return i >= 0 ? l.slice(0, i) : l; })
-    .join(String.fromCharCode(10));
+  const NL = String.fromCharCode(10);
+  let out = '';
+  let quote = null;          // the ' " or ` we are inside, if any
+  let inLine = false;
+  let inBlock = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    const d = src[i + 1];
+    if (inLine) {
+      if (c === NL) { inLine = false; out += c; }
+      continue;
+    }
+    if (inBlock) {
+      if (c === '*' && d === '/') { inBlock = false; i++; }
+      else if (c === NL) out += c;
+      continue;
+    }
+    if (quote) {
+      out += c;
+      if (c === String.fromCharCode(92)) { out += (d === undefined ? '' : d); i++; continue; }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') { quote = c; out += c; continue; }
+    if (c === '/' && d === '/') { inLine = true; i++; continue; }
+    if (c === '/' && d === '*') { inBlock = true; i++; continue; }
+    out += c;
+  }
+  return out;
 }
 
 function declaredNames(src) {

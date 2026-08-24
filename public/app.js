@@ -888,6 +888,15 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       .catch((err) => {
         if (previewVoiceId !== voiceId) return;
         stopPreview();
+        // Say what went wrong. This used to swallow the error and just reset
+        // the button, so a preview that failed - a dead Fish tunnel, a
+        // reference id the server does not have, an OOM - was indistinguishable
+        // from a preview that did nothing at all. The user sees "I pressed play
+        // and nothing happened" and has no way to find out why, while the very
+        // same failure is what stops the voice generating.
+        const why = String((err && err.message) || err || 'unknown error');
+        showStatus(`Could not preview ${v.name || voiceId}: ${why.slice(0, 300)}`);
+        console.warn('[Voice preview] ' + voiceId + ': ' + why);
       });
   }
 

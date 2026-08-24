@@ -228,6 +228,50 @@
     }
   }
 
+  /**
+   * Store a character's reference portrait.
+   *
+   * This module owns the reference store - the key convention, the database and
+   * every reader - but until now it had no writer, and neither did anything
+   * else. storyboard.js called a bare setReference() that was never defined in
+   * any file, so uploading a portrait threw ReferenceError, generating one threw
+   * ReferenceError, and restoreProject threw on refKey before it finished
+   * restoring the project. Nothing in the application could put a portrait in
+   * the store that ltx-video.js has been reading from all along.
+   */
+  async function setReference(name, blob) {
+    const key = refKey(str(name));
+    if (!key || !blob) throw new Error('a reference needs a name and an image');
+    const db = await idbOpen();
+    try {
+      await new Promise((res, rej) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(blob, key);
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } finally {
+      db.close();
+    }
+    return blob;
+  }
+
+  async function clearReference(name) {
+    const key = refKey(str(name));
+    if (!key) return;
+    const db = await idbOpen();
+    try {
+      await new Promise((res, rej) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(key);
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } finally {
+      db.close();
+    }
+  }
+
   async function hasReference(name) {
     return !!(await referenceBlob(name));
   }
@@ -372,6 +416,8 @@
     promptBlockFor,
     seedFor,
     referenceBlob,
+    setReference,
+    clearReference,
     referenceDataUrl,
     referenceBase64,
     hasReference,

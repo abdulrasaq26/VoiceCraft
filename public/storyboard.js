@@ -1259,6 +1259,59 @@
       });
   }
 
+  // ── Character reference portraits ────────────────────────────────────────
+  //
+  // The store belongs to character-library.js (window.BlvckCast): it owns the
+  // key convention, the database and the readers, and ltx-video.js has been
+  // pulling portraits out of it for the KI path all along. What lives here is
+  // only the in-memory copy this module needs to PAINT the cast panel - a blob
+  // to keep, an object URL to show, and a data URL for anything that wants one
+  // inline.
+  //
+  // These three, plus setReference, refKey and blobToDataUrl, were used
+  // throughout this file and declared in none of it. Every path that touched a
+  // reference threw ReferenceError: uploading one, generating one, deleting
+  // one, and restoreProject, which threw on refKey partway through and left the
+  // rest of the restore undone for any project with a cast.
+  const refBlobs = new Map();
+  const refUrls = new Map();
+  const refDataUrls = new Map();
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ''));
+      r.onerror = () => reject(r.error || new Error('could not read the image'));
+      r.readAsDataURL(blob);
+    });
+  }
+
+  /** Persist a portrait, then hold it for the cast panel. */
+  async function setReference(name, blob) {
+    if (!name || !blob) throw new Error('a reference needs a name and an image');
+    if (!window.BlvckCast || !window.BlvckCast.setReference) {
+      throw new Error('the character library is not loaded');
+    }
+    await window.BlvckCast.setReference(name, blob);
+    const dataUrl = await blobToDataUrl(blob);
+    if (refUrls.has(name)) URL.revokeObjectURL(refUrls.get(name));
+    refBlobs.set(name, blob);
+    refUrls.set(name, URL.createObjectURL(blob));
+    refDataUrls.set(name, dataUrl);
+    return blob;
+  }
+
+  /** Forget one, on disk and on screen. */
+  async function clearReference(name) {
+    if (window.BlvckCast && window.BlvckCast.clearReference) {
+      await window.BlvckCast.clearReference(name);
+    }
+    if (refUrls.has(name)) URL.revokeObjectURL(refUrls.get(name));
+    refBlobs.delete(name);
+    refUrls.delete(name);
+    refDataUrls.delete(name);
+  }
+
   async function autoBuildRecurringReferences() {
     const recurring = recurringCharacters();
     if (!recurring.length) return;
@@ -1372,11 +1425,7 @@
         clr.textContent = 'Clear';
         clr.disabled = refBusy || running;
         clr.addEventListener('click', async () => {
-          refBlobs.delete(name);
-          if (refUrls.has(name)) URL.revokeObjectURL(refUrls.get(name));
-          refUrls.delete(name);
-          refDataUrls.delete(name);
-          await idbDelete(refKey(name));
+          await clearReference(name);
           renderCast();
           saveProject();
         });
@@ -1415,6 +1464,51 @@
     if (e.key === 'Escape') closePreview();
   }
 
+  /**
+   * The window of the source this scene actually uses, if any.
+   *
+   * StockMedia owns the excerpt's shape - there are two spellings of it in
+   * circulation - so the reader lives there and this asks rather than parsing
+   * the fields again.
+   */
+  function sceneExcerptWindow(scene) {
+    const ex = (scene && scene.stockAsset && scene.stockAsset.excerpt) || null;
+    if (!ex) return null;
+    if (window.StockMedia && window.StockMedia.excerptWindow) {
+      return window.StockMedia.excerptWindow(ex);
+    }
+    const inn = Number(ex.sourceIn != null ? ex.sourceIn : ex.start);
+    const out = Number(ex.sourceOut != null ? ex.sourceOut : ex.end);
+    return (Number.isFinite(inn) && Number.isFinite(out) && out > inn) ? { in: inn, out } : null;
+  }
+
+  /**
+   * Hold a player inside the excerpt instead of playing the whole source.
+   *
+   * The scene uses nine seconds of a thirteen-minute film. The card was
+   * showing the film: it seeked to 0.1s, looped the lot, and read "0:22 /
+   * 13:01" - which is why the app looked like it had imported the entire
+   * source as the scene, when the excerpt beside it said otherwise and the
+   * export had been using the right window all along.
+   *
+   * The native controls stay. A producer checking an archival cut wants to be
+   * able to scrub into the surrounding film, and the scrubber sitting at 9:27
+   * of 13:01 tells the truth about where this shot came from. What changes is
+   * where it starts and where it loops.
+   */
+  function holdInsideExcerpt(video, win) {
+    if (!win) return;
+    video.loop = false;                       // looping would go back to 0:00
+    const toStart = () => { try { video.currentTime = win.in; } catch (e) { /* codec refused the seek */ } };
+    video.addEventListener('loadedmetadata', toStart, { once: true });
+    if (video.readyState >= 1) toStart();
+    video.addEventListener('timeupdate', () => {
+      // Only pull it back when it runs PAST the window. Scrubbing backwards
+      // into the source is deliberate and must not be fought.
+      if (video.currentTime >= win.out) toStart();
+    });
+  }
+
   function openPreview(scene, url, isVideo) {
     closePreview();
     if (!url) return;
@@ -1435,6 +1529,7 @@
       media.autoplay = true;
       media.loop = true;
       media.playsInline = true;
+      holdInsideExcerpt(media, sceneExcerptWindow(scene));
     } else {
       media.alt = `Scene ${scene.index}`;
     }
@@ -1805,11 +1900,14 @@
         // 'metadata' loads duration but decodes no picture, so a rendered clip
         // shows as a black player until someone presses play.
         thumb.preload = 'auto';
+        const win = sceneExcerptWindow(scene);
         thumb.addEventListener('loadeddata', () => {
+          if (win) return;                    // holdInsideExcerpt owns the position
           if (thumb.currentTime === 0) {
             try { thumb.currentTime = 0.1; } catch { /* some codecs refuse an early seek */ }
           }
         }, { once: true });
+        holdInsideExcerpt(thumb, win);
       } else {
         thumb = document.createElement('img');
         thumb.className = 'sb-thumb';
@@ -2520,7 +2618,8 @@
     if (useRefsEl && typeof saved.useRefs === 'boolean') useRefsEl.checked = saved.useRefs;
     for (const c of (bible && bible.characters) || []) {
       if (!c.name) continue;
-      const blob = await idbGet(refKey(c.name));
+      const blob = window.BlvckCast && window.BlvckCast.referenceBlob
+        ? await window.BlvckCast.referenceBlob(c.name) : null;
       if (blob) {
         refBlobs.set(c.name, blob);
         refUrls.set(c.name, URL.createObjectURL(blob));
