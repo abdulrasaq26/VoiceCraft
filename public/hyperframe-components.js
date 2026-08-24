@@ -34,15 +34,33 @@
     rule: 'rgba(242,245,248,0.18)',
     serif: 'Georgia, "Times New Roman", serif',
     mono: 'ui-monospace, "SF Mono", Menlo, monospace',
+    // How the film moves. An archival film breathes and a data brief snaps,
+    // and that is a difference a viewer names before they name a colour.
+    ease: 'power3.out',
+    pace: 1,
     // The caption band. Subtitles are burned in by the compositor AFTER this
     // video becomes a clip, so a composition that fills the bottom of the frame
     // gets written over. Every component keeps out of it.
     safeBottom: 0.24
   };
 
+  /**
+   * The tokens in force.
+   *
+   * The house style decides these, once, for the whole documentary — the
+   * fallback here is what a project with no style chosen looks like, not a
+   * second opinion. A project may still override any single token.
+   */
   function tokensFor(project) {
-    return Object.assign({}, DEFAULT_TOKENS, (project && project.visualLanguage) || {});
+    const S = window.BlvckHouseStyle;
+    const styled = S ? S.current(project).tokens : {};
+    return Object.assign({}, DEFAULT_TOKENS, styled, (project && project.visualLanguage) || {});
   }
+
+  // Durations are written at the house pace: every number in a component's
+  // timeline is a broadcast-brief number, and a style that breathes stretches
+  // them all together rather than each component having its own opinion.
+  const beat = (t) => (n) => Math.round(n * (Number(t.pace) || 1) * 100) / 100;
 
   // ── Components ───────────────────────────────────────────────────────────
   //
@@ -54,6 +72,7 @@
     /** A line worth reading, with a kicker above it and a rule beneath. */
     title(spec, t, i) {
       const id = 'title' + i;
+      const b = beat(t);
       return {
         html: `<div id="${id}" class="clip hf-title" data-start="0" data-duration="{{D}}" data-track-index="${1 + i}">
   ${spec.kicker ? `<div id="${id}-k" class="hf-kicker">${esc(spec.kicker)}</div>` : ''}
@@ -65,15 +84,16 @@
 .hf-kicker{font-family:${t.mono};font-size:26px;letter-spacing:.28em;text-transform:uppercase;color:${t.accent}}
 .hf-head{font-family:${t.serif};font-size:var(--hf-head,104px);line-height:1.05;letter-spacing:-.02em;color:${t.ink};margin-top:18px}
 .hf-rule{margin-top:30px;width:0;height:6px;background:${t.accent}}`,
-        timeline: `tl.from("#${id}-k",{opacity:0,y:16,duration:.5,ease:"power2.out"},0.08)
-  .from("#${id}-h",{opacity:0,y:38,duration:.75,ease:"power3.out"},0.22)
-  .to("#${id}-r",{width:420,duration:.7,ease:"power2.inOut"},0.75);`
+        timeline: `tl.from("#${id}-k",{opacity:0,y:16,duration:${b(.5)},ease:"${t.ease}"},${b(0.08)})
+  .from("#${id}-h",{opacity:0,y:38,duration:${b(.75)},ease:"${t.ease}"},${b(0.22)})
+  .to("#${id}-r",{width:420,duration:${b(.7)},ease:"${t.ease}"},${b(0.75)});`
       };
     },
 
     /** One number, and what it is a number of. */
     stat(spec, t, i) {
       const id = 'stat' + i;
+      const b = beat(t);
       return {
         html: `<div id="${id}" class="clip hf-stat" data-start="0" data-duration="{{D}}" data-track-index="${1 + i}">
   <div id="${id}-v" class="hf-stat-v">${esc(spec.value || '')}</div>
@@ -83,8 +103,8 @@
         css: `.hf-stat{text-align:right}
 .hf-stat-v{font-family:${t.serif};font-size:var(--hf-stat,190px);line-height:.95;color:${t.accent};letter-spacing:-.03em}
 .hf-stat-l{font-family:${t.mono};font-size:24px;letter-spacing:.12em;text-transform:uppercase;color:${t.dim};margin-top:16px}`,
-        timeline: `tl.from("#${id}-v",{opacity:0,scale:.86,duration:.7,ease:"back.out(1.6)",transformOrigin:"100% 50%"},0.3)
-  .from("#${id}-l",{opacity:0,y:12,duration:.5,ease:"power2.out"},0.62);`
+        timeline: `tl.from("#${id}-v",{opacity:0,scale:.86,duration:${b(.7)},ease:"back.out(1.6)",transformOrigin:"100% 50%"},${b(0.3)})
+  .from("#${id}-l",{opacity:0,y:12,duration:${b(.5)},ease:"${t.ease}"},${b(0.62)});`
       };
     },
 
@@ -96,6 +116,9 @@
      */
     progression(spec, t, i) {
       const id = 'prog' + i;
+      const b = beat(t);
+      const S = window.BlvckHouseStyle;
+      const glow = S ? S.rgba(t.accent, 0.16) : 'rgba(245,179,1,.16)';
       const steps = (spec.items || []).slice(0, 5);
       const rows = steps.map((s, n) => `
   <div id="${id}-s${n}" class="hf-step${n === steps.length - 1 ? ' hf-step-last' : ''}">
@@ -108,8 +131,8 @@
 .hf-step{display:flex;align-items:center;gap:22px;font-family:${t.serif};font-size:54px;color:${t.dim}}
 .hf-step-last{color:${t.ink}}
 .hf-dot{width:18px;height:18px;border-radius:50%;background:${t.rule};flex:none}
-.hf-step-last .hf-dot{background:${t.accent};box-shadow:0 0 0 8px rgba(245,179,1,.16)}`,
-        timeline: `tl.from("#${id} .hf-step",{opacity:0,x:-26,duration:.55,ease:"power2.out",stagger:.16},0.25);`
+.hf-step-last .hf-dot{background:${t.accent};box-shadow:0 0 0 8px ${glow}}`,
+        timeline: `tl.from("#${id} .hf-step",{opacity:0,x:-26,duration:${b(.55)},ease:"${t.ease}",stagger:${b(.16)}},${b(0.25)});`
       };
     },
 
@@ -143,6 +166,7 @@
     /** An approved image, given room and a caption. */
     image(spec, t, i) {
       const id = 'img' + i;
+      const b = beat(t);
       return {
         html: `<div id="${id}" class="clip hf-img" data-start="0" data-duration="{{D}}" data-track-index="${1 + i}">
   <img id="${id}-p" src="assets/${esc(spec.file)}" alt="${esc(spec.caption || '')}" />
@@ -152,7 +176,7 @@
         css: `.hf-img{width:100%}
 .hf-img img{width:100%;height:auto;max-height:520px;object-fit:cover;border-radius:10px;display:block}
 .hf-cap{font-family:${t.mono};font-size:20px;color:${t.dim};margin-top:14px;letter-spacing:.04em}`,
-        timeline: `tl.from("#${id}-p",{opacity:0,scale:1.06,duration:.9,ease:"power2.out"},0.2);`
+        timeline: `tl.from("#${id}-p",{opacity:0,scale:1.06,duration:${b(.9)},ease:"${t.ease}"},${b(0.2)});`
       };
     }
   };

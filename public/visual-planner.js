@@ -30,7 +30,15 @@
 
   const MODES = ['FOOTAGE', 'HYPERFRAME', 'HYBRID'];
   const DEFAULT_MODE = 'FOOTAGE';
-  const DECISION_TIMEOUT_MS = 45000;
+  // NIM answers a request this size in 20-45s when it is healthy — the adapter
+  // records 42s and 20s across three identical calls. A 45s ceiling therefore
+  // sits ON the edge of normal, and a planner that times out does not report an
+  // error: it falls back to FOOTAGE, which is a decision-shaped answer produced
+  // by an outage. Measured here on a cold endpoint, the first beat of a run
+  // exceeded 45s while the next two answered in seconds. The budget has to be
+  // wider than the provider's slow-but-healthy case; it exists to end a call
+  // that is never coming back, not to race one that is merely slow.
+  const DECISION_TIMEOUT_MS = 90000;
 
   const str = (v) => String(v == null ? '' : v).trim();
 
@@ -77,24 +85,28 @@
       'process, an object, weather, work being done. Those are FOOTAGE, and',
       'real footage is almost always better than a drawing of the same thing.',
       '',
-      'Other sentences are about things no camera ever saw: a quantity, a',
-      'comparison, a chain of causes, a hierarchy, a sequence of dates, a share',
-      'of a whole, an idea about how something is organised. Searching for',
-      'footage of those produces a stock clip that is merely ADJACENT to the',
-      'point — a person at a desk standing in for a sentence about authority.',
-      'Those are HYPERFRAME, and they need no footage at all.',
+      'Other sentences have NOTHING TO POINT A CAMERA AT. The subject itself is',
+      'an abstraction — a hierarchy, a chain of causes, a comparison between',
+      'ideas, how something is organised — and any footage would be a stand-in',
+      'chosen for being vaguely related, a person at a desk doing duty for a',
+      'sentence about authority. Those are HYPERFRAME, and they need no footage',
+      'at all.',
       '',
-      'And some carry both. READ THE WHOLE SENTENCE before answering: finding',
-      'something filmable in the first clause does not settle it. A sentence can',
-      'name a real event AND then say how much, how many, how it compares, or',
-      'how it has changed - and a camera pointed at the event records none of',
-      'that. When both are true the answer is HYBRID, and answering FOOTAGE',
-      'throws away the half the shot cannot carry.',
+      'And some carry both. Ask the sentence two questions, and IGNORE THE ORDER',
+      'OF ITS CLAUSES — which half comes first decides nothing:',
       '',
-      'The shape to watch for: a sentence that opens with something being done',
-      'and closes with a number, a share, a date or a comparison. The opening',
-      'is filmable and the closing is not, and stopping at the opening loses',
-      'half the sentence.',
+      '  1. Is there something here a camera could be pointed at? A place, an',
+      '     object, people, work being done, weather.',
+      '  2. Does the sentence also say something about that thing which no',
+      '     camera records? How many, what share, how it compares, how it has',
+      '     changed, what it costs.',
+      '',
+      'When both answers are yes the mode is HYBRID: the shot carries the',
+      'subject and the graphic carries what the shot cannot say. A quantity',
+      'is not by itself a reason to answer HYPERFRAME — the question is whether',
+      'the thing being counted is a thing that exists and could be filmed.',
+      'Answering FOOTAGE loses the half the shot cannot carry; answering',
+      'HYPERFRAME throws away a real place that could have been filmed.',
       '',
       'Two things to weigh beyond the sentence itself. A film made entirely of',
       'one medium is monotonous, so if the last several beats were all the same',

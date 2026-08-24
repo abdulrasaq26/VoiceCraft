@@ -143,6 +143,12 @@
       out.push(line('conveys', esc(scene.visualIntent.concept)));
     }
     if (hf.anchorPhrase) out.push(line('anchored to', `“${esc(hf.anchorPhrase)}”`));
+    const S = window.BlvckHouseStyle;
+    if (S && hf.style) {
+      const st = S.STYLES[hf.style];
+      out.push(line('made in', esc(st ? st.label : hf.style)
+        + (st ? ` <span style="opacity:.6">· at most ${st.maxElements} on screen at once</span>` : '')));
+    }
     if (Array.isArray(hf.elements) && hf.elements.length) {
       out.push(line('built from', hf.elements.map((k) =>
         `<span class="badge standard" style="font-size:.66rem">${esc(k)}</span>`).join(' ')));
@@ -330,8 +336,105 @@
     fill(body);
   }
 
+  // ── The house style ─────────────────────────────────────────────────────
+  //
+  // At the top of the workspace rather than beside a scene, because it is not
+  // a per-scene choice: a documentary has one look and every beat is an
+  // instance of it. Changing it here changes what the next build makes.
+  function styleBar() {
+    const S = window.BlvckHouseStyle;
+    if (!S || !beatsEl || document.getElementById('hf-style-bar')) return;
+
+    const bar = document.createElement('div');
+    bar.id = 'hf-style-bar';
+    bar.style.cssText = 'display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;'
+      + 'margin:.5rem 0 .9rem;padding:.6rem .75rem;border:1px solid var(--rule,#243);border-radius:8px';
+
+    const label = document.createElement('span');
+    label.style.cssText = 'font-size:.76rem;color:var(--faint,#8b98a5)';
+    label.textContent = 'This film is made in';
+
+    const pick = document.createElement('select');
+    pick.className = 'input small';
+    pick.style.cssText = 'font-size:.78rem;max-width:16rem';
+    for (const st of S.styles()) {
+      const opt = document.createElement('option');
+      opt.value = st.name; opt.textContent = st.label; opt.title = st.description;
+      pick.appendChild(opt);
+    }
+    pick.value = S.current().name;
+    pick.addEventListener('change', () => {
+      S.set(pick.value);
+      say(`The film is now made in ${S.current().label}. Built scenes keep the look `
+          + 'they were made in until they are rebuilt.', 'info');
+      paintStyle(bar);
+      paint();
+    });
+
+    const file = document.createElement('input');
+    file.type = 'file'; file.accept = 'image/*'; file.hidden = true;
+    const learn = document.createElement('button');
+    learn.type = 'button';
+    learn.className = 'btn ghost small';
+    learn.style.fontSize = '.72rem';
+    learn.textContent = 'Learn from a picture';
+    learn.title = 'Take the palette from a reference frame. The result is forced to stay '
+      + 'legible: a palette copied straight off a photograph usually is not.';
+    learn.addEventListener('click', () => file.click());
+    file.addEventListener('change', async () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      try {
+        const r = await S.fromReference(f, { name: f.name });
+        say(`The look now comes from ${f.name}. Type reads at ${r.contrast.ink}:1 against `
+            + `the ground, the accent at ${r.contrast.accent}:1.`, 'success');
+        paintStyle(bar);
+        paint();
+      } catch (err) {
+        say('That picture could not be read: ' + err.message, 'error');
+      }
+      file.value = '';
+    });
+
+    bar.append(label, pick, learn, file);
+    beatsEl.parentNode.insertBefore(bar, beatsEl);
+    paintStyle(bar);
+  }
+
+  /** The swatches, so the look in force is visible rather than named. */
+  function paintStyle(bar) {
+    const S = window.BlvckHouseStyle;
+    if (!S) return;
+    const st = S.current();
+    let strip = bar.querySelector('.hf-swatches');
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.className = 'hf-swatches';
+      strip.style.cssText = 'display:flex;gap:.35rem;align-items:center;margin-left:auto';
+      bar.appendChild(strip);
+    }
+    const chip = (c, title) => `<span title="${esc(title)}" style="width:20px;height:20px;`
+      + `border-radius:4px;background:${esc(c)};border:1px solid rgba(255,255,255,.18);`
+      + 'display:inline-block"></span>';
+    strip.innerHTML = chip(st.tokens.bg, 'ground') + chip(st.tokens.ink, 'type')
+      + chip(st.tokens.accent, 'accent')
+      + (st.reference
+         ? `<span style="font-size:.7rem;color:var(--faint,#8b98a5);margin-left:.4rem">`
+           + `learned from ${esc(st.reference.name)} `
+           + `<button type="button" class="btn ghost small" id="hf-style-forget" `
+           + `style="font-size:.66rem">forget</button></span>`
+         : '');
+    const forget = strip.querySelector('#hf-style-forget');
+    if (forget) forget.addEventListener('click', () => {
+      S.clearReference();
+      say('The learned palette is gone. The style itself is unchanged.', 'info');
+      paintStyle(bar); paint();
+    });
+  }
+
   function paint() {
     if (!beatsEl) return;
+    styleBar();
     const list = scenes();
     beatsEl.innerHTML = '';
     if (!list.length) {

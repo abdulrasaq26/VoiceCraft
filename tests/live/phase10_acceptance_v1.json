@@ -1,0 +1,121 @@
+{
+  "at": "2026-08-24T15:06:06.297Z",
+  "beats": [
+    {
+      "index": 1,
+      "mode": "FOOTAGE",
+      "standIn": false,
+      "bytes": 1965320,
+      "asset": {
+        "provider": "pexels",
+        "id": "29844413",
+        "sourceUrl": "https://www.pexels.com/video/vibrant-fishing-boats-in-a-bustling-harbor-29844413/",
+        "claimed": null,
+        "measured": null,
+        "excerpt": null
+      }
+    },
+    {
+      "index": 2,
+      "mode": "HYPERFRAME",
+      "elements": [
+        "title"
+      ],
+      "style": "archival",
+      "renderMs": 33458,
+      "concept": "Authority decreases as you move up a hierarchy",
+      "evaluation": {
+        "layout": {
+          "ok": true,
+          "density": 0.15,
+          "problems": []
+        },
+        "reading": {
+          "ran": true,
+          "sees": "The image is a slide with the title \"Authority Decreases with Rank\" and a subtitle \"A Hierarchy's Hidden Truth\". The background is beige, and there is a red line undernea",
+          "overlap": 0.3,
+          "why": ""
+        },
+        "revised": false,
+        "at": 1787584158373
+      }
+    },
+    {
+      "index": 3,
+      "mode": "HYBRID",
+      "elements": [
+        "footage",
+        "title"
+      ],
+      "style": "archival",
+      "renderMs": 53865,
+      "concept": "Limited fishing boat activity on the quay",
+      "evaluation": {
+        "layout": {
+          "ok": true,
+          "density": 0.11,
+          "problems": []
+        },
+        "reading": {
+          "ran": true,
+          "sees": "The image shows a gradient background with text in the top-left corner, featuring a title and a subtitle. The title reads \"A Third of Boats Remain Idle\" and the subtitle",
+          "overlap": 0,
+          "why": ""
+        },
+        "revised": false,
+        "at": 1787584235094
+      }
+    }
+  ],
+  "film": {
+    "ok": true,
+    "bytes": 2924402,
+    "clips": 3,
+    "duration": 17.98,
+    "w": 1280,
+    "h": 720,
+    "frames": [
+      {
+        "t": 3,
+        "paper": 2,
+        "blue": 0,
+        "ink": 5
+      },
+      {
+        "t": 9,
+        "paper": 95,
+        "blue": 0,
+        "ink": 3
+      },
+      {
+        "t": 15,
+        "paper": 36,
+        "blue": 50,
+        "ink": 3
+      }
+    ]
+  },
+  "plan": [
+    {
+      "index": 1,
+      "mode": "FOOTAGE",
+      "ran": true,
+      "reason": "The sentence describes a specific scene of fishing boats returning to harbor at dawn, which can be captured by a camera.",
+      "confidence": 0.9
+    },
+    {
+      "index": 2,
+      "mode": "HYPERFRAME",
+      "ran": true,
+      "reason": "The sentence describes an abstract concept of authority and hierarchy, with no tangible object or scene that a camera could be pointed at to directly illustrate the idea.",
+      "confidence": 0.9
+    },
+    {
+      "index": 3,
+      "mode": "HYBRID",
+      "ran": true,
+      "reason": "The sentence describes a physical scene of morning work on the quay with ropes being checked and stacked, which can be filmed, while also conveying an abstract idea about the number of boats that will put to sea, which cannot be captured by a camera alone.",
+      "confidence": 0.8
+    }
+  ]
+}

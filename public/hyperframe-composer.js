@@ -123,9 +123,17 @@
 
   // ── The Composer ─────────────────────────────────────────────────────────
 
-  function composePrompt({ narration, intent, assetLines, unmet, hasFootage, revision }) {
+  /** The house style, or a plain default if the style module is not loaded. */
+  function styleOf(project) {
+    const S = window.BlvckHouseStyle;
+    return S ? S.current(project)
+             : { name: 'broadcast-brief', maxElements: MAX_ELEMENTS, prefers: [], guidance: [] };
+  }
+
+  function composePrompt({ narration, intent, assetLines, unmet, hasFootage, revision, project }) {
     const NL = String.fromCharCode(10);
     const C = window.BlvckHyperFrameComponents;
+    const S = window.BlvckHouseStyle;
     const lines = [
       'Build one beat of a documentary out of the components below. There is no',
       'footage; this is the whole picture the viewer sees.',
@@ -134,6 +142,13 @@
       'THE VIEWER SHOULD UNDERSTAND: ' + str(intent.concept)
     ];
     if (intent.conveys.length) lines.push('IT MUST GET ACROSS: ' + intent.conveys.join('; '));
+
+    // A film has one way of doing this, and the beat is an instance of it. The
+    // colours and the motion are settled elsewhere and are not the model's to
+    // touch; what belongs here is what the house REACHES FOR — a brief built
+    // around pictures asks a different question of a sentence than one built
+    // around figures.
+    if (S) lines.push('', S.guidanceFor(project));
 
     if (hasFootage) {
       lines.push('', 'THIS BEAT ALREADY HAS FOOTAGE, and it will fill the frame behind',
@@ -163,7 +178,7 @@
       'already decided and are not yours to set — supply only the words and the',
       'asset ids.',
       '',
-      'Between one and ' + MAX_ELEMENTS + ' components, in the order they should',
+      'Between one and ' + limitFor(project) + ' components, in the order they should',
       'be layered. Keep text short: this is read in seconds, on a screen, once.',
       '',
       'Reply with ONLY this JSON:',
@@ -179,17 +194,27 @@
    * refused loudly rather than dropped, because a silently missing element is
    * how a capability gets promised and never delivered.
    */
-  function parseScene(text, manifest) {
+  /** How much this film puts on screen at once. Never above the hard ceiling. */
+  function limitFor(project) {
+    const n = Number(styleOf(project).maxElements);
+    return Math.max(1, Math.min(MAX_ELEMENTS, Number.isFinite(n) ? n : MAX_ELEMENTS));
+  }
+
+  function parseScene(text, manifest, project) {
     const obj = firstJson(text);
     if (!obj) return { ok: false, why: 'the composer did not answer in JSON', elements: [], rejected: [] };
 
     const C = window.BlvckHyperFrameComponents;
     const byId = new Map((manifest && manifest.assets || []).map((a) => [a.assetId, a]));
+    const limit = limitFor(project);
     const rejected = [];
     const elements = [];
 
     for (const row of (Array.isArray(obj.elements) ? obj.elements : [])) {
-      if (elements.length >= MAX_ELEMENTS) { rejected.push({ why: 'beyond the element limit', row }); continue; }
+      if (elements.length >= limit) {
+        rejected.push({ why: `beyond what this film puts on screen at once (${limit})`, row });
+        continue;
+      }
       const kind = str(row && row.kind).toLowerCase();
 
       const spec = { kind };
@@ -224,20 +249,20 @@
   }
 
   /** Turn an intent into a buildable scene plan. Never throws. */
-  async function composeScene({ narration, intent, manifest, hasFootage, revision } = {}) {
+  async function composeScene({ narration, intent, manifest, hasFootage, revision, project } = {}) {
     if (!available()) return { ok: false, why: 'the composer is not reachable' };
     const R = window.BlvckAssetRegistry;
     const assetLines = manifest && manifest.assets && manifest.assets.length
       ? R.describeForPrompt(manifest) : '';
     let raw;
     try {
-      raw = await ask(composePrompt({ narration, intent, assetLines, hasFootage, revision,
+      raw = await ask(composePrompt({ narration, intent, assetLines, hasFootage, revision, project,
                                       unmet: (manifest && manifest.unmet) || [] }),
                       { maxTokens: 700, timeoutMs: COMPOSER_TIMEOUT_MS });
     } catch (err) {
       return { ok: false, why: 'the composer failed: ' + err.message };
     }
-    const plan = parseScene(raw, manifest);
+    const plan = parseScene(raw, manifest, project);
     plan.raw = raw;
     return plan;
   }
@@ -304,7 +329,7 @@
     // 3. Which components carry it?
     say('composing the scene');
     let plan = await composeScene({ narration: scene.subtitle, intent: d.intent, manifest,
-                                    hasFootage: !!shot });
+                                    hasFootage: !!shot, project });
     if (!plan.ok) return fail('composer', plan.why);
 
     // The shot is not the Composer's to request or to leave out: if this beat
@@ -340,8 +365,8 @@
     if (EV && !layout.ok && layout.problems.some((x) => x.fixable)) {
       say('the layout has problems — composing once more');
       const note = EV.revisionNote({ fixable: layout.problems.filter((x) => x.fixable) });
-      const second = await composeScene({ narration: scene.subtitle, intent: d.intent,
-                                          manifest, hasFootage: !!shot, revision: note });
+      const second = await composeScene({ narration: scene.subtitle, intent: d.intent, manifest,
+                                          hasFootage: !!shot, project, revision: note });
       if (second.ok) {
         if (shot) {
           second.elements = second.elements.filter((e) => e.kind !== 'footage');
@@ -393,6 +418,7 @@
 
       scene.hyperFrame = Object.assign({}, scene.hyperFrame, {
         mode: HF_MODE,
+        style: styleOf(project).name,
         elements: plan.elements.map((e) => e.kind),
         rejected: (plan.rejected || []).map((r) => r.why),
         reason: plan.reason || d.intent.concept,
@@ -411,6 +437,8 @@
     direct, composeScene, runRoute, available,
     _parseIntent: parseIntent,
     _parseScene: parseScene,
+    _limitFor: limitFor,
+    _styleOf: styleOf,
     _intentPrompt: intentPrompt,
     _composePrompt: composePrompt,
     MAX_ELEMENTS

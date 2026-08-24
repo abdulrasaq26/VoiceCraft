@@ -826,6 +826,72 @@
     });
   }
 
+  /**
+   * What the downloaded file actually is, rather than what the catalogue said.
+   *
+   * An excerpt is chosen before the download, from the provider's own metadata,
+   * because deciding where to cut is the cheap part and downloading is not.
+   * That is fine until the metadata is wrong — and it is: a Pixabay item that
+   * advertised a longer runtime arrived as an 11.7s file, and the 8.0-14.0s
+   * window planned against the advertised figure could not be cut out of it.
+   * The export gate refused the clip, correctly, with "excerpt ends at 14.0s
+   * but the file is only 11.7s", which is a true sentence about a scene the
+   * producer had no way to fix.
+   *
+   * So the window is reconciled with the file once the file exists. Never
+   * widened, only moved back or dropped: a shorter file cannot contain more.
+   */
+  function measuredDuration(blob) {
+    return new Promise((resolve) => {
+      let url = '';
+      try { url = URL.createObjectURL(blob); } catch (e) { resolve(0); return; }
+      const v = document.createElement('video');
+      const done = (d) => { try { URL.revokeObjectURL(url); } catch (e) {} resolve(d); };
+      v.preload = 'metadata';
+      v.onloadedmetadata = () => done(Number.isFinite(v.duration) ? v.duration : 0);
+      v.onerror = () => done(0);
+      setTimeout(() => done(Number.isFinite(v.duration) ? v.duration : 0), 15000);
+      v.src = url;
+    });
+  }
+
+  async function reconcileExcerpt(asset, blob) {
+    if (!blob || !/^video\//.test(blob.type || '') && asset.type !== 'video') return asset;
+    const real = await measuredDuration(blob);
+    if (!(real > 0)) return asset;
+
+    const claimed = Number(asset.duration || 0);
+    asset.measuredDuration = Math.round(real * 100) / 100;
+    if (Math.abs(claimed - real) > 0.5) {
+      asset.durationClaimed = claimed || null;
+      asset.duration = asset.measuredDuration;
+    }
+
+    const w = excerptWindow(asset.excerpt);
+    if (!w || w.out <= real + 0.05) return asset;
+
+    const want = Math.min(Math.max(0.5, w.out - w.in), real);
+    if (real <= want * 1.5) {
+      // The file is already about the length the beat wanted. Cutting a window
+      // out of it would only lose footage.
+      asset.excerpt = null;
+      return asset;
+    }
+    const start = Math.max(0, Math.min(w.in, real - want));
+    asset.excerpt = Object.assign({}, asset.excerpt, {
+      start: Math.round(start * 10) / 10,
+      end: Math.round((start + want) * 10) / 10,
+      duration: Math.round(want * 10) / 10,
+      sourceDuration: asset.measuredDuration,
+      sourceIn: undefined, sourceOut: undefined,
+      method: (asset.excerpt.method || 'heuristic_window') + '_clamped',
+      note: `The file is ${asset.measuredDuration}s, not the `
+        + `${claimed || 'unstated'}s the library advertised, so the window was moved `
+        + 'back to fit inside it.'
+    });
+    return asset;
+  }
+
   async function downloadAsset(asset) {
     const cacheKey = `${asset.provider}:${asset.id}`;
 
@@ -1183,6 +1249,7 @@
           asset.excerpt = await chooseExcerpt(asset, wantSeconds, excerpt.selectionIntent);
           asset.treatment = planTreatment(asset);
           const blob = await downloadAsset(asset);
+          await reconcileExcerpt(asset, blob);
           markUsed(asset);
           _attachStockMeta(scene, asset, directorQueries, 'primary');
           console.log(`[StockMedia] scene ${scene.index}: ${asset.provider}:${asset.id} `
@@ -1221,6 +1288,7 @@
         for (const asset of ranked) {
           try {
             const blob = await downloadAsset(asset);
+            await reconcileExcerpt(asset, blob);
             markUsed(asset);
             _attachStockMeta(scene, asset, broaderQueries, 'broader_query');
             return blob;
@@ -1239,6 +1307,7 @@
         for (const asset of ranked) {
           try {
             const blob = await downloadAsset(asset);
+            await reconcileExcerpt(asset, blob);
             markUsed(asset);
             _attachStockMeta(scene, asset, directorQueries, 'photo_fallback');
             return blob;
@@ -1470,6 +1539,7 @@
     const ranked  = rank(results, { orientation, mediaType, minimumDuration: 2, targetDuration: sceneDurationSec(scene) }, usedIds);
     const asset   = ranked[0];
     const blob    = await downloadAsset(asset);
+    await reconcileExcerpt(asset, blob);
     markUsed(asset);
     _attachStockMeta(scene, asset, [query], 'manual_override');
     scene.stockLocked = false;
@@ -1519,6 +1589,8 @@
     isConfigured,
     planExcerpt,
     chooseExcerpt,
+    reconcileExcerpt,
+    measuredDuration,
     excerptWindow,
     planTreatment,
     formatTimecode,
