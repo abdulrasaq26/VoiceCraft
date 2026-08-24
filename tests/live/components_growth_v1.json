@@ -1,0 +1,120 @@
+{
+  "at": "2026-08-24T20:35:01.349Z",
+  "kinds": [
+    "title",
+    "stat",
+    "progression",
+    "comparison",
+    "timeline",
+    "footage",
+    "image"
+  ],
+  "bars": {
+    "even": {
+      "track": 312,
+      "bars": [
+        78,
+        156,
+        312
+      ],
+      "labels": [
+        "Rail",
+        "Road",
+        "Air"
+      ],
+      "values": [
+        "25 tonnes",
+        "50 tonnes",
+        "100 tonnes"
+      ],
+      "ran": true
+    },
+    "extreme": {
+      "track": 312,
+      "bars": [
+        3,
+        12,
+        312
+      ],
+      "labels": [
+        "Cargo Ship",
+        "Lorry",
+        "Plane"
+      ],
+      "values": [
+        "3g/km",
+        "20g/km",
+        "500g/km"
+      ],
+      "ran": true
+    }
+  },
+  "timeline": {
+    "whens": [
+      "1933",
+      "1935",
+      "1937"
+    ],
+    "whats": [
+      "Surveying started",
+      "Towers topped out",
+      "First cars crossed"
+    ],
+    "tops": [
+      339,
+      412,
+      485
+    ],
+    "layout": {
+      "ok": true,
+      "problems": [],
+      "density": 0.09
+    }
+  },
+  "houses": {
+    "broadcast-brief": {
+      "ok": true,
+      "problems": [],
+      "density": 0.11,
+      "barColour": "#f5b301",
+      "prefers": [
+        "title",
+        "stat",
+        "progression"
+      ]
+    },
+    "archival": {
+      "ok": true,
+      "problems": [],
+      "density": 0.12,
+      "barColour": "#8c2f1e",
+      "prefers": [
+        "image",
+        "title",
+        "timeline"
+      ]
+    },
+    "data-brief": {
+      "ok": true,
+      "problems": [],
+      "density": 0.12,
+      "barColour": "#39d0d8",
+      "prefers": [
+        "stat",
+        "comparison",
+        "progression"
+      ]
+    }
+  },
+  "rendered": {
+    "bytes": 36899,
+    "renderMs": 38525,
+    "seconds": 5,
+    "at": 3,
+    "bands": [
+      9,
+      12,
+      312
+    ]
+  }
+}

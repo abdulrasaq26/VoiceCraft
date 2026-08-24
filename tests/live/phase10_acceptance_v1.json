@@ -1,19 +1,12 @@
 {
-  "at": "2026-08-24T15:06:06.297Z",
+  "at": "2026-08-24T20:54:26.736Z",
   "beats": [
     {
       "index": 1,
       "mode": "FOOTAGE",
-      "standIn": false,
-      "bytes": 1965320,
-      "asset": {
-        "provider": "pexels",
-        "id": "29844413",
-        "sourceUrl": "https://www.pexels.com/video/vibrant-fishing-boats-in-a-bustling-harbor-29844413/",
-        "claimed": null,
-        "measured": null,
-        "excerpt": null
-      }
+      "standIn": true,
+      "bytes": 725024,
+      "asset": null
     },
     {
       "index": 2,
@@ -22,7 +15,7 @@
         "title"
       ],
       "style": "archival",
-      "renderMs": 33458,
+      "renderMs": 32903,
       "concept": "Authority decreases as you move up a hierarchy",
       "evaluation": {
         "layout": {
@@ -32,12 +25,12 @@
         },
         "reading": {
           "ran": true,
-          "sees": "The image is a slide with the title \"Authority Decreases with Rank\" and a subtitle \"A Hierarchy's Hidden Truth\". The background is beige, and there is a red line undernea",
+          "sees": "The image is a slide with the title \"Authority Decreases with Rank\" and the subtitle \"A Hierarchy's Hidden Truth\". The background is a solid beige color, and there are no",
           "overlap": 0.3,
           "why": ""
         },
         "revised": false,
-        "at": 1787584158373
+        "at": 1787605360272
       }
     },
     {
@@ -48,7 +41,7 @@
         "title"
       ],
       "style": "archival",
-      "renderMs": 53865,
+      "renderMs": 74234,
       "concept": "Limited fishing boat activity on the quay",
       "evaluation": {
         "layout": {
@@ -58,28 +51,28 @@
         },
         "reading": {
           "ran": true,
-          "sees": "The image shows a gradient background with text in the top-left corner, featuring a title and a subtitle. The title reads \"A Third of Boats Remain Idle\" and the subtitle",
-          "overlap": 0,
+          "sees": "The image shows a title card for a presentation about morning preparations for limited fishing activity. The title card is divided into two sections, with the left side f",
+          "overlap": 0.83,
           "why": ""
         },
         "revised": false,
-        "at": 1787584235094
+        "at": 1787605470415
       }
     }
   ],
   "film": {
     "ok": true,
-    "bytes": 2924402,
+    "bytes": 2158600,
     "clips": 3,
-    "duration": 17.98,
+    "duration": 17.95,
     "w": 1280,
     "h": 720,
     "frames": [
       {
         "t": 3,
         "paper": 2,
-        "blue": 0,
-        "ink": 5
+        "blue": 95,
+        "ink": 2
       },
       {
         "t": 9,
@@ -100,21 +93,21 @@
       "index": 1,
       "mode": "FOOTAGE",
       "ran": true,
-      "reason": "The sentence describes a specific scene of fishing boats returning to harbor at dawn, which can be captured by a camera.",
+      "reason": "The sentence describes a tangible scene of fishing boats returning to harbor at dawn, which can be captured by a camera.",
       "confidence": 0.9
     },
     {
       "index": 2,
       "mode": "HYPERFRAME",
       "ran": true,
-      "reason": "The sentence describes an abstract concept of authority and hierarchy, with no tangible object or scene that a camera could be pointed at to directly illustrate the idea.",
+      "reason": "The sentence describes an abstract concept of authority and hierarchy, with no direct reference to a physical place, object, or action that a camera could capture.",
       "confidence": 0.9
     },
     {
       "index": 3,
       "mode": "HYBRID",
       "ran": true,
-      "reason": "The sentence describes a physical scene of morning work on the quay with ropes being checked and stacked, which can be filmed, while also conveying an abstract idea about the number of boats that will put to sea, which cannot be captured by a camera alone.",
+      "reason": "The sentence describes a physical scene of morning work on the quay with ropes being checked and stacked, which could be filmed, but also conveys an abstract idea about the proportion of boats that will put to sea, which cannot be captured by a camera alone.",
       "confidence": 0.8
     }
   ]

@@ -172,15 +172,29 @@
               && window.ProviderManager && window.ProviderManager.getActiveKey('nim'));
   }
 
+  // A failure the endpoint is telling us to come back from. NIM's workers are
+  // shared and answer "ResourceExhausted: Worker local total request limit
+  // reached (17/16)" the instant they are full — measured twice in one session,
+  // on the FIRST beat of a run both times. That is not a beat that cannot be
+  // decided; it is a queue that was momentarily full, and treating it as a
+  // verdict costs the beat its medium silently, because the fallback IS a mode.
+  const TRANSIENT = /\b(429|503|500|502|504)\b|ResourceExhausted|rate.?limit|did not answer in|timed? ?out|temporarily/i;
+  const RETRY_AFTER_MS = 4000;
+
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
   /**
    * Decide one beat's medium, and never stop the pipeline deciding it.
+   *
+   * One retry, and only for a failure that reads as transient. A beat whose
+   * narration the planner genuinely cannot parse fails the same way twice, and
+   * asking again only spends another call to hear it.
    */
   async function decide({ narration, intent, before, after, recent, position } = {}) {
     if (!str(narration)) return fallback('there is no narration for this beat');
     if (!available()) return fallback('the planner is not reachable');
 
-    let answer = null;
-    try {
+    const ask = async () => {
       const call = window.LLMAdapters.nvidiaNimChat({
         model: (window.AIManager && window.AIManager.nim && window.AIManager.nim.model)
                || 'meta/llama-3.3-70b-instruct',
@@ -193,12 +207,32 @@
         timer = setTimeout(() => reject(new Error('the planner did not answer in '
           + DECISION_TIMEOUT_MS + 'ms')), DECISION_TIMEOUT_MS);
       });
-      answer = await Promise.race([call, bell]).finally(() => clearTimeout(timer));
+      return Promise.race([call, bell]).finally(() => clearTimeout(timer));
+    };
+
+    let answer = null, retried = false;
+    try {
+      answer = await ask();
     } catch (err) {
-      console.warn('[Planner] no plan for this beat: ' + err.message);
-      return fallback('the planner failed: ' + err.message);
+      if (!TRANSIENT.test(err.message)) {
+        console.warn('[Planner] no plan for this beat: ' + err.message);
+        return fallback('the planner failed: ' + err.message);
+      }
+      console.warn('[Planner] ' + err.message + ' — asking once more in '
+        + (RETRY_AFTER_MS / 1000) + 's');
+      await wait(RETRY_AFTER_MS);
+      retried = true;
+      try {
+        answer = await ask();
+      } catch (again) {
+        return fallback('the planner failed twice: ' + again.message);
+      }
     }
-    return parsePlan(answer);
+    const plan = parsePlan(answer);
+    // Said, not hidden: a beat that needed two attempts is a beat worth
+    // knowing about when the same endpoint is about to be asked forty times.
+    if (retried && plan.ran) plan.retried = true;
+    return plan;
   }
 
   // ── The stage ────────────────────────────────────────────────────────────

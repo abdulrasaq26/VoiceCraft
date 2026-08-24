@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T15:13:19.469Z",
+  "at": "2026-08-24T20:42:13.049Z",
   "narration": "By the time you reach executive leadership, you are no longer judged by what you can do yourself, but by what the people below you can do without you.",
   "gate": {
     "kept": [
@@ -13,27 +13,27 @@
     ]
   },
   "intent": {
-    "concept": "Leadership judgement shifts from individual to team capability",
-    "anchorPhrase": "judged by what",
+    "concept": "Leaders are judged by their team's performance, not individual abilities",
+    "anchorPhrase": "without you",
     "conveys": [
-      "change in judgement criteria at executive level",
+      "shift in judgement criteria at executive level",
       "importance of team performance"
     ],
     "assetNeeds": [
-      "organizational hierarchy diagrams",
-      "icons representing teams or employees"
+      "hierarchical org charts",
+      "images of teams working together"
     ]
   },
   "elements": [
     {
       "kind": "title",
-      "text": "Leadership Judgement Shifts",
-      "kicker": "At Executive Level"
+      "text": "Leadership Judgement",
+      "kicker": "A Shift in Criteria"
     },
     {
       "kind": "stat",
       "value": "100%",
-      "label": "of leaders judged by team performance"
+      "label": "of executive leaders judged by team performance"
     }
   ],
   "manifest": [],
@@ -42,9 +42,9 @@
     "status": "ready",
     "renderedKey": "clip:1",
     "durationSec": 6,
-    "renderMs": 43075,
-    "bytes": 320120,
-    "at": 1787584373140,
+    "renderMs": 47345,
+    "bytes": 309402,
+    "at": 1787604117493,
     "failure": null,
     "style": "broadcast-brief",
     "elements": [
@@ -52,19 +52,19 @@
       "stat"
     ],
     "rejected": [],
-    "reason": "This combination effectively conveys the change in judgement criteria at the executive level and highlights the importance of team performance.",
-    "anchorPhrase": "judged by what"
+    "reason": "This combination effectively conveys the shift in judgement criteria at the executive level and emphasizes the importance of team performance.",
+    "anchorPhrase": "without you"
   },
-  "renderMs": 43075,
+  "renderMs": 47345,
   "film": {
     "ok": true,
-    "bytes": 482972,
-    "duration": 5.95,
+    "bytes": 429237,
+    "duration": 5.92,
     "w": 1280,
     "h": 720,
-    "accent": 334,
-    "ink": 2149,
+    "accent": 336,
+    "ink": 2051,
     "n": 57600
   },
-  "sourceChars": 3206
+  "sourceChars": 3210
 }

@@ -62,6 +62,45 @@
   // them all together rather than each component having its own opinion.
   const beat = (t) => (n) => Math.round(n * (Number(t.pace) || 1) * 100) / 100;
 
+  // ── Reading an item a model wrote ────────────────────────────────────────
+  //
+  // A comparison and a timeline both arrive as a list of strings, because that
+  // is what a model reliably produces. Both need something OUT of each string —
+  // a number to draw a bar from, a date to put in the margin — and a component
+  // that cannot get it must refuse rather than draw a bar of length NaN. The
+  // Renderer learned this the expensive way: a chart whose items were
+  // ["3g/km","20","500"] passed every check it had and then threw inside the
+  // export loop, where the failure looks like a frozen frame.
+
+  /** "Cargo ship: 3g/km" -> { label, value, num }. */
+  function measured(item) {
+    const raw = String(item == null ? '' : item).trim();
+    if (!raw) return null;
+    const at = raw.lastIndexOf(':');
+    let label = at > 0 ? raw.slice(0, at).trim() : '';
+    let value = at > 0 ? raw.slice(at + 1).trim() : raw;
+    const m = value.match(/-?\d[\d,]*\.?\d*/);
+    if (m) return { label: label || value, value, num: parseFloat(m[0].replace(/,/g, '')) };
+    // The number may be on the other side of the colon, or there may be no
+    // colon at all: "3g/km for a cargo ship".
+    const alt = raw.match(/-?\d[\d,]*\.?\d*/);
+    if (!alt) return null;
+    const tail = raw.slice(alt.index + alt[0].length).split(' ')[0];
+    return { label: (raw.slice(0, alt.index).trim() || raw), value: alt[0] + tail,
+             num: parseFloat(alt[0].replace(/,/g, '')) };
+  }
+
+  /** "1933: Surveying started" -> { when, what }. */
+  function dated(item) {
+    const raw = String(item == null ? '' : item).trim();
+    const at = raw.indexOf(':');
+    if (at <= 0) return null;
+    const when = raw.slice(0, at).trim();
+    const what = raw.slice(at + 1).trim();
+    if (!when || !what || when.length > 18) return null;
+    return { when, what };
+  }
+
   // ── Components ───────────────────────────────────────────────────────────
   //
   // Each returns { html, css, timeline } for one element. `t` is the tokens,
@@ -136,6 +175,98 @@
       };
     },
 
+
+    /**
+     * Quantities set against one another.
+     *
+     * Added because beats kept asking for it: the Renderer's own records have a
+     * beat wanting "Cargo Ship: 3g/km, Lorry: 20g/km, Plane: 500g/km", which
+     * this library had no way to draw and which a progression would misstate —
+     * those are not stages, they are amounts, and the whole point of the
+     * sentence is how far apart they are.
+     *
+     * THE BAR IS THE ARGUMENT, so it is drawn to scale. But a ratio like
+     * 3:20:500 makes the first bar 0.6% of the track — a sliver nobody can see
+     * and nobody can compare. Every bar therefore keeps a visible minimum AND
+     * carries its own figure in type, so the picture is never the only source
+     * of the number.
+     */
+    comparison(spec, t, i) {
+      const id = 'cmp' + i;
+      const b = beat(t);
+      const rows = (spec.items || []).slice(0, 5).map(measured).filter(Boolean);
+      const max = Math.max.apply(null, rows.map((r) => Math.abs(r.num)).concat([1]));
+      // LINEAR, AND EXACTLY LINEAR. A floor expressed as a percentage seemed
+      // kinder and was a lie: with 3, 20 and 500 against one another a 4% floor
+      // drew the first two AT THE SAME LENGTH, which states that two different
+      // numbers are the same. The bar stays proportional and a min-width in the
+      // CSS keeps the smallest one from vanishing — and a cargo ship reduced to
+      // a stub beside an aeroplane is not a rendering problem, it is the point
+      // of the sentence.
+      const pct = (r) => Math.round((Math.abs(r.num) / max) * 1000) / 10;
+      const html = rows.map((r, n) => `
+    <div class="hf-cmp-row">
+      <div class="hf-cmp-l">${esc(r.label)}</div>
+      <div class="hf-cmp-track"><div id="${id}-b${n}" class="hf-cmp-bar"></div></div>
+      <div class="hf-cmp-v">${esc(r.value)}</div>
+    </div>`).join('');
+      return {
+        html: `<div id="${id}" class="clip hf-cmp" data-start="0" data-duration="{{D}}" data-track-index="${1 + i}">
+  ${spec.label ? `<div id="${id}-h" class="hf-cmp-h">${esc(spec.label)}</div>` : ''}${html}
+</div>`,
+        column: 'left',
+        css: `.hf-cmp{display:flex;flex-direction:column;gap:20px;width:100%}
+.hf-cmp-h{font-family:${t.mono};font-size:24px;letter-spacing:.16em;text-transform:uppercase;color:${t.dim}}
+.hf-cmp-row{display:flex;align-items:center;gap:20px}
+.hf-cmp-l{font-family:${t.serif};font-size:34px;color:${t.ink};flex:0 0 32%;text-align:right;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hf-cmp-track{flex:1;height:26px;background:${t.rule};border-radius:4px;overflow:hidden;min-width:0}
+.hf-cmp-bar{height:100%;width:0;min-width:3px;background:${t.accent};border-radius:4px}
+.hf-cmp-v{font-family:${t.mono};font-size:26px;color:${t.accent};flex:0 0 6em;text-align:left;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`,
+        timeline: rows.map((r, n) =>
+          `tl.to("#${id}-b${n}",{width:"${pct(r)}%",duration:${b(0.8)},ease:"${t.ease}"},${b(0.25 + n * 0.12)});`
+        ).join('\n  ')
+      };
+    },
+
+    /**
+     * Dated events, in the order they happened.
+     *
+     * Also asked for and also missing: "1933: Surveying started · 1935: Towers
+     * topped out · 1937: First cars crossed". A progression would draw those as
+     * three stages and drop the years, which is most of what the beat is about.
+     */
+    timeline(spec, t, i) {
+      const id = 'tml' + i;
+      const b = beat(t);
+      const rows = (spec.items || []).slice(0, 5).map(dated).filter(Boolean);
+      const html = rows.map((r, n) => `
+    <div id="${id}-r${n}" class="hf-tml-row${n === rows.length - 1 ? ' hf-tml-last' : ''}">
+      <div class="hf-tml-when">${esc(r.when)}</div>
+      <div class="hf-tml-mark"><span class="hf-tml-dot"></span></div>
+      <div class="hf-tml-what">${esc(r.what)}</div>
+    </div>`).join('');
+      return {
+        html: `<div id="${id}" class="clip hf-tml" data-start="0" data-duration="{{D}}" data-track-index="${1 + i}">
+  ${spec.label ? `<div id="${id}-h" class="hf-tml-h">${esc(spec.label)}</div>` : ''}${html}
+</div>`,
+        column: 'left',
+        css: `.hf-tml{display:flex;flex-direction:column;width:100%}
+.hf-tml-h{font-family:${t.mono};font-size:24px;letter-spacing:.16em;text-transform:uppercase;
+          color:${t.dim};margin-bottom:22px}
+.hf-tml-row{display:grid;grid-template-columns:4.6em 24px 1fr;gap:0 20px;align-items:start;
+            padding-bottom:26px}
+.hf-tml-last{padding-bottom:0}
+.hf-tml-when{font-family:${t.mono};font-size:30px;color:${t.accent};line-height:1.4}
+.hf-tml-mark{position:relative;height:100%}
+.hf-tml-mark:before{content:"";position:absolute;left:7px;top:22px;bottom:-8px;width:2px;background:${t.rule}}
+.hf-tml-last .hf-tml-mark:before{display:none}
+.hf-tml-dot{display:block;width:16px;height:16px;border-radius:50%;background:${t.accent};margin-top:12px}
+.hf-tml-what{font-family:${t.serif};font-size:36px;color:${t.ink};line-height:1.3}`,
+        timeline: `tl.from("#${id} .hf-tml-row",{opacity:0,y:18,duration:${b(0.5)},ease:"${t.ease}",stagger:${b(0.18)}},${b(0.2)});`
+      };
+    },
     /**
      * The shot itself, inside the composition.
      *
@@ -190,6 +321,16 @@
     title: (s) => !!String(s.text || '').trim(),
     stat: (s) => !!String(s.value || '').trim(),
     progression: (s) => Array.isArray(s.items) && s.items.filter(Boolean).length >= 2,
+    // Two amounts to set against each other, and a number readable out of every
+    // one of them. A bar chart missing a value is not a chart with a gap in it;
+    // it is a chart that lies about the ones it did draw.
+    comparison: (s) => Array.isArray(s.items)
+      && s.items.filter(Boolean).length >= 2
+      && s.items.filter(Boolean).every((x) => measured(x) !== null),
+    // And a timeline needs a when for every what.
+    timeline: (s) => Array.isArray(s.items)
+      && s.items.filter(Boolean).length >= 2
+      && s.items.filter(Boolean).every((x) => dated(x) !== null),
     image: (s) => !!String(s.file || '').trim(),
     footage: (s) => !!String(s.file || '').trim()
   };
@@ -198,9 +339,12 @@
     const kind = String((spec && spec.kind) || '').toLowerCase();
     if (KINDS.indexOf(kind) < 0) return { ok: false, why: `there is no component called "${kind || '(none)'}"` };
     if (!NEEDS[kind](spec)) {
-      return { ok: false, why: `a ${kind} needs ${kind === 'progression' ? 'at least two items'
-        : kind === 'stat' ? 'a value' : (kind === 'image' || kind === 'footage')
-        ? 'an asset' : 'text'}` };
+      const missing = kind === 'progression' ? 'at least two items'
+        : kind === 'comparison' ? 'at least two items, each with a figure in it'
+        : kind === 'timeline' ? 'at least two items, each written "when: what"'
+        : kind === 'stat' ? 'a value'
+        : (kind === 'image' || kind === 'footage') ? 'an asset' : 'text';
+      return { ok: false, why: `a ${kind} needs ${missing}` };
     }
     return { ok: true, why: '' };
   }
@@ -303,6 +447,13 @@ ${css.split('\n').map((l) => '      ' + l).join('\n')}
       '             { "kind":"stat", "value":"40%", "label":"…" }',
       'progression  two to five stages that lead to one another',
       '             { "kind":"progression", "items":["…","…","…"] }',
+      'comparison   two to five amounts set against one another, drawn to scale.',
+      '             Every item must carry its own figure',
+      '             { "kind":"comparison", "label":"…",',
+      '               "items":["<name>: <figure>","<name>: <figure>"] }',
+      'timeline     two to five dated events, in the order they happened',
+      '             { "kind":"timeline", "label":"…",',
+      '               "items":["<when>: <what>","<when>: <what>"] }',
       'image        an approved asset, by its id, with a caption',
       '             { "kind":"image", "assetId":"…", "caption":"…" }',
       'footage      the shot this beat already has, as the background',
@@ -312,6 +463,7 @@ ${css.split('\n').map((l) => '      ' + l).join('\n')}
 
   window.BlvckHyperFrameComponents = {
     compose, canDraw, vocabulary, tokensFor,
+    _measured: measured, _dated: dated,
     KINDS, DEFAULT_TOKENS
   };
 })();

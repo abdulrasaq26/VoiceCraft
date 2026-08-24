@@ -256,6 +256,68 @@ const BEATS = [
           live.map((r) => r.plan.reason));
   }
 
+  // ── A full queue is not a verdict ───────────────────────────────────────
+  //
+  // NIM's workers are shared and answer "ResourceExhausted: Worker local total
+  // request limit reached (17/16)" the moment they are full — seen twice in one
+  // session, on the FIRST beat of a run both times. The planner's fallback IS a
+  // mode, so treating that as an answer silently costs the beat its medium and
+  // leaves a FOOTAGE decision that nobody made.
+  console.log('\n=== when the endpoint says come back in a moment ===');
+  const retry = await page.evaluate(async () => {
+    const P = window.BlvckVisualPlanner;
+    const real = window.LLMAdapters.nvidiaNimChat;
+    const realKey = window.ProviderManager.getActiveKey;
+    window.ProviderManager.getActiveKey = (x) => (x === 'nim' ? 'test-key' : realKey.call(window.ProviderManager, x));
+
+    const run = async (script) => {
+      let calls = 0;
+      window.LLMAdapters.nvidiaNimChat = async () => {
+        calls++;
+        const step = script[Math.min(calls - 1, script.length - 1)];
+        if (step !== 'ok') throw new Error(step);
+        return '{"mode":"HYPERFRAME","reason":"an abstraction","confidence":0.8}';
+      };
+      const t0 = Date.now();
+      const plan = await P.decide({ narration: 'A sentence about a hierarchy.' });
+      return { calls, plan, ms: Date.now() - t0 };
+    };
+
+    const out = {
+      full: await run(['NVIDIA NIM Error (503): ResourceExhausted: Worker local '
+                       + 'total request limit reached (17/16)', 'ok']),
+      slow: await run(['the planner did not answer in 90000ms', 'ok']),
+      // A failure that says nothing about being temporary. Asking again only
+      // spends another call to hear the same thing.
+      broken: await run(['NVIDIA NIM API Key is missing.']),
+      // And one that stays broken.
+      hopeless: await run(['NVIDIA NIM Error (503): ResourceExhausted'])
+    };
+
+    window.LLMAdapters.nvidiaNimChat = real;
+    window.ProviderManager.getActiveKey = realKey;
+    return out;
+  });
+
+  console.log(`  a full queue        → ${retry.full.calls} call(s), `
+    + `${retry.full.plan.mode} ran=${retry.full.plan.ran} retried=${!!retry.full.plan.retried}`);
+  console.log(`  a slow answer       → ${retry.slow.calls} call(s), ${retry.slow.plan.mode}`);
+  console.log(`  a missing key       → ${retry.broken.calls} call(s), ${retry.broken.plan.reason}`);
+  console.log(`  still full          → ${retry.hopeless.calls} call(s), ${retry.hopeless.plan.reason}`);
+
+  check('A FULL QUEUE IS ASKED AGAIN, and the beat keeps the medium it deserved',
+        retry.full.calls === 2 && retry.full.plan.ran === true
+        && retry.full.plan.mode === 'HYPERFRAME', retry.full);
+  check('and it says the answer took two attempts',
+        retry.full.plan.retried === true, retry.full.plan);
+  check('a timeout is treated the same way', retry.slow.calls === 2 && retry.slow.plan.ran, retry.slow);
+  check('but a broken key is not retried — it will say the same thing twice',
+        retry.broken.calls === 1 && retry.broken.plan.ran === false, retry.broken);
+  check('AND THE RETRY IS BOUNDED TO ONE', retry.hopeless.calls === 2, retry.hopeless);
+  check('an endpoint that stays full still falls back rather than hanging the run',
+        retry.hopeless.plan.ran === false
+        && /twice/.test(retry.hopeless.plan.reason), retry.hopeless.plan);
+
   fs.writeFileSync(OUT, JSON.stringify({ at: new Date().toISOString(),
     legacy, contract: { good, over, bad }, down, staged: staged.summary,
     live: live.map((r) => ({ beat: r.beat.name, expect: r.beat.expect, plan: r.plan })) }, null, 2));

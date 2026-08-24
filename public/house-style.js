@@ -151,7 +151,7 @@
                 serif: '"Iowan Old Style", "Palatino Linotype", Georgia, serif',
                 ease: 'power1.out', pace: 1.45 },
       maxElements: 2,
-      prefers: ['image', 'title'],
+      prefers: ['image', 'title', 'timeline'],
       guidance: [
         'THE FILM: archival. It moves slowly and it trusts pictures more than',
         'figures. Prefer a photograph and a line of type over a chart. At most',
@@ -166,7 +166,7 @@
                 serif: '"Helvetica Neue", Helvetica, Arial, sans-serif',
                 ease: 'power2.inOut', pace: 0.8 },
       maxElements: 4,
-      prefers: ['stat', 'progression', 'title'],
+      prefers: ['stat', 'comparison', 'progression'],
       guidance: [
         'THE FILM: a data brief. It is precise and it moves. Reach for the',
         'figure and the sequence — a number the viewer can hold, or the stages',
