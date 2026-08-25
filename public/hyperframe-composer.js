@@ -163,7 +163,8 @@
              : { name: 'broadcast-brief', maxElements: MAX_ELEMENTS, prefers: [], guidance: [] };
   }
 
-  function composePrompt({ narration, intent, assetLines, unmet, hasFootage, revision, project }) {
+  function composePrompt({ narration, intent, assetLines, unmet, hasFootage, revision,
+                          project, faults }) {
     const NL = String.fromCharCode(10);
     const C = window.BlvckHyperFrameComponents;
     const S = window.BlvckHouseStyle;
@@ -195,6 +196,15 @@
       lines.push('APPROVED ASSETS. Reference one by its id in an image component.',
                  'These are the only pictures that exist; there is no other source',
                  'and a file name you invent will not be there:', assetLines, '');
+    } else if (faults && faults.length) {
+      // "There is nothing" and "I could not look" are different sentences, and
+      // the second one used to be told as the first. A beat built from type
+      // because the asset store would not open is not the same beat as one
+      // built from type because the project has no pictures — and the producer
+      // has no way to tell them apart after the fact unless it is said here.
+      lines.push('THE ASSET REGISTRY COULD NOT BE READ, so it is not known what this',
+                 'project has. Build the beat from type alone and do not use an image',
+                 'component — but this is a fault, not a considered absence.', '');
     } else {
       lines.push('NO ASSETS ARE APPROVED FOR THIS BEAT. Build it from type alone —',
                  'do not use an image component.', '');
@@ -290,7 +300,8 @@
     let raw;
     try {
       raw = await ask(composePrompt({ narration, intent, assetLines, hasFootage, revision, project,
-                                      unmet: (manifest && manifest.unmet) || [] }),
+                                      unmet: (manifest && manifest.unmet) || [],
+                                      faults: (manifest && manifest.faults) || [] }),
                       { maxTokens: 700, timeoutMs: COMPOSER_TIMEOUT_MS });
     } catch (err) {
       return { ok: false, why: 'the composer failed: ' + err.message };
@@ -342,8 +353,15 @@
       manifest = await window.BlvckAssetRegistry.manifestFor({ wanted: d.intent.assetNeeds });
     } catch (err) {
       // An empty manifest is a workable answer: the beat is built from type.
+      // A registry that THREW is not that answer, and saying so here is what
+      // keeps the two apart on the finished scene.
       console.warn('[HyperFrame] the asset registry failed: ' + err.message);
+      manifest = { assets: [], missing: [], unmet: d.intent.assetNeeds,
+                   faults: ['the asset registry failed: ' + err.message] };
     }
+    // Kept on the scene whether or not anything was found, because an empty
+    // manifest with faults on it is the interesting case.
+    scene.assetFaults = (manifest.faults || []).slice(0, 4);
     scene.assetManifest = manifest.assets.map((a) => ({
       assetId: a.assetId, type: a.type, source: a.source,
       rightsStatus: a.rights.status, rightsBasis: a.rights.basis,

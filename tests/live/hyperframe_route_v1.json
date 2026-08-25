@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T23:26:37.403Z",
+  "at": "2026-08-25T18:34:34.051Z",
   "narration": "By the time you reach executive leadership, you are no longer judged by what you can do yourself, but by what the people below you can do without you.",
   "gate": {
     "kept": [
@@ -13,22 +13,22 @@
     ]
   },
   "intent": {
-    "concept": "Leaders are judged by their team's performance, not individual abilities",
-    "anchorPhrase": "without you",
+    "concept": "Leadership judgement shifts from individual to team capability",
+    "anchorPhrase": "judged by what",
     "conveys": [
-      "shift in judgement criteria at executive level",
+      "change in judgement criteria at executive level",
       "importance of team performance"
     ],
     "assetNeeds": [
-      "hierarchical org charts",
+      "hierarchical organization charts",
       "images of teams working together"
     ]
   },
   "elements": [
     {
       "kind": "title",
-      "text": "Leadership Judgement",
-      "kicker": "A Shift in Criteria"
+      "text": "Leadership Judgement Shifts",
+      "kicker": "At Executive Level"
     },
     {
       "kind": "stat",
@@ -42,9 +42,9 @@
     "status": "ready",
     "renderedKey": "clip:1",
     "durationSec": 6,
-    "renderMs": 33523,
-    "bytes": 308274,
-    "at": 1787613979973,
+    "renderMs": 50921,
+    "bytes": 326939,
+    "at": 1787682860765,
     "failure": null,
     "style": "broadcast-brief",
     "elements": [
@@ -52,19 +52,19 @@
       "stat"
     ],
     "rejected": [],
-    "reason": "This combination effectively conveys the shift in judgement criteria at the executive level and the importance of team performance in a clear and concise manner.",
-    "anchorPhrase": "without you"
+    "reason": "This combination effectively conveys the change in judgement criteria at executive level and the importance of team performance in a clear and concise manner.",
+    "anchorPhrase": "judged by what"
   },
-  "renderMs": 33523,
+  "renderMs": 50921,
   "film": {
     "ok": true,
-    "bytes": 447439,
-    "duration": 5.97,
+    "bytes": 494724,
+    "duration": 5.95,
     "w": 1280,
     "h": 720,
-    "accent": 337,
-    "ink": 2053,
+    "accent": 335,
+    "ink": 2148,
     "n": 57600
   },
-  "sourceChars": 3210
+  "sourceChars": 3216
 }

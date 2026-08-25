@@ -164,9 +164,19 @@
     }
 
     const manifest = scene.assetManifest || [];
+    const faults = scene.assetFaults || [];
     out.push(line('assets', manifest.length
       ? manifest.map((a) => `${esc(a.assetId)} <span style="opacity:.6">(${esc(a.rightsBasis || a.rightsStatus)})</span>`).join(', ')
-      : '<span style="opacity:.6">none approved for this beat</span>'));
+      : (faults.length
+          // "None approved" is a judgement; "could not be read" is a fault. The
+          // two looked identical here, so a beat built from type because the
+          // asset store would not open was indistinguishable from one built
+          // from type because the project genuinely has no pictures.
+          ? `<span style="color:var(--warn,#e0a030)">the registry could not be read</span>`
+          : '<span style="opacity:.6">none approved for this beat</span>')));
+    if (faults.length) {
+      out.push(line('', esc(faults.join('; ')), 'var(--warn,#e0a030)'));
+    }
 
     // What the evaluator found. Problems first: that is what someone scanning
     // a list of scenes is looking for.

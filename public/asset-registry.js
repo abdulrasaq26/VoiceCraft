@@ -44,7 +44,7 @@
     });
   }
 
-  async function get(dbName, store, key) {
+  async function get(dbName, store, key, faults) {
     try {
       const db = await idb(dbName, store);
       return await new Promise((res, rej) => {
@@ -53,10 +53,25 @@
         rq.onsuccess = () => res(rq.result || null);
         rq.onerror = () => rej(rq.error);
       });
-    } catch (e) { return null; }
+    } catch (e) {
+      if (faults) faults.push(`${dbName}/${store}:${key} could not be read: ${e.message}`);
+      return null;
+    }
   }
 
-  async function keys(dbName, store) {
+  /**
+   * The keys in a store, and whether asking succeeded.
+   *
+   * AN EMPTY LIST AND A BROKEN STORE ARE NOT THE SAME ANSWER, and this returned
+   * the same [] for both. Downstream that becomes an empty manifest, which
+   * becomes "NO ASSETS ARE APPROVED FOR THIS BEAT — build it from type alone"
+   * in the Composer's brief. A project whose imagery is sitting on disk would
+   * be told, in perfectly confident language, that it has none — and the
+   * finished scene would carry no sign that anything had gone wrong.
+   *
+   * The faults are collected instead and travel with the answer.
+   */
+  async function keys(dbName, store, faults) {
     try {
       const db = await idb(dbName, store);
       return await new Promise((res, rej) => {
@@ -65,7 +80,10 @@
         rq.onsuccess = () => res(rq.result || []);
         rq.onerror = () => rej(rq.error);
       });
-    } catch (e) { return []; }
+    } catch (e) {
+      if (faults) faults.push(`${dbName}/${store} could not be read: ${e.message}`);
+      return [];
+    }
   }
 
   // ── Rights ───────────────────────────────────────────────────────────────
@@ -118,13 +136,17 @@
    * cached video to answer "what do we have" would cost tens of megabytes to
    * answer a question about names.
    */
-  async function catalogue() {
+  async function catalogue(faults) {
     const out = [];
 
     // Stock: the manifest in localStorage says what is cached; the scenes say
     // what is known about each one.
     let meta = {};
-    try { meta = JSON.parse(localStorage.getItem(CACHE_META) || '{}') || {}; } catch (e) { meta = {}; }
+    try { meta = JSON.parse(localStorage.getItem(CACHE_META) || '{}') || {}; }
+    catch (e) {
+      meta = {};
+      if (faults) faults.push('the stock cache manifest is unreadable: ' + e.message);
+    }
 
     const byKey = new Map();
     try {
@@ -133,7 +155,11 @@
         const a = s.stockAsset;
         if (a && a.provider && a.id) byKey.set(`${a.provider}:${a.id}`, a);
       }
-    } catch (e) { /* no storyboard yet */ }
+    } catch (e) {
+      // A storyboard that will not parse is different from not having one, and
+      // it costs every cached clip its description.
+      if (faults) faults.push('the storyboard could not be read: ' + e.message);
+    }
 
     for (const key of Object.keys(meta)) {
       const a = byKey.get(key) || {};
@@ -154,7 +180,7 @@
 
     // Character portraits and storyboard stills share one store; the key tells
     // them apart.
-    for (const k of await keys(SB_DB, SB_STORE)) {
+    for (const k of await keys(SB_DB, SB_STORE, faults)) {
       const key = String(k);
       if (key.startsWith('ref:')) {
         const name = key.slice(4);
@@ -186,8 +212,8 @@
   }
 
   /** Only what may actually be used. */
-  async function approved() {
-    return (await catalogue()).filter((a) => a.rights.status === 'approved');
+  async function approved(faults) {
+    return (await catalogue(faults)).filter((a) => a.rights.status === 'approved');
   }
 
   // ── The manifest ─────────────────────────────────────────────────────────
@@ -205,7 +231,8 @@
    * missing image, which the renderer refuses under --no-best-effort.
    */
   async function manifestFor({ wanted = [], limit = 6, allowVideo = false } = {}) {
-    const pool = await approved();
+    const faults = [];
+    const pool = await approved(faults);
     const needs = (Array.isArray(wanted) ? wanted : []).map(str).filter(Boolean);
 
     const scored = pool.map((a) => {
@@ -225,7 +252,7 @@
       if (picked.length >= limit) break;
       const dbName = a.source === 'stock' ? STOCK_DB : SB_DB;
       const store = a.source === 'stock' ? STOCK_STORE : SB_STORE;
-      const blob = await get(dbName, store, a.storeKey);
+      const blob = await get(dbName, store, a.storeKey, faults);
       if (!blob || !blob.size) { missing.push(a.assetId); continue; }
       if (a.type !== 'image' && !allowVideo) continue;
       picked.push(Object.assign({}, a, { blob, bytes: blob.size, fileName: fileNameFor(a, blob) }));
@@ -234,6 +261,10 @@
     return {
       assets: picked,
       missing,
+      // Whatever went wrong while answering. An empty manifest with faults on
+      // it means "this could not be looked up", which is a different sentence
+      // from "there is nothing", and the Composer is told which.
+      faults,
       // What the Director asked for and the registry could not supply. Reported
       // rather than papered over: the Composer designs around the absence, the
       // same way acquisition reports NO_SUITABLE_ASSET.
