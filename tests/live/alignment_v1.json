@@ -1,12 +1,12 @@
 {
-  "at": "2026-08-24T23:35:58.757Z",
+  "at": "2026-08-25T00:22:54.672Z",
   "narration": "Authority does not travel upward. Every level you rise is a level that can act without you.",
   "speech": {
     "ok": true,
-    "seconds": 5.666,
-    "bytes": 57274,
+    "seconds": 6.687,
+    "bytes": 76998,
     "sampleRate": 48000,
-    "ms": 23845
+    "ms": 28129
   },
   "decision": {
     "strategy": "HYPERFRAME",
@@ -14,33 +14,33 @@
     "planReason": "The sentence describes an abstract concept of authority and hierarchy, with no tangible object or scene that a camera could point at.",
     "res": {
       "ok": true,
-      "seconds": 5.67,
-      "renderMs": 29332,
+      "seconds": 6.69,
+      "renderMs": 30696,
       "evaluation": {
         "layout": {
           "ok": true,
-          "density": 0.24,
+          "density": 0.25,
           "problems": []
         },
         "reading": {
           "ran": true,
-          "sees": "The image is a black graphic with white and yellow text, featuring the phrase \"THE HIGHER YOU RISE\" in yellow at the top left, followed by \"Authority Decreases with Rank\"",
-          "overlap": 0.33,
+          "sees": "The image is a slide from a presentation about organizational design, with the title \"A PRINCIPLE OF ORGANIZATIONAL DESIGN\" in yellow text at the top. The main content of",
+          "overlap": 0,
           "why": ""
         },
         "revised": false,
-        "at": 1787614723472
+        "at": 1787617489610
       },
       "elements": [
         {
           "kind": "title",
-          "text": "Authority Decreases with Rank",
-          "kicker": "The Higher You Rise"
+          "text": "Authority Decreases with Hierarchy",
+          "kicker": "A Principle of Organizational Design"
         },
         {
           "kind": "stat",
           "value": "40%",
-          "label": "of decisions made without input from lower levels"
+          "label": "of decisions made without input from higher levels"
         }
       ],
       "rejected": [],
@@ -48,8 +48,8 @@
         "concept": "Authority decreases as you move up a hierarchy",
         "anchorPhrase": "Authority does not",
         "conveys": [
-          "thinly distributed power",
-          "reduced influence with higher rank"
+          "thinly distributed authority",
+          "hierarchy levels acting independently"
         ],
         "assetNeeds": [
           "organizational charts",
@@ -69,8 +69,8 @@
       "concept": "Authority decreases as you move up a hierarchy",
       "anchorPhrase": "Authority does not",
       "conveys": [
-        "thinly distributed power",
-        "reduced influence with higher rank"
+        "thinly distributed authority",
+        "hierarchy levels acting independently"
       ],
       "assetNeeds": [
         "organizational charts",
@@ -81,10 +81,10 @@
       "mode": "FULL_FRAME",
       "status": "ready",
       "renderedKey": "clip:1",
-      "durationSec": 5.67,
-      "renderMs": 29332,
-      "bytes": 330864,
-      "at": 1787614719559,
+      "durationSec": 6.69,
+      "renderMs": 30696,
+      "bytes": 374898,
+      "at": 1787617475892,
       "failure": null,
       "style": "broadcast-brief",
       "elements": [
@@ -92,21 +92,21 @@
         "stat"
       ],
       "rejected": [],
-      "reason": "This combination effectively conveys the idea that authority decreases as you move up a hierarchy, using a clear title and a supporting statistic to illustrate the point.",
+      "reason": "This combination effectively conveys the idea that authority decreases as you move up a hierarchy, using a title to introduce the concept and a stat to provide a concrete example.",
       "anchorPhrase": "Authority does not"
     },
     "declared": {
       "ok": true,
-      "density": 0.24,
+      "density": 0.25,
       "problems": [],
       "elements": [
         {
           "id": "title0",
           "tag": "div",
           "x": 173,
-          "y": 204,
+          "y": 189,
           "w": 747,
-          "h": 412
+          "h": 443
         },
         {
           "id": "stat1",
@@ -129,9 +129,9 @@
       "width": 1920,
       "height": 1080,
       "fps": 30,
-      "frames": 171,
+      "frames": 201,
       "codec": "h264",
-      "duration": 5.7
+      "duration": 6.7
     },
     "ok": true,
     "width": 1920,
@@ -144,14 +144,14 @@
           "id": "title0",
           "tag": "div",
           "x": 173,
-          "y": 204,
+          "y": 189,
           "w": 747,
-          "h": 412
+          "h": 443
         },
         "ink": {
-          "share": 0.089,
-          "pixels": 27413,
-          "total": 307764
+          "share": 0.1,
+          "pixels": 33153,
+          "total": 330921
         }
       },
       {
@@ -166,7 +166,7 @@
         },
         "ink": {
           "share": 0.088,
-          "pixels": 16645,
+          "pixels": 16687,
           "total": 188991
         }
       }
@@ -197,6 +197,83 @@
     "inNarration": true,
     "phrase": "Authority does not",
     "wordCount": 17,
-    "lastWordEnds": 5.46
+    "lastWordEnds": 6.48
+  },
+  "hybrid": {
+    "ok": true,
+    "source": [
+      {
+        "sourceAt": 8.48,
+        "beatAt": 0.5,
+        "colour": "#c61e89",
+        "ok": true,
+        "why": ""
+      },
+      {
+        "sourceAt": 9.478,
+        "beatAt": 1.5,
+        "colour": "#1e59c7",
+        "ok": true,
+        "why": ""
+      },
+      {
+        "sourceAt": 10.478,
+        "beatAt": 2.5,
+        "colour": "#57c81b",
+        "ok": true,
+        "why": ""
+      }
+    ],
+    "rendered": [
+      {
+        "beatAt": 0.5,
+        "landedAt": 0.5,
+        "colour": "#ce2783",
+        "ok": true,
+        "why": ""
+      },
+      {
+        "beatAt": 1.5,
+        "landedAt": 1.5,
+        "colour": "#0a4ec8",
+        "ok": true,
+        "why": ""
+      },
+      {
+        "beatAt": 2.5,
+        "landedAt": 2.5,
+        "colour": "#44ac07",
+        "ok": true,
+        "why": ""
+      }
+    ],
+    "boxes": [
+      {
+        "id": "title1",
+        "share": 0.067
+      },
+      {
+        "id": "stat2",
+        "share": 0.058
+      }
+    ],
+    "meta": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "frames": 191,
+      "codec": "h264",
+      "duration": 6.366992
+    },
+    "elements": [
+      "footage",
+      "title",
+      "stat"
+    ],
+    "hasMediaStart": [
+      "data-media-start=\"8\"",
+      "8"
+    ],
+    "declaredCount": 3
   }
 }

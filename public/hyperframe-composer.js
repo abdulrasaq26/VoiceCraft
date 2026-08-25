@@ -38,18 +38,51 @@
               && window.ProviderManager && window.ProviderManager.getActiveKey('nim'));
   }
 
+  // The same policy the Planner already has, in the two places that were still
+  // without it.
+  //
+  // NIM's workers are shared and answer "ResourceExhausted: Worker local total
+  // request limit reached (17/16)" the instant they are full. The Planner
+  // learned to ask again; the Director and the Composer did not, so the same
+  // momentary queue that costs a Planner nothing killed a build outright —
+  // observed twice in one session, once at the Director and once at the
+  // Composer, both mid-run and both recoverable.
+  //
+  // One retry, four seconds later, and only for a failure that reads as
+  // transient: a prompt the model cannot parse fails identically twice and
+  // asking again only spends another call to hear it.
+  const TRANSIENT = /\b(429|503|500|502|504)\b|ResourceExhausted|rate.?limit|no answer within|timed? ?out|temporarily/i;
+  const RETRY_AFTER_MS = 4000;
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
   async function ask(prompt, { maxTokens = 500, timeoutMs = 45000 } = {}) {
-    const call = window.LLMAdapters.nvidiaNimChat({
-      model: (window.AIManager && window.AIManager.nim && window.AIManager.nim.model)
-             || 'meta/llama-3.3-70b-instruct',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.25, max_tokens: maxTokens
-    });
-    let timer;
-    const bell = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error('no answer within ' + timeoutMs + 'ms')), timeoutMs);
-    });
-    return Promise.race([call, bell]).finally(() => clearTimeout(timer));
+    const once = () => {
+      const call = window.LLMAdapters.nvidiaNimChat({
+        model: (window.AIManager && window.AIManager.nim && window.AIManager.nim.model)
+               || 'meta/llama-3.3-70b-instruct',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.25, max_tokens: maxTokens
+      });
+      let timer;
+      const bell = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('no answer within ' + timeoutMs + 'ms')), timeoutMs);
+      });
+      return Promise.race([call, bell]).finally(() => clearTimeout(timer));
+    };
+
+    try {
+      return await once();
+    } catch (err) {
+      if (!TRANSIENT.test(err.message || '')) throw err;
+      console.warn('[HyperFrame] ' + err.message + ' — asking once more in '
+        + (RETRY_AFTER_MS / 1000) + 's');
+      await pause(RETRY_AFTER_MS);
+      try {
+        return await once();
+      } catch (again) {
+        throw new Error(again.message + ' (asked twice)');
+      }
+    }
   }
 
   const firstJson = (text) => {

@@ -43,6 +43,12 @@ const envGet = (k) => {
 
 const NARRATION = 'Authority does not travel upward. Every level you rise is a level '
                 + 'that can act without you.';
+// The HYBRID beat: something a camera can point at, and a figure the shot
+// cannot state. Its footage is a stand-in whose content encodes its own source
+// time, which is the only way to check an in-point quantitatively.
+const HYBRID_LINE = 'Ropes are checked and stacked along the quay each morning, though '
+                  + 'barely a third of these boats will put to sea this year.';
+const MEDIA_START = 8;
 
 const fails = [];
 const notes = [];
@@ -417,6 +423,225 @@ const check = (name, cond, detail) => {
             anchored.wordCount >= NARRATION.split(/\s+/).length - 2,
             { aligned: anchored.wordCount, expected: NARRATION.split(/\s+/).length });
     }
+  }
+
+  // ── 5. HYBRID: the shot and the graphic sharing one frame ───────────────
+  //
+  // The mode where a timing error is least visible. A FULL_FRAME beat that
+  // starts at the wrong instant looks like a beat that starts at the wrong
+  // instant; a HYBRID beat cut from the wrong second of its source looks like
+  // perfectly good footage of the wrong moment, and nothing downstream would
+  // ever say so.
+  //
+  // So the source is a clip whose picture states its own source time, and the
+  // claim is exact: the frame a viewer sees at t seconds into the beat must be
+  // the frame that sits at mediaStart + t in the source. Both sides are
+  // measured — the source is read with the same extractor as the render, so
+  // nothing depends on the fixture being regular.
+  console.log('\n=== HYBRID: the shot, cut where acquisition said ===');
+
+  const shotBuilt = await page.evaluate(async () => {
+    const c = document.createElement('canvas');
+    c.width = 1280; c.height = 720;
+    const g = c.getContext('2d');
+    const BANDS = ['#c81e1e', '#1e8ac8', '#1ec85a', '#c8b81e', '#8a1ec8', '#1ec8b8',
+                   '#c85a1e', '#5a1ec8', '#c81e8a', '#1e5ac8', '#5ac81e', '#c8c81e',
+                   '#1ec8c8', '#c81ec8', '#8ac81e', '#1e1ec8', '#c88a1e', '#1ec88a',
+                   '#8a8ac8', '#c8c88a'];
+    const rec = new MediaRecorder(c.captureStream(30), { mimeType: 'video/webm',
+                                                         videoBitsPerSecond: 6000000 });
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    rec.start();
+    const t0 = performance.now();
+    await new Promise((done) => {
+      const tick = () => {
+        const t = (performance.now() - t0) / 1000;
+        if (t >= 20) { rec.stop(); done(); return; }
+        g.fillStyle = BANDS[Math.min(BANDS.length - 1, Math.floor(t))];
+        g.fillRect(0, 0, c.width, c.height);
+        g.fillStyle = '#ffffff';
+        g.font = 'bold 90px monospace';
+        g.fillText(t.toFixed(1) + 's', 60, 110);
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
+    await new Promise((r) => { rec.onstop = r; setTimeout(r, 2500); });
+    const blob = new Blob(chunks, { type: 'video/webm' });
+
+    const db = await new Promise((res, rej) => {
+      const rq = indexedDB.open('blvck-stock-cache', 1);
+      rq.onupgradeneeded = () => { const d = rq.result;
+        if (!d.objectStoreNames.contains('assets')) d.createObjectStore('assets'); };
+      rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error);
+    });
+    await new Promise((res, rej) => {
+      const tx = db.transaction('assets', 'readwrite');
+      tx.objectStore('assets').put(blob, 'pexels:aligned');
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+    localStorage.setItem('blvck:stock-cache-meta',
+      JSON.stringify({ 'pexels:aligned': { at: Date.now() } }));
+    window.__shot = blob;
+    return { bytes: blob.size };
+  });
+  console.log(`  a ${(shotBuilt.bytes / 1024).toFixed(0)}KB source whose picture states its own time`);
+
+  // What the SOURCE actually shows at the instants the beat will cut from.
+  // Read rather than assumed: the capture is real-time and its frame times are
+  // its own business.
+  const hybridSpoken = await page.evaluate(async (text) => {
+    const t0 = performance.now();
+    try {
+      const url = await window.FishAdapter.textToSpeech({ input: text, voice: 'default' });
+      const blob = await (await fetch(url)).blob();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+      const seconds = Math.round((buf.length / buf.sampleRate) * 1000) / 1000;
+      ctx.close();
+      return { ok: true, seconds, ms: Math.round(performance.now() - t0) };
+    } catch (err) { return { ok: false, why: err.message }; }
+  }, HYBRID_LINE);
+
+  const hybridWindow = hybridSpoken.ok ? hybridSpoken.seconds : 6;
+  if (hybridSpoken.ok) {
+    console.log(`  the line runs ${hybridWindow}s, spoken in ${(hybridSpoken.ms / 1000).toFixed(1)}s`);
+  } else {
+    console.log(`  ⚠ the second line was not spoken (${hybridSpoken.why}) — using ${hybridWindow}s`);
+    notes.push('the HYBRID clock was estimated: ' + hybridSpoken.why);
+  }
+
+  const SAMPLE_AT = [0.5, 1.5, 2.5].filter((t) => t < hybridWindow - 0.3);
+
+  const hybrid = await page.evaluate(async (line, secs, mediaStart, sampleAt) => {
+    const hex = (d, i) => '#' + [d[i], d[i + 1], d[i + 2]]
+      .map((n) => n.toString(16).padStart(2, '0')).join('');
+    // The right-hand side of the frame, past the scrim, where the footage is
+    // shown as it is. The scrim runs to 72% of the width by design.
+    const sampleRight = (f) => {
+      const x = Math.round(f.width * 0.86), y = Math.round(f.height * 0.20);
+      return hex(f.data, (y * f.width + x) * 4);
+    };
+
+    // 1. What the source shows at mediaStart + t.
+    const src = await window.BlvckFrames.at(window.__shot, sampleAt.map((t) => mediaStart + t));
+    const source = src.frames.map((f, i) => ({
+      sourceAt: f.ok ? f.actualAt : null, beatAt: sampleAt[i],
+      colour: f.ok ? sampleRight(f) : null, ok: f.ok, why: f.why || '' }));
+
+    // 2. Build the beat and render it.
+    const scene = {
+      index: 2, subtitle: line, sceneSummary: 'the morning work on the quay, and how few boats sail',
+      status: 'pending', timelineStart: 0, timelineEnd: secs,
+      timestamp: '00:00:00 - 00:00:' + String(Math.round(secs)).padStart(2, '0'),
+      stockAsset: { provider: 'pexels', id: 'aligned', type: 'video',
+                    duration: 20, width: 1280, height: 720,
+                    sourceUrl: 'https://example.invalid/aligned',
+                    queriesUsed: ['quay'],
+                    excerpt: { required: true, applied: true, start: mediaStart,
+                               end: mediaStart + secs, duration: secs, sourceDuration: 20 } }
+    };
+    const liveScenes = window.BlvckStoryboard.scenes();
+    liveScenes.length = 0; liveScenes.push(scene);
+
+    const res = await window.BlvckHyperFrameComposer.runRoute(scene, { mode: 'HYBRID' });
+    if (!res.ok) return { ok: false, res, source };
+
+    const declared = await window.BlvckHyperFrameEvaluator.inspectLayout(scene.hyperFrameSource);
+    const blob = await new Promise((resolve, reject) => {
+      const rq = indexedDB.open('blvck-storyboard', 1);
+      rq.onsuccess = () => {
+        const tx = rq.result.transaction('images', 'readonly');
+        const g = tx.objectStore('images').get('clip:2');
+        g.onsuccess = () => resolve(g.result || null);
+        g.onerror = () => reject(g.error);
+      };
+      rq.onerror = () => reject(rq.error);
+    });
+    if (!blob) return { ok: false, why: 'nothing was stored for the HYBRID beat', source };
+
+    // 3. What the RENDER shows at t.
+    const out = await window.BlvckFrames.at(blob, sampleAt);
+    const rendered = out.frames.map((f, i) => ({
+      beatAt: sampleAt[i], landedAt: f.ok ? f.actualAt : null,
+      colour: f.ok ? sampleRight(f) : null, ok: f.ok, why: f.why || '' }));
+
+    // 4. And whether the graphics are still where the layout put them.
+    const settled = out.frames[out.frames.length - 1];
+    const t = window.BlvckHyperFrameComponents.tokensFor();
+    const rgbOf = (c) => {
+      const m = String(c).match(/^#?([0-9a-f]{6})/i);
+      if (m) { const n2 = parseInt(m[1], 16); return [(n2 >> 16) & 255, (n2 >> 8) & 255, n2 & 255]; }
+      const p2 = String(c).match(/rgba?\(([^)]+)\)/i);
+      return p2 ? p2[1].split(",").map((x) => parseFloat(x)) : [255, 255, 255];
+    };
+    const typeColours = [rgbOf(t.ink), rgbOf(t.accent)];
+    const isTypeColour = (r, g2, b) => typeColours.some((c) =>
+      Math.abs(r - c[0]) + Math.abs(g2 - c[1]) + Math.abs(b - c[2]) < 120);
+    const ink = (box) => {
+      let n = 0, total = 0;
+      const sx = settled.width / 1920, sy = settled.height / 1080;
+      const x0 = Math.max(0, Math.round(box.x * sx)), x1 = Math.min(settled.width, Math.round((box.x + box.w) * sx));
+      const y0 = Math.max(0, Math.round(box.y * sy)), y1 = Math.min(settled.height, Math.round((box.y + box.h) * sy));
+      for (let yy = y0; yy < y1; yy++) {
+        for (let xx = x0; xx < x1; xx++) {
+          const i = (yy * settled.width + xx) * 4;
+          total++;
+          // The colours the components actually paint with, read from the
+          // tokens. Looking for near-white alone found the title and missed
+          // the stat entirely — a stat is painted in the house accent, which
+          // here is amber, and amber is not white. The measurement said 0%
+          // type over a frame that plainly had some.
+          if (isTypeColour(settled.data[i], settled.data[i + 1], settled.data[i + 2])) n++;
+        }
+      }
+      return total ? Math.round((n / total) * 1000) / 1000 : 0;
+    };
+    const boxes = declared.elements
+      .filter((e) => !(e.w >= 1916 && e.h >= 1076))     // the shot itself is the backdrop
+      .map((e) => ({ id: e.id, share: ink(e) }));
+
+    return { ok: true, source, rendered, boxes, meta: out.meta,
+             elements: scene.hyperFrame.elements,
+             hasMediaStart: /data-media-start="([\d.]+)"/.exec(scene.hyperFrameSource),
+             declaredCount: declared.elements.length };
+  }, HYBRID_LINE, hybridWindow, MEDIA_START, SAMPLE_AT);
+
+  if (!hybrid.ok) {
+    check('the HYBRID beat was built', false, hybrid.res || hybrid.why);
+  } else {
+    console.log(`  built from ${hybrid.elements.join(' + ')}, `
+      + `data-media-start=${hybrid.hasMediaStart ? hybrid.hasMediaStart[1] : '(absent)'}`);
+    console.log(`  ${hybrid.meta.width}x${hybrid.meta.height}, ${hybrid.meta.duration.toFixed(3)}s`);
+    for (let i = 0; i < hybrid.rendered.length; i++) {
+      const r = hybrid.rendered[i], s2 = hybrid.source[i];
+      console.log(`    beat ${r.beatAt}s → source ${s2.sourceAt}s   `
+        + `${s2.colour} in the source, ${r.colour} in the render`);
+    }
+    for (const b of hybrid.boxes) console.log(`    ${b.id.padEnd(9)} ${Math.round(b.share * 100)}% type`);
+    record.hybrid = hybrid;
+
+    const near = (a, b) => {
+      if (!a || !b) return false;
+      const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+      const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
+      return Math.max(...pa.map((v, i) => Math.abs(v - pb[i]))) < 60;
+    };
+
+    check('the shot is carried into the composition with its in-point',
+          !!hybrid.hasMediaStart && Number(hybrid.hasMediaStart[1]) === MEDIA_START,
+          hybrid.hasMediaStart && hybrid.hasMediaStart[1]);
+    check('THE FRAME AT t SECONDS INTO THE BEAT IS THE SOURCE AT mediaStart + t',
+          hybrid.rendered.length > 0
+          && hybrid.rendered.every((r, i) => near(r.colour, hybrid.source[i].colour)),
+          hybrid.rendered.map((r, i) => ({ beatAt: r.beatAt, render: r.colour,
+                                           source: hybrid.source[i].colour })));
+    check('the beat is as long as its own narration',
+          Math.abs(hybrid.meta.duration - hybridWindow) <= (1 / (hybrid.meta.fps || 30)) + 0.05,
+          { window: hybridWindow, file: hybrid.meta.duration });
+    check('and the graphics are still on top of it, where the layout put them',
+          hybrid.boxes.length > 0 && hybrid.boxes.every((b) => b.share > 0.01), hybrid.boxes);
   }
 
   check('nothing threw', pageErrors.length === 0, pageErrors.slice(0, 3));

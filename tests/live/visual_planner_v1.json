@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T20:53:39.315Z",
+  "at": "2026-08-25T00:36:58.049Z",
   "legacy": {
     "mode": "FOOTAGE",
     "planned": false,
@@ -67,7 +67,7 @@
     },
     "threw": {
       "mode": "FOOTAGE",
-      "reason": "the planner failed: 503 ResourceExhausted",
+      "reason": "the planner failed twice: 503 ResourceExhausted",
       "confidence": 0,
       "ran": false
     },
@@ -79,7 +79,7 @@
     },
     "hung": {
       "mode": "FOOTAGE",
-      "reason": "the planner failed: the planner did not answer in 90000ms",
+      "reason": "the planner failed twice: the planner did not answer in 90000ms",
       "confidence": 0,
       "ran": false
     },
@@ -126,7 +126,7 @@
       "expect": "FOOTAGE",
       "plan": {
         "mode": "FOOTAGE",
-        "reason": "The sentence describes a specific scene that can be filmed, including boats, a market, and buyers, which are all tangible elements that a camera can capture.",
+        "reason": "The sentence describes a specific scene that can be filmed, including boats, a market, and buyers, which are all tangible subjects that a camera can capture.",
         "confidence": 0.9,
         "ran": true
       }
@@ -136,9 +136,10 @@
       "expect": "HYPERFRAME",
       "plan": {
         "mode": "HYPERFRAME",
-        "reason": "The sentence describes an abstract concept of a chain of authority, which cannot be directly filmed or pointed at with a camera.",
+        "reason": "The sentence describes an abstract chain of authority, which cannot be directly filmed, and the subject is an organizational hierarchy rather than a physical place or object.",
         "confidence": 0.9,
-        "ran": true
+        "ran": true,
+        "retried": true
       }
     },
     {

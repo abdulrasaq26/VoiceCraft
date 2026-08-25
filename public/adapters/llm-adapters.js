@@ -93,18 +93,29 @@
       }));
     }
 
+    // A response body can only be read once, and this path read it twice.
+    //
+    // On a 429 with no second key to rotate to, the body was consumed here for
+    // the key-error message and then consumed AGAIN below to build the thrown
+    // error — so what the caller received was "Failed to execute 'text' on
+    // 'Response': body stream already read" instead of the rate limit that
+    // actually happened. Rate limits are the most common failure this endpoint
+    // has, and every one of them arrived wearing that disguise. Measured: a
+    // Composer call died with exactly that message mid-run.
+    let alreadyRead = null;
     if (res.status === 429 || res.status === 401 || res.status === 403) {
-      const errText = await res.text();
-      window.ProviderManager.handleKeyError('nim', `HTTP ${res.status}: ${errText}`);
+      alreadyRead = await res.text();
+      window.ProviderManager.handleKeyError('nim', `HTTP ${res.status}: ${alreadyRead}`);
       const nextKey = window.ProviderManager.getActiveKey('nim');
       if (nextKey && nextKey !== key) {
         headers['Authorization'] = `Bearer ${nextKey}`;
         res = await fetch(proxyEndpoint, withBudget({ method: 'POST', headers, body: JSON.stringify(body) }));
+        alreadyRead = null;   // a fresh response, with a body of its own
       }
     }
 
     if (!res.ok) {
-      const err = await res.text();
+      const err = alreadyRead !== null ? alreadyRead : await res.text();
       throw new Error(`NVIDIA NIM Error (${res.status}): ${err}`);
     }
 
