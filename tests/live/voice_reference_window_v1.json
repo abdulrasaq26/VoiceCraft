@@ -1,18 +1,18 @@
 {
-  "at": "2026-08-26T22:10:06.405Z",
+  "at": "2026-08-26T23:07:20.588Z",
   "long": {
-    "seconds": 24.3,
-    "originalSec": 30,
+    "seconds": 11.3,
+    "originalSec": 20,
     "trimmed": true,
-    "openingMean": 0.1341414569475254,
-    "bodyMean": 0.31373277564707946
+    "openingMean": 0.13464909804552974,
+    "bodyMean": 0.31560986663679125
   },
   "short": {
-    "seconds": 20,
-    "originalSec": 20,
+    "seconds": 9,
+    "originalSec": 9,
     "trimmed": false,
-    "openingMean": 0.13283144146198875,
-    "bodyMean": 0.3110104827697718
+    "openingMean": 0.13478125847814565,
+    "bodyMean": 0.3153370279710313
   },
-  "MAX_SEC": 25
+  "MAX_SEC": 12
 }
