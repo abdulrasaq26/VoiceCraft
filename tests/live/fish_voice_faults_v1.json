@@ -1,0 +1,52 @@
+{
+  "at": "2026-08-26T22:27:15.194Z",
+  "survey": {
+    "ids": [
+      "Aria_Female_Warm",
+      "Aria__confused",
+      "Aria__default",
+      "Atlas_Documentary",
+      "Ember_Expressive",
+      "Jessica Anna",
+      "Marcus_Male_Deep",
+      "Nova_Bright_Studio",
+      "River_Natural",
+      "Sage_Storyteller",
+      "Sophia_Female_Narrator"
+    ],
+    "speaks": [
+      "Aria_Female_Warm",
+      "Aria__confused",
+      "Atlas_Documentary",
+      "Ember_Expressive",
+      "Marcus_Male_Deep",
+      "Nova_Bright_Studio",
+      "River_Natural",
+      "Sage_Storyteller",
+      "Sophia_Female_Narrator"
+    ],
+    "broken": [
+      {
+        "id": "Aria__default",
+        "status": 500,
+        "body": "{\"statusCode\":500,\"message\":\"Failed to generate speech\",\"error\":\"Internal Server Error\"}"
+      },
+      {
+        "id": "Jessica Anna",
+        "status": 500,
+        "body": "{\"statusCode\":500,\"message\":\"Failed to generate speech\",\"error\":\"Internal Server Error\"}"
+      }
+    ],
+    "hasAdapter": true
+  },
+  "ghost": {
+    "status": 200,
+    "bytes": 26983
+  },
+  "guarded": {
+    "spoke": false,
+    "message": "the voice \"zz-no-such-voice-zz\" is not on the speech server any more. A reference the server does not have is silently replaced by the base model, so this run would have come back in the wrong voice rather than failing. Voices live in the running Fish session — create it again, or choose one the server still has.",
+    "calls": 0
+  },
+  "notes": []
+}

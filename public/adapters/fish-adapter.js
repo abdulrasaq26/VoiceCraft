@@ -244,6 +244,50 @@
     }
     if (!work.length) return null;
 
+    // A VOICE THAT IS NOT THERE DOES NOT FAIL — IT IS SUBSTITUTED.
+    //
+    // Measured against the live server: a reference id it has never heard of
+    // returns 200 and a perfectly good mp3, spoken by the base model. Nothing
+    // in the response says a substitution happened. So a whole narration can be
+    // produced in the wrong voice and the only way to discover it is to listen
+    // to the finished thing — which is the most expensive moment to find out.
+    //
+    // This is not a hypothetical: the voice studio already warns that
+    // references live in the RUNNING Fish session and that anything added
+    // afterwards is gone when the notebook restarts. That restart is exactly
+    // when a saved project keeps pointing at a voice the server no longer has.
+    //
+    // So the ids are checked against what the server actually holds before a
+    // run is spent. Failing to READ the list is not evidence of absence and
+    // must not block the run — that conflation is its own bug, and this file
+    // has had it before.
+    const wanted = [...new Set(work.map((w) => w.reference_id))]
+      .filter((r) => r && r !== 'default');
+    if (wanted.length) {
+      let have = null;
+      try {
+        const res = await fetch(`/api/proxy/fish/v1/references/list?format=json&t=${Date.now()}`,
+                                { method: 'GET', headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.reference_ids)) have = data.reference_ids;
+        }
+      } catch (e) { have = null; }
+
+      if (have) {
+        const missing = wanted.filter((r) => !have.includes(r));
+        if (missing.length) {
+          throw new Error(`the voice ${missing.map((m) => `"${m}"`).join(', ')} is not on the `
+            + `speech server any more. A reference the server does not have is silently replaced `
+            + `by the base model, so this run would have come back in the wrong voice rather than `
+            + `failing. Voices live in the running Fish session — create it again, or choose one `
+            + `the server still has.`);
+        }
+      } else if (onProgress) {
+        onProgress('Could not read the voice list — going ahead without checking the reference.');
+      }
+    }
+
     const gen = buildGenParams(params);
 
     // One seed for the whole run.
@@ -294,8 +338,56 @@
       return null;
     };
 
+    // "Failed to generate speech" IS NOT A DIAGNOSIS.
+    //
+    // It was treated as one, and matching it here meant every 500 this engine
+    // can produce was read as a GPU running out of memory. Measured against the
+    // live server: nine of eleven references rendered the same sixteen-character
+    // line, while `Jessica Anna` and `Aria__default` returned
+    //
+    //   {"statusCode":500,"message":"Failed to generate speech",
+    //    "error":"Internal Server Error"}
+    //
+    // in 2.9s with an 88-byte body, identically for a 16-character text and a
+    // 37-character one. A machine that is out of memory does not fail before it
+    // starts generating, does not fail at the same speed regardless of length,
+    // and does not succeed nine times out of eleven on the same input. That is a
+    // reference the engine cannot load, wearing the generic message this API
+    // returns for anything that goes wrong inside it.
+    //
+    // The cost of the confusion was not just a bad message. A preview of
+    // thirty-seven characters was classified as too large for the GPU, halved,
+    // and retried down three levels - eight requests, several seconds each,
+    // every one of them certain to fail - before reporting the generic error
+    // anyway. So the match is now only on what actually names the condition.
     const isOom = (status, body) =>
-      status === 500 && /out of memory|CUDA|Failed to generate speech/i.test(String(body));
+      status === 500 && /out of memory|CUDA|OutOfMemory|cuBLAS|device-side assert/i.test(String(body));
+
+    // Did the engine fail because of the VOICE, or is it failing at everything?
+    //
+    // Only asked once per run and only after a 500 that carried a reference,
+    // because the answer converts "Internal Server Error" - which tells the
+    // producer nothing they can act on - into the one distinction that decides
+    // what they do next: pick a different voice, or wait for the engine.
+    let refVerdict = null;
+    async function referenceIsTheProblem(text) {
+      if (refVerdict !== null) return refVerdict;
+      refVerdict = 'unknown';
+      try {
+        const probe = await fetch(`/api/proxy/fish/v1/tts`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ text: String(text || 'Testing.').slice(0, 40), format: 'mp3' })
+        });
+        // The same request minus the voice. If that speaks, the engine is fine
+        // and the voice is not.
+        refVerdict = probe.ok ? 'reference' : 'engine';
+        try { await probe.arrayBuffer(); } catch (e) { /* drained, not needed */ }
+      } catch (e) {
+        refVerdict = 'unknown';
+      }
+      return refVerdict;
+    }
 
     async function renderOne(item, depth = 0) {
       // gen carries the run seed, so every chunk is the same take of the voice.
@@ -341,6 +433,23 @@
             out.push(...await renderOne({ ...item, text: p }, depth + 1));
           }
           return out;
+        }
+      }
+      // A 500 carrying a reference is the case worth naming, because the engine
+      // says the same sentence whatever went wrong and the producer cannot see
+      // which of the two situations they are in.
+      if (res.status === 500 && payload.reference_id) {
+        const verdict = await referenceIsTheProblem(item.text);
+        if (verdict === 'reference') {
+          throw new Error(`the voice "${payload.reference_id}" could not be used — the same `
+            + `request without it speaks normally, so the engine is up and this reference is `
+            + `the problem. Pick another voice, or create this one again. `
+            + `(Fish returned ${res.status}: ${err})`);
+        }
+        if (verdict === 'engine') {
+          throw new Error(`the speech engine is failing on every voice, including none at all — `
+            + `this is the engine rather than "${payload.reference_id}". `
+            + `(Fish returned ${res.status}: ${err})`);
         }
       }
       throw new Error(`Fish Audio API error (${res.status}): ${err}`);
