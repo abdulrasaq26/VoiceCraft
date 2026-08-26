@@ -363,29 +363,47 @@
     const isOom = (status, body) =>
       status === 500 && /out of memory|CUDA|OutOfMemory|cuBLAS|device-side assert/i.test(String(body));
 
-    // Did the engine fail because of the VOICE, or is it failing at everything?
+    // WHICH OF THREE THINGS WENT WRONG?
     //
-    // Only asked once per run and only after a 500 that carried a reference,
-    // because the answer converts "Internal Server Error" - which tells the
-    // producer nothing they can act on - into the one distinction that decides
-    // what they do next: pick a different voice, or wait for the engine.
+    // The first version of this asked whether a short line speaks WITHOUT the
+    // reference. That cannot tell the two interesting cases apart, and it
+    // misreported the more common one: a voice that speaks perfectly well on
+    // its own, failing only when a long chunk of script is added to it.
+    //
+    // The reference is encoded INTO the prompt, so reference tokens and spoken
+    // text share one sequence budget (text2semantic/inference.py raises when
+    // the total reaches max_seq_len). A 14s reference is fine for a preview and
+    // can still be too much for paragraph nine. That is a chunk that needs
+    // splitting, not a broken voice, and telling somebody to pick another voice
+    // is both wrong and expensive.
+    //
+    // So the first question is now the RIGHT one: does this reference speak a
+    // short line? If it does, the voice is good and the chunk was too big.
+    //   budget     the voice speaks alone; this text plus it does not
+    //   reference  the voice fails even on a short line, but the engine speaks
+    //   engine     nothing speaks, including no reference at all
+    //   unknown    the question could not be asked, which is not an answer
     let refVerdict = null;
-    async function referenceIsTheProblem(text) {
+    async function diagnose(referenceId) {
       if (refVerdict !== null) return refVerdict;
-      refVerdict = 'unknown';
-      try {
-        const probe = await fetch(`/api/proxy/fish/v1/tts`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ text: String(text || 'Testing.').slice(0, 40), format: 'mp3' })
-        });
-        // The same request minus the voice. If that speaks, the engine is fine
-        // and the voice is not.
-        refVerdict = probe.ok ? 'reference' : 'engine';
-        try { await probe.arrayBuffer(); } catch (e) { /* drained, not needed */ }
-      } catch (e) {
-        refVerdict = 'unknown';
-      }
+      const SHORT = 'Testing one two.';
+      const speaks = async (body) => {
+        try {
+          const r = await fetch(`/api/proxy/fish/v1/tts`, {
+            method: 'POST', headers, body: JSON.stringify(body)
+          });
+          const ok = r.ok;
+          try { await r.arrayBuffer(); } catch (e) { /* drained */ }
+          return ok;
+        } catch (e) { return null; }
+      };
+
+      const withRef = await speaks({ text: SHORT, format: 'mp3', reference_id: referenceId });
+      if (withRef === true) { refVerdict = 'budget'; return refVerdict; }
+      if (withRef === null) { refVerdict = 'unknown'; return refVerdict; }
+
+      const bare = await speaks({ text: SHORT, format: 'mp3' });
+      refVerdict = bare === true ? 'reference' : (bare === false ? 'engine' : 'unknown');
       return refVerdict;
     }
 
@@ -437,9 +455,35 @@
       }
       // A 500 carrying a reference is the case worth naming, because the engine
       // says the same sentence whatever went wrong and the producer cannot see
-      // which of the two situations they are in.
+      // which of the situations they are in.
       if (res.status === 500 && payload.reference_id) {
-        const verdict = await referenceIsTheProblem(item.text);
+        const verdict = await diagnose(payload.reference_id);
+
+        // The voice is fine and this chunk was too long to sit beside it.
+        // Split and carry on — the same remedy the OOM path uses, for the same
+        // underlying reason: a sequence that did not fit.
+        if (verdict === 'budget' && depth < 3) {
+          const parts = halve(item.text);
+          if (parts) {
+            if (onProgress) {
+              onProgress('This passage is too long to sit beside the voice reference — '
+                + 'splitting it and carrying on…');
+            }
+            const out = [];
+            for (const p of parts) {
+              if (!p) continue;
+              out.push(...await renderOne({ ...item, text: p }, depth + 1));
+            }
+            return out;
+          }
+        }
+        if (verdict === 'budget') {
+          throw new Error(`this passage will not fit beside the voice "${payload.reference_id}" `
+            + `even after splitting it three times. The reference is encoded into the prompt `
+            + `alongside the text, so a shorter reference leaves more room for the script — `
+            + `try re-creating the voice from a shorter recording. `
+            + `(Fish returned ${res.status}: ${err})`);
+        }
         if (verdict === 'reference') {
           // Where the real reason is. views.py catches every exception in the
           // TTS path, logs it with a traceback, and returns this one sentence

@@ -41,7 +41,13 @@
   // Hence 12: inside the measured limit with room for a real line of script.
   // This is the model's ceiling rather than a preference, and raising it does
   // not buy a longer reference - it buys a voice that cannot speak.
-  const MAX_SEC = 12;
+  //
+  // Set to 14 on request. 14 is the longest length measured speaking, so it is
+  // the edge of what works rather than a margin inside it — and because the
+  // budget is shared with the script, a 14s reference leaves less room for a
+  // long narration chunk than a 12s one does. The adapter compensates by
+  // splitting a chunk that will not fit; see the 500 handling in fish-adapter.
+  const MAX_SEC = 14;
   const MIN_SEC = 4;
 
   // Mirrors the server's own rule in tools/server/views.py, so a bad name is
