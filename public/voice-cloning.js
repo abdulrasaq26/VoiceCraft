@@ -267,6 +267,16 @@
       body: fd
     });
     const body = await res.text();
+    // The server refuses to overwrite a reference and answers 409. On its own
+    // that reads as "this worked before, why not now" - and it is the reply to
+    // the one action most likely to be a deliberate REPLACEMENT, because
+    // deleting and re-adding is the standard fix for a voice that has stopped
+    // loading. So say what to do rather than forwarding the status.
+    if (res.status === 409) {
+      throw new Error(`A voice called "${String(id).trim()}" is already on the server, and the `
+        + `server will not overwrite one. Delete it in the list below, then create it again — `
+        + `that is also the fix when a voice has stopped working.`);
+    }
     if (!res.ok) throw new Error(`Upload failed (${res.status}): ${body.slice(0, 200)}`);
     return body;
   }

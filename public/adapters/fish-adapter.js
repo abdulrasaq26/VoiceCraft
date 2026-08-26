@@ -441,10 +441,15 @@
       if (res.status === 500 && payload.reference_id) {
         const verdict = await referenceIsTheProblem(item.text);
         if (verdict === 'reference') {
+          // Where the real reason is. views.py catches every exception in the
+          // TTS path, logs it with a traceback, and returns this one sentence
+          // regardless - so the answer exists, it is just on the other machine.
           throw new Error(`the voice "${payload.reference_id}" could not be used — the same `
             + `request without it speaks normally, so the engine is up and this reference is `
-            + `the problem. Pick another voice, or create this one again. `
-            + `(Fish returned ${res.status}: ${err})`);
+            + `the problem. Delete the voice and create it again, or pick another. The real `
+            + `reason is in the notebook cell running the Fish API server: look for `
+            + `"Error in TTS generation" — the server returns this same generic sentence for `
+            + `every internal failure. (Fish returned ${res.status}: ${err})`);
         }
         if (verdict === 'engine') {
           throw new Error(`the speech engine is failing on every voice, including none at all — `
