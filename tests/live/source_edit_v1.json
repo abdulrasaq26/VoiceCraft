@@ -1,0 +1,80 @@
+{
+  "at": "2026-08-26T12:34:31.524Z",
+  "seconds": 3,
+  "editedDuration": 8,
+  "first": {
+    "hyperFrame": {
+      "mode": "FULL_FRAME",
+      "status": "ready",
+      "renderedKey": "clip:1",
+      "version": 1,
+      "handEdited": false,
+      "durationForced": false,
+      "durationSec": 3,
+      "renderMs": 13944,
+      "bytes": 98129,
+      "at": 1787747653514,
+      "failure": null
+    },
+    "file": {
+      "ok": true,
+      "count": {
+        "before": 45720,
+        "after": 1267,
+        "ground": 2010774,
+        "type": 15839
+      },
+      "mean": [
+        242,
+        49,
+        156
+      ],
+      "width": 1920,
+      "height": 1080,
+      "duration": 3,
+      "frames": 90,
+      "fps": 30
+    }
+  },
+  "second": {
+    "hyperFrame": {
+      "mode": "FULL_FRAME",
+      "status": "ready",
+      "renderedKey": "clip:1",
+      "version": 2,
+      "handEdited": true,
+      "durationForced": true,
+      "durationSec": 3,
+      "renderMs": 14152,
+      "bytes": 102962,
+      "at": 1787747669729,
+      "failure": null
+    },
+    "file": {
+      "ok": true,
+      "count": {
+        "before": 929,
+        "after": 46058,
+        "ground": 2010780,
+        "type": 15833
+      },
+      "mean": [
+        9,
+        186,
+        78
+      ],
+      "width": 1920,
+      "height": 1080,
+      "duration": 3,
+      "frames": 90,
+      "fps": 30
+    },
+    "res": {
+      "ok": true,
+      "seconds": 3,
+      "renderMs": 14152,
+      "version": 2,
+      "durationForced": true
+    }
+  }
+}

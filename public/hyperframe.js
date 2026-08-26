@@ -117,6 +117,38 @@
   }
 
   /**
+   * Force the composition's length back to the timeline's.
+   *
+   * Only ever applied to a source a HUMAN edited. The Composer's output is
+   * built FROM this number, so there is nothing to correct; an edited source is
+   * the one case where the two can disagree, and the rule from Timing has never
+   * been about who is asking. The model may not authoritatively set start, end
+   * or duration, and neither may an editor typing into a textarea - the window
+   * belongs to the measured narration.
+   *
+   * This is the same disagreement 83ce3ce removed between runRoute and
+   * renderScene, arriving by a different door: the renderer obeys
+   * data-duration, so a source that says 8 makes an 8s file while the record
+   * says 7, and the workspace reports the record.
+   */
+  function atTimelineDuration(source, seconds) {
+    const text = String(source == null ? '' : source);
+    // The root carries the composition's own length. Per-clip data-duration
+    // values are internal animation timing and are the composition's business.
+    const root = /(<[^>]*data-composition-id="main"[^>]*)/i.exec(text);
+    if (!root) return { source: text, forced: false, was: null };
+    const had = /data-duration="([^"]*)"/i.exec(root[1]);
+    if (had && Number(had[1]) === Number(seconds)) {
+      return { source: text, forced: false, was: Number(had[1]) };
+    }
+    const fixed = had
+      ? root[1].replace(/data-duration="[^"]*"/i, `data-duration="${seconds}"`)
+      : root[1] + ` data-duration="${seconds}"`;
+    return { source: text.replace(root[1], fixed), forced: true,
+             was: had ? Number(had[1]) : null };
+  }
+
+  /**
    * Render a scene's composition and attach it as that scene's visual.
    *
    * Stored under clip:N through the storyboard's own writer, which is what
@@ -131,7 +163,7 @@
    * produced a file of 8s carrying a scene that recorded 7s, which the
    * workspace would have reported as the truth. One number now.
    */
-  async function renderScene(scene, { source, format = 'mp4', assets = [], vendor = [], seconds: given } = {}) {
+  async function renderScene(scene, { source, format = 'mp4', assets = [], vendor = [], seconds: given, handEdited = false } = {}) {
     const win = window.BlvckRenderer && window.BlvckRenderer._shotWindowOf
       ? window.BlvckRenderer._shotWindowOf(scene) : null;
     if (!win && !(Number(given) > 0)) throw new Error('this scene has no place on the timeline yet');
@@ -139,16 +171,32 @@
       ? Number(given)
       : Math.round((win.timelineEnd - win.timelineStart) * 100) / 100;
 
-    const blob = await render({ source, seconds, format, assets, vendor });
+    const fixed = handEdited ? atTimelineDuration(source, seconds) : { source, forced: false };
+    const blob = await render({ source: fixed.source, seconds, format, assets, vendor });
 
     const SBM = window.BlvckStoryboard;
     if (!SBM || !SBM.attachAsset) throw new Error('the storyboard is not available to store the render');
     await SBM.attachAsset(scene, blob, 'video');
 
+    // What this scene is built from, kept HERE rather than in the route that
+    // happened to generate it.
+    //
+    // runRoute set hyperFrameSource on its way past, which meant the source
+    // survived only for scenes the Composer built: a hand-authored composition
+    // - the Phase 1 slice, and anything rendered without the model - went
+    // through this function and kept nothing, so its scene could be inspected
+    // and re-rendered by nobody. Every render passes through here, so this is
+    // where the record of what was rendered belongs. For an edited source it is
+    // the CORRECTED text, because that is what the renderer was given.
+    scene.hyperFrameSource = fixed.source;
+
     scene.hyperFrame = Object.assign({}, scene.hyperFrame, {
       mode: (scene.hyperFrame && scene.hyperFrame.mode) || 'FULL_FRAME',
       status: 'ready',
       renderedKey: 'clip:' + scene.index,
+      version: ((scene.hyperFrame && scene.hyperFrame.version) || 0) + 1,
+      handEdited: !!handEdited,
+      durationForced: !!fixed.forced,
       // Derived from the scene window, never authored. If this and the window
       // ever disagree, the window wins - it is the measured one.
       durationSec: seconds,
@@ -173,21 +221,27 @@
    * showed the ground through, and none came back black. That is why this is a
    * WebM and not an RGBA png-sequence.
    */
-  async function renderOverlay(scene, { source, assets = [], vendor = [] } = {}) {
+  async function renderOverlay(scene, { source, assets = [], vendor = [], handEdited = false } = {}) {
     const win = window.BlvckRenderer && window.BlvckRenderer._shotWindowOf
       ? window.BlvckRenderer._shotWindowOf(scene) : null;
     if (!win) throw new Error('this scene has no place on the timeline yet');
     const seconds = Math.round((win.timelineEnd - win.timelineStart) * 100) / 100;
 
-    const blob = await render({ source, seconds, format: 'webm', assets, vendor });
+    const fixed = handEdited ? atTimelineDuration(source, seconds) : { source, forced: false };
+    const blob = await render({ source: fixed.source, seconds, format: 'webm', assets, vendor });
 
     const SBM = window.BlvckStoryboard;
     if (!SBM || !SBM.putOverlay) throw new Error('the storyboard cannot store an overlay');
     await SBM.putOverlay(scene, blob);
 
+    scene.hyperFrameSource = fixed.source;
+
     scene.hyperFrame = Object.assign({}, scene.hyperFrame, {
       mode: 'OVERLAY', status: 'ready',
       overlayKey: 'hfov:' + scene.index,
+      version: ((scene.hyperFrame && scene.hyperFrame.version) || 0) + 1,
+      handEdited: !!handEdited,
+      durationForced: !!fixed.forced,
       durationSec: seconds, renderMs: blob.renderMs, bytes: blob.size,
       at: Date.now(), failure: null
     });
@@ -196,6 +250,7 @@
 
   window.BlvckHyperFrame = {
     available, render, renderScene, renderOverlay, gsap,
+    _atTimelineDuration: atTimelineDuration,
     RENDER_TIMEOUT_MS
   };
 })();

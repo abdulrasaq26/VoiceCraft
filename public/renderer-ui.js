@@ -201,6 +201,23 @@
     if (hf.status === 'failed' && hf.failure) {
       out.push(line('failed at', esc(`${hf.failure.stage}: ${hf.failure.why}`), 'var(--warn,#e0a030)'));
     }
+    // A hand-edited file is not what the Composer described, and the lines
+    // above are the Composer's account. Say so rather than letting them read
+    // as an explanation of what is on screen.
+    if (hf.handEdited) {
+      out.push(line('edited by hand',
+        `this scene was re-rendered from an edited composition`
+        + (hf.version ? ` (version ${hf.version})` : '')
+        + `, so the elements and reasoning above describe the build before that edit`,
+        'var(--warn,#e0a030)'));
+    } else if (hf.version > 1) {
+      out.push(line('version', String(hf.version), 'var(--muted)'));
+    }
+    if (hf.durationForced) {
+      out.push(line('length held',
+        'the edited composition asked for a different length; the timeline’s was used',
+        'var(--warn,#e0a030)'));
+    }
     if (hf.renderMs) {
       out.push(line('rendered', `${(hf.renderMs / 1000).toFixed(1)}s`
         + (hf.durationSec ? ` for ${hf.durationSec}s of film` : '')
@@ -312,14 +329,79 @@
     }
   }
 
+  /**
+   * The composition, to read and to change.
+   *
+   * Editable rather than a dump, because a source you cannot act on is a
+   * curiosity: the only thing a producer could previously do with a scene that
+   * was nearly right was throw it away and ask the Composer for a different
+   * one. Re-rendering from this text calls no model - what is on screen here is
+   * what gets rendered.
+   *
+   * Two things are deliberately NOT the editor's to decide. The scene's length
+   * comes from the measured narration and is forced back if the text disagrees,
+   * and the assets staged for the render are the approved ones - an edit that
+   * names a file nobody approved gets a missing image, because that file is not
+   * on disk in the render job to begin with.
+   */
   function showSource(scene) {
     openSheet(`Scene ${scene.index} — composition source`, (body) => {
-      const pre = document.createElement('pre');
-      pre.textContent = scene.hyperFrameSource || '';
-      pre.style.cssText = 'max-height:70vh;overflow:auto;font-size:.72rem;line-height:1.5;'
-        + 'background:rgba(0,0,0,.3);padding:1rem;border-radius:6px;white-space:pre-wrap';
-      body.appendChild(pre);
+      const ta = document.createElement('textarea');
+      ta.value = scene.hyperFrameSource || '';
+      ta.spellcheck = false;
+      ta.style.cssText = 'width:100%;height:min(62vh,640px);overflow:auto;font-size:.72rem;'
+        + 'line-height:1.5;background:rgba(0,0,0,.3);color:inherit;padding:1rem;'
+        + 'border-radius:6px;border:1px solid rgba(255,255,255,.12);'
+        + 'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical';
+      body.appendChild(ta);
+
+      const foot = document.createElement('div');
+      foot.style.cssText = 'display:flex;align-items:center;gap:.6rem;margin-top:.7rem;flex-wrap:wrap';
+      const note = document.createElement('span');
+      note.style.cssText = 'font-size:.7rem;opacity:.7;flex:1;min-width:12rem';
+      note.textContent = 'Re-rendering uses this text as it stands. The scene’s length stays '
+        + 'the one the narration measured.';
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'btn small';
+      go.textContent = 'Re-render from this source';
+      go.addEventListener('click', async () => {
+        go.disabled = true;
+        go.textContent = 'Rendering…';
+        await rerenderScene(scene, ta.value);
+        const back = body.closest('div[style*="position:fixed"]');
+        if (back) back.remove();
+      });
+      foot.append(note, go);
+      body.appendChild(foot);
     });
+  }
+
+  /** Render the edited text, and say what it cost and what it changed. */
+  async function rerenderScene(scene, source) {
+    const C = window.BlvckHyperFrameComposer;
+    if (!C || !C.rerenderFrom) { say('The HyperFrame composer is not loaded.', 'error'); return; }
+    say(`Scene ${scene.index}: re-rendering the edited composition…`, 'info');
+    try {
+      const res = await C.rerenderFrom(scene, source, {
+        onProgress: (step) => say(`Scene ${scene.index}: ${step}…`, 'info')
+      });
+      const SBM = window.BlvckStoryboard;
+      if (SBM && SBM.save) SBM.save();
+      if (res.ok) {
+        say(`Scene ${scene.index} re-rendered from the edited source in `
+          + `${(res.renderMs / 1000).toFixed(1)}s (version ${res.version})`
+          + (res.durationForced
+              ? ' — the composition asked for a different length and was held to the timeline.'
+              : '.'),
+          'success');
+      } else {
+        say(`Scene ${scene.index} could not be re-rendered — ${res.why}`, 'error');
+      }
+    } catch (err) {
+      say(`Scene ${scene.index}: ${err.message}`, 'error');
+    }
+    paint();
   }
 
   /** A plain sheet, so a preview or a source dump has somewhere to live. */

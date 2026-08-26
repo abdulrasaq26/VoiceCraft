@@ -485,8 +485,66 @@
     }
   }
 
+  /**
+   * Render a scene again from a source somebody edited by hand.
+   *
+   * No Director, no Composer, no model: the entire point is that the text in
+   * front of the editor is the text that gets rendered. But everything the
+   * route enforces AROUND the source still applies - the same approved assets
+   * are staged and nothing else is on disk to reference, the same vendored
+   * GSAP, the same mode, and the scene window still decides how long the file
+   * is.
+   *
+   * THE COMPOSER'S REASONING NO LONGER DESCRIBES THE FILE. elements, reason and
+   * the frame reading were an account of a composition that has since been
+   * changed by hand, and a workspace that kept showing them would be explaining
+   * a file nobody rendered. The reading is dropped because it cannot be redone
+   * without the model; the layout IS re-measured, because that is geometry and
+   * costs nothing.
+   */
+  async function rerenderFrom(scene, source, { onProgress } = {}) {
+    const say = (s) => { if (onProgress) onProgress(s); };
+    const text = String(source == null ? '' : source);
+    if (!text.trim()) return { ok: false, why: 'there is no composition to render' };
+
+    const HF_MODE = (scene.hyperFrame && scene.hyperFrame.mode) || 'FULL_FRAME';
+    try {
+      say('gathering the approved assets');
+      const assets = await window.BlvckAssetRegistry.toRenderAssets(scene.assetManifest || { assets: [] });
+      if (HF_MODE === 'HYBRID') {
+        const shot = await window.BlvckAssetRegistry.footageFor(scene);
+        if (!shot) return { ok: false, why: 'HYBRID needs footage this scene does not have' };
+        assets.push(...await window.BlvckAssetRegistry.toRenderAssets({ assets: [shot] }));
+      }
+      const vendor = [{ name: 'gsap.min.js', text: await window.BlvckHyperFrame.gsap() }];
+
+      say('rendering the edited composition');
+      const out = HF_MODE === 'OVERLAY'
+        ? await window.BlvckHyperFrame.renderOverlay(scene, { source: text, assets, vendor, handEdited: true })
+        : await window.BlvckHyperFrame.renderScene(scene, { source: text, assets, vendor, handEdited: true });
+
+      const EV = window.BlvckHyperFrameEvaluator;
+      if (EV) {
+        try {
+          const layout = await EV.inspectLayout(scene.hyperFrameSource);
+          scene.hyperFrameLayout = { ok: layout.ok, density: layout.density,
+                                     problems: layout.problems.map((x) => x.why) };
+        } catch (e) { delete scene.hyperFrameLayout; }
+      }
+      delete scene.hyperFrameEvaluation;
+
+      return { ok: true, seconds: out.seconds, renderMs: out.renderMs,
+               version: scene.hyperFrame.version,
+               durationForced: !!scene.hyperFrame.durationForced };
+    } catch (err) {
+      scene.hyperFrame = Object.assign({}, scene.hyperFrame,
+        { status: 'failed', failure: { stage: 'render', why: err.message }, at: Date.now() });
+      return { ok: false, why: err.message };
+    }
+  }
+
   window.BlvckHyperFrameComposer = {
-    direct, composeScene, runRoute, available,
+    direct, composeScene, runRoute, rerenderFrom, available,
     _parseIntent: parseIntent,
     _parseScene: parseScene,
     _limitFor: limitFor,

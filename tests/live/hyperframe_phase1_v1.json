@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-24T11:47:30.024Z",
+  "at": "2026-08-26T12:35:09.083Z",
   "seconds": 3,
   "accent": {
     "r": 233,
@@ -7,8 +7,8 @@
     "b": 160
   },
   "rendered": {
-    "wallMs": 29481,
-    "renderMs": 29330,
+    "wallMs": 15447,
+    "renderMs": 15366,
     "seconds": 3,
     "bytes": 135009,
     "type": "video/mp4",
@@ -16,10 +16,13 @@
       "mode": "FULL_FRAME",
       "status": "ready",
       "renderedKey": "clip:1",
+      "version": 1,
+      "handEdited": false,
+      "durationForced": false,
       "durationSec": 3,
-      "renderMs": 29330,
+      "renderMs": 15366,
       "bytes": 135009,
-      "at": 1787572045721,
+      "at": 1787747705326,
       "failure": null
     },
     "hasStockAsset": false,
@@ -28,8 +31,8 @@
   },
   "film": {
     "ok": true,
-    "bytes": 70198,
-    "duration": 2.94,
+    "bytes": 92838,
+    "duration": 2.96,
     "w": 1280,
     "h": 720,
     "mid": {
