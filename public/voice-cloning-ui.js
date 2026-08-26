@@ -224,8 +224,32 @@
       uploadBtn.disabled = true;
       say('Uploading…');
       try {
+        const newName = nameEl.value.trim();
         await VC.addReference(nameEl.value, prepared.wav, transcriptEl.value);
-        say(`✓ "${nameEl.value.trim()}" created.`, 'good');
+
+        // Accepted is not the same as usable. The server takes a reference on
+        // the strength of its extension and a non-empty transcript; whether the
+        // model can build a prompt from it is only answered at generation time,
+        // with a 500 that names nothing. Ask now, while there is still context
+        // for the answer to mean something.
+        say(`Checking that "${newName}" can actually speak…`, 'info');
+        const check = await VC.verify(newName);
+        if (check.ok === false) {
+          // A voice that cannot speak is not a voice. Leaving it would put a
+          // broken entry in every picker AND block re-creating it under the
+          // same name, since the server refuses to overwrite.
+          let removed = false;
+          try { await VC.deleteReference(newName); removed = true; } catch (e) { /* say so below */ }
+          say(`"${newName}" was created but the engine cannot speak with it, so it `
+            + `${removed ? 'has been removed' : 'could not be removed — delete it in the list below'}. `
+            + `The usual cause is a reference that is too long: this engine encodes the whole clip `
+            + `into its prompt, and clips past about 15 seconds are refused. Try a shorter recording. `
+            + `(${check.status || ''} ${check.why || ''})`.trim(), 'error');
+          return;
+        }
+        say(check.ok === null
+          ? `✓ "${newName}" created — but it could not be test-spoken (${check.why}), so it is unverified.`
+          : `✓ "${newName}" created, and it speaks.`, check.ok === null ? 'warn' : 'good');
         nameEl.value = '';
         transcriptEl.value = '';
         prepared = null;

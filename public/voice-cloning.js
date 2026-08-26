@@ -20,7 +20,28 @@
   'use strict';
 
   const TARGET_SR = 44100;   // Fish S2 Pro is happiest full-band
-  const MAX_SEC = 25;        // ceiling, not a target: shorter clips are kept whole
+  // THE ENGINE REFUSES A LONG REFERENCE, AND SAYS NOTHING USEFUL WHEN IT DOES.
+  //
+  // 25 was tried on request and is not survivable. Measured against the live
+  // server, one reference per length through this exact encoder, asked to speak
+  // a sixteen-character line:
+  //
+  //   8s 10s 11s 12s 13s 14s   all speak
+  //   16s                      500 "Failed to generate speech", in 0.7s
+  //   22s                      500, same
+  //
+  // It fails in well under a second, before generation starts, because the
+  // reference is encoded into the prompt: text2semantic/inference.py raises
+  // when the sequence length T reaches the model's max_seq_len, and T is the
+  // reference tokens PLUS the text being spoken. So the usable reference length
+  // depends on the script - a clip that speaks a test phrase can still fail on
+  // a real narration chunk, which is exactly how a 14.0s reference passed a
+  // probe here and failed in production.
+  //
+  // Hence 12: inside the measured limit with room for a real line of script.
+  // This is the model's ceiling rather than a preference, and raising it does
+  // not buy a longer reference - it buys a voice that cannot speak.
+  const MAX_SEC = 12;
   const MIN_SEC = 4;
 
   // Mirrors the server's own rule in tools/server/views.py, so a bad name is
@@ -281,6 +302,42 @@
     return body;
   }
 
+  /**
+   * Ask the engine to actually speak with a reference that was just created.
+   *
+   * A reference is ACCEPTED by /references/add on the strength of its file
+   * extension and a non-empty transcript. Whether the model can use it is a
+   * different question, answered only at generation time - and answered with
+   * a generic 500 that names nothing. So a voice could be created, appear in
+   * every picker, and fail on the first real narration, which is what was
+   * reported twice.
+   *
+   * One short line, once, at creation. Cheap next to discovering it during a
+   * run, and it is the only way to know.
+   */
+  async function verify(id) {
+    const ep = endpoint();
+    if (!ep) return { ok: false, why: 'no endpoint' };
+    try {
+      const res = await fetch('/api/proxy/fish/v1/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json',
+                   'x-fish-endpoint': ep },
+        body: JSON.stringify({ text: 'Testing one two.', format: 'mp3', reference_id: String(id).trim() })
+      });
+      if (res.ok) {
+        const b = await res.arrayBuffer();
+        return b.byteLength > 500
+          ? { ok: true }
+          : { ok: false, why: 'the engine returned an empty file for this voice' };
+      }
+      return { ok: false, status: res.status, why: (await res.text()).slice(0, 160) };
+    } catch (e) {
+      // Could not ASK is not the same as failed, and must not delete anything.
+      return { ok: null, why: 'the check could not be run: ' + e.message };
+    }
+  }
+
   async function deleteReference(id) {
     const ep = endpoint();
     if (!ep) throw new Error('Set the Fish Speech endpoint in AI settings first.');
@@ -297,6 +354,7 @@
   window.BlvckVoiceCloning = {
     prepare,
     addReference,
+    verify,
     deleteReference,
     validateId,
     measure,
