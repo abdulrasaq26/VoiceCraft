@@ -1,0 +1,57 @@
+{
+  "at": "2026-08-26T23:10:59.603Z",
+  "untouched": {
+    "settings": {
+      "faithful": true,
+      "stored": null,
+      "temperature": "0.8",
+      "style": "documentary"
+    },
+    "sentKeys": [],
+    "body": {
+      "text": "Testing one two three.",
+      "format": "mp3",
+      "use_memory_cache": "on",
+      "seed": 641403755
+    }
+  },
+  "afterStyle": {
+    "pick": "storytelling",
+    "slider": "0.8",
+    "sentKeys": []
+  },
+  "afterSlider": {
+    "settings": {
+      "faithful": false,
+      "stored": "0",
+      "temperature": "0.35",
+      "style": "storytelling"
+    },
+    "sentKeys": [
+      "temperature",
+      "top_p",
+      "repetition_penalty"
+    ],
+    "body": {
+      "text": "Testing one two three.",
+      "format": "mp3",
+      "temperature": 0.35,
+      "top_p": 0.8,
+      "repetition_penalty": 1.1,
+      "chunk_length": 200,
+      "max_new_tokens": 1024,
+      "normalize": true,
+      "use_memory_cache": "on",
+      "seed": 1311433701
+    }
+  },
+  "backOn": {
+    "sentKeys": []
+  },
+  "afterReload": {
+    "faithful": true,
+    "stored": "1",
+    "temperature": "0.35",
+    "style": "documentary"
+  }
+}

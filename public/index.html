@@ -576,6 +576,16 @@
                   <strong style="font-size:13px;">🎛️ Engine parameters</strong>
                   <button id="btn-reset-gen-params" class="btn ghost small" type="button">Reset to defaults</button>
                 </div>
+                <label class="ssml-toggle" style="display:flex; gap:8px; align-items:flex-start; margin-bottom:10px;">
+                  <input type="checkbox" id="gen-faithful" checked />
+                  <span>
+                    <strong>Leave the voice alone</strong>
+                    <span id="gen-faithful-note" class="field-note" style="display:block; margin:2px 0 0;">
+                      Nothing below is sent, so a cloned voice comes out the way the reference sounds.
+                      Moving any control turns this off.
+                    </span>
+                  </span>
+                </label>
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:12px;">
                   <div>
                     <label for="gen-temperature">Expressiveness <output id="gen-temperature-val">0.80</output></label>

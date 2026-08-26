@@ -2391,6 +2391,59 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     normalize: document.getElementById('gen-normalize')
   };
 
+  // LEAVE THE VOICE ALONE, AND MEAN IT.
+  //
+  // A cloned reference already contains the delivery somebody recorded. Every
+  // control in this panel steers the engine AWAY from it, and until now the
+  // panel steered by default: the sliders always had values and those values
+  // were always sent. Worse, picking a narration style silently overwrote them
+  // — the style select is about rewriting the SCRIPT, but its handler also
+  // wrote a sampling preset to storage, so choosing "Storytelling" once left
+  // temperature 0.85 / top_p 0.9 / repetition_penalty 1.05 applied to every
+  // later run under every other style. That is how a panel reading
+  // "Documentary" comes to be sending the storytelling preset, which is exactly
+  // what was reported.
+  //
+  // So the default is now to send NOTHING. Not the engine's defaults restated
+  // by us — nothing at all, so whatever the engine does with an unsteered
+  // reference is what happens, and there is no second copy of those numbers
+  // here to drift out of step with the server's. Touching any control is a
+  // deliberate act and turns steering on.
+  const FAITHFUL_KEY = 'blvck:tts_gen_faithful';
+  function isFaithful() {
+    try {
+      const v = localStorage.getItem(FAITHFUL_KEY);
+      return v === null ? true : v === '1';   // absent means on: it is the default
+    } catch { return true; }
+  }
+  function setFaithful(on) {
+    try { localStorage.setItem(FAITHFUL_KEY, on ? '1' : '0'); } catch { /* quota */ }
+    paintFaithful();
+  }
+  function paintFaithful() {
+    const box = document.getElementById('gen-faithful');
+    const note = document.getElementById('gen-faithful-note');
+    const on = isFaithful();
+    if (box) box.checked = on;
+    if (note) {
+      note.textContent = on
+        ? 'Nothing below is sent, so a cloned voice comes out the way the reference sounds. '
+          + 'Moving any control turns this off.'
+        : 'These values are being sent with every generation, so the voice is being steered '
+          + 'away from the reference. Tick this to stop.';
+    }
+    // Dim rather than disable: the values stay readable, and clicking one is
+    // still how you opt in.
+    const panel = document.getElementById('gen-params-panel');
+    if (panel) {
+      for (const el of panel.querySelectorAll('input[type=range], input[type=number], input[type=checkbox]')) {
+        if (el.id === 'gen-faithful') continue;
+        const wrap = el.closest('div') || el;
+        wrap.style.opacity = on ? '0.55' : '1';
+      }
+    }
+  }
+
   function readGenParams() {
     try {
       const stored = JSON.parse(localStorage.getItem(GEN_PARAMS_KEY) || '{}');
@@ -2442,6 +2495,8 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   function currentGenParams() {
     const def = window.getTtsProvider ? window.getTtsProvider(window.BlvckAI.ttsProvider()) : null;
     if (!def || !def.caps || !def.caps.genParams) return {};
+    // The whole point: an untouched panel contributes nothing to the request.
+    if (isFaithful()) return {};
     return readGenParams();
   }
 
@@ -2481,7 +2536,26 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     const p = collectGenParamsFromUI();
     writeGenParams(p);
     syncGenParamOutputs(p);
+    // Moving a control IS the opt-in. Silently storing a value that is never
+    // sent would be its own small lie - the panel would show a setting and the
+    // engine would never see it.
+    if (isFaithful()) {
+      setFaithful(false);
+      showStatus('The voice is now being steered by these parameters. '
+        + 'Tick "Leave the voice alone" to go back to the reference as recorded.', 'info');
+    }
   }
+
+  const faithfulBox = document.getElementById('gen-faithful');
+  if (faithfulBox) {
+    faithfulBox.addEventListener('change', () => {
+      setFaithful(faithfulBox.checked);
+      showStatus(faithfulBox.checked
+        ? 'Engine parameters are no longer sent — the reference is left as recorded.'
+        : 'Engine parameters will be sent with every generation.', 'info');
+    });
+  }
+  paintFaithful();
 
   ['temperature', 'top_p', 'repetition_penalty', 'chunk_length', 'max_new_tokens'].forEach((k) => {
     if (genEls[k]) genEls[k].addEventListener('input', onGenParamChanged);
@@ -2501,7 +2575,8 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     btnResetGen.addEventListener('click', () => {
       writeGenParams({ ...GEN_DEFAULTS });
       applyGenParamsToUI({ ...GEN_DEFAULTS });
-      showStatus('Engine parameters reset to defaults.', 'info');
+      setFaithful(true);
+      showStatus('Engine parameters reset — nothing is sent, so the voice is left as recorded.', 'info');
     });
   }
 
@@ -2625,8 +2700,13 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   // The seed and advanced fields are left alone.
   if (styleSelect) {
     styleSelect.addEventListener('change', () => {
+      // The style belongs to the SCRIPT — it is applied by "Generate Natural
+      // Narration", which shows a diff and asks. It used to reach sideways into
+      // the engine parameters as well, writing a sampling preset to storage
+      // that then outlived the choice and applied under every other style. A
+      // preset is still available, but only where steering was asked for.
       const preset = STYLE_PARAM_PRESETS[styleSelect.value];
-      if (preset) {
+      if (preset && !isFaithful()) {
         const p = { ...readGenParams(), ...preset };
         writeGenParams(p);
         applyGenParamsToUI(p);
