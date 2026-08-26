@@ -69,7 +69,7 @@
     </div>`;
 
     const trimNote = p.trimmed
-      ? `<div style="opacity:0.75; margin-bottom:4px;">Trimmed from ${p.originalSec.toFixed(1)}s to the cleanest ${p.seconds.toFixed(1)}s of speech.</div>`
+      ? `<div style="opacity:0.75; margin-bottom:4px;">Kept the first ${p.seconds.toFixed(1)}s of ${p.originalSec.toFixed(1)}s, ending at a pause. The opening is never cut.</div>`
       : '';
     const problems = v.problems.map((x) => `<div style="color:#f87171;">✕ ${esc(x)}</div>`).join('');
     const warnings = v.warnings.map((x) => `<div style="color:#fbbf24;">▲ ${esc(x)}</div>`).join('');

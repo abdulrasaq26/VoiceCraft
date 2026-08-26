@@ -1,0 +1,18 @@
+{
+  "at": "2026-08-26T22:10:06.405Z",
+  "long": {
+    "seconds": 24.3,
+    "originalSec": 30,
+    "trimmed": true,
+    "openingMean": 0.1341414569475254,
+    "bodyMean": 0.31373277564707946
+  },
+  "short": {
+    "seconds": 20,
+    "originalSec": 20,
+    "trimmed": false,
+    "openingMean": 0.13283144146198875,
+    "bodyMean": 0.3110104827697718
+  },
+  "MAX_SEC": 25
+}

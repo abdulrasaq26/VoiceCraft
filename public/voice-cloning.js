@@ -20,7 +20,7 @@
   'use strict';
 
   const TARGET_SR = 44100;   // Fish S2 Pro is happiest full-band
-  const TARGET_SEC = 14;     // ~10-20 s is the sweet spot for cloning
+  const MAX_SEC = 25;        // ceiling, not a target: shorter clips are kept whole
   const MIN_SEC = 4;
 
   // Mirrors the server's own rule in tools/server/views.py, so a bad name is
@@ -61,36 +61,38 @@
     return rendered.getChannelData(0);
   }
 
-  // Pick the most speech-dense contiguous window and snap the start back to a
-  // natural pause, so a long recording becomes one clean stretch of speech
-  // rather than an arbitrary slice through the middle of a word.
-  function bestWindow(data, targetSec = TARGET_SEC) {
-    const need = Math.floor(targetSec * TARGET_SR);
+  // Keep the START of the recording, and end on a pause.
+  //
+  // This used to hunt for the most speech-dense window ANYWHERE in the file and
+  // then snap that window's start back to the nearest silence, so a recording
+  // longer than the ceiling reliably lost its opening - and, because the search
+  // was over the whole file, it could take a stretch from the middle and drop
+  // both ends. For a voice reference that is the wrong trade. Somebody who
+  // records a reference speaks the line they want cloned from the top; the
+  // opening is usually the most deliberate, best-articulated speech in the
+  // clip, and losing it is a silent edit to the thing being cloned.
+  //
+  // So the window always begins at sample 0 and a clip inside the ceiling is
+  // kept whole. Only the END moves, and only backwards, to the quietest frame
+  // in the last ~0.8 s - a clip that stops mid-syllable clones that truncation.
+  function leadWindow(data, maxSec = MAX_SEC) {
+    const need = Math.floor(maxSec * TARGET_SR);
     if (data.length <= need) return data;
+
     const hop = Math.floor(0.05 * TARGET_SR);
-    const frames = Math.floor((data.length - hop) / hop);
-    const rms = new Float64Array(frames);
-    for (let f = 0; f < frames; f++) {
+    const endFrame = Math.floor(need / hop);
+    const lookBack = Math.floor(0.8 * TARGET_SR / hop);
+    const lo = Math.max(1, endFrame - lookBack);
+    let quietest = endFrame, quietestRms = Infinity;
+    for (let f = lo; f <= endFrame; f++) {
+      const start = f * hop;
+      if (start + hop > data.length) break;
       let acc = 0;
-      const s = f * hop;
-      for (let i = s; i < s + hop; i++) acc += data[i] * data[i];
-      rms[f] = Math.sqrt(acc / hop);
+      for (let i = start; i < start + hop; i++) acc += data[i] * data[i];
+      const r = Math.sqrt(acc / hop);
+      if (r < quietestRms) { quietestRms = r; quietest = f; }
     }
-    const win = Math.max(1, Math.floor(need / hop));
-    let best = 0, bestSum = -1, run = 0;
-    for (let f = 0; f < win && f < frames; f++) run += rms[f];
-    bestSum = run;
-    for (let f = win; f < frames; f++) {
-      run += rms[f] - rms[f - win];
-      if (run > bestSum) { bestSum = run; best = f - win + 1; }
-    }
-    // snap back to the quietest frame in the preceding ~0.6 s
-    const lookBack = Math.floor(0.6 * TARGET_SR / hop);
-    const lo = Math.max(0, best - lookBack);
-    let quietest = best;
-    for (let f = lo; f <= best; f++) if (rms[f] < rms[quietest]) quietest = f;
-    const start = quietest * hop;
-    return data.slice(start, start + need);
+    return data.slice(0, Math.min(need, quietest * hop));
   }
 
   function normalize(data, peakDbfs = -1) {
@@ -222,7 +224,7 @@
     const raw = await fileOrBlob.arrayBuffer();
     const mono = await decodeToMono(raw);
     const originalSec = mono.length / TARGET_SR;
-    const trimmed = normalize(bestWindow(mono));
+    const trimmed = normalize(leadWindow(mono));
     const seconds = trimmed.length / TARGET_SR;
     const metrics = measure(trimmed);
     return {
@@ -291,6 +293,6 @@
     encodeWav,
     QUALITY,
     TARGET_SR,
-    TARGET_SEC
+    MAX_SEC
   };
 })();
