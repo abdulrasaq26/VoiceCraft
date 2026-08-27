@@ -64,25 +64,9 @@
     }
     .voicecraft-main {
       width: 100%;
-      max-width: none;
+      max-width: 1440px;
       margin: 0 auto;
       padding: 32px 40px 64px;
-    }
-    
-    /* On large desktops, arrange input (main) and output side-by-side */
-    @media (min-width: 1280px) {
-      #workspace-voice {
-        display: grid !important;
-        grid-template-columns: 1fr 360px;
-        gap: 32px;
-        align-items: start;
-      }
-    }
-    @media (min-width: 1600px) {
-      #workspace-voice {
-        grid-template-columns: 1fr 480px;
-        gap: 40px;
-      }
     }
     /* Suppress the AI Director Co-Pilot card from the voice workspace — it needs the old pipeline */
     #workspace-voice > .copilot-card {
