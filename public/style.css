@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #0d0d0f;
   --card: #161619;
   --card-border: #26262b;
@@ -35,8 +35,6 @@ body {
   color: var(--text);
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   min-height: 100vh;
-  height: 100vh;
-  overflow: hidden;
   display: block;
   margin: 0;
   padding: 0;
@@ -1834,7 +1832,7 @@ input[type="range"]:disabled {
 
 @media (max-width: 640px) {
   body {
-    padding: 1.25rem 0.75rem;
+    padding: 0;
   }
 
   .card {
