@@ -5,6 +5,7 @@ import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import autoEditorApp from './features/auto-editor/server/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,6 +54,15 @@ const handler = (req, res) => {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
+  // AutoEditor Feature Backend
+  // ──────────────────────────────────────────────────────────────────────────
+  if (req.url.startsWith('/api/auto-editor/')) {
+    // Rewrite URL so the AutoEditor express app matches its original routes (/render, /status, etc.)
+    req.url = req.url.replace('/api/auto-editor', '');
+    return autoEditorApp(req, res);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
   // Fish Audio / Fish Speech Proxy
   // Forwards /api/proxy/fish/* → <x-fish-endpoint>/*
   //
@@ -64,9 +74,6 @@ const handler = (req, res) => {
   // user in Settings. It changes every Colab session restart.
   // ──────────────────────────────────────────────────────────────────────────
   if (req.url.startsWith('/api/proxy/fish')) {
-    const fishEndpoint = req.headers['x-fish-endpoint'];
-
-    if (!fishEndpoint) {
       res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ error: 'Missing x-fish-endpoint header.' }));
       return;

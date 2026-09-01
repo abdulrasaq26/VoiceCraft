@@ -1590,7 +1590,15 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       dl.title = 'Download';
       dl.disabled = item.status !== 'done';
       dl.addEventListener('click', () => downloadItem(item));
-      actions.append(playBtn, dl);
+      
+      const editorBtn = document.createElement('button');
+      editorBtn.type = 'button';
+      editorBtn.textContent = '🎬';
+      editorBtn.title = 'Send to Auto Editor';
+      editorBtn.disabled = item.status !== 'done';
+      editorBtn.addEventListener('click', () => sendToAutoEditor(item));
+
+      actions.append(playBtn, dl, editorBtn);
 
       // Retrying one part belongs on that part. The batch-level button is at
       // the top of a list that can be forty rows long, and it is hidden while
@@ -1661,6 +1669,28 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   function downloadItem(item) {
     const url = urls.get(item.index);
     if (url) downloadBlobUrl(url, itemFileName(item));
+  }
+
+  // [VoiceCraft Integration] Handoff generated audio to AutoEditor feature
+  async function sendToAutoEditor(item) {
+    const url = urls.get(item.index);
+    if (!url) return;
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const file = new File([blob], itemFileName(item), { type: blob.type || 'audio/wav' });
+      
+      const win = window.open('/auto-editor/index.html', '_blank');
+      // Wait for AutoEditor to load and register its listener
+      let attempts = 0;
+      const interval = setInterval(() => {
+        if (win.closed) { clearInterval(interval); return; }
+        win.postMessage({ type: 'VOICECRAFT_HANDOFF', file: file }, '*');
+        if (++attempts >= 5) clearInterval(interval); // Send a few times over 2.5s
+      }, 500);
+    } catch (e) {
+      console.error("Handoff failed:", e);
+    }
   }
 
   async function downloadEach() {
