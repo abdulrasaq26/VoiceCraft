@@ -138,6 +138,18 @@
           <div class="input-header">
             <label for="text-input">Your script</label>
             <div class="input-tools">
+              <button class="btn ghost small" type="button" onclick="document.getElementById('script-file-input').click()" style="margin-right:8px;">Load .txt</button>
+              <input id="script-file-input" type="file" accept=".txt" hidden onchange="
+                const file = this.files[0];
+                if(file) {
+                  const reader = new FileReader();
+                  reader.onload = e => {
+                    document.getElementById('text-input').value = e.target.result;
+                    document.getElementById('text-input').dispatchEvent(new Event('input', { bubbles: true }));
+                  };
+                  reader.readAsText(file);
+                }
+              " />
               <span id="char-count" class="char-count">0 characters</span>
             </div>
           </div>
@@ -223,7 +235,21 @@
               <p class="field-note" style="margin:2px 0 0;">Letters, numbers, spaces, - and _ only.</p>
             </div>
             <div>
-              <label for="clone-transcript">Transcript <span style="opacity:0.7;">(required)</span></label>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <label for="clone-transcript" style="margin:0;">Transcript <span style="opacity:0.7;">(required)</span></label>
+                <button class="btn ghost small" type="button" onclick="document.getElementById('clone-transcript-file').click()" style="padding:2px 6px; font-size:11px;">Load .txt</button>
+                <input id="clone-transcript-file" type="file" accept=".txt" hidden onchange="
+                  const file = this.files[0];
+                  if(file) {
+                    const reader = new FileReader();
+                    reader.onload = e => {
+                      document.getElementById('clone-transcript').value = e.target.result;
+                      document.getElementById('clone-transcript').dispatchEvent(new Event('input', { bubbles: true }));
+                    };
+                    reader.readAsText(file);
+                  }
+                " />
+              </div>
               <textarea id="clone-transcript" rows="3" placeholder="Type exactly what the recording says…"></textarea>
               <p class="field-note" style="margin:2px 0 0;">Must match the audio — a wrong transcript degrades the clone.</p>
             </div>
