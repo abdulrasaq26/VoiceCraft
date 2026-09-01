@@ -5,7 +5,6 @@ import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import autoEditorApp from './features/auto-editor/server/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,7 +58,15 @@ const handler = (req, res) => {
   if (req.url.startsWith('/api/auto-editor/')) {
     // Rewrite URL so the AutoEditor express app matches its original routes (/render, /status, etc.)
     req.url = req.url.replace('/api/auto-editor', '');
-    return autoEditorApp(req, res);
+    import('./features/auto-editor/server/index.js').then((module) => {
+      const autoEditorApp = module.default;
+      autoEditorApp(req, res);
+    }).catch((err) => {
+      console.error("AutoEditor backend failed to load:", err);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'AutoEditor backend is unavailable on this environment.' }));
+    });
+    return;
   }
 
   // ──────────────────────────────────────────────────────────────────────────
