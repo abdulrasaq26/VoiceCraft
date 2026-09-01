@@ -81,6 +81,9 @@ const handler = (req, res) => {
   // user in Settings. It changes every Colab session restart.
   // ──────────────────────────────────────────────────────────────────────────
   if (req.url.startsWith('/api/proxy/fish')) {
+    const fishEndpoint = req.headers['x-fish-endpoint'];
+
+    if (!fishEndpoint) {
       res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ error: 'Missing x-fish-endpoint header.' }));
       return;
