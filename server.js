@@ -151,7 +151,10 @@ const handler = (req, res) => {
   // ──────────────────────────────────────────────────────────────────────────
 
   // Resolve static request path
-  const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+  let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+  if (urlPath.startsWith('/_next/') || urlPath.startsWith('/logo')) {
+    urlPath = '/auto-editor' + urlPath;
+  }
   let filePath = path.join(ROOT, urlPath);
   if (!filePath.startsWith(ROOT)) {
     res.writeHead(403);
