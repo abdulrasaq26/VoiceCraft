@@ -229,6 +229,215 @@ app.post("/render", newJob, oneAtATime, upload.any(), async (req, res) => {
   }
 });
 
+app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, res) => {
+  try {
+    const spec = JSON.parse(req.body.spec);
+    const fileMap = {};
+    for (const f of req.files) fileMap[f.fieldname] = f.filename;
+
+    const job = {
+      dir: req.jobDir, proc: null, total: 0,
+      progress: 0, status: "running", outPath: null, error: null, listeners: new Set(),
+      _loggedPct: -5,
+    };
+    jobs.set(req.jobId, job);
+    activeJobId = req.jobId;
+    console.log("HyperFrames Render started");
+
+    const launch = async () => {
+      try {
+        // 1. Copy the hyperframes composition template to jobDir
+        const hfDir = path.join(process.cwd(), "scratch/hyperframes-aws/hyperframes/autoeditor-composition");
+        if (!fssync.existsSync(hfDir)) {
+          throw new Error(`Composition template not found at ${hfDir}`);
+        }
+        fssync.cpSync(hfDir, req.jobDir, { recursive: true });
+
+        // 2. Rewrite spec assets to use the local files saved by multer
+        for (const asset of spec.assets) {
+          const fieldName = asset.id; // e.g. "asset_1"
+          if (fileMap[fieldName]) {
+            asset.src = `./${fileMap[fieldName]}`;
+          } else if (fieldName === "audio_main" && fileMap["audio_main"]) {
+            asset.src = `./${fileMap["audio_main"]}`;
+          }
+        }
+
+        // 3. Write mock-spec.json (or spec.json) so the HTML can read it locally
+        fssync.writeFileSync(path.join(req.jobDir, "mock-spec.json"), JSON.stringify(spec, null, 2));
+
+        // 3.5 Inject dynamic duration into index.html so HyperFrames AWS CLI parses it correctly
+        const indexPath = path.join(req.jobDir, "index.html");
+        let htmlStr = fssync.readFileSync(indexPath, "utf-8");
+        htmlStr = htmlStr.replace(/data-duration="10"/, `data-duration="${spec.project.duration}"`);
+        fssync.writeFileSync(indexPath, htmlStr);
+
+        // 4. Run hyperframes lambda sites create
+        const hfRoot = path.join(process.cwd(), "scratch/hyperframes-aws/hyperframes");
+        
+        console.log(`Uploading site for job ${req.jobId}...`);
+        
+        let aws = null;
+        try { if (req.body.aws) aws = JSON.parse(req.body.aws); } catch (e) {}
+        
+        const stackName = aws?.stackName?.trim() || "hyperframes-autoeditor-dev";
+        const region = aws?.region?.trim() || "us-east-1";
+
+        // Ensure AWS_PROFILE or AWS_ACCESS_KEY_ID is passed
+        const env = { ...process.env };
+        if (aws?.accessKey?.trim() && aws?.secretKey?.trim()) {
+            env.AWS_ACCESS_KEY_ID = aws.accessKey.trim();
+            env.AWS_SECRET_ACCESS_KEY = aws.secretKey.trim();
+            delete env.AWS_PROFILE;
+        } else {
+            env.AWS_PROFILE = "autoeditor-dev";
+        }
+        
+        const createCmd = `npx tsx packages/cli/src/cli.ts lambda sites create "${req.jobDir}" --stack-name ${stackName} --region ${region} --json`;
+        
+        const createOutput = await new Promise((resolve, reject) => {
+           import("node:child_process").then(cp => {
+               cp.exec(createCmd, { cwd: hfRoot, env }, (err, stdout, stderr) => {
+                   if (err) reject(new Error(`Site creation failed: ${stderr || err.message}`));
+                   else resolve(stdout);
+               });
+           });
+        });
+        
+        // Parse the siteId from JSON output
+        const createResult = JSON.parse(createOutput);
+        const siteId = createResult.siteId;
+        console.log(`Site uploaded: ${siteId}`);
+        job.progress = 0.3;
+        broadcast(job, { progress: 0.3 });
+
+        // 5. Run hyperframes lambda render
+        console.log(`Starting Lambda render for site ${siteId}...`);
+        const renderCmdArgs = ["tsx", "packages/cli/src/cli.ts", "lambda", "render", req.jobDir, "--site-id", siteId, "--stack-name", stackName, "--region", region, "--width", spec.project.width, "--height", spec.project.height, "--chunk-size", "150", "--max-parallel-chunks", "10", "--wait"];
+        
+        const renderOutput = await new Promise((resolve, reject) => {
+           import("node:child_process").then(cp => {
+               const child = cp.spawn("npx", renderCmdArgs, { cwd: hfRoot, env, shell: true });
+               let fullStdout = "";
+               let fullStderr = "";
+               
+               child.stdout.on("data", (data) => {
+                   const str = data.toString();
+                   fullStdout += str;
+                   const cleanStr = str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+                   // Parse progress like: [RUNNING] 45%
+                   const match = cleanStr.match(/\[RUNNING\]\s*(\d+)%/);
+                   if (match) {
+                       const pct = parseInt(match[1], 10);
+                       // Scale the remaining 0.3 to 0.9 range (reserving last 10% for S3 download)
+                       job.progress = 0.3 + ((pct / 100) * 0.6);
+                       broadcast(job, { progress: job.progress });
+                   }
+               });
+               
+               child.stderr.on("data", (data) => {
+                   fullStderr += data.toString();
+               });
+               
+               child.on("close", (code) => {
+                   const cleanStdout = fullStdout.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+                   const cleanStderr = fullStderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+                   if (code !== 0) reject(new Error(`Lambda render failed: ${cleanStderr || cleanStdout}`));
+                   else resolve(cleanStdout);
+               });
+               
+               child.on("error", (err) => reject(err));
+           });
+        });
+        
+        const s3Match = renderOutput.match(/Output:\s+(s3:\/\/[^\s]+)/);
+        const costMatch = renderOutput.match(/Total cost:\s+([^\s]+)/);
+        const s3Uri = s3Match ? s3Match[1] : null;
+        const costStr = costMatch ? costMatch[1] : "unknown";
+        console.log(`Render finished! Cost: ${costStr}, Object: ${s3Uri}`);
+        
+        job.progress = 0.9;
+        broadcast(job, { progress: 0.9 });
+        
+        if (!s3Uri) throw new Error("No output file returned by Lambda render");
+
+        const outPath = path.join(req.jobDir, "output.mp4");
+        console.log(`Downloading ${s3Uri} to ${outPath}...`);
+        await new Promise((resolve, reject) => {
+           import("node:child_process").then(cp => {
+               cp.exec(`aws s3 cp "${s3Uri}" "${outPath}"`, { env }, (err, stdout, stderr) => {
+                   if (err) reject(new Error(`S3 download failed: ${stderr || err.message}`));
+                   else resolve();
+               });
+           });
+        });
+
+        let finalOutPath = outPath;
+        if (fileMap["audio_main"]) {
+            console.log("Muxing audio into output video...");
+            const audioPath = path.join(req.jobDir, fileMap["audio_main"]);
+            const muxedPath = path.join(req.jobDir, "muxed.mp4");
+            await new Promise((resolve, reject) => {
+                import("node:child_process").then(cp => {
+                    // Fast stream copy for both video and audio
+                    const muxCmd = `ffmpeg -y -i "${outPath}" -i "${audioPath}" -c:v copy -c:a aac -shortest "${muxedPath}"`;
+                    cp.exec(muxCmd, (err, stdout, stderr) => {
+                        if (err) reject(new Error(`FFmpeg audio muxing failed: ${stderr || err.message}`));
+                        else resolve();
+                    });
+                });
+            });
+            finalOutPath = muxedPath;
+        }
+
+        job.status = "done"; 
+        job.progress = 1;
+        
+        let saved = null;
+        if (OUTPUT_DIR) {
+          try {
+            fssync.mkdirSync(OUTPUT_DIR, { recursive: true });
+            const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+            saved = path.join(OUTPUT_DIR, `autoeditor-${stamp}-${req.jobId.slice(0, 6)}.mp4`);
+            fssync.copyFileSync(finalOutPath, saved);
+            console.log("Saved video to " + saved);
+          } catch (e) { console.warn("Could not save to OUTPUT_DIR: " + e.message); saved = null; }
+        }
+        job.outPath = saved || finalOutPath;
+        job.saved = saved;
+        broadcast(job, { progress: 1 });
+        broadcast(job, { done: true, saved });
+        endListeners(job);
+        clearActive(req.jobId);
+        
+      } catch (err) {
+        job.status = "error"; job.error = String(err.message || err);
+        console.error("HyperFrames render failed: " + job.error);
+        broadcast(job, { error: job.error });
+        endListeners(job);
+        clearActive(req.jobId);
+      }
+    };
+    
+    launch();
+    res.json({ jobId: req.jobId });
+  } catch (err) {
+    rmrf(req.jobDir);
+    res.status(400).json({ error: String(err.message || err) });
+  }
+});
+
+app.get("/render/:id", (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json({
+    id: req.params.id,
+    status: job.status === "done" ? "completed" : job.status,
+    progress: Math.round(job.progress * 100),
+    error: job.error
+  });
+});
+
 app.get("/render/:id/events", (req, res) => {
   const job = jobs.get(req.params.id);
   if (!job) return res.status(404).end();
