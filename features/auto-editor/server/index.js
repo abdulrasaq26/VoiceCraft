@@ -349,10 +349,14 @@ app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, re
                });
                
                child.on("close", (code) => {
-                   const cleanStdout = fullStdout.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
-                   const cleanStderr = fullStderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
-                   if (code !== 0) reject(new Error(`Lambda render failed: ${cleanStderr || cleanStdout}`));
-                   else resolve(cleanStdout);
+                   if (code !== 0) {
+                       // The [SystemMemory] line is often just a startup warning in stderr.
+                       // The REAL error is usually printed to stdout before it crashes, or it's an OOM (code 137).
+                       const outTail = fullStdout.length > 1000 ? "..." + fullStdout.slice(-1000) : fullStdout;
+                       reject(new Error(`Lambda CLI exited with code ${code}.\nStderr: ${fullStderr.trim()}\nStdout tail: ${outTail.trim()}`));
+                   } else {
+                       resolve(fullStdout);
+                   }
                });
                
                child.on("error", (err) => reject(err));
