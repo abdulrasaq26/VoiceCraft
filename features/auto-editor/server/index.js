@@ -283,13 +283,18 @@ app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, re
         const stackName = aws?.stackName?.trim() || "hyperframes-autoeditor-dev";
         const region = aws?.region?.trim() || "us-east-1";
 
-        // Ensure AWS_PROFILE or AWS_ACCESS_KEY_ID is passed
+        // Ensure AWS_PROFILE or AWS_ACCESS_KEY_ID is passed, but NEVER both.
         const env = { ...process.env };
+        
         if (aws?.accessKey?.trim() && aws?.secretKey?.trim()) {
             env.AWS_ACCESS_KEY_ID = aws.accessKey.trim();
             env.AWS_SECRET_ACCESS_KEY = aws.secretKey.trim();
             delete env.AWS_PROFILE;
+        } else if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY) {
+            // They are set in Railway environment variables, so we delete profile to avoid conflict
+            delete env.AWS_PROFILE;
         } else {
+            // Fallback to local developer profile
             env.AWS_PROFILE = "autoeditor-dev";
         }
         
