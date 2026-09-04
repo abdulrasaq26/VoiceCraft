@@ -313,7 +313,7 @@ app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, re
 
         // 5. Run hyperframes lambda render
         console.log(`Starting Lambda render for site ${siteId}...`);
-        const renderCmdArgs = ["tsx", "packages/cli/src/cli.ts", "lambda", "render", req.jobDir, "--site-id", siteId, "--stack-name", stackName, "--region", region, "--width", spec.project.width, "--height", spec.project.height, "--chunk-size", "150", "--max-parallel-chunks", "10", "--wait"];
+        const renderCmdArgs = ["tsx", "packages/cli/src/cli.ts", "lambda", "render", req.jobDir, "--site-id", siteId, "--stack-name", stackName, "--region", region, "--width", spec.project.width, "--height", spec.project.height, "--chunk-size", "90", "--max-parallel-chunks", "60", "--wait"];
         
         const renderOutput = await new Promise((resolve, reject) => {
            import("node:child_process").then(cp => {
