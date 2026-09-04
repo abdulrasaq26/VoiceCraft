@@ -20,14 +20,16 @@ async function awaitJobBlob(jobId, onProgress) {
       cleanup();
       
       try {
-        const fileRes = await fetch(`${getBase()}/render/${jobId}/file`, {
-          headers: { 
-            "ngrok-skip-browser-warning": "1"
-          }
-        });
-        if (!fileRes.ok) throw new Error("Could not download the finished MP4");
-        const blob = await fileRes.blob();
-        resolve(blob);
+        const dlLink = `${getBase()}/render/${jobId}/file`;
+        // Create an invisible anchor tag to trigger a native browser download
+        const a = document.createElement('a');
+        a.href = dlLink;
+        a.download = `hyperframes-${jobId.slice(0,6)}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        resolve(null);
       } catch (e) {
         reject(e);
       }
