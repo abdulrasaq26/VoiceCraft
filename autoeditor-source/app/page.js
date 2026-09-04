@@ -863,7 +863,12 @@ export default function Home() {
       opts.onProgress = setProgress;
       const blob = await renderVideoHyperframes(opts);
       
-      setOutUrl(URL.createObjectURL(blob));
+      if (blob) {
+        setOutUrl(URL.createObjectURL(blob));
+      } else {
+        // null means the download was already triggered directly via anchor tag
+        setOutUrl(null);
+      }
     } catch (e) {
       setError(e.message || String(e));
     } finally {
