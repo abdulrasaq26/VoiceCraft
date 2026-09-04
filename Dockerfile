@@ -1,9 +1,11 @@
-# Blvck-TTS is a zero-dependency static site served by a tiny Node http
-# server (server.js). No npm install needed — there are no dependencies.
+# VoiceCraft-TTS + AutoEditor now has a backend!
 FROM node:20-slim
 
 ENV NODE_ENV=production
 WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev
 
 COPY . .
 
