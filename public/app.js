@@ -47,6 +47,7 @@
   const zipSelectedBtn = $('zip-selected-btn');
   const downloadEachBtn = $('download-each-btn');
   const mergeBtn = $('merge-btn');
+  const sendAeBtn = $('send-ae-btn');
   const selectAllToggle = $('select-all');
   const queueList = $('queue-list');
   const rowAudio = $('row-audio');
@@ -1532,6 +1533,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     zipBtn.disabled = !hasDone;
     downloadEachBtn.disabled = !hasDone;
     if (mergeBtn) mergeBtn.disabled = !hasDone;
+    if (sendAeBtn) sendAeBtn.disabled = !hasDone;
     zipSelectedBtn.disabled = selected.size === 0;
   }
 
@@ -1708,6 +1710,43 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
    * index order the editor uses to build the video's audio, so the download is
    * the same recording rather than a second assembly of it that could drift.
    */
+  async function sendToAutoEditor() {
+    if (!batch || !window.BlvckAudioMerge) return;
+    const items = batch.items.filter((i) => i.status === 'done').sort((a, b) => a.index - b.index);
+    if (!items.length) { showStatus('Nothing has finished generating yet.'); return; }
+
+    sendAeBtn.disabled = true;
+    const label = sendAeBtn.textContent;
+    sendAeBtn.textContent = 'Sending...';
+    try {
+      // 1. Merge audio
+      const blobs = [];
+      for (const item of items) {
+        const blob = memBlobs.get(item.index) || (await idbGet(`${batch.id}:${item.index}`));
+        if (blob) blobs.push(blob);
+      }
+      const res = await window.BlvckAudioMerge.merge(blobs);
+      
+      // 2. Generate SRT
+      const cues = await computeCues();
+      const srtText = toSRT(cues);
+
+      // 3. Save to IDB for AutoEditor to pick up
+      await idbPut("transfer_audio", res.blob);
+      await idbPut("transfer_srt", srtText);
+      await idbPut("transfer_project", batch.project);
+
+      // 4. Open AutoEditor
+      window.open('/auto-editor/index.html', '_blank');
+      showStatus('Sent audio and subtitles to AutoEditor.', 'success');
+    } catch (err) {
+      showStatus(`Could not send to AutoEditor: ${err.message}`);
+    } finally {
+      sendAeBtn.textContent = label;
+      sendAeBtn.disabled = false;
+    }
+  }
+
   async function mergeDownload() {
     if (!batch || !window.BlvckAudioMerge) return;
     const items = batch.items.filter((i) => i.status === 'done')
@@ -2246,6 +2285,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     if (batch) downloadEach();
   });
   if (mergeBtn) mergeBtn.addEventListener('click', mergeDownload);
+  if (sendAeBtn) sendAeBtn.addEventListener('click', sendToAutoEditor);
   selectAllToggle.addEventListener('change', () => {
     if (!batch) return;
     const doneItems = batch.items.filter((i) => i.status === 'done');
