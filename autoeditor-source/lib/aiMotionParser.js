@@ -37,17 +37,21 @@ export function validateAndMapMotionJSON(jsonString, slots) {
     }
 
     // Basic validation of motion structure
-    if (c.motion && c.motion.keyframes) {
-      if (!Array.isArray(c.motion.keyframes)) {
+    const motionObj = c.motion || c; // Support both nested 'motion' object and flat properties
+    if (motionObj.keyframes) {
+      if (!Array.isArray(motionObj.keyframes)) {
         errors.push(`clipId '${c.clipId}' has invalid 'keyframes' (must be an array).`);
       } else {
-        c.motion.keyframes.forEach((kf, kIdx) => {
-          if (kf.t === undefined || kf.t < 0 || kf.t > 1) {
-            errors.push(`clipId '${c.clipId}' keyframe ${kIdx} has invalid 't' (must be 0-1).`);
+        motionObj.keyframes.forEach((kf, kIdx) => {
+          const tValue = kf.t !== undefined ? kf.t : kf.time;
+          if (tValue === undefined || tValue < 0 || tValue > 1) {
+            // Some AIs generate raw seconds for 'time' instead of normalized 't'. Allow it if it's >= 0.
+            if (tValue === undefined || tValue < 0) {
+              errors.push(`clipId '${c.clipId}' keyframe ${kIdx} has invalid 't' or 'time'.`);
+            }
           }
-          if (!kf.properties || typeof kf.properties !== 'object') {
-            errors.push(`clipId '${c.clipId}' keyframe ${kIdx} missing 'properties' object.`);
-          }
+          // The AI generated flat properties inside the keyframe object (e.g. {time: 0, scale: 1.2})
+          // We don't strictly require a 'properties' object anymore, we just accept the whole keyframe
         });
       }
     }

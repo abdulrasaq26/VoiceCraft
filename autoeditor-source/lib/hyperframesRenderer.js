@@ -148,20 +148,34 @@ export async function renderVideoHyperframes(opts) {
     const ai = opts.aiMotion ? opts.aiMotion[c.name] : null;
 
     if (ai) {
-      // AI Motion Override
-      if (ai.motion && ai.motion.keyframes) {
+      // AI Motion Override (Support both nested 'motion' object and flat clip object)
+      const motionObj = ai.motion || ai;
+      if (motionObj.keyframes) {
         const propsMap = {};
-        ai.motion.keyframes.forEach(kf => {
-          const timeSec = kf.t * c.duration;
-          for (const p in kf.properties) {
-            if (!propsMap[p]) propsMap[p] = { property: p, keyframes: [], easing: ai.motion.easing || "power2.inOut" };
-            propsMap[p].keyframes.push({ time: timeSec, value: kf.properties[p] });
+        motionObj.keyframes.forEach(kf => {
+          // Some AIs emit 't' (0..1), others emit 'time' (raw seconds). Handle both.
+          let timeSec = 0;
+          if (kf.t !== undefined) {
+              timeSec = kf.t * c.duration;
+          } else if (kf.time !== undefined) {
+              // If it's larger than 1, it's probably absolute seconds. If it's <= 1, it might be normalized or just a short clip.
+              // The AI outputted { "time": 17.0, ... } so it's absolute seconds.
+              timeSec = kf.time; 
+          }
+          
+          // The AI might nest properties in kf.properties, or flatten them in kf.
+          const props = kf.properties || kf;
+          for (const p in props) {
+            if (p === "t" || p === "time" || p === "properties" || p === "easing") continue;
+            if (!propsMap[p]) propsMap[p] = { property: p, keyframes: [], easing: motionObj.easing || "power2.inOut" };
+            propsMap[p].keyframes.push({ time: timeSec, value: props[p] });
           }
         });
         animations = Object.values(propsMap);
       }
+      
       effects = ai.effects || [];
-      transitionIn = ai.transitionIn || null;
+      transitionIn = ai.transitionIn || ai.transition || null; // Support flat 'transition' key
       transitionOut = ai.transitionOut || null;
 
       // Ensure transition duration is absolute, defaulting to opts if missing but type exists
