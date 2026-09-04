@@ -1,5 +1,5 @@
 # VoiceCraft-TTS + AutoEditor now has a backend!
-FROM node:20-slim
+FROM node:22-slim
 
 ENV NODE_ENV=production
 WORKDIR /app
