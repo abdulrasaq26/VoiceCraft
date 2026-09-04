@@ -175,12 +175,21 @@ export async function renderVideoHyperframes(opts) {
       }
       
       effects = ai.effects || [];
-      transitionIn = ai.transitionIn || ai.transition || null; // Support flat 'transition' key
-      transitionOut = ai.transitionOut || null;
-
-      // Ensure transition duration is absolute, defaulting to opts if missing but type exists
-      if (transitionIn && !transitionIn.duration) transitionIn.duration = transitionDuration;
-      if (transitionOut && !transitionOut.duration) transitionOut.duration = transitionDuration;
+      // Support flat string transition (e.g. "crossfade") or object ({ type, duration })
+      const rawTransitionIn = ai.transitionIn || ai.transition || null;
+      if (typeof rawTransitionIn === "string") {
+        transitionIn = { type: rawTransitionIn, duration: transitionDuration };
+      } else if (rawTransitionIn) {
+        transitionIn = rawTransitionIn;
+        if (!transitionIn.duration) transitionIn.duration = transitionDuration;
+      }
+      const rawTransitionOut = ai.transitionOut || null;
+      if (typeof rawTransitionOut === "string") {
+        transitionOut = { type: rawTransitionOut, duration: transitionDuration };
+      } else if (rawTransitionOut) {
+        transitionOut = rawTransitionOut;
+        if (!transitionOut.duration) transitionOut.duration = transitionDuration;
+      }
 
     } else {
       // Standard UI behavior
