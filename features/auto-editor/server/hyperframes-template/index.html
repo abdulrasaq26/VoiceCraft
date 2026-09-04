@@ -1,0 +1,308 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoiceCraft Composition Runtime v2</title>
+
+  <style>
+    /* ================================================================
+       BASE RESET
+    ================================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+
+    /* ================================================================
+       VIEWPORT
+    ================================================================ */
+    #vc-viewport {
+      position: relative;
+      overflow: hidden;
+      /* width/height set by CompositionRuntime from spec.project */
+    }
+
+    /* ================================================================
+       LAYER SYSTEM
+    ================================================================ */
+    .vc-layer {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      will-change: transform, opacity;
+    }
+
+    .vc-media {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .vc-overlay-container {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* ================================================================
+       EFFECTS
+    ================================================================ */
+    .vc-vignette {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(
+        ellipse at center,
+        transparent 50%,
+        rgba(0,0,0,calc(var(--vc-vignette-intensity, 0.5) * 1)) 100%
+      );
+      pointer-events: none;
+    }
+
+    .vc-grain {
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+      background-size: 200px 200px;
+      pointer-events: none;
+      mix-blend-mode: overlay;
+    }
+
+    /* ================================================================
+       TYPOGRAPHY LAYERS
+    ================================================================ */
+    .vc-text-layer {
+      position: absolute;
+      left: 0; right: 0;
+      padding: 0 5%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    /* Positions */
+    .vc-text--bottom       { bottom: 10%; top: auto; }
+    .vc-text--top          { top: 8%;  bottom: auto; }
+    .vc-text--center       { top: 50%; transform: translateY(-50%); }
+    .vc-text--lower-third  { bottom: 18%; top: auto; }
+
+    /* Sizes */
+    .vc-text--sm   { font-size: 2.2rem; }
+    .vc-text--md   { font-size: 3.2rem; }
+    .vc-text--lg   { font-size: 4.2rem; }
+    .vc-text--xl   { font-size: 5.5rem; }
+    .vc-text--2xl  { font-size: 7rem; }
+
+    .vc-text-content {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 0.15em;
+      text-align: center;
+      font-weight: 700;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.85);
+      line-height: 1.2;
+    }
+
+    .vc-word, .vc-char {
+      display: inline-block;
+      white-space: pre;
+    }
+
+    /* Typography Backgrounds */
+    .vc-text-bg {
+      position: absolute;
+      inset: -0.4em -0.8em;
+      border-radius: 0;
+      pointer-events: none;
+    }
+
+    .vc-text-bg--pill {
+      background: rgba(0, 0, 0, 0.65);
+      border-radius: 9999px;
+    }
+
+    .vc-text-bg--bar {
+      background: rgba(0, 0, 0, 0.7);
+      left: -9999px; right: -9999px;
+      border-radius: 0;
+    }
+
+    .vc-text-bg--gradient {
+      background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%);
+      left: -9999px; right: -9999px; bottom: -3em; top: auto;
+      height: 6em;
+    }
+
+    /* ================================================================
+       LOWER THIRDS
+    ================================================================ */
+    .vc-lt {
+      position: absolute;
+      left: 5%;
+      bottom: 12%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .vc-lt-text { position: relative; z-index: 2; }
+    .vc-lt-title   { font-weight: 800; line-height: 1.15; }
+    .vc-lt-subtitle { font-weight: 400; line-height: 1.3; opacity: 0.85; }
+
+    /* BG elements */
+    .vc-lt-bg {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+    }
+
+    /* ---- Minimal ---- */
+    .vc-lt--minimal { color: #fff; }
+    .vc-lt--minimal .vc-lt-title   { font-size: 3.4rem; }
+    .vc-lt--minimal .vc-lt-subtitle { font-size: 1.9rem; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 0.2em; }
+    .vc-lt-accent--line {
+      width: 3.5rem; height: 3px;
+      background: #fff;
+      margin-bottom: 0.6em;
+    }
+
+    /* ---- Modern ---- */
+    .vc-lt--modern { color: #fff; padding: 0.6em 1.4em; }
+    .vc-lt--modern .vc-lt-title   { font-size: 3rem; }
+    .vc-lt--modern .vc-lt-subtitle { font-size: 1.6rem; margin-top: 0.15em; }
+    .vc-lt-bg--pill {
+      background: rgba(0,0,0,0.6);
+      border-radius: 12px;
+      backdrop-filter: blur(4px);
+    }
+
+    /* ---- News ---- */
+    .vc-lt--news { color: #fff; padding: 0.5em 1.2em; min-width: 40%; }
+    .vc-lt--news .vc-lt-title   { font-size: 2.8rem; font-weight: 900; }
+    .vc-lt--news .vc-lt-subtitle { font-size: 1.5rem; margin-top: 0.1em; }
+    .vc-lt-bg--bar { background: #c0392b; border-radius: 0; }
+    .vc-lt-accent--bar {
+      height: 5px;
+      background: #fff;
+      width: 100%;
+      margin-bottom: 0;
+    }
+
+    /* ---- Corporate ---- */
+    .vc-lt--corporate { color: #fff; padding: 0.8em 1.5em; }
+    .vc-lt--corporate .vc-lt-title   { font-size: 2.9rem; }
+    .vc-lt--corporate .vc-lt-subtitle { font-size: 1.6rem; color: #aaa; margin-top: 0.2em; }
+    .vc-lt-bg--dark { background: rgba(15,15,25,0.85); border-radius: 6px; }
+    .vc-lt-accent--side {
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 5px;
+      background: #2980b9;
+      border-radius: 0;
+    }
+
+    /* ---- Social ---- */
+    .vc-lt--social { color: #111; padding: 0.9em 1.6em; }
+    .vc-lt--social .vc-lt-title   { font-size: 3rem; color: #111; }
+    .vc-lt--social .vc-lt-subtitle { font-size: 1.6rem; color: #444; margin-top: 0.2em; }
+    .vc-lt-bg--card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+    }
+
+    /* ---- Cinematic ---- */
+    .vc-lt--cinematic {
+      color: #fff;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      left: 50%; transform: translateX(-50%);
+      bottom: 10%;
+      text-align: center;
+    }
+    .vc-lt--cinematic .vc-lt-title   { font-size: 2.6rem; font-weight: 300; }
+    .vc-lt--cinematic .vc-lt-subtitle { font-size: 1.3rem; letter-spacing: 0.3em; opacity: 0.7; margin-top: 0.5em; }
+    .vc-lt-accent--underline {
+      width: 4rem; height: 1px;
+      background: rgba(255,255,255,0.6);
+      margin: 0.6em auto 0;
+    }
+  </style>
+
+  <!-- GSAP from CDN — safe for Lambda (network reachable from Chromium) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+</head>
+<body>
+
+  <!-- Main composition viewport. data-duration is patched per-job by the backend -->
+  <div
+    id="vc-viewport"
+    data-composition-id="autoeditor-composition"
+    data-duration="10"
+    data-width="1920"
+    data-height="1080"
+    data-fps="30"
+  ></div>
+
+  <!-- Phase 5 Engine Stack — order matters: dependencies first -->
+  <script src="./keyframe-engine.js"></script>
+  <script src="./effect-engine.js"></script>
+  <script src="./animation-engine.js"></script>
+  <script src="./transition-engine.js"></script>
+  <script src="./typography-engine.js"></script>
+  <script src="./lower-third-engine.js"></script>
+  <script src="./layer-engine.js"></script>
+  <script src="./composition-runtime.js"></script>
+
+  <script>
+    window.addEventListener("load", async () => {
+      let spec = null;
+
+      // HyperFrames injects spec via window.hyperframes.variables
+      if (window.hyperframes && window.hyperframes.variables && window.hyperframes.variables.spec) {
+        spec = window.hyperframes.variables.spec;
+        if (typeof spec === "string") spec = JSON.parse(spec);
+      } else {
+        // Fallback: load mock-spec.json for local browser testing
+        try {
+          const res = await fetch("./mock-spec.json");
+          spec = await res.json();
+        } catch (e) {
+          console.error("Failed to load mock-spec.json:", e);
+        }
+      }
+
+      if (!spec) { console.error("No spec found. Composition cannot render."); return; }
+
+      // Patch viewport data-duration from spec (belt-and-suspenders alongside backend injection)
+      const vp = document.getElementById("vc-viewport");
+      if (vp && spec.project) {
+        vp.setAttribute("data-duration", String(spec.project.duration));
+        vp.setAttribute("data-fps",      String(spec.project.fps || 30));
+        vp.setAttribute("data-width",    String(spec.project.width));
+        vp.setAttribute("data-height",   String(spec.project.height));
+      }
+
+      const timeline = await CompositionRuntime.init(spec);
+
+      // HyperFrames rendering contract
+      window.renderHyperFrame = (timeSeconds) => {
+        CompositionRuntime.seek(timeSeconds);
+      };
+
+      // Also expose the GSAP timeline for HyperFrames legacy contract
+      window.__timelines = window.__timelines || {};
+      window.__timelines["autoeditor-composition"] = timeline;
+    });
+  </script>
+</body>
+</html>

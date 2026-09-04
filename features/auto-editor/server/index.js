@@ -247,7 +247,7 @@ app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, re
     const launch = async () => {
       try {
         // 1. Copy the hyperframes composition template to jobDir
-        const hfDir = path.join(process.cwd(), "scratch/hyperframes-aws/hyperframes/autoeditor-composition");
+        const hfDir = path.join(process.cwd(), "features/auto-editor/server/hyperframes-template");
         if (!fssync.existsSync(hfDir)) {
           throw new Error(`Composition template not found at ${hfDir}`);
         }
