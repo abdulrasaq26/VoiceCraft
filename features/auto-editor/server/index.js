@@ -266,10 +266,12 @@ app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, re
         // 3. Write mock-spec.json (or spec.json) so the HTML can read it locally
         fssync.writeFileSync(path.join(req.jobDir, "mock-spec.json"), JSON.stringify(spec, null, 2));
 
-        // 3.5 Inject dynamic duration into index.html so HyperFrames AWS CLI parses it correctly
+        // 3.5 Inject dynamic duration AND dimensions into index.html so HyperFrames AWS CLI parses it correctly
         const indexPath = path.join(req.jobDir, "index.html");
         let htmlStr = fssync.readFileSync(indexPath, "utf-8");
-        htmlStr = htmlStr.replace(/data-duration="10"/, `data-duration="${spec.project.duration}"`);
+        htmlStr = htmlStr.replace(/data-duration="[^"]*"/, `data-duration="${spec.project.duration}"`);
+        htmlStr = htmlStr.replace(/data-width="[^"]*"/, `data-width="${spec.project.width}"`);
+        htmlStr = htmlStr.replace(/data-height="[^"]*"/, `data-height="${spec.project.height}"`);
         fssync.writeFileSync(indexPath, htmlStr);
 
         // 4. Run hyperframes lambda sites create
