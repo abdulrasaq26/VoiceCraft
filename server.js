@@ -55,6 +55,17 @@ const handler = (req, res) => {
   // ──────────────────────────────────────────────────────────────────────────
   // AutoEditor Feature Backend
   // ──────────────────────────────────────────────────────────────────────────
+  if (req.url === '/api/debug-ls') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    import('node:fs').then(fs => {
+      const root = fs.readdirSync(process.cwd());
+      const nm = fs.existsSync('node_modules') ? fs.readdirSync('node_modules') : ['NO NODE_MODULES'];
+      const fe = fs.existsSync('features/auto-editor/server') ? fs.readdirSync('features/auto-editor/server') : [];
+      res.end(JSON.stringify({ root, nm, fe }));
+    });
+    return;
+  }
+
   if (req.url.startsWith('/api/auto-editor/')) {
     // Rewrite URL so the AutoEditor express app matches its original routes (/render, /status, etc.)
     req.url = req.url.replace('/api/auto-editor', '');
