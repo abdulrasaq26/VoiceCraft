@@ -1,6 +1,6 @@
 {
   "name": "voicecraft-tts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Professional AI text-to-speech powered by Fish Audio.",
   "main": "server.js",
   "type": "module",
