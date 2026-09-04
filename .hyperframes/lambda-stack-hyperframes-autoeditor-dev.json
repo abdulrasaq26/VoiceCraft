@@ -1,0 +1,9 @@
+{
+  "stackName": "hyperframes-autoeditor-dev",
+  "region": "us-east-1",
+  "bucketName": "hyperframes-autoeditor-dev-renderbucket-iwpbgixonmym",
+  "stateMachineArn": "arn:aws:states:us-east-1:591702753273:stateMachine:hyperframes-render",
+  "functionName": "hyperframes-render",
+  "lambdaMemoryMb": 3008,
+  "deployedAt": "2026-09-03T01:16:47.000Z"
+}
