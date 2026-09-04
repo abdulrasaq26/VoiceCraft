@@ -63,8 +63,12 @@ const handler = (req, res) => {
       autoEditorApp(req, res);
     }).catch((err) => {
       console.error("AutoEditor backend failed to load:", err);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'AutoEditor backend is unavailable on this environment.' }));
+      // Consume the request body so we don't abort the socket
+      req.on('data', () => {});
+      req.on('end', () => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `AutoEditor backend is unavailable: ${err.message}` }));
+      });
     });
     return;
   }
