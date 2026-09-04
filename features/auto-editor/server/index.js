@@ -322,7 +322,7 @@ app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, re
         console.log(`Starting Lambda render for site ${siteId}...`);
         // chunk-size=150 = 5s per Lambda, max-parallel-chunks=50 (stable sweet spot for Railway 953MB)
         // For an 8-min video at 24fps: ~11,520 frames / 150 = ~77 chunks total, done in 2 waves.
-        const renderCmdArgs = ["hyperframes", "lambda", "render", req.jobDir, "--site-id", siteId, "--stack-name", stackName, "--region", region, "--chunk-size", "150", "--max-parallel-chunks", "50", "--wait"];
+        const renderCmdArgs = ["hyperframes", "lambda", "render", req.jobDir, "--site-id", siteId, "--stack-name", stackName, "--region", region, "--width", spec.project.width, "--height", spec.project.height, "--chunk-size", "150", "--max-parallel-chunks", "50", "--wait"];
         
         const renderOutput = await new Promise((resolve, reject) => {
            import("node:child_process").then(cp => {
