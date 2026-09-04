@@ -320,9 +320,9 @@ app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, re
 
         // 5. Run hyperframes lambda render
         console.log(`Starting Lambda render for site ${siteId}...`);
-        // chunk-size=150 = 5s per Lambda, max-parallel-chunks=50 for optimized free-tier speeds.
-        // For an 8-min video at 24fps: ~11,520 frames / 150 = ~77 chunks total, done in 2 waves.
-        const renderCmdArgs = ["hyperframes", "lambda", "render", req.jobDir, "--site-id", siteId, "--stack-name", stackName, "--region", region, "--chunk-size", "150", "--max-parallel-chunks", "50", "--wait"];
+        // chunk-size=150 = 5s per Lambda, max-parallel-chunks=100 (testing limits)
+        // For an 8-min video at 24fps: ~11,520 frames / 150 = ~77 chunks total, done in 1 wave.
+        const renderCmdArgs = ["hyperframes", "lambda", "render", req.jobDir, "--site-id", siteId, "--stack-name", stackName, "--region", region, "--chunk-size", "150", "--max-parallel-chunks", "100", "--wait"];
         
         const renderOutput = await new Promise((resolve, reject) => {
            import("node:child_process").then(cp => {
