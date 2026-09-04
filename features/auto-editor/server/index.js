@@ -293,11 +293,11 @@ app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, re
             env.AWS_PROFILE = "autoeditor-dev";
         }
         
-        const createCmd = `npx tsx packages/cli/src/cli.ts lambda sites create "${req.jobDir}" --stack-name ${stackName} --region ${region} --json`;
+        const createCmd = `npx hyperframes lambda sites create "${req.jobDir}" --stack-name ${stackName} --region ${region} --json`;
         
         const createOutput = await new Promise((resolve, reject) => {
            import("node:child_process").then(cp => {
-               cp.exec(createCmd, { cwd: hfRoot, env }, (err, stdout, stderr) => {
+               cp.exec(createCmd, { cwd: process.cwd(), env }, (err, stdout, stderr) => {
                    if (err) reject(new Error(`Site creation failed: ${stderr || err.message}`));
                    else resolve(stdout);
                });
@@ -313,11 +313,11 @@ app.post("/render-hyperframes", newJob, oneAtATime, upload.any(), async (req, re
 
         // 5. Run hyperframes lambda render
         console.log(`Starting Lambda render for site ${siteId}...`);
-        const renderCmdArgs = ["tsx", "packages/cli/src/cli.ts", "lambda", "render", req.jobDir, "--site-id", siteId, "--stack-name", stackName, "--region", region, "--width", spec.project.width, "--height", spec.project.height, "--chunk-size", "90", "--max-parallel-chunks", "60", "--wait"];
+        const renderCmdArgs = ["hyperframes", "lambda", "render", req.jobDir, "--site-id", siteId, "--stack-name", stackName, "--region", region, "--width", spec.project.width, "--height", spec.project.height, "--chunk-size", "90", "--max-parallel-chunks", "60", "--wait"];
         
         const renderOutput = await new Promise((resolve, reject) => {
            import("node:child_process").then(cp => {
-               const child = cp.spawn("npx", renderCmdArgs, { cwd: hfRoot, env, shell: true });
+               const child = cp.spawn("npx", renderCmdArgs, { cwd: process.cwd(), env, shell: true });
                let fullStdout = "";
                let fullStderr = "";
                
