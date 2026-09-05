@@ -646,8 +646,6 @@ export default function Home() {
       };
     });
     setShowAiModal(false);
-    setAiMotionText("");
-    setAiMotionResult(null);
   }, [aiMotionResult, commitDoc]);
 
   const handleClearAiMotion = useCallback(() => {
@@ -1441,6 +1439,7 @@ export default function Home() {
           fadeIn={fadeIn} setFadeIn={setFadeIn}
           fadeOut={fadeOut} setFadeOut={setFadeOut}
           motionByName={motionByName} setMotion={setMotion}
+          aiMotion={aiMotion} aiOverlays={aiOverlays}
           applyMotionAll={applyMotionAll} applyMotionAlternate={applyMotionAlternate}
           motionAmount={motionAmount} setMotionAmount={setMotionAmount}
           videoInfoByName={videoInfoByName}

@@ -34,6 +34,7 @@ export default function Editor({
   transitionsByName, transitionDuration, setTransition, applyTransitionAll, applyTransitionMix, setTransitionDuration,
   fadeIn, setFadeIn, fadeOut, setFadeOut,
   motionByName, setMotion, applyMotionAll, applyMotionAlternate, motionAmount, setMotionAmount,
+  aiMotion = {}, aiOverlays = [],
   videoInfoByName = {}, trimByName = {}, setTrim, volumeByName = {}, setVolume,
   fitByName = {}, setFit,
   trimEnd, setTrimEnd, exportDuration,
@@ -173,15 +174,49 @@ export default function Editor({
     ctx.fillRect(0, 0, W, H);
     let activeVideo = null; // clip name whose video should be playing this frame
 
-    // Per-clip Ken Burns zoom at time tt (gaps never zoom). Progress is clamped so
-    // an outgoing image keeps its end-of-clip zoom through the transition.
-    const scaleAt = (ci, tt) => {
+    // Calculates AI Motion interpolation (keyframes) and falls back to Ken Burns if no AI.
+    const clipStateAt = (ci, tt) => {
       const c = clips[ci];
-      if (!c || c.gap) return 1;
-      const m = (motionByName && motionByName[c.name]) || "none";
-      if (m === "none") return 1;
+      if (!c || c.gap) return { scale: 1, x: 0, y: 0, opacity: 1, rotation: 0 };
       const lp = Math.min(1, Math.max(0, (tt - c.start) / c.duration));
-      return m === "zoomout" ? 1 + motionAmount * (1 - lp) : 1 + motionAmount * lp;
+
+      // 1. AI Keyframes
+      const ai = aiMotion && aiMotion[c.name];
+      let kfs = null;
+      if (ai && ai.keyframes) kfs = ai.keyframes;
+      else if (ai && ai.motion && ai.motion.keyframes) kfs = ai.motion.keyframes;
+
+      if (kfs && kfs.length > 0) {
+        const useAbsolute = (kfs[0].time !== undefined && kfs[0].t === undefined);
+        const tVal = useAbsolute ? (tt - c.start) : lp;
+
+        let k1 = kfs[0], k2 = kfs[kfs.length - 1];
+        for (let i = 0; i < kfs.length - 1; i++) {
+           const t1 = useAbsolute ? kfs[i].time : kfs[i].t;
+           const t2 = useAbsolute ? kfs[i+1].time : kfs[i+1].t;
+           if (tVal >= t1 && tVal <= t2) { k1 = kfs[i]; k2 = kfs[i+1]; break; }
+        }
+        const tk1 = useAbsolute ? k1.time : k1.t;
+        const tk2 = useAbsolute ? k2.time : k2.t;
+        const segmentDur = tk2 - tk1;
+        const prog = segmentDur <= 0 ? 1 : Math.max(0, Math.min(1, (tVal - tk1) / segmentDur));
+        
+        const getProp = (prop, def) => {
+          const v1 = (k1.properties && k1.properties[prop] !== undefined) ? k1.properties[prop] : (k1[prop] !== undefined ? k1[prop] : def);
+          const v2 = (k2.properties && k2.properties[prop] !== undefined) ? k2.properties[prop] : (k2[prop] !== undefined ? k2[prop] : v1);
+          return v1 + (v2 - v1) * prog;
+        };
+
+        return {
+          scale: getProp("scale", 1), x: getProp("x", 0), y: getProp("y", 0),
+          opacity: getProp("opacity", 1), rotation: getProp("rotation", 0),
+        };
+      }
+
+      // 2. Fallback to basic Ken Burns
+      const m = (motionByName && motionByName[c.name]) || "none";
+      const scale = m === "zoomout" ? 1 + motionAmount * (1 - lp) : (m === "none" ? 1 : 1 + motionAmount * lp);
+      return { scale, x: 0, y: 0, opacity: 1, rotation: 0 };
     };
 
     // Start/keep a clip's offscreen <video> playing in sync with the playhead and
@@ -218,7 +253,7 @@ export default function Editor({
         const p = Math.min(1, Math.max(0, (t - clip.start) / tdur));
         transitionOf(type).canvas(
           ctx, imageEls[clips[idx - 1].name] || null, imageEls[clip.name] || null, p, W, H,
-          scaleAt(idx - 1, t), scaleAt(idx, t)
+          clipStateAt(idx - 1, t).scale, clipStateAt(idx, t).scale
         );
         ctx.globalAlpha = 1;
         // Warm up the incoming video during the transition so it's already
@@ -233,11 +268,38 @@ export default function Editor({
         const dw = (drawable && (drawable.videoWidth || drawable.naturalWidth)) || 0;
         const dh = (drawable && (drawable.videoHeight || drawable.naturalHeight)) || 0;
         if (drawable && dw && dh) {
-          const scale = Math.min(W / dw, H / dh) * scaleAt(idx, t);
+          const state = clipStateAt(idx, t);
+          const fitScale = Math.min(W / dw, H / dh);
+          const scale = fitScale * state.scale;
           const w = dw * scale, h = dh * scale;
-          ctx.drawImage(drawable, (W - w) / 2, (H - h) / 2, w, h);
+          
+          ctx.save();
+          ctx.globalAlpha = state.opacity;
+          ctx.translate(W / 2 + state.x, H / 2 + state.y);
+          if (state.rotation) ctx.rotate((state.rotation * Math.PI) / 180);
+          ctx.drawImage(drawable, -w / 2, -h / 2, w, h);
+          ctx.restore();
         }
       }
+    }
+
+    // AI Overlays Preview
+    if (aiOverlays && aiOverlays.length > 0) {
+      aiOverlays.forEach(ol => {
+        if (t >= ol.start && t <= ol.start + ol.duration) {
+          if (ol.type === "text" && ol.typography) {
+            const txt = ol.typography.text || "";
+            const color = ol.typography.color || "#FFFFFF";
+            ctx.save();
+            ctx.fillStyle = color;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.font = `bold ${W * 0.05}px sans-serif`;
+            ctx.fillText(txt, W / 2, H / 2);
+            ctx.restore();
+          }
+        }
+      });
     }
 
     // Only the clip under the playhead plays; pause every other clip's video.
