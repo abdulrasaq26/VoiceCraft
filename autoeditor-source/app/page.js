@@ -1246,7 +1246,7 @@ export default function Home() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <h2 style={{ margin: 0, fontSize: 18 }}>AI Motion JSON</h2>
               <button 
-                onClick={() => { setShowAiModal(false); setAiMotionResult(null); }}
+                onClick={() => setShowAiModal(false)}
                 style={{ background: "transparent", border: "none", color: "#888", fontSize: 20, cursor: "pointer" }}
               >×</button>
             </div>

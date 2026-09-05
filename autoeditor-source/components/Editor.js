@@ -244,7 +244,9 @@ export default function Editor({
       let idx = clips.findIndex((c) => t >= c.start && t < c.start + c.duration);
       if (idx === -1) idx = clips.length - 1;
       const clip = clips[idx];
-      const type = idx > 0 ? (transitionsByName[clip.name] || "cut") : "cut";
+      const aiClipConfig = aiMotion && aiMotion[clip.name];
+      const aiTransition = aiClipConfig && (typeof aiClipConfig.transition === "string" ? aiClipConfig.transition : null);
+      const type = idx > 0 ? (aiTransition || transitionsByName[clip.name] || "cut") : "cut";
       const tdur = type === "cut" ? 0 : Math.min(transitionDuration, clip.duration);
 
       if (idx > 0 && tdur > 0 && t < clip.start + tdur) {
@@ -283,21 +285,62 @@ export default function Editor({
       }
     }
 
+    // AI Clip Effects Preview (vignette etc.)
+    if (aiMotion) {
+      const ci = clips.findIndex(c => t >= c.start && t < c.start + c.duration);
+      const currentClip = ci >= 0 ? clips[ci] : null;
+      if (currentClip) {
+        const aiCfg = aiMotion[currentClip.name];
+        const effects = aiCfg && Array.isArray(aiCfg.effects) ? aiCfg.effects : [];
+        if (effects.includes("vignette")) {
+          const grad = ctx.createRadialGradient(W/2, H/2, H*0.3, W/2, H/2, H*0.8);
+          grad.addColorStop(0, "rgba(0,0,0,0)");
+          grad.addColorStop(1, "rgba(0,0,0,0.7)");
+          ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H); ctx.restore();
+        }
+        if (effects.includes("glow")) {
+          ctx.save(); ctx.globalAlpha = 0.15; ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, W, H); ctx.restore();
+        }
+      }
+    }
+
     // AI Overlays Preview
     if (aiOverlays && aiOverlays.length > 0) {
       aiOverlays.forEach(ol => {
         if (t >= ol.start && t <= ol.start + ol.duration) {
-          if (ol.type === "text" && ol.typography) {
-            const txt = ol.typography.text || "";
-            const color = ol.typography.color || "#FFFFFF";
-            ctx.save();
-            ctx.fillStyle = color;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.font = `bold ${W * 0.05}px sans-serif`;
-            ctx.fillText(txt, W / 2, H / 2);
-            ctx.restore();
+          const txt = ol.text || (ol.typography && ol.typography.text) || "";
+          const color = (ol.typography && ol.typography.color) || "#FFFFFF";
+          const position = (ol.typography && ol.typography.position) || ol.position || "center";
+          const background = (ol.typography && ol.typography.background) || ol.background || "none";
+          const fontSize = W * (ol.size === "sm" ? 0.03 : ol.size === "lg" ? 0.055 : ol.size === "xl" ? 0.07 : 0.045);
+          
+          ctx.save();
+          ctx.font = `bold ${fontSize}px sans-serif`;
+          ctx.textAlign = "center";
+          const textMetrics = ctx.measureText(txt);
+          const textW = textMetrics.width;
+          const textH = fontSize;
+          
+          const yPos = position === "top" ? H * 0.12 :
+                       position === "bottom" || position === "lower-third" ? H * 0.85 :
+                       H / 2;
+          
+          if (background === "pill") {
+            ctx.fillStyle = "rgba(0,0,0,0.6)";
+            ctx.beginPath();
+            ctx.roundRect(W/2 - textW/2 - 16, yPos - textH*0.6, textW + 32, textH * 1.4, 20);
+            ctx.fill();
+          } else if (background === "bar") {
+            ctx.fillStyle = "rgba(0,0,0,0.8)";
+            ctx.fillRect(0, yPos - textH * 0.8, W, textH * 1.6);
           }
+          
+          ctx.fillStyle = color;
+          ctx.textBaseline = "middle";
+          ctx.fillText(txt, W / 2, yPos);
+          ctx.restore();
         }
       });
     }
@@ -324,6 +367,7 @@ export default function Editor({
       ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
     }
   }, [clips, imageEls, transitionsByName, transitionDuration, motionByName, motionAmount,
+      aiMotion, aiOverlays,
       fadeIn, fadeOut, duration, exportDuration, playing, videoInfoByName, videoParams, volumeByName,
       captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
 
