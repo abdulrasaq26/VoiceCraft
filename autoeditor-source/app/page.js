@@ -373,7 +373,10 @@ export default function Home() {
         const blob = await reconnectRender(active.jobId, (p) => {
           if (alive) setResume((r) => (r ? { ...r, progress: p } : r));
         });
-        if (alive) setResume({ busy: false, progress: 1, url: URL.createObjectURL(blob), error: null });
+        if (alive) {
+          const safeUrl = (blob && (blob instanceof Blob || blob instanceof File)) ? URL.createObjectURL(blob) : null;
+          setResume({ busy: false, progress: 1, url: safeUrl, error: null });
+        }
       } catch (e) {
         if (alive) setResume({ busy: false, progress: 0, url: null, error: e.message || String(e) });
       }
@@ -913,7 +916,8 @@ export default function Home() {
         captions, captionStyle, captionSize, captionLineHeight, captionFontScale,
         onProgress: setProgress,
       });
-      setOutUrl(URL.createObjectURL(blob));
+      const safeUrl = (blob && (blob instanceof Blob || blob instanceof File)) ? URL.createObjectURL(blob) : null;
+      setOutUrl(safeUrl);
     } catch (e) {
       if (!cancelRef.current) setError(e.message || String(e));
     } finally {
