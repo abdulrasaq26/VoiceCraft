@@ -174,10 +174,38 @@ export default function Editor({
     ctx.fillRect(0, 0, W, H);
     let activeVideo = null; // clip name whose video should be playing this frame
 
+    // ── GSAP-compatible easing functions ──────────────────────────────────
+    const EASING = {
+      "linear":       (t) => t,
+      "none":         (t) => t,
+      "power1.in":    (t) => t * t,
+      "power1.out":   (t) => t * (2 - t),
+      "power1.inOut": (t) => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+      "power2.in":    (t) => t * t * t,
+      "power2.out":   (t) => { const u = 1 - t; return 1 - u*u*u; },
+      "power2.inOut": (t) => t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2,
+      "power3.in":    (t) => t * t * t * t,
+      "power3.out":   (t) => { const u = 1 - t; return 1 - u*u*u*u; },
+      "power3.inOut": (t) => t < 0.5 ? 8*t*t*t*t : 1-Math.pow(-2*t+2,4)/2,
+      "back.out":     (t) => { const c = 1.70158+1; return 1 + c*Math.pow(t-1,3) + 1.70158*Math.pow(t-1,2); },
+      "bounce.out":   (t) => {
+        const n1 = 7.5625, d1 = 2.75;
+        if (t < 1/d1) return n1*t*t;
+        if (t < 2/d1) { t -= 1.5/d1; return n1*t*t+0.75; }
+        if (t < 2.5/d1) { t -= 2.25/d1; return n1*t*t+0.9375; }
+        t -= 2.625/d1; return n1*t*t+0.984375;
+      },
+    };
+    const applyEasing = (easingName, t) => {
+      const fn = EASING[easingName] || EASING["linear"];
+      return fn(Math.max(0, Math.min(1, t)));
+    };
+
     // Calculates AI Motion interpolation (keyframes) and falls back to Ken Burns if no AI.
+    // Returns { scale, x, y, opacity, rotation, filter } where filter is a CSS filter string.
     const clipStateAt = (ci, tt) => {
       const c = clips[ci];
-      if (!c || c.gap) return { scale: 1, x: 0, y: 0, opacity: 1, rotation: 0 };
+      if (!c || c.gap) return { scale: 1, x: 0, y: 0, opacity: 1, rotation: 0, filter: "none", effects: [] };
       const lp = Math.min(1, Math.max(0, (tt - c.start) / c.duration));
 
       // 1. AI Keyframes
@@ -186,37 +214,52 @@ export default function Editor({
       if (ai && ai.keyframes) kfs = ai.keyframes;
       else if (ai && ai.motion && ai.motion.keyframes) kfs = ai.motion.keyframes;
 
+      let state = { scale: 1, x: 0, y: 0, opacity: 1, rotation: 0 };
+
       if (kfs && kfs.length > 0) {
+        const easingName = (ai && ai.easing) || "linear";
         const useAbsolute = (kfs[0].time !== undefined && kfs[0].t === undefined);
         const tVal = useAbsolute ? (tt - c.start) : lp;
 
         let k1 = kfs[0], k2 = kfs[kfs.length - 1];
         for (let i = 0; i < kfs.length - 1; i++) {
-           const t1 = useAbsolute ? kfs[i].time : kfs[i].t;
-           const t2 = useAbsolute ? kfs[i+1].time : kfs[i+1].t;
-           if (tVal >= t1 && tVal <= t2) { k1 = kfs[i]; k2 = kfs[i+1]; break; }
+          const t1 = useAbsolute ? kfs[i].time : kfs[i].t;
+          const t2 = useAbsolute ? kfs[i+1].time : kfs[i+1].t;
+          if (tVal >= t1 && tVal <= t2) { k1 = kfs[i]; k2 = kfs[i+1]; break; }
         }
         const tk1 = useAbsolute ? k1.time : k1.t;
         const tk2 = useAbsolute ? k2.time : k2.t;
         const segmentDur = tk2 - tk1;
-        const prog = segmentDur <= 0 ? 1 : Math.max(0, Math.min(1, (tVal - tk1) / segmentDur));
-        
+        const rawProg = segmentDur <= 0 ? 1 : Math.max(0, Math.min(1, (tVal - tk1) / segmentDur));
+        const prog = applyEasing(easingName, rawProg);
+
         const getProp = (prop, def) => {
           const v1 = (k1.properties && k1.properties[prop] !== undefined) ? k1.properties[prop] : (k1[prop] !== undefined ? k1[prop] : def);
           const v2 = (k2.properties && k2.properties[prop] !== undefined) ? k2.properties[prop] : (k2[prop] !== undefined ? k2[prop] : v1);
           return v1 + (v2 - v1) * prog;
         };
-
-        return {
+        state = {
           scale: getProp("scale", 1), x: getProp("x", 0), y: getProp("y", 0),
           opacity: getProp("opacity", 1), rotation: getProp("rotation", 0),
         };
+      } else {
+        // 2. Fallback to basic Ken Burns
+        const m = (motionByName && motionByName[c.name]) || "none";
+        const scale = m === "zoomout" ? 1 + motionAmount * (1 - lp) : (m === "none" ? 1 : 1 + motionAmount * lp);
+        state = { scale, x: 0, y: 0, opacity: 1, rotation: 0 };
       }
 
-      // 2. Fallback to basic Ken Burns
-      const m = (motionByName && motionByName[c.name]) || "none";
-      const scale = m === "zoomout" ? 1 + motionAmount * (1 - lp) : (m === "none" ? 1 : 1 + motionAmount * lp);
-      return { scale, x: 0, y: 0, opacity: 1, rotation: 0 };
+      // 3. Build CSS filter string from AI effects
+      const effects = (ai && Array.isArray(ai.effects)) ? ai.effects : [];
+      const filterParts = [];
+      if (effects.includes("blur"))       filterParts.push("blur(4px)");
+      if (effects.includes("brightness")) filterParts.push("brightness(1.4)");
+      if (effects.includes("contrast"))   filterParts.push("contrast(1.3)");
+      if (effects.includes("saturation")) filterParts.push("saturate(1.8)");
+      if (effects.includes("hue-rotate")) filterParts.push("hue-rotate(30deg)");
+      const filter = filterParts.length > 0 ? filterParts.join(" ") : "none";
+
+      return { ...state, filter, effects };
     };
 
     // Start/keep a clip's offscreen <video> playing in sync with the playhead and
@@ -274,24 +317,40 @@ export default function Editor({
           const fitScale = Math.min(W / dw, H / dh);
           const scale = fitScale * state.scale;
           const w = dw * scale, h = dh * scale;
-          
+
           ctx.save();
           ctx.globalAlpha = state.opacity;
+          // Apply blur/brightness/saturation/contrast via ctx.filter (Canvas2D API)
+          if (state.filter && state.filter !== "none") ctx.filter = state.filter;
           ctx.translate(W / 2 + state.x, H / 2 + state.y);
           if (state.rotation) ctx.rotate((state.rotation * Math.PI) / 180);
           ctx.drawImage(drawable, -w / 2, -h / 2, w, h);
+          ctx.filter = "none"; // reset after draw
           ctx.restore();
+
+          // Grain effect — canvas noise overlay
+          if (state.effects && state.effects.includes("grain")) {
+            const imageData = ctx.createImageData(W, H);
+            const d = imageData.data;
+            for (let i = 0; i < d.length; i += 4) {
+              const noise = (Math.random() - 0.5) * 60;
+              d[i] = d[i+1] = d[i+2] = 128 + noise; d[i+3] = 30;
+            }
+            ctx.save(); ctx.globalAlpha = 1;
+            ctx.putImageData(imageData, 0, 0);
+            ctx.restore();
+          }
         }
       }
     }
 
-    // AI Clip Effects Preview (vignette etc.)
-    if (aiMotion) {
+
+    // AI Clip Effects Preview (post-draw overlaid effects: vignette, glow, shadow)
+    {
       const ci = clips.findIndex(c => t >= c.start && t < c.start + c.duration);
-      const currentClip = ci >= 0 ? clips[ci] : null;
-      if (currentClip) {
-        const aiCfg = aiMotion[currentClip.name];
-        const effects = aiCfg && Array.isArray(aiCfg.effects) ? aiCfg.effects : [];
+      if (ci >= 0) {
+        const state = clipStateAt(ci, t);
+        const effects = state.effects || [];
         if (effects.includes("vignette")) {
           const grad = ctx.createRadialGradient(W/2, H/2, H*0.3, W/2, H/2, H*0.8);
           grad.addColorStop(0, "rgba(0,0,0,0)");
@@ -300,8 +359,16 @@ export default function Editor({
           ctx.fillRect(0, 0, W, H); ctx.restore();
         }
         if (effects.includes("glow")) {
-          ctx.save(); ctx.globalAlpha = 0.15; ctx.fillStyle = "#ffffff";
+          ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = "#ffe4a0";
           ctx.fillRect(0, 0, W, H); ctx.restore();
+        }
+        if (effects.includes("shadow")) {
+          // Cinematic letterbox shadow bars
+          ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = "rgba(0,0,0,0.5)";
+          const barH = H * 0.08;
+          ctx.fillRect(0, 0, W, barH);
+          ctx.fillRect(0, H - barH, W, barH);
+          ctx.restore();
         }
       }
     }
