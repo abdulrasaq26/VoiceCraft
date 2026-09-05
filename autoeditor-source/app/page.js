@@ -182,12 +182,12 @@ export default function Home() {
     useHistory({ slots: [], transitionsByName: {}, aiMotion: {}, aiOverlays: [] });
   const { slots, transitionsByName, aiMotion = {}, aiOverlays = [] } = doc;
 
-  const onAudio = useCallback(async (files) => {
+  const onAudio = useCallback(async (files, precalcDur = null) => {
     const file = files[0];
     if (!file) return;
     setError(null);
     try {
-      const d = await getAudioDuration(file);
+      const d = precalcDur !== null ? precalcDur : await getAudioDuration(file);
       setAudioFile(file);
       setAudioUrl(URL.createObjectURL(file));
       setAudioDuration(d);
@@ -326,6 +326,7 @@ export default function Home() {
         });
 
         const audioBlob = await getFromDb("transfer_audio");
+        const audioDur = await getFromDb("transfer_audio_duration");
         const srtText = await getFromDb("transfer_srt");
         const projectName = await getFromDb("transfer_project") || "voicecraft";
         
@@ -333,11 +334,16 @@ export default function Home() {
 
         let loadedAudio = false;
 
+        if (audioBlob || srtText || projectName !== "voicecraft") {
+          setView("editor");
+        }
+
         if (audioBlob) {
           const file = new File([audioBlob], `${projectName}.wav`, { type: "audio/wav" });
-          await onAudio([file]);
+          await onAudio([file], audioDur);
           loadedAudio = true;
           await delFromDb("transfer_audio");
+          await delFromDb("transfer_audio_duration");
         }
 
         if (srtText) {
@@ -347,6 +353,7 @@ export default function Home() {
           await delFromDb("transfer_srt");
         }
         if (projectName !== "voicecraft") {
+          setCurrentProject({ id: Date.now().toString(), name: projectName, createdAt: Date.now() });
           await delFromDb("transfer_project");
         }
       } catch (err) {
@@ -354,7 +361,7 @@ export default function Home() {
       }
     }
     checkTransfer();
-  }, [onAudio, onCaptionFile]);
+  }, [onAudio, onCaptionFile, setView]);
   const captionParse = useMemo(
     () => (captionRaw ? parseTranscript(captionRaw, audioDuration) : { cues: [], error: null }),
     [captionRaw, audioDuration]
@@ -642,7 +649,9 @@ export default function Home() {
       return { 
         ...d, 
         aiMotion: nextAi,
-        aiOverlays: aiMotionResult.overlays || []
+        aiOverlays: aiMotionResult.overlays || [],
+        // v3: persist project palette/style so compiler can use it at render time
+        aiProject: aiMotionResult.project || d.aiProject || null,
       };
     });
     setShowAiModal(false);
@@ -848,6 +857,7 @@ export default function Home() {
         // AI Motion Override state
         aiMotion: doc.aiMotion || {},
         aiOverlays: doc.aiOverlays || [],
+        aiProject: doc.aiProject || null,
         aws: {
           accessKey: awsAccessKey,
           secretKey: awsSecretKey,
@@ -1362,6 +1372,17 @@ export default function Home() {
             can be trimmed, zoomed, and their sound mixed under the narration. Review everything below,
             then build the timeline. Everything runs on your device. Nothing is uploaded.
           </p>
+
+          <div style={{ marginBottom: 32, display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column", gap: 8 }}>
+            <label style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 1 }}>Project Name</label>
+            <input 
+              type="text" 
+              placeholder="Untitled Project" 
+              value={currentProject?.name || ""}
+              onChange={(e) => setCurrentProject(p => p ? { ...p, name: e.target.value } : { id: Date.now().toString(), name: e.target.value, createdAt: Date.now() })}
+              style={{ background: "#222", border: "1px solid #444", borderRadius: 8, padding: "10px 16px", color: "#fff", fontSize: 16, width: "100%", maxWidth: 350, textAlign: "center" }}
+            />
+          </div>
 
           <div className="onboard__zones">
             <Dropzone

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AnimationEngine - Phase 5 Motion-Graphics Runtime
  *
  * Two responsibilities:
@@ -106,6 +106,53 @@ window.AnimationEngine = (function () {
       const deg = opts.degrees || 2;
       return [
         { property: "rotation", keyframes: [{ time: 0, value: -deg }, { time: dur, value: deg }], easing: "power1.inOut" },
+      ];
+    },
+
+    // ── V3 NEW PRESETS ────────────────────────────────────────────────────────
+
+    /**
+     * Cinematic slow push — the v3 default for restrained intensity.
+     * Scale 1.0 → 1.05 over the full clip duration with a gentle ease.
+     */
+    "cinematic-push": (dur, opts = {}) => {
+      const amt = opts.amount || 0.05;
+      const x   = opts.x || 0;
+      const anims = [
+        { property: "scale", keyframes: [{ time: 0, value: 1 }, { time: dur, value: 1 + amt }], easing: "power1.inOut" },
+      ];
+      if (x !== 0) {
+        anims.push({ property: "x", keyframes: [{ time: 0, value: 0 }, { time: dur, value: x }], easing: "power1.inOut" });
+      }
+      return anims;
+    },
+
+    /**
+     * 3D perspective tilt — subtle rotationX/Y that creates a sense of depth.
+     * Designed for hero/climax moments. Use sparingly.
+     */
+    "perspective-tilt": (dur, opts = {}) => {
+      const rx = opts.rotationX || 3;
+      const ry = opts.rotationY || 2;
+      return [
+        { property: "rotationX", keyframes: [{ time: 0, value: rx }, { time: dur * 0.5, value: -rx * 0.5 }, { time: dur, value: 0 }], easing: "power2.inOut" },
+        { property: "rotationY", keyframes: [{ time: 0, value: 0 }, { time: dur * 0.5, value: ry }, { time: dur, value: 0 }], easing: "power2.inOut" },
+      ];
+    },
+
+    /**
+     * Negative-space drift — moves the image away from a declared subject side
+     * so typography can occupy the cleared zone.
+     * opts.side: "left" | "right" | "up" | "down"
+     */
+    "negative-space-drift": (dur, opts = {}) => {
+      const side = opts.side || "right";
+      const px   = opts.pixels || 40;
+      const propMap = { left: ["x", -px], right: ["x", px], up: ["y", -px], down: ["y", px] };
+      const [prop, val] = propMap[side] || ["x", px];
+      return [
+        { property: prop, keyframes: [{ time: 0, value: 0 }, { time: dur, value: val }], easing: "power1.inOut" },
+        { property: "scale", keyframes: [{ time: 0, value: 1 }, { time: dur, value: 1.04 }], easing: "power1.inOut" },
       ];
     },
   };

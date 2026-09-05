@@ -1,16 +1,28 @@
 /**
- * AutoEditor Motion Schema v2 — Strict Validator
+ * AutoEditor Motion Schema v2 & v3 — Strict Validator & Normalizer
  *
- * This is a CONTRACT ENFORCER, not a forgiving parser.
- * If the AI output is invalid, it MUST be corrected before rendering.
- * We never silently patch, guess, or normalize AI output.
- *
- * Schema authority: AutoEditor_Motion_Schema_v2.md
+ * This validates and normalizes AI output for motion specifications.
+ * Supports both legacy `motion-v2` and new `motion-v3` (Director Mode).
+ * 
+ * Schema authority: docs/AI-MOTION-SCHEMA.md
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Allowed value sets (source-verified against running engine files)
+// Allowed value sets
 // ─────────────────────────────────────────────────────────────────────────────
+
+const ALLOWED_SCHEMA_VERSIONS = new Set(["motion-v2", "motion-v3"]);
+
+const ALLOWED_STYLES = new Set([
+  "cinematic-documentary", "tech-modern", "editorial-clean", 
+  "bold-energetic", "minimal-dark"
+]);
+
+const ALLOWED_SCENE_ROLES = new Set([
+  "intro", "setup", "explanation", "evidence", "statistic", 
+  "comparison", "problem", "solution", "emotional", "emphasis", 
+  "climax", "cta", "outro"
+]);
 
 const ALLOWED_TRANSITIONS = new Set([
   "cut", "fade", "crossfade",
@@ -20,9 +32,15 @@ const ALLOWED_TRANSITIONS = new Set([
   "blur-in", "zoom-through", "zoom",
 ]);
 
-const ALLOWED_EFFECTS = new Set([
+const ALLOWED_EFFECTS_V2 = new Set([
   "vignette", "glow", "shadow", "blur",
   "brightness", "contrast", "saturation", "grain", "hue-rotate",
+]);
+
+const ALLOWED_EFFECTS_V3 = new Set([
+  "vignette", "glow", "grain", "blur", 
+  "brightness", "contrast", "saturation", 
+  "light-sweep", "accent-line", "shadow-bars", "shadow", "hue-rotate"
 ]);
 
 const ALLOWED_EASINGS = new Set([
@@ -37,16 +55,20 @@ const ALLOWED_EASINGS = new Set([
 const ALLOWED_TYPOGRAPHY = new Set([
   "word-reveal", "char-cascade", "typewriter",
   "blur-reveal", "fade-up", "slide-up", "pop", "bounce",
+  "masked-reveal", "scale-punch"
 ]);
 
 const ALLOWED_SIZES = new Set(["sm", "md", "lg", "xl", "2xl"]);
 
-const ALLOWED_POSITIONS = new Set(["top", "center", "bottom", "lower-third"]);
+const ALLOWED_POSITIONS = new Set([
+  "top", "center", "bottom", "lower-third", 
+  "negative-left", "negative-right"
+]);
 
-const ALLOWED_BACKGROUNDS = new Set(["none", "pill", "bar", "gradient"]);
+const ALLOWED_BACKGROUNDS = new Set(["none", "pill", "bar", "gradient", "card"]);
 
 const ALLOWED_KEYFRAME_PROPS = new Set([
-  "time", "scale", "x", "y", "opacity", "rotation",
+  "time", "scale", "x", "y", "opacity", "rotation", "rotationX", "rotationY"
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,6 +81,8 @@ function err(errors, msg) {
 
 function validateEasing(value, path, errors) {
   if (value !== undefined && !ALLOWED_EASINGS.has(value)) {
+    // We normalize if the LLM hallucinated a slight variation
+    // For now, strict enforcement, but could be forgiving here
     err(errors, `${path}: unknown easing "${value}". Allowed: ${[...ALLOWED_EASINGS].join(", ")}`);
   }
 }
@@ -73,25 +97,89 @@ function validateKeyframe(kf, path, errors) {
     return;
   }
 
-  // time is required and must be a non-negative number
   if (kf.time === undefined) {
-    err(errors, `${path}: missing required field "time" (absolute seconds from clip start)`);
+    err(errors, `${path}: missing required field "time"`);
   } else if (typeof kf.time !== "number" || kf.time < 0) {
-    err(errors, `${path}.time: must be a non-negative number (got ${JSON.stringify(kf.time)}). Use absolute seconds, NOT normalized 0-1.`);
+    err(errors, `${path}.time: must be a non-negative number`);
   }
 
-  // Check for unknown properties
   for (const key of Object.keys(kf)) {
     if (!ALLOWED_KEYFRAME_PROPS.has(key)) {
-      err(errors, `${path}: unknown keyframe property "${key}". Allowed: ${[...ALLOWED_KEYFRAME_PROPS].join(", ")}`);
+      err(errors, `${path}: unknown keyframe property "${key}"`);
     }
   }
 
-  // Validate numeric properties
-  for (const prop of ["scale", "x", "y", "opacity", "rotation"]) {
+  for (const prop of ["scale", "x", "y", "opacity", "rotation", "rotationX", "rotationY"]) {
     if (kf[prop] !== undefined && typeof kf[prop] !== "number") {
-      err(errors, `${path}.${prop}: must be a number (got ${JSON.stringify(kf[prop])})`);
+      err(errors, `${path}.${prop}: must be a number`);
     }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V3 validators
+// ─────────────────────────────────────────────────────────────────────────────
+
+function validateProject(project, errors) {
+  if (typeof project !== "object" || project === null) return;
+  if (project.style && !ALLOWED_STYLES.has(project.style)) {
+    err(errors, `project.style: unknown style "${project.style}"`);
+  }
+  if (project.palette) {
+    if (typeof project.palette !== "object") {
+      err(errors, `project.palette: must be an object`);
+    }
+  }
+  if (project.defaultEasing) {
+    validateEasing(project.defaultEasing, "project.defaultEasing", errors);
+  }
+}
+
+function validateTransitionObject(trans, path, errors) {
+  if (typeof trans !== "object" || trans === null) {
+    err(errors, `${path}: must be an object`);
+    return;
+  }
+  if (trans.type && !ALLOWED_TRANSITIONS.has(trans.type)) {
+    err(errors, `${path}.type: unknown value "${trans.type}"`);
+  }
+  if (trans.duration !== undefined && typeof trans.duration !== "number") {
+    err(errors, `${path}.duration: must be a number`);
+  }
+}
+
+function validateTypography(typo, index, path, errors) {
+  const p = `${path}.typography[${index}]`;
+  if (typeof typo !== "object" || typo === null) {
+    err(errors, `${p}: must be an object`);
+    return;
+  }
+  if (typo.start !== undefined && typeof typo.start !== "number") err(errors, `${p}.start: must be a number`);
+  if (typo.duration !== undefined && typeof typo.duration !== "number") err(errors, `${p}.duration: must be a number`);
+  if (typo.text !== undefined && typeof typo.text !== "string") err(errors, `${p}.text: must be a string`);
+  
+  if (typo.preset && !ALLOWED_TYPOGRAPHY.has(typo.preset)) err(errors, `${p}.preset: unknown preset "${typo.preset}"`);
+  if (typo.position && !ALLOWED_POSITIONS.has(typo.position)) err(errors, `${p}.position: unknown position "${typo.position}"`);
+  if (typo.size && !ALLOWED_SIZES.has(typo.size)) err(errors, `${p}.size: unknown size "${typo.size}"`);
+  if (typo.background && !ALLOWED_BACKGROUNDS.has(typo.background)) err(errors, `${p}.background: unknown background "${typo.background}"`);
+  
+  if (typo.emphasisWords) {
+    if (!Array.isArray(typo.emphasisWords)) {
+      err(errors, `${p}.emphasisWords: must be an array of strings`);
+    }
+  }
+}
+
+function validateEffectV3(eff, index, path, errors) {
+  const p = `${path}.effects[${index}]`;
+  if (typeof eff !== "object" || eff === null) {
+    err(errors, `${p}: must be an object in v3`);
+    return;
+  }
+  if (!eff.type) {
+    err(errors, `${p}: missing "type"`);
+  } else if (!ALLOWED_EFFECTS_V3.has(eff.type)) {
+    err(errors, `${p}.type: unknown effect "${eff.type}"`);
   }
 }
 
@@ -99,7 +187,7 @@ function validateKeyframe(kf, path, errors) {
 // Clip validator
 // ─────────────────────────────────────────────────────────────────────────────
 
-function validateClip(clip, index, validIds, errors) {
+function validateClip(clip, index, validIds, version, errors) {
   const path = `clips[${index}]`;
 
   if (typeof clip !== "object" || clip === null) {
@@ -107,63 +195,63 @@ function validateClip(clip, index, validIds, errors) {
     return null;
   }
 
-  // clipId is required
   if (!clip.clipId || typeof clip.clipId !== "string") {
-    err(errors, `${path}: missing required field "clipId" (string)`);
+    err(errors, `${path}: missing required field "clipId"`);
     return null;
   }
 
-  // clipId must exist in the timeline
   if (!validIds.has(clip.clipId)) {
-    err(errors, `${path}: clipId "${clip.clipId}" not found in timeline. Valid IDs: ${[...validIds].join(", ")}`);
+    err(errors, `${path}: clipId "${clip.clipId}" not found in timeline.`);
     return null;
   }
 
-  // keyframes — optional but must be an array
-  if (clip.keyframes !== undefined) {
-    if (!Array.isArray(clip.keyframes)) {
-      err(errors, `${path}.keyframes: must be an array`);
-    } else {
-      clip.keyframes.forEach((kf, ki) => {
-        validateKeyframe(kf, `${path}.keyframes[${ki}]`, errors);
-      });
+  if (version === "motion-v3") {
+    // V3 validations
+    if (clip.sceneRole && !ALLOWED_SCENE_ROLES.has(clip.sceneRole)) {
+      err(errors, `${path}.sceneRole: unknown role "${clip.sceneRole}"`);
     }
-  }
-
-  // easing — optional string
-  if (clip.easing !== undefined) {
-    validateEasing(clip.easing, `${path}.easing`, errors);
-  }
-
-  // transition — must be a string, not an object
-  if (clip.transition !== undefined) {
-    if (typeof clip.transition !== "string") {
-      err(errors, `${path}.transition: must be a string (got ${typeof clip.transition}). Example: "crossfade". Do NOT use an object.`);
-    } else if (!ALLOWED_TRANSITIONS.has(clip.transition)) {
-      err(errors, `${path}.transition: unknown value "${clip.transition}". Allowed: ${[...ALLOWED_TRANSITIONS].join(", ")}`);
+    if (clip.motionIntensity !== undefined) {
+      if (typeof clip.motionIntensity !== "number" || clip.motionIntensity < 0 || clip.motionIntensity > 5) {
+        err(errors, `${path}.motionIntensity: must be a number between 0 and 5`);
+      }
     }
-  }
-
-  // effects — must be an array of strings
-  if (clip.effects !== undefined) {
-    if (!Array.isArray(clip.effects)) {
-      err(errors, `${path}.effects: must be an array of strings`);
-    } else {
-      clip.effects.forEach((eff, ei) => {
-        if (typeof eff !== "string") {
-          err(errors, `${path}.effects[${ei}]: must be a string`);
-        } else if (!ALLOWED_EFFECTS.has(eff)) {
-          err(errors, `${path}.effects[${ei}]: unknown effect "${eff}". Allowed: ${[...ALLOWED_EFFECTS].join(", ")}`);
+    if (clip.camera) {
+      if (typeof clip.camera !== "object") err(errors, `${path}.camera: must be an object`);
+      else {
+        if (clip.camera.keyframes) {
+          if (!Array.isArray(clip.camera.keyframes)) err(errors, `${path}.camera.keyframes: must be an array`);
+          else clip.camera.keyframes.forEach((kf, ki) => validateKeyframe(kf, `${path}.camera.keyframes[${ki}]`, errors));
         }
-      });
+        if (clip.camera.easing) validateEasing(clip.camera.easing, `${path}.camera.easing`, errors);
+      }
     }
-  }
-
-  // Check for unknown top-level clip fields
-  const ALLOWED_CLIP_FIELDS = new Set(["clipId", "keyframes", "easing", "transition", "effects"]);
-  for (const key of Object.keys(clip)) {
-    if (!ALLOWED_CLIP_FIELDS.has(key)) {
-      err(errors, `${path}: unknown field "${key}". Allowed clip fields: ${[...ALLOWED_CLIP_FIELDS].join(", ")}`);
+    if (clip.typography) {
+      if (!Array.isArray(clip.typography)) err(errors, `${path}.typography: must be an array`);
+      else clip.typography.forEach((t, i) => validateTypography(t, i, path, errors));
+    }
+    if (clip.effects) {
+      if (!Array.isArray(clip.effects)) err(errors, `${path}.effects: must be an array`);
+      else clip.effects.forEach((eff, ei) => validateEffectV3(eff, ei, path, errors));
+    }
+    if (clip.transitionIn) validateTransitionObject(clip.transitionIn, `${path}.transitionIn`, errors);
+    if (clip.transitionOut) validateTransitionObject(clip.transitionOut, `${path}.transitionOut`, errors);
+  } else {
+    // V2 validations
+    if (clip.keyframes) {
+      if (!Array.isArray(clip.keyframes)) err(errors, `${path}.keyframes: must be an array`);
+      else clip.keyframes.forEach((kf, ki) => validateKeyframe(kf, `${path}.keyframes[${ki}]`, errors));
+    }
+    if (clip.easing) validateEasing(clip.easing, `${path}.easing`, errors);
+    if (clip.transition) {
+      if (typeof clip.transition !== "string") err(errors, `${path}.transition: must be a string in v2`);
+      else if (!ALLOWED_TRANSITIONS.has(clip.transition)) err(errors, `${path}.transition: unknown value "${clip.transition}"`);
+    }
+    if (clip.effects) {
+      if (!Array.isArray(clip.effects)) err(errors, `${path}.effects: must be an array of strings`);
+      else clip.effects.forEach((eff, ei) => {
+        if (typeof eff !== "string") err(errors, `${path}.effects[${ei}]: must be a string in v2`);
+        else if (!ALLOWED_EFFECTS_V2.has(eff)) err(errors, `${path}.effects[${ei}]: unknown effect "${eff}"`);
+      });
     }
   }
 
@@ -171,7 +259,7 @@ function validateClip(clip, index, validIds, errors) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Overlay validator
+// Overlay validator (Mostly V2 legacy support)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function validateOverlay(overlay, index, errors) {
@@ -182,96 +270,71 @@ function validateOverlay(overlay, index, errors) {
     return;
   }
 
-  // type — required, only "text" supported currently
-  if (!overlay.type) {
-    err(errors, `${path}: missing required field "type". Currently only "text" is supported.`);
-  } else if (overlay.type !== "text") {
-    err(errors, `${path}.type: unsupported value "${overlay.type}". Currently only "text" is supported.`);
+  if (!overlay.type || overlay.type !== "text") {
+    err(errors, `${path}: missing or invalid "type". Currently only "text" supported.`);
   }
 
-  // start — required, absolute seconds
-  if (overlay.start === undefined) {
-    err(errors, `${path}: missing required field "start" (absolute video seconds)`);
-  } else if (typeof overlay.start !== "number" || overlay.start < 0) {
-    err(errors, `${path}.start: must be a non-negative number (absolute video seconds)`);
+  if (overlay.start === undefined || typeof overlay.start !== "number" || overlay.start < 0) {
+    err(errors, `${path}.start: must be a non-negative number`);
   }
 
-  // duration — required
-  if (overlay.duration === undefined) {
-    err(errors, `${path}: missing required field "duration" (seconds)`);
-  } else if (typeof overlay.duration !== "number" || overlay.duration <= 0) {
+  if (overlay.duration === undefined || typeof overlay.duration !== "number" || overlay.duration <= 0) {
     err(errors, `${path}.duration: must be a positive number`);
   }
 
-  // text — required
   if (!overlay.text || typeof overlay.text !== "string") {
-    err(errors, `${path}: missing required field "text" (string)`);
+    err(errors, `${path}: missing required field "text"`);
   }
 
-  // size — optional enum
-  if (overlay.size !== undefined && !ALLOWED_SIZES.has(overlay.size)) {
-    err(errors, `${path}.size: unknown value "${overlay.size}". Allowed: ${[...ALLOWED_SIZES].join(", ")}`);
+  if (overlay.size && !ALLOWED_SIZES.has(overlay.size)) err(errors, `${path}.size: unknown value`);
+  if (overlay.position && !ALLOWED_POSITIONS.has(overlay.position)) err(errors, `${path}.position: unknown value`);
+  if (overlay.background && !ALLOWED_BACKGROUNDS.has(overlay.background)) err(errors, `${path}.background: unknown value`);
+  if (overlay.typography && !ALLOWED_TYPOGRAPHY.has(overlay.typography)) err(errors, `${path}.typography: unknown preset`);
+  if (overlay.easing) validateEasing(overlay.easing, `${path}.easing`, errors);
+  if (overlay.effects) {
+    if (!Array.isArray(overlay.effects)) err(errors, `${path}.effects: must be an array`);
+    else overlay.effects.forEach((eff, ei) => {
+      if (typeof eff !== "string" || !ALLOWED_EFFECTS_V2.has(eff)) err(errors, `${path}.effects[${ei}]: unknown effect`);
+    });
   }
+}
 
-  // position — optional enum
-  if (overlay.position !== undefined && !ALLOWED_POSITIONS.has(overlay.position)) {
-    err(errors, `${path}.position: unknown value "${overlay.position}". Allowed: ${[...ALLOWED_POSITIONS].join(", ")}`);
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// Normalizer
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // background — optional enum
-  if (overlay.background !== undefined && !ALLOWED_BACKGROUNDS.has(overlay.background)) {
-    err(errors, `${path}.background: unknown value "${overlay.background}". Allowed: ${[...ALLOWED_BACKGROUNDS].join(", ")}`);
-  }
-
-  // typography — optional enum
-  if (overlay.typography !== undefined && !ALLOWED_TYPOGRAPHY.has(overlay.typography)) {
-    err(errors, `${path}.typography: unknown preset "${overlay.typography}". Allowed: ${[...ALLOWED_TYPOGRAPHY].join(", ")}`);
-  }
-
-  // easing — optional
-  if (overlay.easing !== undefined) {
-    validateEasing(overlay.easing, `${path}.easing`, errors);
-  }
-
-  // effects — optional array of strings
-  if (overlay.effects !== undefined) {
-    if (!Array.isArray(overlay.effects)) {
-      err(errors, `${path}.effects: must be an array of strings`);
-    } else {
-      overlay.effects.forEach((eff, ei) => {
-        if (typeof eff !== "string" || !ALLOWED_EFFECTS.has(eff)) {
-          err(errors, `${path}.effects[${ei}]: unknown effect "${eff}". Allowed: ${[...ALLOWED_EFFECTS].join(", ")}`);
+/**
+ * Ensures a parsed object meets base requirements, forgiving minor LLM mistakes
+ * without violating strict schema validation.
+ */
+function normalizeSpec(spec) {
+  // Graceful fallback for version
+  if (!spec.schemaVersion) spec.schemaVersion = "motion-v2";
+  
+  if (spec.schemaVersion === "motion-v3") {
+    if (!spec.project) spec.project = {};
+    if (spec.clips && Array.isArray(spec.clips)) {
+      spec.clips.forEach(clip => {
+        // Fallbacks for LLM generating v2 shapes in v3 schema
+        if (clip.keyframes && !clip.camera) {
+          clip.camera = { keyframes: clip.keyframes };
+          delete clip.keyframes;
+        }
+        if (clip.easing && clip.camera) {
+          if (!clip.camera.easing) clip.camera.easing = clip.easing;
+          delete clip.easing;
         }
       });
     }
   }
-
-  // zIndex — optional number
-  if (overlay.zIndex !== undefined && typeof overlay.zIndex !== "number") {
-    err(errors, `${path}.zIndex: must be a number`);
-  }
+  return spec;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main export
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Validate and map an AI-generated Motion Schema v2 JSON string.
- *
- * @param {string} jsonString  - Raw JSON from the AI
- * @param {Array}  slots       - Timeline slots from the editor doc
- * @returns {{
- *   valid:    boolean,
- *   errors:   string[],
- *   matched:  number,
- *   unknown:  string[],
- *   config:   Object | null,   // clipId → clip config map (only if valid)
- *   overlays: Array            // overlay array (only if valid)
- * }}
- */
 export function validateAndMapMotionJSON(jsonString, slots) {
-  // ── Step 1: Parse JSON ──────────────────────────────────────────────────────
   let spec;
   try {
     spec = JSON.parse(jsonString);
@@ -280,60 +343,59 @@ export function validateAndMapMotionJSON(jsonString, slots) {
       valid: false,
       errors: [`Invalid JSON syntax: ${e.message}`],
       matched: 0, unknown: [], config: null, overlays: [],
+      version: "unknown", project: null
     };
   }
 
   const errors = [];
 
-  // ── Step 2: Top-level structure ─────────────────────────────────────────────
   if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
     return {
       valid: false,
       errors: ["Root value must be a JSON object"],
       matched: 0, unknown: [], config: null, overlays: [],
+      version: "unknown", project: null
     };
   }
 
-  // schemaVersion must be exactly "motion-v2"
-  if (spec.schemaVersion !== "motion-v2") {
-    err(errors, `schemaVersion must be exactly "motion-v2" (got ${JSON.stringify(spec.schemaVersion)})`);
+  spec = normalizeSpec(spec);
+
+  if (!ALLOWED_SCHEMA_VERSIONS.has(spec.schemaVersion)) {
+    err(errors, `schemaVersion must be one of: ${[...ALLOWED_SCHEMA_VERSIONS].join(", ")}`);
   }
 
-  // clips must be an array
+  if (spec.schemaVersion === "motion-v3") {
+    validateProject(spec.project, errors);
+  }
+
   if (!Array.isArray(spec.clips)) {
-    err(errors, `"clips" must be an array (got ${typeof spec.clips})`);
-    return { valid: false, errors, matched: 0, unknown: [], config: null, overlays: [] };
+    err(errors, `"clips" must be an array`);
+    return { valid: false, errors, matched: 0, unknown: [], config: null, overlays: [], version: spec.schemaVersion, project: null };
   }
 
-  // overlays must be an array if present
   if (spec.overlays !== undefined && !Array.isArray(spec.overlays)) {
-    err(errors, `"overlays" must be an array if provided (got ${typeof spec.overlays})`);
+    err(errors, `"overlays" must be an array if provided`);
   }
 
-  // ── Step 3: Build valid ID set ──────────────────────────────────────────────
   const validIds = new Set(slots.filter(s => !s.empty).map(s => s.id));
-
-  // ── Step 4: Validate each clip ──────────────────────────────────────────────
   const configMap = {};
   const unknownClips = [];
   let matchedCount = 0;
 
   spec.clips.forEach((clip, i) => {
-    const result = validateClip(clip, i, validIds, errors);
+    const result = validateClip(clip, i, validIds, spec.schemaVersion, errors);
     if (result) {
       matchedCount++;
       configMap[clip.clipId] = clip;
     }
   });
 
-  // Track unknown clipIds separately (not in timeline)
   spec.clips.forEach(clip => {
     if (clip.clipId && !validIds.has(clip.clipId)) {
       unknownClips.push(clip.clipId);
     }
   });
 
-  // ── Step 5: Validate overlays ───────────────────────────────────────────────
   const validOverlays = [];
   if (Array.isArray(spec.overlays)) {
     spec.overlays.forEach((overlay, i) => {
@@ -342,7 +404,6 @@ export function validateAndMapMotionJSON(jsonString, slots) {
     });
   }
 
-  // ── Step 6: Return result ───────────────────────────────────────────────────
   const isValid = errors.length === 0;
 
   return {
@@ -351,6 +412,8 @@ export function validateAndMapMotionJSON(jsonString, slots) {
     matched: matchedCount,
     unknown: unknownClips,
     config:   isValid ? configMap   : null,
-    overlays: isValid ? (Array.isArray(spec.overlays) ? spec.overlays : []) : [],
+    overlays: isValid ? validOverlays : [],
+    version:  spec.schemaVersion,
+    project:  isValid && spec.schemaVersion === "motion-v3" ? spec.project : null
   };
 }

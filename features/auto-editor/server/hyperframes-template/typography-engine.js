@@ -1,13 +1,13 @@
-﻿/**
+/**
  * TypographyEngine - Phase 5 Motion-Graphics Runtime
  *
  * Kinetic typography system with word/char/line splitting and GSAP stagger.
  *
  * Presets: word-reveal, char-cascade, typewriter, blur-reveal, fade-up,
- *          slide-up, pop, bounce
+ *          slide-up, pop, bounce, masked-reveal, scale-punch
  *
- * Backgrounds: pill, bar, gradient, none
- * Positions: bottom, top, center, custom
+ * Backgrounds: pill, bar, gradient, none, card
+ * Positions: bottom, top, center, lower-third, negative-left, negative-right
  * Font: reads fontFamily from spec; falls back to system-ui (no Google Fonts in Lambda)
  */
 window.TypographyEngine = (function () {
@@ -22,12 +22,36 @@ window.TypographyEngine = (function () {
     return text.trim().split("");
   }
 
-  function wrapSpans(parts, className) {
+  function wrapSpans(parts, className, emphasisWords = [], accentColor = "", isMasked = false) {
     return parts.map(p => {
-      const span = document.createElement("span");
-      span.className = className;
-      span.textContent = p === " " ? "\u00A0" : p;
-      return span;
+      const innerSpan = document.createElement("span");
+      innerSpan.className = className;
+      
+      const cleanWord = p.replace(/[^\w]/g, '').toLowerCase();
+      let emphasized = false;
+      if (emphasisWords && emphasisWords.length > 0 && cleanWord.length > 0) {
+        emphasized = emphasisWords.some(ew => cleanWord === ew.replace(/[^\w]/g, '').toLowerCase());
+      }
+      
+      if (emphasized) {
+        innerSpan.classList.add("vc-text-emphasis");
+        if (accentColor) innerSpan.style.color = accentColor;
+      }
+      
+      innerSpan.textContent = p === " " ? "\u00A0" : p;
+
+      if (isMasked && p !== " " && p !== "") {
+        const maskWrap = document.createElement("span");
+        maskWrap.className = "vc-mask-wrap";
+        maskWrap.style.display = "inline-block";
+        maskWrap.style.overflow = "hidden";
+        maskWrap.style.verticalAlign = "bottom";
+        innerSpan.style.display = "inline-block";
+        maskWrap.appendChild(innerSpan);
+        return maskWrap;
+      }
+      
+      return innerSpan;
     });
   }
 
@@ -46,17 +70,18 @@ window.TypographyEngine = (function () {
 
   const PRESETS = {
 
-    "word-reveal"(tl, container, spans, start, dur, opts) {
+    "word-reveal"(tl, container, spanWrappers, start, dur, opts) {
+      const spans = extractInnerSpans(spanWrappers);
       const stagger = opts.stagger || 0.06;
       const dur_each = opts.wordDur || 0.35;
       const ease = opts.easing || "power2.out";
       gsap.set(spans, { opacity: 0, y: 16 });
       tl.to(spans, { opacity: 1, y: 0, duration: dur_each, stagger, ease }, start);
-      // Fade out near end
       tl.to(container, { opacity: 0, duration: 0.25, ease: "power1.in" }, start + dur - 0.3);
     },
 
-    "char-cascade"(tl, container, spans, start, dur, opts) {
+    "char-cascade"(tl, container, spanWrappers, start, dur, opts) {
+      const spans = extractInnerSpans(spanWrappers);
       const stagger = opts.stagger || 0.04;
       const dur_each = opts.charDur || 0.25;
       const ease = opts.easing || "back.out(1.4)";
@@ -65,7 +90,8 @@ window.TypographyEngine = (function () {
       tl.to(container, { opacity: 0, duration: 0.25, ease: "power1.in" }, start + dur - 0.3);
     },
 
-    "typewriter"(tl, container, spans, start, dur, opts) {
+    "typewriter"(tl, container, spanWrappers, start, dur, opts) {
+      const spans = extractInnerSpans(spanWrappers);
       const interval = opts.interval || 0.06;
       gsap.set(spans, { opacity: 0 });
       spans.forEach((span, i) => {
@@ -74,7 +100,8 @@ window.TypographyEngine = (function () {
       tl.to(container, { opacity: 0, duration: 0.2, ease: "power1.in" }, start + dur - 0.25);
     },
 
-    "blur-reveal"(tl, container, spans, start, dur, opts) {
+    "blur-reveal"(tl, container, spanWrappers, start, dur, opts) {
+      const spans = extractInnerSpans(spanWrappers);
       const stagger = opts.stagger || 0.07;
       const dur_each = opts.wordDur || 0.4;
       gsap.set(spans, { opacity: 0, filter: "blur(10px)" });
@@ -82,34 +109,56 @@ window.TypographyEngine = (function () {
       tl.to(container, { opacity: 0, duration: 0.3, ease: "linear" }, start + dur - 0.35);
     },
 
-    "fade-up"(tl, container, spans, start, dur, opts) {
-      // Animate the whole container, not per-word
+    "fade-up"(tl, container, spanWrappers, start, dur, opts) {
       gsap.set(container, { opacity: 0, y: 24 });
       tl.to(container, { opacity: 1, y: 0, duration: opts.inDur || 0.4, ease: "power2.out" }, start);
       tl.to(container, { opacity: 0, duration: opts.outDur || 0.3, ease: "power1.in" }, start + dur - (opts.outDur || 0.3));
     },
 
-    "slide-up"(tl, container, spans, start, dur, opts) {
+    "slide-up"(tl, container, spanWrappers, start, dur, opts) {
+      const spans = extractInnerSpans(spanWrappers);
       const stagger = opts.stagger || 0.06;
       gsap.set(spans, { opacity: 0, y: 32 });
       tl.to(spans, { opacity: 1, y: 0, duration: 0.4, stagger, ease: "power3.out" }, start);
       tl.to(container, { opacity: 0, duration: 0.25, ease: "linear" }, start + dur - 0.3);
     },
 
-    "pop"(tl, container, spans, start, dur, opts) {
+    "pop"(tl, container, spanWrappers, start, dur, opts) {
+      const spans = extractInnerSpans(spanWrappers);
       const stagger = opts.stagger || 0.05;
       gsap.set(spans, { opacity: 0, scale: 0.4 });
       tl.to(spans, { opacity: 1, scale: 1, duration: 0.3, stagger, ease: "back.out(2)" }, start);
       tl.to(container, { opacity: 0, duration: 0.2, ease: "power1.in" }, start + dur - 0.25);
     },
 
-    "bounce"(tl, container, spans, start, dur, opts) {
+    "bounce"(tl, container, spanWrappers, start, dur, opts) {
+      const spans = extractInnerSpans(spanWrappers);
       const stagger = opts.stagger || 0.06;
       gsap.set(spans, { opacity: 0, y: -30 });
       tl.to(spans, { opacity: 1, y: 0, duration: 0.5, stagger, ease: "bounce.out" }, start);
       tl.to(container, { opacity: 0, duration: 0.25, ease: "power1.in" }, start + dur - 0.3);
     },
+
+    "masked-reveal"(tl, container, spanWrappers, start, dur, opts) {
+      const spans = extractInnerSpans(spanWrappers);
+      const stagger = opts.stagger || 0.05;
+      gsap.set(spans, { yPercent: 110 });
+      tl.to(spans, { yPercent: 0, duration: 0.5, stagger, ease: "power3.out" }, start);
+      tl.to(container, { opacity: 0, duration: 0.25, ease: "power1.in" }, start + dur - 0.3);
+    },
+
+    "scale-punch"(tl, container, spanWrappers, start, dur, opts) {
+      const spans = extractInnerSpans(spanWrappers);
+      const stagger = opts.stagger || 0.04;
+      gsap.set(spans, { opacity: 0, scale: 1.5 });
+      tl.to(spans, { opacity: 1, scale: 1, duration: 0.4, stagger, ease: "back.out(1.7)" }, start);
+      tl.to(container, { opacity: 0, duration: 0.25, ease: "linear" }, start + dur - 0.3);
+    }
   };
+
+  function extractInnerSpans(elements) {
+    return elements.map(el => el.classList.contains("vc-mask-wrap") ? el.firstChild : el);
+  }
 
   // ---- Position CSS classes ----
   const POSITION_CLASS = {
@@ -117,6 +166,8 @@ window.TypographyEngine = (function () {
     top:          "vc-text--top",
     center:       "vc-text--center",
     "lower-third":"vc-text--lower-third",
+    "negative-left": "vc-text--negative-left",
+    "negative-right": "vc-text--negative-right",
   };
 
   // ---- Size presets ----
@@ -147,6 +198,8 @@ window.TypographyEngine = (function () {
     const size   = typo.size || "lg";
     const color  = typo.color || "#FFFFFF";
     const family = typo.fontFamily || "system-ui, sans-serif";
+    const emphasisWords = typo.emphasisWords || [];
+    const accentColor = typo.accentColor || "";
 
     // Outer wrapper
     const container = document.createElement("div");
@@ -171,9 +224,17 @@ window.TypographyEngine = (function () {
     // Decide split unit (chars for typewriter/char-cascade, words for the rest)
     const useChars = ["typewriter", "char-cascade"].includes(preset);
     const parts = useChars ? splitChars(text) : splitWords(text);
-    const spans = wrapSpans(parts, useChars ? "vc-char" : "vc-word");
+    const isMasked = preset === "masked-reveal";
+    
+    const spanWrappers = wrapSpans(parts, useChars ? "vc-char" : "vc-word", emphasisWords, accentColor, isMasked);
 
-    spans.forEach(s => textWrap.appendChild(s));
+    spanWrappers.forEach(s => {
+      textWrap.appendChild(s);
+      // If we are splitting by words, add a space after each word.
+      if (!useChars) {
+        textWrap.appendChild(document.createTextNode(" "));
+      }
+    });
 
     // Add to DOM, hidden initially
     trackEl.appendChild(container);
@@ -182,7 +243,7 @@ window.TypographyEngine = (function () {
 
     // Run preset
     const presetFn = PRESETS[preset] || PRESETS["fade-up"];
-    presetFn(tl, container, spans, layerStart, layerDuration, typo);
+    presetFn(tl, container, spanWrappers, layerStart, layerDuration, typo);
 
     return container;
   }

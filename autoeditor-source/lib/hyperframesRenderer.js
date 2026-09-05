@@ -1,3 +1,5 @@
+import { compileV3Clip } from "./motionCompiler.js";
+
 const getBase = () => {
   return process.env.NEXT_PUBLIC_RENDERER_URL || "/api/auto-editor";
 };
@@ -150,47 +152,57 @@ export async function renderVideoHyperframes(opts) {
     const ai = opts.aiMotion ? opts.aiMotion[c.name] : null;
 
     if (ai) {
-      // AI Motion Override (Support both nested 'motion' object and flat clip object)
-      const motionObj = ai.motion || ai;
-      if (motionObj.keyframes) {
-        const propsMap = {};
-        motionObj.keyframes.forEach(kf => {
-          // Some AIs emit 't' (0..1), others emit 'time' (raw seconds). Handle both.
-          let timeSec = 0;
-          if (kf.t !== undefined) {
-              timeSec = kf.t * c.duration;
-          } else if (kf.time !== undefined) {
-              // If it's larger than 1, it's probably absolute seconds. If it's <= 1, it might be normalized or just a short clip.
-              // The AI outputted { "time": 17.0, ... } so it's absolute seconds.
-              timeSec = kf.time; 
-          }
-          
-          // The AI might nest properties in kf.properties, or flatten them in kf.
-          const props = kf.properties || kf;
-          for (const p in props) {
-            if (p === "t" || p === "time" || p === "properties" || p === "easing") continue;
-            if (!propsMap[p]) propsMap[p] = { property: p, keyframes: [], easing: motionObj.easing || "power2.inOut" };
-            propsMap[p].keyframes.push({ time: timeSec, value: props[p] });
-          }
-        });
-        animations = Object.values(propsMap);
-      }
-      
-      effects = ai.effects || [];
-      // Support flat string transition (e.g. "crossfade") or object ({ type, duration })
-      const rawTransitionIn = ai.transitionIn || ai.transition || null;
-      if (typeof rawTransitionIn === "string") {
-        transitionIn = { type: rawTransitionIn, duration: transitionDuration };
-      } else if (rawTransitionIn) {
-        transitionIn = rawTransitionIn;
-        if (!transitionIn.duration) transitionIn.duration = transitionDuration;
-      }
-      const rawTransitionOut = ai.transitionOut || null;
-      if (typeof rawTransitionOut === "string") {
-        transitionOut = { type: rawTransitionOut, duration: transitionDuration };
-      } else if (rawTransitionOut) {
-        transitionOut = rawTransitionOut;
-        if (!transitionOut.duration) transitionOut.duration = transitionDuration;
+      const isV3 = !!(ai.camera || ai.typography); // motion-v3 shape
+
+      if (isV3) {
+        // ── Motion-v3 path: compile high-level intent → explicit layers ──────
+        const project = opts.aiProject || null;
+        const compiled = compileV3Clip(ai, { name: c.name, start: c.start, duration: c.duration }, project);
+
+        animations  = compiled.animations;
+        effects     = compiled.effects;
+        transitionIn  = compiled.transitionIn;
+        transitionOut = compiled.transitionOut;
+
+        // Typography sub-layers are pushed after the visual layer
+        compiled.typographyLayers.forEach(tl => spec.layers.push(tl));
+      } else {
+        // ── Motion-v2 path: raw keyframes / effects / transition ─────────────
+        const motionObj = ai.motion || ai;
+        if (motionObj.keyframes) {
+          const propsMap = {};
+          motionObj.keyframes.forEach(kf => {
+            let timeSec = 0;
+            if (kf.t !== undefined) {
+                timeSec = kf.t * c.duration;
+            } else if (kf.time !== undefined) {
+                timeSec = kf.time;
+            }
+            const props = kf.properties || kf;
+            for (const p in props) {
+              if (p === "t" || p === "time" || p === "properties" || p === "easing") continue;
+              if (!propsMap[p]) propsMap[p] = { property: p, keyframes: [], easing: motionObj.easing || "power2.inOut" };
+              propsMap[p].keyframes.push({ time: timeSec, value: props[p] });
+            }
+          });
+          animations = Object.values(propsMap);
+        }
+
+        effects = ai.effects || [];
+        const rawTransitionIn = ai.transitionIn || ai.transition || null;
+        if (typeof rawTransitionIn === "string") {
+          transitionIn = { type: rawTransitionIn, duration: transitionDuration };
+        } else if (rawTransitionIn) {
+          transitionIn = rawTransitionIn;
+          if (!transitionIn.duration) transitionIn.duration = transitionDuration;
+        }
+        const rawTransitionOut = ai.transitionOut || null;
+        if (typeof rawTransitionOut === "string") {
+          transitionOut = { type: rawTransitionOut, duration: transitionDuration };
+        } else if (rawTransitionOut) {
+          transitionOut = rawTransitionOut;
+          if (!transitionOut.duration) transitionOut.duration = transitionDuration;
+        }
       }
 
     } else {

@@ -1733,6 +1733,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
       // 3. Save to IDB for AutoEditor to pick up
       await idbPut("transfer_audio", res.blob);
+      await idbPut("transfer_audio_duration", res.seconds);
       await idbPut("transfer_srt", srtText);
       await idbPut("transfer_project", batch.project);
 
