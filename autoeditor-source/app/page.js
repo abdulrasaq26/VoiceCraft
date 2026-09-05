@@ -12,6 +12,7 @@ import { validateAndMapMotionJSON } from "../lib/aiMotionParser";
 import { renderWebCodecs, webCodecsCanRender, pickRenderProfile, startKeepAwake } from "../lib/webcodecsRender";
 import { DEFAULT_TRANSITION_DURATION, mixTransitions } from "../lib/transitions";
 import { parseTranscript } from "../lib/captions";
+import { getMegaPrompt } from "../lib/megaPrompt";
 import Dropzone from "../components/Dropzone";
 import Editor from "../components/Editor";
 import ProjectsHome from "../components/ProjectsHome";
@@ -1258,41 +1259,10 @@ export default function Home() {
                     durationSeconds: s.seconds
                   }));
                   
-                  let text = `You are a Motion Director for AutoEditor, a video composition tool.
-
-Your output must be a single JSON object conforming to AutoEditor Motion Schema v2.
-Do not invent fields. Do not use field names outside this specification.
-
-RULES:
-1. schemaVersion must be exactly "motion-v2"
-2. clips[].clipId must exactly match a clipId from the timeline context I provide
-3. clips[].keyframes[].time is in SECONDS from the clip's own start (0 = start of that clip)
-4. clips[].transition is a single string (e.g. "crossfade")
-5. clips[].effects is an array of strings (e.g. ["vignette", "glow"])
-6. overlays[].start is ABSOLUTE video time in seconds (not per-clip)
-
-ALLOWED transitions: cut, fade, crossfade, slide-left, slide-right, slide-up, slide-down, wipe-left, wipe-right, push-left, push-right, blur-in, zoom-through
-ALLOWED effects: vignette, glow, shadow, blur, brightness, contrast, saturation, grain, hue-rotate
-ALLOWED typography: word-reveal, char-cascade, typewriter, blur-reveal, fade-up, slide-up, pop, bounce
-ALLOWED positions: top, center, bottom, lower-third
-ALLOWED sizes: sm, md, lg, xl, 2xl
-ALLOWED backgrounds: none, pill, bar, gradient
-ALLOWED easings: linear, none, power1.inOut, power2.inOut, power3.inOut, back.out, bounce.out
-
-=== TIMELINE CLIPS ===
-Use these exact clipIds in your JSON clips array.
-${JSON.stringify(validClips, null, 2)}
-
-`;
-
-                  if (captionRaw) {
-                    text += `=== VOICE OVER TRANSCRIPT ===\nUse this to time your overlays (absolute seconds):\n${captionRaw}\n\n`;
-                  }
-
-                  text += `Output only valid JSON. No markdown fences. No explanation text.`;
+                  const text = getMegaPrompt(validClips, captionRaw);
                   
                   navigator.clipboard.writeText(text);
-                  alert("Mega-Prompt copied! This includes the System Prompt, your exact clip IDs, and your audio transcript. Just paste it directly into ChatGPT!");
+                  alert("Mega-Prompt copied! This includes the System Prompt, Guidelines, exact clip IDs, and your audio transcript. Just paste it directly into ChatGPT!");
                 }}
                 style={{ background: "#2c3e50", color: "#ecf0f1", border: "1px solid #34495e", borderRadius: 6, padding: "8px 12px", fontSize: 12, cursor: "pointer", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}
               >
