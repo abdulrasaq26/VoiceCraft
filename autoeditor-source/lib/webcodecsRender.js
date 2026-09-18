@@ -72,7 +72,7 @@ export function webCodecsSupported() {
 // VideoEncoder.isConfigSupported can wrongly report H.264 as unsupported even though
 // encoding works, so this is the ground-truth fallback. Firefox (no H.264 encoder)
 // errors here and correctly fails.
-async function encodeProbe(codec, width, height, framerate, bitrate) {
+async function encodeProbe(codec, width, height, framerate, bitrate, useQuantizer = false) {
   if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined" || typeof OffscreenCanvas === "undefined") return false;
   let enc = null;
   try {
@@ -83,7 +83,7 @@ async function encodeProbe(codec, width, height, framerate, bitrate) {
     ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
     let got = false, cfg = null, err = null;
     enc = new VideoEncoder({ output: (chunk, meta) => { got = true; if (meta && meta.decoderConfig) cfg = meta.decoderConfig; }, error: (e) => { err = e; } });
-    enc.configure({ codec, width: W, height: H, framerate: framerate || 30, bitrate: Math.min(bitrate || 500000, 1_000_000), avc: { format: "avc" } });
+    enc.configure({ codec, width: W, height: H, framerate: framerate || 30, ...(useQuantizer ? { bitrateMode: "quantizer" } : { bitrate: Math.min(bitrate || 500000, 1_000_000) }), avc: { format: "avc" } });
     const frame = new VideoFrame(oc, { timestamp: 0 });
     enc.encode(frame, { keyFrame: true });
     frame.close();
@@ -562,7 +562,10 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   if (!(lowMem && !streamToDisk && !writable)) {
     try {
       const q = await VideoEncoder.isConfigSupported({ codec: profile.videoCodec, width: W, height: H, framerate: fps, bitrateMode: "quantizer", avc: { format: "avc" } });
-      useQuantizer = !!(q && q.supported);
+      if (q && q.supported) {
+        // Double-check: some browsers (Firefox 135+) report quantizer support but fail to emit decoderConfig
+        useQuantizer = await encodeProbe(profile.videoCodec, W, H, fps, undefined, true);
+      }
     } catch (_) { useQuantizer = false; }
   }
   if (streamToDisk) {
