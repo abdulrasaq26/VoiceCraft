@@ -1013,6 +1013,16 @@ input[type="range"]:disabled {
   filter: brightness(1.1);
 }
 
+.queue-item-edit-warning {
+  font-size: 0.78rem;
+  color: var(--accent);
+  background: rgba(232, 182, 76, 0.1);
+  border: 1px solid rgba(232, 182, 76, 0.25);
+  border-radius: 7px;
+  padding: 0.45rem 0.65rem;
+  line-height: 1.4;
+}
+
 
 .row-audio {
   width: 100%;

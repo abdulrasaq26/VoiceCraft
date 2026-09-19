@@ -1667,6 +1667,25 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       regenBtn.type = 'button';
       regenBtn.textContent = '↻ Regenerate This Part';
       regenBtn.className = 'btn-primary-sm';
+
+      // Drift warning: shown live as the user types when word count changes significantly
+      const driftWarn = document.createElement('div');
+      driftWarn.className = 'queue-item-edit-warning';
+      driftWarn.hidden = true;
+
+      const origWords = item.text.trim().split(/\s+/).length;
+      ta.addEventListener('input', () => {
+        const newWords = ta.value.trim().split(/\s+/).length;
+        const change = Math.abs(newWords - origWords) / origWords;
+        if (change >= 0.25) {
+          const more = newWords > origWords ? 'longer' : 'shorter';
+          driftWarn.textContent = `⚠️ Word count changed by ${Math.round(change * 100)}% — the audio will be ${more}. The SRT will update automatically after regeneration to match the new timing.`;
+          driftWarn.hidden = false;
+        } else {
+          driftWarn.hidden = true;
+        }
+      });
+
       regenBtn.addEventListener('click', async () => {
         const newText = ta.value.trim();
         if (!newText) return;
@@ -1675,7 +1694,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       });
 
       editActions.append(cancelEdit, regenBtn);
-      editPanel.append(ta, editActions);
+      editPanel.append(driftWarn, ta, editActions);
 
       wrapper.append(row, editPanel);
       queueList.appendChild(wrapper);
@@ -1738,6 +1757,9 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     item.sig = null; // force sig re-check on next run
     selected.delete(item.index);
     attempted.delete(item.index);
+    // Invalidate the subtitle cache — the text changed so the old timing is wrong.
+    // computeCues() will rebuild from the new audio duration once it finishes.
+    subtitleCache = { key: null, cues: null };
     persistBatch();
     renderQueue();
     clearStatus();
