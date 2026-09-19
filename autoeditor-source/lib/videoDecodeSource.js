@@ -105,7 +105,12 @@ export async function createVideoSource(file) {
     dropOlderThan(target);
     let cur = frames[0] || null;
     for (const fr of frames) { if (fr.timestamp <= target) cur = fr; else break; }
-    return cur;
+    try {
+      return cur ? cur.clone() : null;
+    } catch (_) {
+      // If clone fails (e.g. frame was somehow already closed), return null
+      return null;
+    }
   }
 
   function close() {
