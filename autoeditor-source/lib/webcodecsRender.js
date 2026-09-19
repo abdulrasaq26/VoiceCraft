@@ -499,7 +499,8 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
     let src = null;
     try { src = await createVideoSource(resolvedVideosByName[clips[i].name]); } catch (_) { src = null; }
     videoSources.set(i, src);
-    log(`clip ${i}: ${src ? "VideoDecoder (fast)" : "<video> playback (fallback)"}`);
+    const path = src ? "VideoDecoder (fast)" : "<video> seek (slow — check codec)";
+    log(`clip ${i}: ${path} — ${clips[i].name}`);
     return src;
   }
   // A drawable for clip i at output time t. Video clips decode sequentially (or

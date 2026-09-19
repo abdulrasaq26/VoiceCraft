@@ -67,18 +67,28 @@ export async function createVideoSource(file) {
     codedHeight: (track.video && track.video.height) || track.track_height,
   };
   if (description) config.description = description;
-  try {
-    const sup = await VideoDecoder.isConfigSupported(config);
-    if (!sup || !sup.supported) return null;
-  } catch (_) { return null; }
 
+  // Skip isConfigSupported() — Chrome is overly conservative and returns false for
+  // many valid H.264 profiles (e.g. High Profile L5.0+ from AI video generators),
+  // causing ALL video clips to use the slow <video> seek fallback even though
+  // hardware decoding works fine in practice. We attempt to configure the decoder
+  // directly and only bail if it actually errors during decode.
   let decErr = null;
   const frames = []; // decoded VideoFrames, ascending presentation timestamp (µs)
   let decoder;
   try {
     decoder = new VideoDecoder({ output: (f) => frames.push(f), error: (e) => { decErr = e; } });
     decoder.configure(config);
-  } catch (_) { return null; }
+  } catch (_) {
+    // If configure() throws (codec truly unsupported), try without description
+    if (description) {
+      try {
+        const cfg2 = { codec: config.codec, codedWidth: config.codedWidth, codedHeight: config.codedHeight };
+        decoder = new VideoDecoder({ output: (f) => frames.push(f), error: (e) => { decErr = e; } });
+        decoder.configure(cfg2);
+      } catch (__) { return null; }
+    } else { return null; }
+  }
 
   let fedIndex = 0, flushed = false;
   const tick = () => new Promise((r) => setTimeout(r, 0));
