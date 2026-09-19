@@ -2,12 +2,15 @@
 // Detects H.265/HEVC video clips and transcodes them to H.264 in-browser
 // using FFmpeg.wasm (loaded lazily — only when H.265 clips are present).
 // The original File objects are never modified; we return new File objects.
-import { createFile, DataStream } from "mp4box";
+import { createFile } from "mp4box";
 
-// Returns true if this file needs to be transcoded to H.264.
-// This tests if Chrome's hardware VideoDecoder supports the codec/profile.
-// AI video generators (like Google Flow) often output H.265, or H.264 high profiles
-// (like 10-bit or 4:4:4) that Chrome refuses to hardware decode.
+// Returns true if this file needs to be transcoded to a simple H.264 profile.
+// AI video generators (like Google Flow, Runway, etc.) often output:
+// 1. H.265/HEVC (which Chrome can't hardware decode on desktop).
+// 2. H.264 High Profile (avc1.64...) with settings that force Chrome into a
+//    single-threaded software fallback, dropping render speeds from 300fps to <1fps.
+// We aggressively intercept these and run them through FFmpeg to produce a clean,
+// hardware-friendly baseline/main profile.
 export async function needsTranscode(file) {
   return new Promise((resolve) => {
     let mp4;
@@ -17,32 +20,32 @@ export async function needsTranscode(file) {
       const vt = info.videoTracks && info.videoTracks[0];
       if (!vt) { resolve(false); return; } // no video track, skip transcode
 
-      const base = (vt.codec || "").split(".")[0].toLowerCase();
+      const codec = (vt.codec || "").toLowerCase();
+      const base = codec.split(".")[0];
+      
+      // 1. Catch H.265/HEVC
       const HEVC_CODECS = ["hvc1", "hev1", "dvh1", "dvhe", "mhm1", "mhm2"];
       if (HEVC_CODECS.includes(base)) { resolve(true); return; }
 
-      // Test hardware decoder support
-      const config = {
-        codec: vt.codec,
-        codedWidth: (vt.video && vt.video.width) || vt.track_width,
-        codedHeight: (vt.video && vt.video.height) || vt.track_height,
-      };
-
-      const entry = mp4.moov?.traks[0]?.mdia?.minf?.stbl?.stsd?.entries[0];
-      if (entry && entry.avcC) {
-        try {
-          const stream = entry.avcC.write(new DataStream(new ArrayBuffer(entry.avcC.size), 0, DataStream.BIG_ENDIAN));
-          config.description = stream.buffer;
-        } catch (_) {}
+      // 2. Catch H.264 High Profile (avc1.64...) or unusual codecs
+      // avc1.42E... is Baseline, avc1.4D... is Main. These are safe.
+      // avc1.64... is High Profile, which is the culprit for the 0.63fps crawl.
+      if (base === "avc1" || base === "avc3") {
+        if (codec.includes(".64") || codec.includes(".6a") || codec.includes(".f4")) {
+          resolve(true); // High Profile or above -> TRANSCODE
+          return;
+        }
+        resolve(false); // Baseline/Main -> SAFE
+        return;
       }
 
-      try {
-        const sup = await VideoDecoder.isConfigSupported(config);
-        // If supported, we don't need to transcode. If unsupported, we must transcode.
-        resolve(!(sup && sup.supported));
-      } catch (_) {
-        resolve(true); // If in doubt, transcode to a clean baseline profile
+      // 3. Catch AV1 / VP9 just in case (we prefer simple H.264 for the render pipeline)
+      if (base.startsWith("vp09") || base.startsWith("av01")) {
+        resolve(true);
+        return;
       }
+
+      resolve(false);
     };
     file.arrayBuffer().then((ab) => {
       ab.fileStart = 0;
