@@ -43,6 +43,7 @@ import { captionAt, drawCaption, captionFontPx } from "./captions";
 import { transitionOf } from "./transitions";
 import { createVideoSource } from "./videoDecodeSource";
 import { createVoiceSource } from "./voiceSource";
+import { transcodeH265Clips } from "./clipTranscoder";
 
 // Open a fresh temp file in OPFS to stream the muxed MP4 into, so the output never
 // accumulates in RAM. We can't delete the current file until its download finishes
@@ -322,7 +323,29 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   const profile = spec.profile || (await pickRenderProfile(spec.width, spec.height, fps, bitrate));
   if (!profile) throw new Error("This browser can't encode video with WebCodecs.");
   const W = profile.width, H = profile.height;
-  const isVideo = (i) => i >= 0 && i < clips.length && Object.prototype.hasOwnProperty.call(videosByName, clips[i].name);
+
+  // ── H.265 → H.264 auto-conversion ──────────────────────────────────────────
+  // AI-generated clips (Google Flow, Runway, Luma…) are usually H.265/HEVC.
+  // Chrome cannot hardware-decode H.265 on the web, forcing the slow seek
+  // fallback (~1 fps). We detect and transcode them here before the render loop.
+  let resolvedVideosByName = videosByName;
+  const hasVideos = Object.keys(videosByName).length > 0;
+  if (hasVideos) {
+    report(0, "Checking clips for H.265…");
+    try {
+      resolvedVideosByName = await transcodeH265Clips(
+        videosByName,
+        (name, ratio) => report(ratio * 0.15, `Converting: ${name}`),
+        (msg) => { log(msg); report(0, msg); }
+      );
+    } catch (e) {
+      log(`H.265 transcode failed (continuing with original clips): ${e && e.message}`);
+      resolvedVideosByName = videosByName; // fall back gracefully
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const isVideo = (i) => i >= 0 && i < clips.length && Object.prototype.hasOwnProperty.call(resolvedVideosByName, clips[i].name);
   if (!clips || !clips.length) throw new Error("Nothing to render.");
   const total = clips[clips.length - 1].start + clips[clips.length - 1].duration;
   const totalFrames = Math.max(1, Math.round(total * fps));
@@ -333,7 +356,7 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   // track config up front so the muxer can be created with it; the actual mix is
   // rendered (via OfflineAudioContext) after the video frames.
   const clipAudio = clips.map((c, i) => (isVideo(i) && (volumes[i] || 0) > 0)
-    ? { file: videosByName[c.name], start: c.start, dur: c.duration, offset: trims[i] || 0, speed: speeds[i] || 1, vol: volumes[i] }
+    ? { file: resolvedVideosByName[c.name], start: c.start, dur: c.duration, offset: trims[i] || 0, speed: speeds[i] || 1, vol: volumes[i] }
     : null).filter(Boolean);
   // Streaming voiceover: WAV is read straight from the file, other formats are decoded
   // once and offloaded to disk (OPFS) — so the full decoded track never sits in memory
@@ -404,7 +427,7 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   const videoEls = new Map(); // clip index -> { v, url } | null
   async function getVideoEl(i) {
     if (videoEls.has(i)) return videoEls.get(i);
-    const file = videosByName[clips[i].name];
+    const file = resolvedVideosByName[clips[i].name];
     if (!file) { videoEls.set(i, null); return null; }
     const v = document.createElement("video");
     v.muted = true; v.playsInline = true; v.preload = "auto";
@@ -470,7 +493,7 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   async function getVideoSource(i) {
     if (videoSources.has(i)) return videoSources.get(i);
     let src = null;
-    try { src = await createVideoSource(videosByName[clips[i].name]); } catch (_) { src = null; }
+    try { src = await createVideoSource(resolvedVideosByName[clips[i].name]); } catch (_) { src = null; }
     videoSources.set(i, src);
     log(`clip ${i}: ${src ? "VideoDecoder (fast)" : "<video> playback (fallback)"}`);
     return src;
