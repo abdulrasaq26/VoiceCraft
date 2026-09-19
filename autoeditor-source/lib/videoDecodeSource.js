@@ -35,6 +35,17 @@ export async function createVideoSource(file) {
       const vt = info.videoTracks && info.videoTracks[0];
       if (!vt) { reject(new Error("no video track")); return; }
       track = vt;
+
+      // Chrome's WebCodecs VideoDecoder often falls back to a crawling ~0.5 fps 
+      // software implementation for AI-generated High Profile (avc1.64) clips.
+      // We reject them here so they fall back to the optimized <video> element
+      // (BufferedVideoSource), which handles them flawlessly via the browser's main media pipeline.
+      const codecStr = (vt.codec || "").toLowerCase();
+      if (codecStr.includes("avc1.64") || codecStr.includes("avc1.6a") || codecStr.includes("hvc1") || codecStr.includes("hev1")) {
+        reject(new Error("high-profile/hevc clip -> force <video> fallback"));
+        return;
+      }
+
       try { description = descriptionOf(mp4.getTrackById(vt.id)); } catch (_) { description = null; }
       mp4.onSamples = (id, user, samples) => {
         for (const s of samples) {

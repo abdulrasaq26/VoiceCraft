@@ -413,6 +413,18 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
     if (!file) { videoEls.set(i, null); return null; }
     const v = document.createElement("video");
     v.muted = true; v.playsInline = true; v.preload = "auto";
+    
+    // In modern Chrome, offscreen <video> elements (not in DOM) often suspend playback
+    // or refuse to fire requestVideoFrameCallback to save battery. We must append it
+    // to the DOM invisibly so the compositor actively processes its frames.
+    v.style.position = "fixed";
+    v.style.opacity = "0.001";
+    v.style.pointerEvents = "none";
+    v.style.top = "0";
+    v.style.width = "10px";
+    v.style.height = "10px";
+    document.body.appendChild(v);
+
     const url = URL.createObjectURL(file);
     v.src = url;
     await new Promise((res) => {
@@ -502,6 +514,12 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
           checkLeash();
           const f = buffer[0].frame;
           return f.clone ? f.clone() : f;
+        }
+
+        // If video is ended and buffer is entirely empty (e.g. flushed on a jump past the end),
+        // we will never get new frames. Return the video element itself as a fallback.
+        if (buffer.length === 0 && v.ended) {
+          return v;
         }
 
         // Keep playing if we are starved
@@ -789,12 +807,14 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
       const curFrame = await getFrame(idx, t);
       transitionOf(type).canvas(ctx, prevFrame, curFrame, p, W, H, scaleAt(idx - 1, t), scaleAt(idx, t));
       ctx.globalAlpha = 1;
-      if (prevFrame && prevFrame.close) try { prevFrame.close(); } catch(_) {}
-      if (curFrame && curFrame.close) try { curFrame.close(); } catch(_) {}
+      const safeClose = (f) => { if (f && typeof VideoFrame !== "undefined" && f instanceof VideoFrame) { try { f.close(); } catch(_) {} } };
+      safeClose(prevFrame);
+      safeClose(curFrame);
     } else {
       const curFrame = await getFrame(idx, t);
       drawContain(ctx, curFrame, W, H, scaleAt(idx, t), 1);
-      if (curFrame && curFrame.close) try { curFrame.close(); } catch(_) {}
+      const safeClose = (f) => { if (f && typeof VideoFrame !== "undefined" && f instanceof VideoFrame) { try { f.close(); } catch(_) {} } };
+      safeClose(curFrame);
     }
 
     // Captions drawn on top of the images.
@@ -853,7 +873,18 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   report(0.98, "Muxing");
   muxer.finalize();
   for (const b of cache.values()) if (b && b.close) b.close();
-  for (const e of videoEls.values()) { if (e && e.ctrl) { try { e.ctrl.dispose(); } catch (_) {} } if (e && e.v) { try { e.v.pause(); e.v.removeAttribute("src"); e.v.load(); } catch (_) {} } if (e && e.url) { try { URL.revokeObjectURL(e.url); } catch (_) {} } }
+  for (const e of videoEls.values()) {
+    if (e && e.ctrl) { try { e.ctrl.dispose(); } catch (_) {} }
+    if (e && e.v) {
+      try {
+        e.v.pause();
+        e.v.removeAttribute("src");
+        e.v.load();
+        if (e.v.parentNode) e.v.parentNode.removeChild(e.v);
+      } catch (_) {}
+    }
+    if (e && e.url) { try { URL.revokeObjectURL(e.url); } catch (_) {} }
+  }
   for (const s of videoSources.values()) { if (s && s.close) { try { s.close(); } catch (_) {} } }
   if (voiceSource && voiceSource.dispose) { try { await voiceSource.dispose(); } catch (_) {} }
   yielder.done();
