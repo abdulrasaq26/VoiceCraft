@@ -1,35 +1,55 @@
-﻿// clipTranscoder.js
+// clipTranscoder.js
 // Detects H.265/HEVC video clips and transcodes them to H.264 in-browser
 // using FFmpeg.wasm (loaded lazily — only when H.265 clips are present).
 // The original File objects are never modified; we return new File objects.
-import { createFile } from "mp4box";
+import { createFile, DataStream } from "mp4box";
 
-const HEVC_CODECS = ["hvc1", "hev1", "dvh1", "dvhe", "mhm1", "mhm2"];
-
-// Read the codec string from an MP4 file using mp4box.
-async function getVideoCodec(file) {
+// Returns true if this file needs to be transcoded to H.264.
+// This tests if Chrome's hardware VideoDecoder supports the codec/profile.
+// AI video generators (like Google Flow) often output H.265, or H.264 high profiles
+// (like 10-bit or 4:4:4) that Chrome refuses to hardware decode.
+export async function needsTranscode(file) {
   return new Promise((resolve) => {
     let mp4;
-    try { mp4 = createFile(); } catch (_) { resolve(null); return; }
-    mp4.onError = () => resolve(null);
-    mp4.onReady = (info) => {
+    try { mp4 = createFile(); } catch (_) { resolve(true); return; } // fallback to transcode if parse fails
+    mp4.onError = () => resolve(true);
+    mp4.onReady = async (info) => {
       const vt = info.videoTracks && info.videoTracks[0];
-      resolve(vt ? vt.codec : null);
+      if (!vt) { resolve(false); return; } // no video track, skip transcode
+
+      const base = (vt.codec || "").split(".")[0].toLowerCase();
+      const HEVC_CODECS = ["hvc1", "hev1", "dvh1", "dvhe", "mhm1", "mhm2"];
+      if (HEVC_CODECS.includes(base)) { resolve(true); return; }
+
+      // Test hardware decoder support
+      const config = {
+        codec: vt.codec,
+        codedWidth: (vt.video && vt.video.width) || vt.track_width,
+        codedHeight: (vt.video && vt.video.height) || vt.track_height,
+      };
+
+      const entry = mp4.moov?.traks[0]?.mdia?.minf?.stbl?.stsd?.entries[0];
+      if (entry && entry.avcC) {
+        try {
+          const stream = entry.avcC.write(new DataStream(new ArrayBuffer(entry.avcC.size), 0, DataStream.BIG_ENDIAN));
+          config.description = stream.buffer;
+        } catch (_) {}
+      }
+
+      try {
+        const sup = await VideoDecoder.isConfigSupported(config);
+        // If supported, we don't need to transcode. If unsupported, we must transcode.
+        resolve(!(sup && sup.supported));
+      } catch (_) {
+        resolve(true); // If in doubt, transcode to a clean baseline profile
+      }
     };
     file.arrayBuffer().then((ab) => {
       ab.fileStart = 0;
       mp4.appendBuffer(ab);
       mp4.flush();
-    }).catch(() => resolve(null));
+    }).catch(() => resolve(true));
   });
-}
-
-// Returns true if this file needs to be transcoded to H.264.
-export async function needsTranscode(file) {
-  const codec = await getVideoCodec(file);
-  if (!codec) return false;
-  const base = codec.split(".")[0].toLowerCase();
-  return HEVC_CODECS.includes(base);
 }
 
 let _ffmpegInstance = null;
