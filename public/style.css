@@ -923,6 +923,97 @@ input[type="range"]:disabled {
   cursor: not-allowed;
 }
 
+/* ── Per-part inline script editor ─────────────────────────────────────── */
+
+.queue-item-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.queue-item-edit {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  padding: 0.75rem 0.9rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  animation: fadeSlideDown 0.15s ease;
+}
+
+/* When edit panel is open, square off the bottom of the row above */
+.queue-item-wrapper:has(.queue-item-edit:not([hidden])) .queue-item {
+  border-radius: 10px 10px 0 0;
+  border-bottom-color: transparent;
+}
+
+@keyframes fadeSlideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.queue-item-edit-textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  background: var(--input-bg, var(--bg));
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.queue-item-edit-textarea:focus {
+  border-color: var(--accent);
+}
+
+.queue-item-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.btn-secondary-sm {
+  background: none;
+  border: 1px solid var(--card-border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btn-secondary-sm:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.btn-primary-sm {
+  background: var(--accent);
+  border: 1px solid transparent;
+  color: #000;
+  border-radius: 8px;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btn-primary-sm:hover {
+  filter: brightness(1.1);
+}
+
+
 .row-audio {
   width: 100%;
   margin-top: 0.25rem;

@@ -1547,6 +1547,10 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
     queueList.innerHTML = '';
     for (const item of batch.items) {
+      // Outer wrapper — flex-column so the edit panel sits below the row
+      const wrapper = document.createElement('div');
+      wrapper.className = 'queue-item-wrapper';
+
       const row = document.createElement('div');
       row.className = 'queue-item';
       if (item.status === 'generating') row.classList.add('is-generating');
@@ -1602,6 +1606,25 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
       actions.append(playBtn, dl, editorBtn);
 
+      // ✏️ Edit script button — only for completed parts
+      if (item.status === 'done') {
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.textContent = '✏️';
+        editBtn.title = 'Edit script and regenerate this part';
+        editBtn.addEventListener('click', () => {
+          const panel = wrapper.querySelector('.queue-item-edit');
+          const isOpen = !panel.hidden;
+          panel.hidden = isOpen;
+          if (!isOpen) {
+            const ta = panel.querySelector('textarea');
+            ta.value = item.text;
+            ta.focus();
+          }
+        });
+        actions.appendChild(editBtn);
+      }
+
       // Retrying one part belongs on that part. The batch-level button is at
       // the top of a list that can be forty rows long, and it is hidden while
       // the queue is running — which is exactly when a failure is on screen.
@@ -1619,7 +1642,43 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       }
 
       row.append(check, info, badge, actions);
-      queueList.appendChild(row);
+
+      // ── Inline edit panel (hidden by default) ──────────────────────────────
+      const editPanel = document.createElement('div');
+      editPanel.className = 'queue-item-edit';
+      editPanel.hidden = true;
+
+      const ta = document.createElement('textarea');
+      ta.className = 'queue-item-edit-textarea';
+      ta.value = item.text;
+      ta.rows = 4;
+      ta.spellcheck = true;
+
+      const editActions = document.createElement('div');
+      editActions.className = 'queue-item-edit-actions';
+
+      const cancelEdit = document.createElement('button');
+      cancelEdit.type = 'button';
+      cancelEdit.textContent = 'Cancel';
+      cancelEdit.className = 'btn-secondary-sm';
+      cancelEdit.addEventListener('click', () => { editPanel.hidden = true; });
+
+      const regenBtn = document.createElement('button');
+      regenBtn.type = 'button';
+      regenBtn.textContent = '↻ Regenerate This Part';
+      regenBtn.className = 'btn-primary-sm';
+      regenBtn.addEventListener('click', async () => {
+        const newText = ta.value.trim();
+        if (!newText) return;
+        editPanel.hidden = true;
+        await regenItem(item, newText);
+      });
+
+      editActions.append(cancelEdit, regenBtn);
+      editPanel.append(ta, editActions);
+
+      wrapper.append(row, editPanel);
+      queueList.appendChild(wrapper);
     }
     syncSelectAll();
   }
@@ -1644,6 +1703,40 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     item.status = 'pending';
     item.error = null;
     item.progressMsg = null;
+    attempted.delete(item.index);
+    persistBatch();
+    renderQueue();
+    clearStatus();
+    if (!running) runQueue();
+  }
+
+  /**
+   * Edit the text of a completed part and regenerate only that part.
+   *
+   * Because the text changed, the old audio and sub-pieces are invalid —
+   * they are cleared before re-queuing. Every other done part is untouched;
+   * the queue runner skips parts with status === 'done'.
+   */
+  async function regenItem(item, newText) {
+    if (!batch) return;
+    // Discard the old audio blob and URL for this item
+    memBlobs.delete(item.index);
+    if (urls.has(item.index)) {
+      URL.revokeObjectURL(urls.get(item.index));
+      urls.delete(item.index);
+    }
+    // Remove old IDB blob (use prefix delete with exact key — idbDeletePrefix matches startsWith)
+    try { await idbDeletePrefix(`${batch.id}:${item.index}`); } catch (_) {}
+    // Clear sub-pieces — text changed so they no longer match
+    await forgetPieces(item);
+
+    // Apply the new script and re-queue
+    item.text = newText;
+    item.status = 'pending';
+    item.error = null;
+    item.progressMsg = null;
+    item.sig = null; // force sig re-check on next run
+    selected.delete(item.index);
     attempted.delete(item.index);
     persistBatch();
     renderQueue();
