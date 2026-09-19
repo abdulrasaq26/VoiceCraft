@@ -332,15 +332,19 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   const hasVideos = Object.keys(videosByName).length > 0;
   if (hasVideos) {
     report(0, "Checking clips for H.265…");
+    log("H.265 check: scanning " + Object.keys(videosByName).length + " clip(s)");
     try {
       resolvedVideosByName = await transcodeH265Clips(
         videosByName,
         (name, ratio) => report(ratio * 0.15, `Converting: ${name}`),
         (msg) => { log(msg); report(0, msg); }
       );
+      log("H.265 check complete");
     } catch (e) {
-      log(`H.265 transcode failed (continuing with original clips): ${e && e.message}`);
-      resolvedVideosByName = videosByName; // fall back gracefully
+      const errMsg = `H.265 transcode failed: ${e && e.message}`;
+      log(errMsg);
+      report(0, errMsg + " — rendering with original clips (may be slow)");
+      resolvedVideosByName = videosByName;
     }
   }
   // ───────────────────────────────────────────────────────────────────────────

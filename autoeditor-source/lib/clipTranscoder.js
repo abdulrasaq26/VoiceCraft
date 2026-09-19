@@ -40,7 +40,7 @@ async function getFFmpeg() {
   const { FFmpeg } = await import("@ffmpeg/ffmpeg");
   const { fetchFile, toBlobURL } = await import("@ffmpeg/util");
   const ff = new FFmpeg();
-  const base = "/ffmpeg";
+  const base = (typeof window !== "undefined" ? window.location.pathname.split("/").slice(0, -1).join("/") : "") + "/ffmpeg";
   await ff.load({
     coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
     wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
@@ -112,3 +112,4 @@ export async function transcodeH265Clips(videosByName, onClipProgress, onStatus)
   if (onStatus) onStatus("Conversion complete - starting render...");
   return result;
 }
+
