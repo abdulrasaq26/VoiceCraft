@@ -325,30 +325,8 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   const W = profile.width, H = profile.height;
 
   // ── H.265 → H.264 auto-conversion ──────────────────────────────────────────
-  // AI-generated clips (Google Flow, Runway, Luma…) are usually H.265/HEVC.
-  // Chrome cannot hardware-decode H.265 on the web, forcing the slow seek
-  // fallback (~1 fps). We detect and transcode them here before the render loop.
-  let resolvedVideosByName = videosByName;
-  const hasVideos = Object.keys(videosByName).length > 0;
-  if (hasVideos) {
-    report(0, "Checking clip compatibility…");
-    log("Hardware compatibility check: scanning " + Object.keys(videosByName).length + " clip(s)");
-    try {
-      resolvedVideosByName = await transcodeH265Clips(
-        videosByName,
-        (name, ratio) => report(ratio * 0.15, `Converting: ${name}`),
-        (msg) => { log(msg); report(0, msg); }
-      );
-      log("Compatibility check complete");
-    } catch (e) {
-      const errMsg = `Clip conversion failed: ${e && e.message}`;
-      log(errMsg);
-      report(0, errMsg + " — rendering with original clips (may be slow)");
-      resolvedVideosByName = videosByName;
-    }
-  }
   // ───────────────────────────────────────────────────────────────────────────
-
+  let resolvedVideosByName = videosByName;
   const isVideo = (i) => i >= 0 && i < clips.length && Object.prototype.hasOwnProperty.call(resolvedVideosByName, clips[i].name);
   if (!clips || !clips.length) throw new Error("Nothing to render.");
   const total = clips[clips.length - 1].start + clips[clips.length - 1].duration;
@@ -457,37 +435,92 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
       try { v.currentTime = time; } catch (_) { done(); }
     });
   }
-  // Fallback frame source that plays the clip STRAIGHT THROUGH instead of seeking to
-  // each frame. Seeking rebuilds every frame from the nearest keyframe — thousands of
-  // times over a clip — which is what makes the seek path crawl on mobile. Playing
-  // forward decodes sequentially (one smooth pass). A short leash pauses playback when
-  // it runs past what the render currently needs, so a slow encoder can't let the clip
-  // race ahead and desync; big jumps / rewinds (e.g. a trim start) still use one seek.
+  // Fallback frame source that plays the clip STRAIGHT THROUGH into a buffer.
+  // Seeking rebuilds every frame from the nearest keyframe — which crawls on mobile.
+  // The old leash approach played forward but the renderer often outran the video,
+  // triggering a backward seek on every frame (dropping it to 0.5 fps).
+  // This approach captures frames cleanly in the background and hands them off.
   function createPlaybackController(v) {
-    const eps = 1 / (fps * 2);
-    const leash = 3 / fps;
-    let want = 0, disposed = false;
-    const hasRVFC = typeof v.requestVideoFrameCallback === "function";
-    const leashCheck = () => { if (!disposed && !v.paused && v.currentTime > want + leash) { try { v.pause(); } catch (_) {} } };
-    if (hasRVFC) {
-      const onFrame = () => { if (disposed) return; leashCheck(); v.requestVideoFrameCallback(onFrame); };
-      v.requestVideoFrameCallback(onFrame);
-    } else {
-      const iv = setInterval(() => { if (disposed) { clearInterval(iv); return; } leashCheck(); }, 8);
+    let disposed = false;
+    const buffer = []; // { time, frame }
+    let rvfcHandle = 0;
+    
+    try { v.currentTime = 0; } catch(_) {}
+    v.playbackRate = 1.0;
+
+    function checkLeash() {
+      if (disposed) return;
+      if (buffer.length >= 8 && !v.paused) {
+        try { v.pause(); } catch(_) {}
+      } else if (buffer.length <= 3 && v.paused && !v.ended) {
+        try { v.play().catch(()=>{}); } catch(_) {}
+      }
     }
-    async function frameAt(src) {
-      want = src;
-      // Backward, or a jump too large to reach by playing → a single seek is cheaper.
-      if (src < v.currentTime - eps || src - v.currentTime > 0.5) { await seekTo(v, src); return v; }
-      if (v.currentTime >= src - eps) return v; // playback already reached this time
-      if (v.paused) { try { await v.play(); } catch (_) { await seekTo(v, src); return v; } }
-      await new Promise((resolve) => {
-        const check = () => { if (disposed || v.ended || v.currentTime >= src - eps) resolve(); else setTimeout(check, 6); };
-        check();
-      });
+
+    function onFrame(now, metadata) {
+      if (disposed) return;
+      try {
+        if (typeof VideoFrame !== "undefined") {
+          const frame = new VideoFrame(v, { timestamp: Math.round(metadata.mediaTime * 1e6) });
+          buffer.push({ time: metadata.mediaTime, frame });
+        } else {
+          // Absolute fallback (Safari without WebCodecs): push the video element itself
+          // We don't really buffer it, we just let it play.
+          buffer.push({ time: metadata.mediaTime, frame: v });
+        }
+      } catch (_) {}
+      checkLeash();
+      if (v.requestVideoFrameCallback) {
+        rvfcHandle = v.requestVideoFrameCallback(onFrame);
+      }
+    }
+
+    if (v.requestVideoFrameCallback) {
+      rvfcHandle = v.requestVideoFrameCallback(onFrame);
+      v.play().catch(()=>{});
+    }
+
+    async function frameAt(srcSec) {
+      // Big backward jump -> flush buffer and seek
+      if (buffer.length && srcSec < buffer[0].time - 0.2) {
+        buffer.forEach(b => { if (b.frame.close) try { b.frame.close(); } catch(_) {} });
+        buffer.length = 0;
+        try { v.currentTime = srcSec; } catch(_) {}
+      }
+
+      checkLeash();
+
+      while (!disposed) {
+        // Drop frames older than requested
+        while (buffer.length > 1 && buffer[1].time <= srcSec) {
+          const old = buffer.shift();
+          if (old.frame.close) try { old.frame.close(); } catch(_) {}
+        }
+        
+        // Return if we have it
+        if (buffer.length > 0 && (buffer[buffer.length - 1].time >= srcSec - (1/(fps*2)) || v.ended)) {
+          checkLeash();
+          const f = buffer[0].frame;
+          return f.clone ? f.clone() : f;
+        }
+
+        // Keep playing if we are starved
+        if (v.paused && !v.ended) {
+          try { await v.play(); } catch(_) { try { v.currentTime = srcSec; } catch(__){} }
+        }
+        await new Promise(r => setTimeout(r, 8));
+      }
       return v;
     }
-    function dispose() { disposed = true; try { v.pause(); } catch (_) {} }
+
+    function dispose() {
+      disposed = true;
+      if (rvfcHandle && v.cancelVideoFrameCallback) v.cancelVideoFrameCallback(rvfcHandle);
+      try { v.pause(); } catch(_) {}
+      buffer.forEach(b => { if (b.frame.close) try { b.frame.close(); } catch(_) {} });
+      buffer.length = 0;
+    }
+
     return { frameAt, dispose };
   }
   // Fast path: decode each video clip sequentially with a hardware VideoDecoder
@@ -756,8 +789,12 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
       const curFrame = await getFrame(idx, t);
       transitionOf(type).canvas(ctx, prevFrame, curFrame, p, W, H, scaleAt(idx - 1, t), scaleAt(idx, t));
       ctx.globalAlpha = 1;
+      if (prevFrame && prevFrame.close) try { prevFrame.close(); } catch(_) {}
+      if (curFrame && curFrame.close) try { curFrame.close(); } catch(_) {}
     } else {
-      drawContain(ctx, await getFrame(idx, t), W, H, scaleAt(idx, t), 1);
+      const curFrame = await getFrame(idx, t);
+      drawContain(ctx, curFrame, W, H, scaleAt(idx, t), 1);
+      if (curFrame && curFrame.close) try { curFrame.close(); } catch(_) {}
     }
 
     // Captions drawn on top of the images.
