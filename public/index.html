@@ -509,7 +509,8 @@
           </div>
 
           <div id="queue-list" class="queue-list"></div>
-          <audio id="row-audio" class="row-audio" controls hidden></audio>
+          <!-- row-audio is kept in DOM for legacy compatibility but hidden; playback is via Play All bar -->
+          <audio id="row-audio" hidden></audio>
 
           <!-- Play All bar — appears once any part is done -->
           <div id="play-all-bar" class="play-all-bar" hidden>

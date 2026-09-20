@@ -251,9 +251,34 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
   // Split a paragraph into sentence-like units, keeping the terminal
   // punctuation attached so nothing is cut mid-sentence.
+  //
+  // Strategy: replace periods that are NOT sentence-endings with a private
+  // placeholder (\x02) before splitting, then restore them afterwards.
+  // This prevents false splits on:
+  //   • Time abbreviations:  a.m.  p.m.  A.M.  P.M.
+  //   • Titles:              Mr.  Mrs.  Ms.  Dr.  Prof.  St.  vs.  etc.
+  //   • Initials:            J.K.  U.S.  U.K.  D.C.
+  //   • Decimal numbers:     3.5  0.75
+  //   • Domain names / URLs: example.com  ...handled naturally (no space after dot)
+  const _ABBREV_RE = /\b(?:Mr|Mrs|Ms|Miss|Dr|Prof|Sr|Jr|St|vs|etc|approx|dept|est|govt|Inc|Ltd|Corp|Co|Blvd|Ave|Rd|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec|a\.m|p\.m|A\.M|P\.M)\./g;
+  const _INITIAL_RE = /\b([A-Z])\./g;           // single capital letter followed by period
+  const _DECIMAL_RE = /(\d)\.(\d)/g;             // digit.digit (decimals)
+  const _INNER_ABBR_RE = /\.([a-zA-Z]\.)+/g;    // multi-dot abbreviations like U.S.A.
+
+  function _protectDots(text) {
+    return text
+      .replace(_INNER_ABBR_RE, (m) => m.replace(/\./g, '\x02'))
+      .replace(_ABBREV_RE, (m) => m.replace(/\./g, '\x02'))
+      .replace(_INITIAL_RE, '$1\x02')
+      .replace(_DECIMAL_RE, '$1\x02$2');
+  }
+
   function splitSentences(paragraph) {
-    const matches = paragraph.match(/[^.!?…]*[.!?…]+(?=\s|$)|[^.!?…]+$/g);
-    return (matches || [paragraph]).map((s) => s.trim()).filter(Boolean);
+    const protected_ = _protectDots(paragraph);
+    const matches = protected_.match(/[^.!?…]*[.!?…]+(?=\s|$)|[^.!?…]+$/g);
+    const raw = matches || [protected_];
+    // Restore the placeholder back to real dots
+    return raw.map((s) => s.replace(/\x02/g, '.').trim()).filter(Boolean);
   }
 
   // Fallback for a single sentence longer than the hard max: break on clause
@@ -1604,7 +1629,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       playBtn.textContent = '▶';
       playBtn.title = 'Play';
       playBtn.disabled = item.status !== 'done';
-      playBtn.addEventListener('click', () => playItem(item));
+      playBtn.addEventListener('click', () => playItemFromBar(item));
       const dl = document.createElement('button');
       dl.type = 'button';
       dl.textContent = '↓';
@@ -1781,13 +1806,19 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     if (!running) runQueue();
   }
 
-  function playItem(item) {
-    const url = urls.get(item.index);
-    if (!url) return;
-    rowAudio.src = url;
-    rowAudio.hidden = false;
-    rowAudio.play().catch(() => {});
+  // playItemFromBar: starts the Play All engine from the clicked part,
+  // continuing through all subsequent done parts automatically.
+  // Called by the ▶ button on individual queue rows.
+  function playItemFromBar(item) {
+    if (!batch) return;
+    const doneItems = batch.items.filter(i => i.status === 'done');
+    const startAt = doneItems.findIndex(i => i.index === item.index);
+    if (startAt === -1) return;
+    startPlayAll(doneItems, startAt);
   }
+
+  // Legacy stub kept in case other code calls playItem directly.
+  function playItem(item) { playItemFromBar(item); }
 
   // ── Play All engine ──────────────────────────────────────────────────────
   // Plays all completed parts in order using a dedicated <audio> element
@@ -1853,8 +1884,10 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
 
       playAllIndex = item.index;
 
-      // Update label
-      playAllLabel.textContent = `Playing Part ${pos + 1} of ${doneItems.length}: ${itemFileName(item)}`;
+      // Update label — show position within ALL done items (not just from startAt)
+      const globalPos = doneItems.findIndex(i => i.index === item.index);
+      const totalDone = doneItems.length;
+      playAllLabel.textContent = `Playing Part ${globalPos + 1} of ${totalDone}: ${itemFileName(item)}`;
       playAllTime.textContent = '';
 
       // Highlight the active row and scroll it into view
