@@ -170,6 +170,10 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.style.justifyContent = 'space-between';
         btn.style.alignItems = 'center';
         
+        const infoDiv = document.createElement('div');
+        infoDiv.style.display = 'flex';
+        infoDiv.style.flexDirection = 'column';
+        
         const titleSpan = document.createElement('strong');
         titleSpan.textContent = p.name || 'Untitled';
         
@@ -178,8 +182,32 @@ document.addEventListener('DOMContentLoaded', () => {
         dateSpan.style.color = 'var(--text-dim)';
         dateSpan.textContent = new Date(p.updatedAt).toLocaleString();
         
-        btn.appendChild(titleSpan);
-        btn.appendChild(dateSpan);
+        infoDiv.appendChild(titleSpan);
+        infoDiv.appendChild(dateSpan);
+        
+        const delBtn = document.createElement('button');
+        delBtn.textContent = '🗑️ Delete';
+        delBtn.className = 'btn';
+        delBtn.style.padding = '4px 8px';
+        delBtn.style.background = '#4a1111';
+        delBtn.style.color = '#ff9999';
+        delBtn.style.border = 'none';
+        delBtn.style.borderRadius = '4px';
+        delBtn.style.cursor = 'pointer';
+        
+        delBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (confirm(`Are you sure you want to delete "${p.name || 'Untitled'}"? This will delete both the VoiceCraft script and the AutoEditor timeline.`)) {
+            await window.SharedDB.deleteProject(p.id);
+            if (localStorage.getItem('blvck-tts:currentProjectId') === p.id) {
+              localStorage.removeItem('blvck-tts:currentProjectId');
+            }
+            showProjects(); // refresh the list
+          }
+        });
+        
+        btn.appendChild(infoDiv);
+        btn.appendChild(delBtn);
         
         btn.addEventListener('click', () => loadProject(p.id));
         listContainer.appendChild(btn);

@@ -175,6 +175,8 @@ export default function Home() {
   const [loadingProject, setLoadingProject] = useState(false);
   const saveRef = useRef(null);
   const idRef = useRef(0);
+  const playheadRef = useRef(0);
+  const [initialPlayhead, setInitialPlayhead] = useState(0);
   const nextId = () => `s${idRef.current++}`;
 
   // Composition (undoable): slots + per-clip transition choices, snapshotted together.
@@ -614,6 +616,7 @@ export default function Home() {
     audioName: audioFile ? audioFile.name : null,
     idCounter: idRef.current,
     built,
+    playhead: playheadRef.current,
   }), [aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd,
       motionByName, trimByName, volumeByName, fitByName,
       captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
@@ -789,6 +792,8 @@ export default function Home() {
       setCaptionFontScale(cp.captionFontScale ?? null);
       idRef.current = d.idCounter || newSlots.length;
       setBuilt(!!d.built);
+      setInitialPlayhead(d.playhead || 0);
+      playheadRef.current = d.playhead || 0;
     } finally { setLoadingProject(false); }
   }, [resetDoc, resetAllState]);
 
@@ -1471,6 +1476,7 @@ export default function Home() {
         </section>
       ) : (
         <Editor
+          initialTime={initialPlayhead} onTimeChange={(t) => { playheadRef.current = t; }}
           clips={clips} imageEls={imageEls} audioUrl={audioUrl}
           duration={audioDuration} peaks={peaks} dims={dims}
           aspect={aspect} setAspect={setAspect} fps={fps} setFps={setFps}

@@ -36,28 +36,36 @@ export default function Editor({
   motionByName, setMotion, applyMotionAll, applyMotionAlternate, motionAmount, setMotionAmount,
   aiMotion = {}, aiOverlays = [],
   videoInfoByName = {}, trimByName = {}, setTrim, volumeByName = {}, setVolume,
-  fitByName = {}, setFit,
+  fitByName = {}, setFit, applyFitAll,
   trimEnd, setTrimEnd, exportDuration,
   undo, redo, canUndo, canRedo,
   captionCues, captionsOn, setCaptionsOn, captionStyle, setCaptionStyle,
   captionSize, setCaptionSize, captionLineHeight, setCaptionLineHeight,
   captionFontScale, setCaptionFontScale,
-  captionName, captionError, onCaptionFile,
+  captionRaw, captionName, captionError, onCaptionFile, removeCaptions, lowerThirdConfig,
+  initialTime = 0, onTimeChange,
 }) {
   const canvasRef = useRef(null);
   const audioRef = useRef(null);
-  const rafRef = useRef(0);
+  const rafRef = useRef(null);
   const fileInputRef = useRef(null);
   const capInputRef = useRef(null);
   const replaceInputRef = useRef(null);
   const pending = useRef(null); // gap-fill target name
-  const trimEndRef = useRef(exportDuration);
+  const pendingSeekRef = useRef(null);
+  const trimEndRef = useRef(exportDuration || duration);
   const vidRefs = useRef({});     // clip name -> offscreen <video> for live preview
   const drawRef = useRef(null);   // latest draw fn (so video 'seeked' can redraw)
-  const timeRef = useRef(0);      // latest playhead time
+  const timeRef = useRef(initialTime);      // latest playhead time
   const modalVideoRef = useRef(null); // the trim scrubber <video> in the inspector
-  useEffect(() => { trimEndRef.current = exportDuration; }, [exportDuration]);
-  const [time, setTime] = useState(0);
+  useEffect(() => { trimEndRef.current = exportDuration || duration; }, [exportDuration, duration]);
+  const [time, setTimeState] = useState(initialTime);
+
+  const setTime = useCallback((t) => {
+    setTimeState(t);
+    timeRef.current = t;
+    if (onTimeChange) onTimeChange(t);
+  }, [onTimeChange]);
   const [playing, setPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0); // seconds spent in the current render
   const [selectedCut, setSelectedCut] = useState(null); // selected clip name (drives transition)
@@ -488,7 +496,7 @@ export default function Editor({
   // Coalesce rapid scrub seeks: while a seek is still settling (slow for WAV),
   // remember the latest target and apply it on 'seeked', so the drag's release
   // position always wins instead of being dropped mid-seek.
-  const pendingSeekRef = useRef(null);
+
   const seek = useCallback((t) => {
     const a = audioRef.current;
     if (!a) return;
