@@ -661,7 +661,9 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       language: languageSelect.value,
       instructions: instructionsInput.value,
       voice_settings: collectVoiceSettings(),
-      format: formatSelect.value
+      format: formatSelect.value,
+      script: textInput ? textInput.value : '',
+      title: titleInput ? titleInput.value : ''
     };
   }
 
@@ -684,6 +686,15 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     if (typeof s.instructions === 'string') instructionsInput.value = s.instructions;
     applyVoiceSettings(s.voice_settings);
     if (s.format && FORMAT_EXT[s.format]) formatSelect.value = s.format;
+    // Restore the script text and project title
+    if (typeof s.script === 'string' && textInput && !textInput.value) {
+      textInput.value = s.script;
+      textInput.dispatchEvent(new Event('input')); // trigger char count / naming note update
+    }
+    if (typeof s.title === 'string' && titleInput && !titleInput.value) {
+      titleInput.value = s.title;
+      titleInput.dispatchEvent(new Event('input'));
+    }
     updateSliderOutputs();
     renderVoiceCard();
     persistSettings();
@@ -2495,6 +2506,15 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   textInput.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') startGeneration();
   });
+
+  // Auto-save script text and title on every change so they survive a refresh.
+  let _scriptSaveTimer = null;
+  const debouncedPersist = () => {
+    clearTimeout(_scriptSaveTimer);
+    _scriptSaveTimer = setTimeout(persistSettings, 500);
+  };
+  if (textInput) textInput.addEventListener('input', debouncedPersist);
+  if (titleInput) titleInput.addEventListener('input', debouncedPersist);
 
   // Queue controls
   pauseBtn.addEventListener('click', () => {
