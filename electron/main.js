@@ -1,4 +1,4 @@
-﻿// VoiceCraft Studio — Electron main process
+// VoiceCraft Studio — Electron main process
 // Starts the existing server.js HTTP server then opens a BrowserWindow.
 // No Node.js APIs are exposed to the renderer — all communication
 // goes through the existing HTTP server at localhost:3000, exactly
@@ -68,8 +68,20 @@ function createWindow() {
   // Clean app — no File/Edit/View/Help menu bar
   Menu.setApplicationMenu(null);
 
-  // Open _blank links in the system browser
+  // Handle _blank links intelligently
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // If it's an internal link (like AutoEditor), open it in a new Electron window
+    if (url.startsWith(DEV_URL) || url.startsWith('http://localhost:')) {
+      return { 
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          icon: path.join(__dirname, 'icon.ico'),
+          backgroundColor: '#0a0a0a',
+          autoHideMenuBar: true
+        }
+      };
+    }
+    // If it's an external link, open in the user's default web browser
     shell.openExternal(url);
     return { action: 'deny' };
   });
