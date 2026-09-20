@@ -510,6 +510,19 @@
 
           <div id="queue-list" class="queue-list"></div>
           <audio id="row-audio" class="row-audio" controls hidden></audio>
+
+          <!-- Play All bar — appears once any part is done -->
+          <div id="play-all-bar" class="play-all-bar" hidden>
+            <div class="play-all-controls">
+              <button id="play-all-btn" class="btn primary small" type="button">▶ Play All</button>
+              <button id="play-all-stop-btn" class="btn ghost small" type="button" hidden>■ Stop</button>
+            </div>
+            <div id="play-all-info" class="play-all-info">
+              <span id="play-all-label">Ready to play all parts</span>
+              <span id="play-all-time" class="play-all-time"></span>
+            </div>
+            <audio id="play-all-audio" preload="none"></audio>
+          </div>
         </section>
       </main>
     </div>

@@ -1023,6 +1023,63 @@ input[type="range"]:disabled {
   line-height: 1.4;
 }
 
+/* ── Currently-playing row highlight ────────────────────────────────────── */
+
+.queue-item-wrapper.is-playing .queue-item {
+  border-left: 3px solid var(--accent);
+  background: rgba(232, 182, 76, 0.06);
+  box-shadow: 0 0 0 1px rgba(232, 182, 76, 0.18);
+}
+
+.queue-item-wrapper.is-playing .queue-item-name {
+  color: var(--accent);
+}
+
+/* ── Play All bar ────────────────────────────────────────────────────────── */
+
+.play-all-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 0.6rem 0.9rem;
+  margin-top: 0.75rem;
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 10;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.play-all-controls {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.play-all-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  overflow: hidden;
+}
+
+.play-all-info span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.84rem;
+}
+
+.play-all-time {
+  color: var(--text-dim);
+  font-size: 0.78rem !important;
+  flex-shrink: 0;
+}
+
 
 .row-audio {
   width: 100%;

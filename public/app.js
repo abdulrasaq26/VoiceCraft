@@ -1535,6 +1535,9 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     if (mergeBtn) mergeBtn.disabled = !hasDone;
     if (sendAeBtn) sendAeBtn.disabled = !hasDone;
     zipSelectedBtn.disabled = selected.size === 0;
+    // Show/hide the Play All bar as soon as the first part is done
+    const paBar = $('play-all-bar');
+    if (paBar) paBar.hidden = !hasDone;
   }
 
   function renderQueue() {
@@ -1550,6 +1553,7 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       // Outer wrapper — flex-column so the edit panel sits below the row
       const wrapper = document.createElement('div');
       wrapper.className = 'queue-item-wrapper';
+      wrapper.dataset.itemIndex = String(item.index);
 
       const row = document.createElement('div');
       row.className = 'queue-item';
@@ -1773,6 +1777,152 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     rowAudio.hidden = false;
     rowAudio.play().catch(() => {});
   }
+
+  // ── Play All engine ──────────────────────────────────────────────────────
+  // Plays all completed parts in order using a dedicated <audio> element
+  // (separate from the single-part rowAudio so they never conflict).
+  // Highlights the currently-playing row and shows a "Playing Part N of M" label.
+
+  const playAllAudio  = $('play-all-audio');
+  const playAllBar    = $('play-all-bar');
+  const playAllBtn    = $('play-all-btn');
+  const playAllStop   = $('play-all-stop-btn');
+  const playAllLabel  = $('play-all-label');
+  const playAllTime   = $('play-all-time');
+
+  let playAllActive   = false;   // true while sequential playback is running
+  let playAllPaused   = false;
+  let playAllIndex    = -1;      // item index currently playing
+  let playAllAbort    = null;    // AbortController to cancel the chain
+
+  function playAllItems() {
+    const doneItems = batch ? batch.items.filter(i => i.status === 'done') : [];
+    if (!doneItems.length) return;
+
+    // If already playing, toggle pause/resume
+    if (playAllActive) {
+      if (playAllPaused) {
+        playAllPaused = false;
+        playAllAudio.play().catch(() => {});
+        playAllBtn.textContent = '⏸ Pause';
+      } else {
+        playAllPaused = true;
+        playAllAudio.pause();
+        playAllBtn.textContent = '▶ Resume';
+      }
+      return;
+    }
+
+    startPlayAll(doneItems, 0);
+  }
+
+  function startPlayAll(doneItems, startAt) {
+    stopPlayAll();
+
+    playAllActive = true;
+    playAllPaused = false;
+    const ac = new AbortController();
+    playAllAbort = ac;
+
+    playAllBtn.textContent = '⏸ Pause';
+    playAllStop.hidden = false;
+    playAllBar.hidden = false;
+
+    let pos = startAt;
+
+    function playNext() {
+      if (ac.signal.aborted || pos >= doneItems.length) {
+        if (!ac.signal.aborted) finishPlayAll();
+        return;
+      }
+
+      const item = doneItems[pos];
+      const url = urls.get(item.index);
+      if (!url) { pos++; playNext(); return; }
+
+      playAllIndex = item.index;
+
+      // Update label
+      playAllLabel.textContent = `Playing Part ${pos + 1} of ${doneItems.length}: ${itemFileName(item)}`;
+      playAllTime.textContent = '';
+
+      // Highlight the active row and scroll it into view
+      highlightPlayingRow(item.index);
+
+      // Wire the audio element
+      playAllAudio.src = url;
+      playAllAudio.currentTime = 0;
+
+      const onTimeUpdate = () => {
+        const left = playAllAudio.duration - playAllAudio.currentTime;
+        if (isFinite(left)) {
+          const m = Math.floor(left / 60);
+          const s = Math.floor(left % 60);
+          playAllTime.textContent = `${m}:${String(s).padStart(2, '0')} left in part`;
+        }
+      };
+
+      const onEnded = () => {
+        playAllAudio.removeEventListener('timeupdate', onTimeUpdate);
+        playAllAudio.removeEventListener('ended', onEnded);
+        pos++;
+        playNext();
+      };
+
+      playAllAudio.addEventListener('timeupdate', onTimeUpdate);
+      playAllAudio.addEventListener('ended', onEnded);
+      playAllAudio.play().catch(() => {
+        playAllAudio.removeEventListener('timeupdate', onTimeUpdate);
+        playAllAudio.removeEventListener('ended', onEnded);
+        pos++;
+        playNext();
+      });
+    }
+
+    playNext();
+  }
+
+  function highlightPlayingRow(activeIndex) {
+    document.querySelectorAll('.queue-item-wrapper').forEach(el => {
+      if (Number(el.dataset.itemIndex) === activeIndex) {
+        el.classList.add('is-playing');
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        el.classList.remove('is-playing');
+      }
+    });
+  }
+
+  function stopPlayAll() {
+    if (playAllAbort) { playAllAbort.abort(); playAllAbort = null; }
+    playAllActive = false;
+    playAllPaused = false;
+    playAllIndex = -1;
+    try { playAllAudio.pause(); playAllAudio.src = ''; } catch (_) {}
+    document.querySelectorAll('.queue-item-wrapper.is-playing').forEach(el => el.classList.remove('is-playing'));
+    playAllBtn.textContent = '▶ Play All';
+    playAllStop.hidden = true;
+  }
+
+  function finishPlayAll() {
+    stopPlayAll();
+    playAllLabel.textContent = 'Finished playing all parts';
+    playAllTime.textContent = '';
+  }
+
+  function updatePlayAllBar() {
+    if (!playAllBar) return;
+    const hasDone = batch && batch.items.some(i => i.status === 'done');
+    playAllBar.hidden = !hasDone;
+    if (!hasDone) stopPlayAll();
+  }
+
+  if (playAllBtn) playAllBtn.addEventListener('click', playAllItems);
+  if (playAllStop) playAllStop.addEventListener('click', () => {
+    stopPlayAll();
+    playAllLabel.textContent = 'Ready to play all parts';
+    playAllTime.textContent = '';
+  });
 
   function downloadBlobUrl(url, filename) {
     const a = document.createElement('a');
