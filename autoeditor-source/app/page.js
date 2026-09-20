@@ -216,9 +216,11 @@ export default function Home() {
       for (const { file, seconds, img } of loaded) {
         const slot = seconds != null ? next.find((s) => s.seconds === seconds) : null;
         if (slot) {
+          slot.mediaId = nextId();
           slot.file = file; slot.img = img; slot.empty = false;
         } else {
-          next.push({ id: nextId(), seconds, file, img, empty: false });
+          const id = nextId();
+          next.push({ id, mediaId: id, seconds, file, img, empty: false });
         }
       }
       return { ...d, slots: next };
@@ -234,9 +236,10 @@ export default function Home() {
     const isVid = file.type.startsWith("video/");
     if (!isVid && !file.type.startsWith("image/")) return;
     const img = isVid ? await loadVideoEl(file) : await loadImageEl(file);
+    const newMediaId = nextId();
     commitDoc((d) => ({
       ...d,
-      slots: d.slots.map((s) => (s.id === id ? { ...s, file, img, empty: false } : s)),
+      slots: d.slots.map((s) => (s.id === id ? { ...s, mediaId: newMediaId, file, img, empty: false } : s)),
     }));
   }, [commitDoc]);
 
@@ -604,7 +607,7 @@ export default function Home() {
     captions: { captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale },
     transitionsByName,
     slots: slots.map((s) => ({
-      id: s.id, seconds: s.seconds, empty: !!s.empty,
+      id: s.id, mediaId: s.mediaId || s.id, seconds: s.seconds, empty: !!s.empty,
       fileName: s.file ? s.file.name : (s.img && s.img.fileName) || null,
       isVideo: !!(s.img && s.img.isVideo),
     })),
@@ -628,7 +631,7 @@ export default function Home() {
       await saveProject(rec);
       const wanted = new Map();
       if (audioFile) wanted.set("audio", audioFile);
-      for (const s of slots) if (!s.empty && s.file) wanted.set(s.id, s.file);
+      for (const s of slots) if (!s.empty && s.file) wanted.set(s.mediaId || s.id, s.file);
       await syncMedia(proj.id, wanted);
       try { setStorage(await storageEstimate()); } catch (_) {}
     } catch (_) { /* storage full or unavailable — keep editing */ }
@@ -755,12 +758,13 @@ export default function Home() {
         return { file, dur };
       })();
       const slotsP = mapLimit(d.slots || [], 12, async (sm) => {
-        if (sm.empty) return { id: sm.id, seconds: sm.seconds, file: null, img: null, empty: true };
-        const blob = await getMedia(id, sm.id);
-        if (!blob) return { id: sm.id, seconds: sm.seconds, file: null, img: null, empty: true };
+        if (sm.empty) return { id: sm.id, mediaId: sm.mediaId || sm.id, seconds: sm.seconds, file: null, img: null, empty: true };
+        const mediaId = sm.mediaId || sm.id;
+        const blob = await getMedia(id, mediaId);
+        if (!blob) return { id: sm.id, mediaId, seconds: sm.seconds, file: null, img: null, empty: true };
         const file = new File([blob], sm.fileName || sm.id, { type: blob.type || (sm.isVideo ? "video/mp4" : "image/png") });
         const img = sm.isVideo ? await loadVideoEl(file) : await loadImageEl(file);
-        return { id: sm.id, seconds: sm.seconds, file, img, empty: false };
+        return { id: sm.id, mediaId, seconds: sm.seconds, file, img, empty: false };
       });
       const [audio, newSlots] = await Promise.all([audioP, slotsP]);
       // Commit the loaded project.
@@ -1164,6 +1168,19 @@ export default function Home() {
           <span className="brand__tag">image + video · voiceover sync</span>
         </div>
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <button
+            onClick={async (e) => {
+              const btn = e.currentTarget;
+              btn.textContent = 'Saving...';
+              await saveCurrent();
+              btn.textContent = 'Saved!';
+              setTimeout(() => { btn.textContent = '💾 Save Project'; }, 2000);
+            }}
+            className="btn primary small"
+            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+          >
+            💾 Save Project
+          </button>
             <button
               onClick={() => setShowAiModal(true)}
               style={{

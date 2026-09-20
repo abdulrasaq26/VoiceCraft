@@ -86,7 +86,11 @@ export async function getProject(id) {
 }
 
 export async function saveProject(record) {
-  const rec = { ...record, updatedAt: Date.now() };
+  let existing = null;
+  try {
+    existing = await getProject(record.id);
+  } catch(e) {}
+  const rec = existing ? { ...existing, ...record, updatedAt: Date.now() } : { ...record, updatedAt: Date.now() };
   await tx(STORE_PROJECTS, "readwrite", (s) => reqP(s.put(rec)));
   return rec;
 }

@@ -57,7 +57,9 @@ window.SharedDB = (function() {
       return tx(STORE_PROJECTS, "readonly", (s) => reqP(s.get(id)));
     },
     async saveProject(record) {
-      const rec = { ...record, updatedAt: Date.now() };
+      let existing = null;
+      try { existing = await this.getProject(record.id); } catch(e) {}
+      const rec = existing ? { ...existing, ...record, updatedAt: Date.now() } : { ...record, updatedAt: Date.now() };
       await tx(STORE_PROJECTS, "readwrite", (s) => reqP(s.put(rec)));
       return rec;
     },
