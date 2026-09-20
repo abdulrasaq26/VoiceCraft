@@ -329,6 +329,7 @@ export default function Home() {
         const audioDur = await getFromDb("transfer_audio_duration");
         const srtText = await getFromDb("transfer_srt");
         const projectName = await getFromDb("transfer_project") || "voicecraft";
+        const projectId = await getFromDb("transfer_projectId");
         
         db.close();
 
@@ -336,6 +337,21 @@ export default function Home() {
 
         if (audioBlob || srtText || projectName !== "voicecraft") {
           setView("editor");
+        }
+
+        if (projectName !== "voicecraft") {
+          const allProjs = await listProjects();
+          let match = null;
+          if (projectId) match = allProjs.find(p => p.id === projectId);
+          if (!match) match = allProjs.find(p => p.name === projectName);
+          
+          if (match) {
+            await openProject(match.id);
+          } else {
+            setCurrentProject({ id: projectId || Date.now().toString(), name: projectName, createdAt: Date.now() });
+          }
+          await delFromDb("transfer_project");
+          await delFromDb("transfer_projectId");
         }
 
         if (audioBlob) {
@@ -351,10 +367,6 @@ export default function Home() {
           const file = new File([srtText], `${projectName}.srt`, { type: "text/plain" });
           await onCaptionFile(file);
           await delFromDb("transfer_srt");
-        }
-        if (projectName !== "voicecraft") {
-          setCurrentProject({ id: Date.now().toString(), name: projectName, createdAt: Date.now() });
-          await delFromDb("transfer_project");
         }
       } catch (err) {
         console.error("Failed to check transfer DB:", err);
