@@ -3445,3 +3445,10 @@ body.sidebar-collapsed .brand-name {
 .sb-dp-note { font-size: 0.74rem; color: var(--text-dim, #9aa4b2); }
 .sb-dp-track { height: 5px; border-radius: 3px; background: #0b0f12; overflow: hidden; }
 .sb-dp-fill { height: 100%; background: #3f7f6f; transition: width 0.3s ease; }
+
+/* Custom Professional Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+
