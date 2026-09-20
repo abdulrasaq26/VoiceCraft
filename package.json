@@ -2,11 +2,13 @@
   "name": "voicecraft-tts",
   "version": "1.0.1",
   "description": "Professional AI text-to-speech powered by Fish Audio.",
-  "main": "server.js",
+  "main": "electron/main.js",
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "electron": "electron .",
+    "build:win": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64"
   },
   "engines": {
     "node": ">=18"
@@ -29,5 +31,54 @@
     "multer": "^2.3.0",
     "node-fetch": "^3.3.2",
     "puppeteer": "^25.11.0"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.auther.voicecraft-studio",
+    "productName": "VoiceCraft Studio",
+    "copyright": "Copyright © 2025 Abdul",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**",
+      "features/auto-editor/server/assets/**"
+    ],
+    "files": [
+      "electron/**",
+      "public/**",
+      "server.js",
+      "features/**",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "node_modules/ffmpeg-static",
+        "to": "resources/ffmpeg-static",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "electron/icon.ico",
+      "artifactName": "VoiceCraft-Studio-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "VoiceCraft Studio",
+      "installerIcon": "electron/icon.ico",
+      "uninstallerIcon": "electron/icon.ico"
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "electron"
+    }
   }
 }

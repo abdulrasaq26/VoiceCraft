@@ -204,10 +204,29 @@ const handler = (req, res) => {
 
 export default handler;
 
-// Start local server if not in Vercel environment
-if (!process.env.VERCEL) {
-  const server = http.createServer(handler);
-  server.listen(PORT, () => {
-    console.log(`🎙️  VoiceCraft running at http://localhost:${PORT}`);
+// ── startServer ─────────────────────────────────────────────────────────────
+// Exported so Electron's main.js can start the server at the right moment
+// (after app.whenReady()) and await confirmation that it is listening before
+// loading the BrowserWindow.  Returns a Promise that resolves with the
+// http.Server instance once it is bound to the port.
+export function startServer(port = PORT) {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer(handler);
+    server.listen(port, () => {
+      console.log(`🎙️  VoiceCraft running at http://localhost:${port}`);
+      resolve(server);
+    });
+    server.on('error', reject);
+  });
+}
+
+// ── Auto-start ───────────────────────────────────────────────────────────────
+// Runs when launched directly (Railway, `npm start`, `npm run dev`).
+// Skipped when ELECTRON=1 — Electron's main.js calls startServer() itself.
+// Skipped when VERCEL=1 — Vercel imports the handler directly.
+if (!process.env.VERCEL && !process.env.ELECTRON) {
+  startServer().catch((err) => {
+    console.error('Server failed to start:', err);
+    process.exit(1);
   });
 }
