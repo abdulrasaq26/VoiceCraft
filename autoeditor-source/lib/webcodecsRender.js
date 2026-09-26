@@ -40,6 +40,7 @@ class ChunkedBuffer {
 }
 
 import { captionAt, drawCaption, captionFontPx } from "./captions";
+import { getActiveCaption, drawUnifiedCaption } from "./captions/caption-renderer.js";
 import { transitionOf } from "./transitions";
 import { createVideoSource } from "./videoDecodeSource";
 import { createVoiceSource } from "./voiceSource";
@@ -819,8 +820,8 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
 
     // Captions drawn on top of the images.
     if (hasCaptions) {
-      const cap = captionAt(cues, t);
-      if (cap) drawCaption(ctx, cap, W, H, captionStyle, capFontPx, captionLineHeight);
+      const activeCap = getActiveCaption(cues, t);
+      if (activeCap) drawUnifiedCaption(ctx, activeCap, t, W, H);
     }
 
     // Recover a reclaimed/closed encoder: swap in a fresh one and force this frame to be a

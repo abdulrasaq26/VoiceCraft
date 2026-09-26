@@ -2552,12 +2552,9 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
   // Queue controls
   pauseBtn.addEventListener('click', () => {
     paused = true;
+    if (currentAbort) currentAbort.abort();
     updateControls();
-    const now = batch && batch.items.find((i) => i.status === 'generating');
-    showStatus(now
-      ? `Pausing after ${partName(batch.project, now.part)} — it is already being spoken, `
-        + 'so it is finished rather than thrown away. Press Cancel to stop it now.'
-      : 'Paused.', 'info');
+    showStatus('Paused.', 'info');
   });
   resumeBtn.addEventListener('click', () => {
     if (running) {

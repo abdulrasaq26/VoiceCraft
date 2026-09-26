@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Flow Media Downloader Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Flow Media Downloader</h1>
+    
+    <div class="section">
+      <h2>General</h2>
+      <label>
+        <input type="checkbox" id="auto-select" checked> Auto-select new media
+      </label>
+      <label>
+        <input type="checkbox" id="ignore-small" checked> Ignore small media (UI icons)
+      </label>
+    </div>
+    
+    <div class="section">
+      <h2>Filters</h2>
+      <label>
+        <input type="checkbox" id="allow-images" checked> Detect Images
+      </label>
+      <label>
+        <input type="checkbox" id="allow-videos" checked> Detect Videos
+      </label>
+    </div>
+
+    <div class="section">
+      <h2>Download Settings</h2>
+      <label>
+        Base Folder:
+        <input type="text" id="base-folder" value="Flow Downloader">
+      </label>
+      <p class="hint">Downloads will be saved to: Downloads/[Base Folder]/YYYY-MM-DD/</p>
+      
+      <label>
+        Filename Template:
+        <input type="text" id="filename-template" value="{title}-{id}.{ext}">
+      </label>
+      <p class="hint">
+        Variables: <code>{title}</code>, <code>{date}</code>, <code>{time}</code>, <code>{id}</code>, <code>{type}</code>, <code>{ext}</code>
+      </p>
+    </div>
+
+    <button id="save">Save Settings</button>
+    <div id="status"></div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

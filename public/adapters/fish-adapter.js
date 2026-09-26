@@ -5,6 +5,14 @@
   let FISH_VOICES = [
     { id: 'default', name: 'Fish Audio (Default Colab Model)', grade: 'A' },
   ];
+  let sessionVoices = [];
+  window.FishAdapterLoadServer = false;
+  window.FishAdapterSessionVoices = {
+    add: (name) => { if (!sessionVoices.includes(name)) sessionVoices.push(name); },
+    remove: (name) => { sessionVoices = sessionVoices.filter(n => n !== name); },
+    clear: () => { sessionVoices = []; },
+    getAll: () => sessionVoices
+  };
   let lastError = '';
 
   // The last run's per-chunk requests, so a wrong-sounding voice can be traced
@@ -71,24 +79,29 @@
           console.warn('[Fish Adapter]', lastError);
         }
       } else {
-        // Colab / Kaggle tunnel uses /v1/references/list
-        const res = await fetch(`/api/proxy/fish/v1/references/list?format=json&t=${Date.now()}`, { method: 'GET', headers });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.reference_ids && Array.isArray(data.reference_ids)) {
-             const customVoices = data.reference_ids.map(id => ({ id, name: `Custom: ${id}`, grade: 'A' }));
-             FISH_VOICES = [
-               { id: 'default', name: 'Fish Audio (Default Base Model)', grade: 'A' },
-               ...customVoices
-             ];
-             if (!customVoices.length) {
-               lastError = 'The Fish server reported zero reference voices — run the voice-pack cell in the notebook, then re-run the API server cell.';
-               console.warn('[Fish Adapter]', lastError);
-             }
+        let customVoices = [];
+        if (window.FishAdapterLoadServer) {
+          const res = await fetch(/api/proxy/fish/v1/references/list?format=json&t=, { method: 'GET', headers });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.reference_ids && Array.isArray(data.reference_ids)) {
+               customVoices = data.reference_ids.map(id => ({ id, name: Custom: , grade: 'A' }));
+               FISH_VOICES = [
+                 { id: 'default', name: 'Fish Audio (Default Base Model)', grade: 'A' },
+                 ...customVoices
+               ];
+               data.reference_ids.forEach(id => window.FishAdapterSessionVoices.add(id));
+            }
+          } else {
+            lastError = Voice list failed (): ;
+            console.warn('[Fish Adapter]', lastError);
           }
         } else {
-          lastError = `Voice list failed (${res.status}): ${(await res.text()).slice(0, 200)}`;
-          console.warn('[Fish Adapter]', lastError);
+          customVoices = sessionVoices.map(id => ({ id, name: Custom: , grade: 'A' }));
+          FISH_VOICES = [
+            { id: 'default', name: 'Fish Audio (Default Base Model)', grade: 'A' },
+            ...customVoices
+          ];
         }
       }
     } catch (e) {

@@ -47,3 +47,23 @@ __pycache__/
 # HyperFrame render scratch — per-job dirs and staged ffmpeg binaries
 .hyperframe-jobs/
 .frame-jobs/
+
+# Scratch scripts
+dist/
+*.py
+#!kaggle_director/**/*.py
+#!build_kaggle_notebook.py
+*.cjs
+!electron/preload.cjs
+electron_log*.txt
+test-ext.js
+fix_node.js
+fix_node.mjs
+log_server.js
+refactor.mjs
+replace.js
+fix_ae.mjs
+
+autoeditor-source/speech.wav
+autoeditor-source/download-test.js
+autoeditor-source/test-whisper*.js

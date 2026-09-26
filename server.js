@@ -46,6 +46,37 @@ const handler = (req, res) => {
   }
 
   // Health check
+  
+  // Browser Extension Bridge
+  if (req.url.startsWith('/api/extension-bridge/download')) {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body);
+        const { url, filename } = payload;
+        
+        // Save it to a known projects directory
+        const { mkdirSync, writeFileSync } = await import('node:fs');
+        const targetDir = path.join(__dirname, 'projects', path.dirname(filename));
+        mkdirSync(targetDir, { recursive: true });
+        
+        const finalPath = path.join(__dirname, 'projects', filename);
+        const response = await fetch(url);
+        const buffer = await response.arrayBuffer();
+        writeFileSync(finalPath, Buffer.from(buffer));
+        
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ success: true, path: finalPath }));
+      } catch (e) {
+        console.error('Extension bridge download error:', e);
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   if (req.url === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, product: 'voicecraft', version: '1.0.0' }));

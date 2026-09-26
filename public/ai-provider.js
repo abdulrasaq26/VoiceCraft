@@ -58,14 +58,14 @@
   }
 
   function getTtsProvider() {
-    return localStorage.getItem(TTS_PROVIDER_KEY) || 'kokoro';
+    return localStorage.getItem(TTS_PROVIDER_KEY) || 'fishaudio';
   }
   function setTtsProvider(val) {
     localStorage.setItem(TTS_PROVIDER_KEY, val);
   }
 
   function getTtsModel() {
-    return localStorage.getItem(TTS_MODEL_KEY) || 'kokoro';
+    return localStorage.getItem(TTS_MODEL_KEY) || 'fishaudio';
   }
   function setTtsModel(val) {
     localStorage.setItem(TTS_MODEL_KEY, val);

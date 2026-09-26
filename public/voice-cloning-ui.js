@@ -19,6 +19,8 @@
   const statusEl = $('clone-status');
   const listEl = $('clone-list');
   const refreshBtn = $('clone-refresh');
+  const loadServerBtn = $('clone-load-server');
+  const deleteBtn = $('clone-delete-all');
   const audioEl = $('clone-audio');
 
   let prepared = null;      // result of VC.prepare()
@@ -255,7 +257,7 @@
         prepared = null;
         analysisEl.hidden = true;
         previewBtn.hidden = true;
-        if (fileEl) fileEl.value = '';
+        if (fileEl) fileEl.value = ''; if (window.FishAdapterSessionVoices) window.FishAdapterSessionVoices.add(newName);
         // Re-probe so the new voice appears in the picker straight away.
         if (window.FishAdapter) await window.FishAdapter.probeFish();
         window.dispatchEvent(new CustomEvent('blvck:tts-provider-changed'));
@@ -323,6 +325,33 @@
   }
 
   if (refreshBtn) refreshBtn.addEventListener('click', renderList);
+  if (loadServerBtn) loadServerBtn.addEventListener('click', async () => {
+    window.FishAdapterLoadServer = true;
+    if (window.FishAdapter) await window.FishAdapter.probeFish();
+    window.dispatchEvent(new CustomEvent('blvck:tts-provider-changed'));
+    renderList();
+  });
+  if (deleteBtn) deleteBtn.addEventListener('click', async () => {
+    if (!window.confirm('Delete ALL reference voices from the server? This cannot be undone.')) return;
+    deleteBtn.disabled = true;
+    try {
+      const state = await window.FishAdapter.probeFish();
+      const voices = (state.voices || []).filter(v => v.id && v.id !== 'default');
+      say('Deleting all voices...', 'info');
+      for (const v of voices) {
+        try { await VC.deleteReference(v.id); } catch (e) { console.error('Failed to delete', v.id, e); }
+      }
+      if (window.FishAdapterSessionVoices) window.FishAdapterSessionVoices.clear();
+      say('All reference voices deleted.', 'good');
+      if (window.FishAdapter) await window.FishAdapter.probeFish();
+      window.dispatchEvent(new CustomEvent('blvck:tts-provider-changed'));
+      renderList();
+    } catch (e) {
+      say(e.message, 'error');
+    } finally {
+      deleteBtn.disabled = false;
+    }
+  });
   // Settings save and TTS-provider switch are separate events; both can change
   // whether this studio applies and which references exist.
   window.addEventListener('blvck:provider-status-changed', updateVisibility);

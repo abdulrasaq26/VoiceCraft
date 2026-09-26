@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Flow Downloader Test Page</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    .grid { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+    .item { border: 1px solid #ccc; padding: 10px; text-align: center; }
+    img, video { max-width: 200px; max-height: 200px; display: block; margin-bottom: 5px; }
+    .small-icon { width: 16px; height: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Test Page</h1>
+  <button id="add-dynamic">Add Dynamic Media</button>
+  <hr>
+
+  <h2>Static Media</h2>
+  <div class="grid">
+    <!-- 5 images -->
+    <div class="item">
+      <img src="https://picsum.photos/300/200?random=1" alt="Image 1">
+      Image 1
+    </div>
+    <div class="item">
+      <img src="https://picsum.photos/300/200?random=2" alt="Image 2">
+      Image 2
+    </div>
+    <div class="item">
+      <img src="https://picsum.photos/300/200?random=3" alt="Image 3">
+      Image 3
+    </div>
+    <div class="item">
+      <img src="https://picsum.photos/300/200?random=4" alt="Image 4">
+      Image 4
+    </div>
+    <div class="item">
+      <img src="https://picsum.photos/300/200?random=5" alt="Image 5">
+      Image 5
+    </div>
+    
+    <!-- 2 videos -->
+    <div class="item">
+      <video src="https://www.w3schools.com/html/mov_bbb.mp4" controls></video>
+      Video 1
+    </div>
+    <div class="item">
+      <video controls poster="https://picsum.photos/300/200?random=vid2">
+        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+      </video>
+      Video 2 (w/ source)
+    </div>
+
+    <!-- duplicate image -->
+    <div class="item">
+      <img src="https://picsum.photos/300/200?random=1" alt="Image 1 Duplicate">
+      Image 1 (Duplicate)
+    </div>
+
+    <!-- small UI icon -->
+    <div class="item">
+      <img src="https://picsum.photos/16/16" class="small-icon" alt="Icon">
+      Small Icon (Should ignore)
+    </div>
+
+    <!-- blob and data URLs -->
+    <div class="item">
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="Data URL Image">
+      Data URL
+    </div>
+    <div class="item">
+      <img id="blob-img-test" alt="Blob URL Image">
+      Blob URL
+    </div>
+  </div>
+
+  <h2>Dynamic Area</h2>
+  <div id="dynamic-container" class="grid"></div>
+
+  <script>
+    // Create a blob URL for testing
+    const svgData = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="red"/></svg>';
+    const blob = new Blob([svgData], { type: 'image/svg+xml' });
+    const blobUrl = URL.createObjectURL(blob);
+    document.getElementById('blob-img-test').src = blobUrl;
+    let counter = 1;
+    document.getElementById('add-dynamic').addEventListener('click', () => {
+      const container = document.getElementById('dynamic-container');
+      
+      const divImg = document.createElement('div');
+      divImg.className = 'item';
+      const img = document.createElement('img');
+      img.src = `https://picsum.photos/300/200?random=dyn${counter++}`;
+      divImg.appendChild(img);
+      divImg.appendChild(document.createTextNode('Dynamic Image'));
+      
+      const divVid = document.createElement('div');
+      divVid.className = 'item';
+      const vid = document.createElement('video');
+      vid.src = "https://www.w3schools.com/html/mov_bbb.mp4";
+      vid.controls = true;
+      divVid.appendChild(vid);
+      divVid.appendChild(document.createTextNode('Dynamic Video'));
+
+      container.appendChild(divImg);
+      container.appendChild(divVid);
+    });
+  </script>
+</body>
+</html>

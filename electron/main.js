@@ -1,13 +1,8 @@
-// VoiceCraft Studio — Electron main process
-// Starts the existing server.js HTTP server then opens a BrowserWindow.
-// No Node.js APIs are exposed to the renderer — all communication
-// goes through the existing HTTP server at localhost:3000, exactly
-// as in the Railway/browser deployment.
-
-import { app, BrowserWindow, shell, Menu, dialog } from 'electron';
+import { app, BrowserWindow, Menu, shell, ipcMain, session, dialog } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
+import { BrowserManager } from './browser-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -22,7 +17,6 @@ const PORT    = process.env.PORT || 3000;
 const DEV_URL = `http://localhost:${PORT}`;
 
 // Wait for localhost:PORT/api/health to respond (max 15s).
-// Polls every 200ms so the window never gets a brief ERR_CONNECTION_REFUSED.
 function waitForServer(maxMs = 15_000, intervalMs = 200) {
   const deadline = Date.now() + maxMs;
   return new Promise((resolve, reject) => {
@@ -46,6 +40,7 @@ function waitForServer(maxMs = 15_000, intervalMs = 200) {
 }
 
 let mainWindow = null;
+let browserManager = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -55,22 +50,20 @@ function createWindow() {
     minHeight: 600,
     title:     'VoiceCraft Studio',
     icon:      path.join(__dirname, 'icon.ico'),
-    backgroundColor: '#0a0a0a',  // match app dark theme — no white flash
-    show: false,                 // show only after first paint
+    backgroundColor: '#0a0a0a',  // match app dark theme
+    show: false,
     webPreferences: {
-      preload:          path.join(__dirname, 'preload.js'),
+      preload:          path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration:  false,
-      sandbox:          false,   // lets preload.js use require() if ever needed
+      sandbox:          true
     },
   });
 
-  // Clean app — no File/Edit/View/Help menu bar
+  browserManager = new BrowserManager(mainWindow);
   Menu.setApplicationMenu(null);
 
-  // Handle _blank links intelligently
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // If it's an internal link (like AutoEditor), open it in a new Electron window
     if (url.startsWith(DEV_URL) || url.startsWith('http://localhost:')) {
       return { 
         action: 'allow',
@@ -81,7 +74,6 @@ function createWindow() {
         }
       };
     }
-    // If it's an external link, open in the user's default web browser
     shell.openExternal(url);
     return { action: 'deny' };
   });
@@ -94,10 +86,22 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
-    // Import server.js AFTER setting ELECTRON=1 so it does not auto-start.
+    // 1. Start Server
     const { startServer } = await import('../server.js');
     await startServer(PORT);
     await waitForServer();
+    
+    // 2. Load Extension
+    try {
+      const extPath = path.join(__dirname, '../VoiceCraft Flow Downloader');
+      const browserSession = session.fromPartition('persist:browser');
+      await browserSession.loadExtension(extPath);
+      console.log('[VoiceCraft] Extension loaded successfully');
+    } catch (extErr) {
+      console.warn('[VoiceCraft] Failed to load extension:', extErr);
+    }
+
+    // 3. Create Window
     createWindow();
   } catch (err) {
     console.error('[VoiceCraft] Startup error:', err);
@@ -109,12 +113,10 @@ app.whenReady().then(async () => {
   }
 });
 
-// Quit when all windows closed (Windows / Linux)
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// macOS: re-open window when dock icon clicked
 app.on('activate', () => {
   if (mainWindow === null) createWindow();
 });

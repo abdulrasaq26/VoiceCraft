@@ -1,0 +1,80 @@
+{
+  "manifest_version": 3,
+  "name": "VoiceCraft Flow Downloader",
+  "version": "1.0",
+  "description": "Download media from Google Flow",
+  "permissions": [
+    "downloads",
+    "activeTab",
+    "scripting",
+    "storage",
+    "webRequest",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_page": "options/options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "storage/project-store.js",
+        "content/automation/event-bus.js",
+        "content/automation/job.js",
+        "content/automation/queue-manager.js",
+        "content/automation/asset-matcher.js",
+        "content/automation/flow-selectors.js",
+        "content/automation/automator-adapter.js",
+        "content/automation/flow-driver.js",
+        "content/detection/fingerprint.js",
+        "content/detection/flow-adapter.js",
+        "content/detection/name-normalizer.js",
+        "content/detection/media-normalizer.js",
+        "content/detection/detector.js",
+        "content/detection/mutation-observer.js",
+        "content/detection/network-media.js",
+        "content/detection/media-resolver.js",
+        "content/flow-crawler/flow-crawler.js",
+        "content/prompt-recovery/reference-engine.js",
+        "content/prompt-recovery/flow-result-detector.js",
+        "content/prompt-recovery/generation-reconciler.js",
+        "content/prompt-recovery/prompt-parser.js",
+        "content/prompt-recovery/prompt-recovery-ui.js",
+        "content/ui/media-item.js",
+        "content/ui/media-tray.js",
+        "content/ui/automator-panel.js",
+        "content/index.js"
+      ],
+      "css": [],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content/ui/styles.css",
+        "icons/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

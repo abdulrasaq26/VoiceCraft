@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VoiceCraft - Browser</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="browser.css" />
+</head>
+<body>
+  <!-- VoiceCraft Application Shell -->
+  <header class="voicecraft-header" id="app-header">
+    <div class="voicecraft-brand">
+      <div>
+        <span class="voicecraft-name">Voice<span class="accent">Craft</span></span>
+        <span class="voicecraft-tagline">Integrated Production Environment</span>
+      </div>
+    </div>
+    <div class="voicecraft-header-right" id="app-nav">
+      <div class="app-workspaces">
+        <a href="/index.html" class="btn ghost small" style="text-decoration:none;">&#127897; VoiceCraft</a>
+        <a href="/auto-editor/index.html" class="btn ghost small" style="text-decoration:none;">&#127916; AutoEditor</a>
+        <a href="/browser.html" class="btn primary small" style="text-decoration:none;">&#127760; Browser</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="browser-container">
+    <div class="browser-toolbar">
+      <div class="browser-tabs" id="browser-tabs">
+        <button id="btn-new-tab" class="btn ghost small">+</button>
+      </div>
+      <div class="browser-controls">
+        <button id="btn-back" class="btn ghost small">&#9664;</button>
+        <button id="btn-forward" class="btn ghost small">&#9654;</button>
+        <button id="btn-reload" class="btn ghost small">&#8635;</button>
+        <input type="text" id="address-bar" placeholder="Enter URL or search..." />
+        <button id="btn-go" class="btn ghost small">Go</button>
+        <button id="btn-bookmarks" class="btn ghost small" title="Bookmarks">&#11088;</button>
+        <button id="btn-focus" class="btn ghost small" title="Focus Mode">&#9974;</button>
+        <button id="btn-settings" class="btn ghost small" title="Settings">&#9881;</button>
+        <button id="btn-flow-automator" class="btn ghost small flow-tool" style="display:none;" title="Flow Automator">&#9889; Flow Automator</button>
+        <button id="btn-prompt-recovery" class="btn ghost small flow-tool" style="display:none;" title="Prompt Recovery">&#128269; Prompt Recovery</button>
+        <button id="btn-extension" class="btn primary small flow-tool" style="display:none;" title="Flow Downloader">&#129513; Flow Downloader</button>
+      </div>
+    </div>
+
+    <!-- WebContentsView spacer -->
+    <div class="browser-content-area" id="browser-content-area" style="flex: 1; position: relative;">
+      <!-- Main process will overlay WebContentsView perfectly here -->
+    </div>
+    
+    <!-- Professional Settings Center -->
+    <div id="settings-center" class="browser-panel settings-center" style="display: none; position: fixed; top: 10%; left: 10%; right: 10%; bottom: 10%; background: #151518; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; z-index: 1000; box-shadow: 0 20px 40px rgba(0,0,0,0.8); flex-direction: row; overflow: hidden;">
+      
+      <!-- Sidebar -->
+      <div class="settings-sidebar" style="width: 200px; background: #0d0d0f; border-right: 1px solid rgba(255,255,255,0.08); padding: 16px 0; overflow-y: auto;">
+        <div style="padding: 0 16px 16px 16px; font-weight: bold; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 8px;">Settings &#9881;</div>
+        <button class="settings-tab active" data-tab="general">General</button>
+        <button class="settings-tab" data-tab="appearance">&#127912; Appearance</button>
+        <button class="settings-tab" data-tab="network">&#127760; Network & Proxy</button>
+        <button class="settings-tab" data-tab="privacy">&#128274; Privacy & Security</button>
+        <button class="settings-tab" data-tab="downloads">&#128142; Downloads</button>
+        <button class="settings-tab" data-tab="bookmarks">&#128278; Bookmarks</button>
+        <button class="settings-tab" data-tab="profiles">&#128100; Profiles</button>
+        <button class="settings-tab" data-tab="extensions">&#129513; Extensions</button>
+        <button class="settings-tab" data-tab="devtools">&#128736; Developer Tools</button>
+        <button class="settings-tab" data-tab="flow">&#129302; Flow Integration</button>
+        <button class="settings-tab" data-tab="performance">&#9889; Performance</button>
+        <button class="settings-tab" data-tab="shortcuts">&#9000; Shortcuts</button>
+        <button class="settings-tab" data-tab="about">&#8505; About</button>
+      </div>
+
+      <!-- Main Content -->
+      <div class="settings-content-area" style="flex: 1; padding: 24px; overflow-y: auto; background: #151518;">
+        <div class="panel-header" style="display:flex; justify-content: space-between; margin-bottom: 24px;">
+          <h3 id="settings-title" style="margin: 0; color: #fff;">General</h3>
+          <button id="close-settings-center" class="btn ghost small">&#10005;</button>
+        </div>
+
+        <div id="settings-content">
+           <p>Select a category from the sidebar to view its settings.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="browser.js"></script>
+</body>
+</html>

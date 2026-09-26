@@ -94,20 +94,24 @@
   <!-- VoiceCraft Application Shell -->
   <header class="voicecraft-header">
     <div class="voicecraft-brand">
-      <div class="voicecraft-logo">V</div>
+      
       <div>
         <span class="voicecraft-name">Voice<span class="accent">Craft</span></span>
         <span class="voicecraft-tagline">AI Text-to-Speech</span>
       </div>
     </div>
-    <div class="voicecraft-header-right">
-      <button id="save-project-btn" class="btn primary small" style="margin-right: 8px;">💾 Save Project</button>
-      <button id="load-project-btn" class="btn ghost small" style="margin-right: 16px;">📂 Projects</button>
-      <a href="/auto-editor/index.html" target="_blank" class="btn ghost small" style="margin-right: 8px; text-decoration: none;">🎬 Auto Editor</a>
-      <button id="tutorial-open" class="btn primary small" type="button" style="margin-right: 8px;">📖 How to Use</button>
-      <button id="ai-settings-open" class="topbar-badge" type="button" title="VoiceCraft Settings">⚙ Settings</button>
-    </div>
-  </header>
+            <div class="voicecraft-header-right">
+        <div class="app-workspaces" style="display:flex; gap:8px; margin-right: 16px;">
+          <a href="/index.html" class="btn primary small" style="text-decoration:none;">&#127897; VoiceCraft</a>
+          <a href="/auto-editor/index.html" class="btn ghost small" style="text-decoration:none;">&#127916; AutoEditor</a>
+          <a href="/browser.html" class="btn ghost small" style="text-decoration:none;">&#127760; Browser</a>
+        </div>
+        <button id="save-project-btn" class="btn ghost small" style="margin-right: 8px;">&#128190; Save Project</button>
+        <button id="load-project-btn" class="btn ghost small" style="margin-right: 16px;">&#128193; Projects</button>
+        <button id="tutorial-open" class="btn ghost small" type="button" style="margin-right: 8px;">&#128214; How to Use</button>
+        <button id="ai-settings-open" class="topbar-badge" type="button" title="VoiceCraft Settings">⚙ Settings</button>
+      </div>
+    </header>
 
   <div class="voicecraft-main">
 
@@ -276,7 +280,7 @@
           <div style="margin-top:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <strong style="font-size:13px;">Your reference voices</strong>
-              <button id="clone-refresh" class="btn ghost small" type="button">↻ Refresh</button>
+              <div style="display:flex; gap:6px;"><button id="clone-delete-all" class="btn ghost small" type="button" style="color:#f87171">&#128465; Delete All</button><button id="clone-load-server" class="btn ghost small" type="button">&#128229; Load from server</button><button id="clone-refresh" class="btn ghost small" type="button">↻ Refresh</button></div>
             </div>
             <div id="clone-list" style="display:flex; flex-direction:column; gap:6px; margin-top:8px;"></div>
           </div>

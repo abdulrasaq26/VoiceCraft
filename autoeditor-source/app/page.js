@@ -11,7 +11,8 @@ import { renderVideoHyperframes } from "../lib/hyperframesRenderer";
 import { validateAndMapMotionJSON } from "../lib/aiMotionParser";
 import { renderWebCodecs, webCodecsCanRender, pickRenderProfile, startKeepAwake } from "../lib/webcodecsRender";
 import { DEFAULT_TRANSITION_DURATION, mixTransitions } from "../lib/transitions";
-import { parseTranscript } from "../lib/captions";
+import { parseSRT } from "../lib/captions/srt-parser.js";
+import { generateCaptionsFlow } from "../lib/captions/caption-generator.js";
 import { getMegaPrompt } from "../lib/megaPrompt";
 import Dropzone from "../components/Dropzone";
 import Editor from "../components/Editor";
@@ -135,7 +136,9 @@ export default function Home() {
   const [volumeByName, setVolumeByName] = useState({}); // video clip name -> 0..1 (default 0.5)
   const [fitByName, setFitByName] = useState({});     // video clip name -> "fit" (fast-fwd, default) | "trim" (1x)
   const [trimEnd, setTrimEnd] = useState(0); // export end point (0 = untrimmed / full audio)
-  const [captionRaw, setCaptionRaw] = useState(null); // uploaded transcript text
+  const [captionsTrack, setCaptionsTrack] = useState([]); // Unified caption data model
+  const [generatingCaptions, setGeneratingCaptions] = useState(false);
+  const [genCapStatus, setGenCapStatus] = useState("");
   const [captionName, setCaptionName] = useState(null);
   const [captionsOn, setCaptionsOn] = useState(false);
   const [captionStyle, setCaptionStyle] = useState("classic");
@@ -296,7 +299,9 @@ export default function Home() {
     if (!file) return;
     try {
       const text = await file.text();
-      setCaptionRaw(text);
+        const res = parseSRT(text);
+        if (res.error) throw new Error(res.error);
+        setCaptionsTrack(res.captions);
       setCaptionName(file.name);
       setCaptionsOn(true);
     } catch (e) { setError(e.message || String(e)); }
@@ -379,12 +384,8 @@ export default function Home() {
     }
     checkTransfer();
   }, [onAudio, onCaptionFile, setView]);
-  const captionParse = useMemo(
-    () => (captionRaw ? parseTranscript(captionRaw, audioDuration) : { cues: [], error: null }),
-    [captionRaw, audioDuration]
-  );
-  const captionCues = captionParse.cues;
-  const captionError = captionParse.error;
+  const captionCues = captionsTrack;
+    const captionError = null;
 
   // On load, reconnect to a render that's still running on the server.
   useEffect(() => {
@@ -572,7 +573,7 @@ export default function Home() {
     setTransitionDuration(DEFAULT_TRANSITION_DURATION); setFadeIn(0.5); setFadeOut(0.6);
     setMotionByName({}); setMotionAmount(0.08); setTrimByName({}); setVolumeByName({}); setFitByName({});
     setTrimEnd(0);
-    setCaptionRaw(null); setCaptionName(null); setCaptionsOn(false); setCaptionStyle("classic");
+    setCaptionsTrack([]); setCaptionName(null); setCaptionsOn(false); setCaptionStyle("classic");
     setCaptionSize("md"); setCaptionLineHeight(null); setCaptionFontScale(null);
     setError(null); setOutUrl(null); setProgress(0);
     idRef.current = 0;
@@ -606,7 +607,7 @@ export default function Home() {
     v: 1,
     settings: { aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd },
     maps: { motionByName, trimByName, volumeByName, fitByName },
-    captions: { captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale },
+    captions: { captionsTrack, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale },
     transitionsByName,
     slots: slots.map((s) => ({
       id: s.id, mediaId: s.mediaId || s.id, seconds: s.seconds, empty: !!s.empty,
@@ -619,7 +620,7 @@ export default function Home() {
     playhead: playheadRef.current,
   }), [aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd,
       motionByName, trimByName, volumeByName, fitByName,
-      captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionsTrack, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
       transitionsByName, slots, audioFile, built]);
 
   const saveCurrent = useCallback(async () => {
@@ -648,8 +649,34 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [view, currentProject, loadingProject, slots, transitionsByName, aspect, fps, renderQuality, transitionDuration,
       fadeIn, fadeOut, motionByName, motionAmount, trimByName, volumeByName, fitByName, trimEnd,
-      captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionsTrack, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
       audioFile, built]);
+
+    const handleGenerateCaptions = async () => {
+    if (!audioFile) {
+      setError("Please add an audio track first.");
+      return;
+    }
+    setGeneratingCaptions(true);
+    setGenCapStatus("Starting...");
+    try {
+      const state = { audioFile };
+      const options = { mode: "main", segmentation: { maxChars: 42 } };
+      
+      const newCaptions = await generateCaptionsFlow(state, options, (progress) => {
+        setGenCapStatus(progress.status);
+      });
+      
+      setCaptionsTrack(newCaptions);
+      setCaptionName("Generated from Audio");
+      setCaptionsOn(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGeneratingCaptions(false);
+      setGenCapStatus("");
+    }
+  };
 
   const handleValidateAiMotion = useCallback(() => {
     const res = validateAndMapMotionJSON(aiMotionText, doc.slots);
@@ -711,7 +738,7 @@ export default function Home() {
           dataFields: ["title", "subtitle"]
         }
       },
-      audioTranscriptSRT: captionRaw || null, // Include the SRT if uploaded so AI doesn't need to ask for it separately
+      audioTranscriptSRT: captionsTrack.length > 0 ? captionsTrack.map(c => c.text).join(" ") : null, // Include the SRT if uploaded so AI doesn't need to ask for it separately
       clips: clips.filter(c => !c.gap).map((c, index) => {
         const s = doc.slots.find(slot => slot.id === c.name);
         return {
@@ -737,7 +764,7 @@ export default function Home() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [clips, doc.slots, exportDuration, aspect, fps, captionsOn, captionStyle, lowerThirdConfig, captionRaw]);
+  }, [clips, doc.slots, exportDuration, aspect, fps, captionsOn, captionStyle, lowerThirdConfig, captionsTrack]);
 
   const openProject = useCallback(async (id) => {
     const rec = await getProject(id);
@@ -786,7 +813,13 @@ export default function Home() {
       setMotionByName(mp.motionByName || {}); setTrimByName(mp.trimByName || {});
       setVolumeByName(mp.volumeByName || {}); setFitByName(mp.fitByName || {});
       const cp = d.captions || {};
-      setCaptionRaw(cp.captionRaw ?? null); setCaptionName(cp.captionName ?? null);
+        if (cp.captionRaw && (!cp.captionsTrack || !cp.captionsTrack.length)) {
+           const res = parseSRT(cp.captionRaw);
+           setCaptionsTrack(res.error ? [] : res.captions);
+        } else {
+           setCaptionsTrack(cp.captionsTrack || []);
+        }
+        setCaptionName(cp.captionName ?? null);
       setCaptionsOn(!!cp.captionsOn); setCaptionStyle(cp.captionStyle ?? "classic");
       setCaptionSize(cp.captionSize ?? "md"); setCaptionLineHeight(cp.captionLineHeight ?? null);
       setCaptionFontScale(cp.captionFontScale ?? null);
@@ -1172,19 +1205,24 @@ export default function Home() {
           <span className="brand__name"><span className="brand__pre">VoiceCraft</span> AutoEditor</span>
           <span className="brand__tag">image + video · voiceover sync</span>
         </div>
-        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-          <button
+                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <div className="app-workspaces" style={{ display: "flex", gap: "8px", marginRight: "16px" }}>
+              <a href="/index.html" className="btn ghost small" style={{textDecoration: "none"}}>&#127897; VoiceCraft</a>
+              <a href="/auto-editor/index.html" className="btn primary small" style={{textDecoration: "none"}}>&#127916; AutoEditor</a>
+              <a href="/browser.html" className="btn ghost small" style={{textDecoration: "none"}}>&#127760; Browser</a>
+            </div>
+            <button
             onClick={async (e) => {
               const btn = e.currentTarget;
               btn.textContent = 'Saving...';
               await saveCurrent();
               btn.textContent = 'Saved!';
-              setTimeout(() => { btn.textContent = '💾 Save Project'; }, 2000);
+              setTimeout(() => { btn.textContent = '&#128190; Save Project'; }, 2000);
             }}
             className="btn primary small"
             style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
           >
-            💾 Save Project
+            &#128190; Save Project
           </button>
             <button
               onClick={() => setShowAiModal(true)}
@@ -1305,7 +1343,7 @@ export default function Home() {
                     durationSeconds: s.seconds
                   }));
                   
-                  const text = getMegaPrompt(validClips, captionRaw);
+                  const text = getMegaPrompt(validClips, captionsTrack.map(c => c.text).join(" "));
                   
                   navigator.clipboard.writeText(text);
                   alert("Mega-Prompt copied! This includes the System Prompt, Guidelines, exact clip IDs, and your audio transcript. Just paste it directly into ChatGPT!");
@@ -1510,6 +1548,7 @@ export default function Home() {
           captionLineHeight={captionLineHeight} setCaptionLineHeight={setCaptionLineHeight}
           captionFontScale={captionFontScale} setCaptionFontScale={setCaptionFontScale}
           captionName={captionName} captionError={captionError} onCaptionFile={onCaptionFile}
+          generatingCaptions={generatingCaptions} genCapStatus={genCapStatus} onGenerateCaptions={handleGenerateCaptions}
         />
       )}
       </div>

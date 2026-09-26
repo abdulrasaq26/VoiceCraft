@@ -5,9 +5,8 @@ import {
   TRANSITION_LIST, transitionOf,
   MIN_TRANSITION_DURATION, MAX_TRANSITION_DURATION,
 } from "../lib/transitions";
-import {
-  CAPTION_STYLE_LIST, CAPTION_SIZES, captionAt, drawCaption, captionFontPx, captionLineHeightDefault,
-} from "../lib/captions";
+import { CAPTION_STYLE_LIST, CAPTION_SIZES, captionFontPx, captionLineHeightDefault } from "../lib/captions";
+import { getActiveCaption, drawUnifiedCaption } from "../lib/captions/caption-renderer.js";
 
 function tc(t) {
   if (!isFinite(t) || t < 0) t = 0;
@@ -42,7 +41,7 @@ export default function Editor({
   captionCues, captionsOn, setCaptionsOn, captionStyle, setCaptionStyle,
   captionSize, setCaptionSize, captionLineHeight, setCaptionLineHeight,
   captionFontScale, setCaptionFontScale,
-  captionRaw, captionName, captionError, onCaptionFile, removeCaptions, lowerThirdConfig,
+  captionRaw, captionName, captionError, onCaptionFile, removeCaptions, lowerThirdConfig, generatingCaptions, genCapStatus, onGenerateCaptions,
   initialTime = 0, onTimeChange,
 }) {
   const canvasRef = useRef(null);
@@ -427,8 +426,8 @@ export default function Editor({
 
     // Captions burn in before the fades, so the fade dims them too.
     if (captionsOn && captionCues && captionCues.length) {
-      const txt = captionAt(captionCues, t);
-      if (txt) drawCaption(ctx, txt, W, H, captionStyle, captionFontPx(H, captionSize, captionFontScale), captionLineHeight);
+      const activeCap = getActiveCaption(captionCues, t);
+      if (activeCap) drawUnifiedCaption(ctx, activeCap, t, W, H);
     }
 
     // Scene fades (opening / ending).
@@ -871,19 +870,20 @@ export default function Editor({
 
         <div className="panel captions">
           <h2 className="panel__h">Captions</h2>
-          {!(captionCues && captionCues.length) ? (
-            <div className="cap-empty">
-              <button type="button" className="cap-upload" onClick={() => capInputRef.current && capInputRef.current.click()}>
-                <span className="cap-upload__i">⤒</span> Upload timestamped script
-              </button>
-              <p className="cap-hint">
-                An <code>.srt</code>, <code>.vtt</code>, or timestamped <code>.txt</code> — inline
-                markers like <code>(0:03)</code>, NoteGPT ranges, or <code>[0:03]</code> lines all
-                work. Captions sync to the audio and burn into the MP4.
-              </p>
-              {captionError && <div className="note note--bad">{captionError}</div>}
-            </div>
-          ) : (
+          {generatingCaptions ? (
+              <div className="cap-empty">
+                 <p style={{marginBottom: "8px", color: "var(--brand-main)"}}>Generating Captions...</p>
+                 <p style={{fontSize: "12px", color: "#888"}}>{genCapStatus || "Starting..."}</p>
+              </div>
+            ) : !(captionCues && captionCues.length) ? (
+              <div className="cap-empty" style={{display: "flex", flexDirection: "column", gap: "8px"}}>
+                <button type="button" className="cap-upload" onClick={onGenerateCaptions} style={{borderColor: "var(--brand-main)", color: "var(--brand-main)", marginBottom: "8px"}}><span className="cap-upload__i" style={{color: "var(--brand-main)"}}>✨</span> Auto-Generate from Audio</button>
+                <div style={{textAlign: "center", color: "#666", fontSize: "12px", margin: "4px 0"}}>OR</div>
+                <button type="button" className="cap-upload" onClick={() => capInputRef.current && capInputRef.current.click()}>
+                  <span className="cap-upload__i">⇧</span> Import SRT
+                </button>
+              </div>
+            ) : (
             <>
               <div className="cap-bar">
                 <button
