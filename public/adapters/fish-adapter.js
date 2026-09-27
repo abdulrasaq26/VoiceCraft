@@ -81,11 +81,11 @@
       } else {
         let customVoices = [];
         if (window.FishAdapterLoadServer) {
-          const res = await fetch(/api/proxy/fish/v1/references/list?format=json&t=, { method: 'GET', headers });
+          const res = await fetch(`/api/proxy/fish/v1/references/list?format=json&t=${Date.now()}`, { method: 'GET', headers });
           if (res.ok) {
             const data = await res.json();
             if (data && data.reference_ids && Array.isArray(data.reference_ids)) {
-               customVoices = data.reference_ids.map(id => ({ id, name: Custom: , grade: 'A' }));
+               customVoices = data.reference_ids.map(id => ({ id, name: `Custom: ${id}`, grade: 'A' }));
                FISH_VOICES = [
                  { id: 'default', name: 'Fish Audio (Default Base Model)', grade: 'A' },
                  ...customVoices
@@ -93,11 +93,11 @@
                data.reference_ids.forEach(id => window.FishAdapterSessionVoices.add(id));
             }
           } else {
-            lastError = Voice list failed (): ;
+            lastError = `Voice list failed (${res.status}): ${(await res.text()).slice(0, 200)}`;
             console.warn('[Fish Adapter]', lastError);
           }
         } else {
-          customVoices = sessionVoices.map(id => ({ id, name: Custom: , grade: 'A' }));
+          customVoices = sessionVoices.map(id => ({ id, name: `Custom: ${id}`, grade: 'A' }));
           FISH_VOICES = [
             { id: 'default', name: 'Fish Audio (Default Base Model)', grade: 'A' },
             ...customVoices
