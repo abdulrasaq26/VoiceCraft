@@ -1,6 +1,12 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { transitionOf } from "../lib/transitions";
+
+// Horizontal zoom: 1 = the whole timeline fits the visible width. `null`
+// means "auto" — the legacy per-clip minimum width, until the user zooms.
+const ZOOM_KEY = "autoeditor.tlzoom.v1";
+const ZOOM_STEP = 1.35;
+const ZOOM_MAX_FLOOR = 8;
 
 function label(t) {
   const m = Math.floor(t / 60);
@@ -34,10 +40,98 @@ export default function Timeline({
   clips, imageEls, duration, time, peaks, activeName, badClips,
   transitionsByName, motionByName, selectedName, onSelect,
   onSeek, onScrubStart, onScrubEnd, onOpen, onAdd, onDeleteGap, onResizeBoundary,
-  trimEnd, onTrimChange,
+  trimEnd, onTrimChange, height, playing,
 }) {
   const trackRef = useRef(null);
+  const scrollRef = useRef(null);
   const downRef = useRef(null); // pointer-down position, to tell a clip tap from a drag
+
+  // ---- Zoom ------------------------------------------------------------
+  const [viewW, setViewW] = useState(0); // visible content width of the scroller
+  const [zoom, setZoomState] = useState(null);
+  useEffect(() => {
+    try {
+      const z = parseFloat(localStorage.getItem(ZOOM_KEY));
+      if (isFinite(z) && z >= 1) setZoomState(z);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setViewW(el.clientWidth));
+    ro.observe(el);
+    setViewW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  // Legacy auto width: a readable minimum per clip, so dense timelines scroll
+  // instead of crushing clips into slivers.
+  const autoW = clips.length ? 30 + clips.length * 72 : 0;
+  const autoZoom = viewW ? Math.max(1, autoW / viewW) : 1;
+  const zoomEff = zoom == null ? autoZoom : zoom;
+  const zoomMax = Math.max(ZOOM_MAX_FLOOR, autoZoom * 4);
+  const rowW = viewW ? Math.round(viewW * zoomEff) : autoW;
+
+  // Keep the point under `anchorX` (client px) fixed while zooming.
+  const anchorRef = useRef(null);
+  const setZoom = useCallback((next, anchorX) => {
+    const el = scrollRef.current;
+    const z = Math.min(Math.max(next, 1), zoomMax);
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const ax = anchorX == null ? r.width / 2 : anchorX - r.left;
+      anchorRef.current = { ratio: (el.scrollLeft + ax) / Math.max(1, el.scrollWidth), ax };
+    }
+    setZoomState(z);
+    try { localStorage.setItem(ZOOM_KEY, String(z)); } catch { /* ignore */ }
+  }, [zoomMax]);
+  useLayoutEffect(() => {
+    const a = anchorRef.current, el = scrollRef.current;
+    if (!a || !el) return;
+    anchorRef.current = null;
+    el.scrollLeft = a.ratio * el.scrollWidth - a.ax;
+  }, [rowW]);
+
+  // Zoom buttons anchor on the playhead when it's on screen, else the centre.
+  const playheadClientX = useCallback(() => {
+    const el = scrollRef.current, tr = trackRef.current;
+    if (!el || !tr || !duration) return null;
+    const tb = tr.getBoundingClientRect(), vb = el.getBoundingClientRect();
+    const x = tb.left + (time / duration) * tb.width;
+    return x >= vb.left && x <= vb.right ? x : null;
+  }, [time, duration]);
+  const zoomIn = () => setZoom(zoomEff * ZOOM_STEP, playheadClientX());
+  const zoomOut = () => setZoom(zoomEff / ZOOM_STEP, playheadClientX());
+  const zoomFit = () => setZoom(1, null);
+
+  // Ctrl/⌘ + wheel zooms at the cursor; plain wheel scrolls horizontally.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        setZoom(zoomEff * Math.exp(-e.deltaY * 0.0022), e.clientX);
+      } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [setZoom, zoomEff]);
+
+  // During playback, page the view forward when the playhead runs off the
+  // right edge — only while playing, so it never fights manual scrolling.
+  useEffect(() => {
+    if (!playing) return;
+    const el = scrollRef.current, tr = trackRef.current;
+    if (!el || !tr || !duration) return;
+    const x = tr.offsetLeft + (time / duration) * tr.offsetWidth;
+    if (x > el.scrollLeft + el.clientWidth - 24 || x < el.scrollLeft) {
+      el.scrollLeft = Math.max(0, x - 40);
+    }
+  }, [time, playing, duration]);
 
   // Scrub the playhead. Reference the track's box for x/width; the ruler and
   // audio lane are horizontally aligned with it, so this works for all three.
@@ -144,24 +238,44 @@ export default function Timeline({
     if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6 && onOpen) onOpen(name);
   }, [onOpen]);
 
-  const step = duration > 180 ? 30 : duration > 90 ? 15 : duration > 30 ? 10 : 5;
-  const ticks = [];
-  for (let t = 0; t <= duration + 0.001; t += step) ticks.push(Math.round(t));
-
   const pct = (v) => `${Math.min(100, (v / duration) * 100)}%`;
   const stop = (e) => e.stopPropagation();
-
-  // Give each clip a readable minimum: when the timeline is dense, widen the
-  // track past the container so it scrolls horizontally instead of crushing
-  // clips into slivers. Percentages resolve against this wider track, so the
-  // ruler, clips, waveform and playhead all stay aligned.
-  const rowMin = clips.length ? 30 + clips.length * 72 : 0;
 
   const trimPos = trimEnd > 0 && trimEnd < duration ? trimEnd : duration;
   const trimmed = trimPos < duration;
 
+  // Ruler density follows the zoom: aim for a label roughly every 90px.
+  const pxPerSec = duration ? (rowW - 30) / duration : 0;
+  const niceSteps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  const step = pxPerSec
+    ? niceSteps.find((s) => s * pxPerSec >= 90) || 600
+    : duration > 180 ? 30 : duration > 90 ? 15 : duration > 30 ? 10 : 5;
+  const ticks = [];
+  for (let t = 0; t <= duration + 0.001; t += step) ticks.push(Math.round(t));
+
+  const zoomSlider = Math.round((Math.log(zoomEff) / Math.log(zoomMax)) * 1000);
+  const imageCount = clips.filter((c) => !c.gap).length;
+
   return (
-    <div className="tl" style={rowMin ? { "--tl-min": `${rowMin}px` } : undefined}>
+    <div className="tlwrap" style={height ? { height } : undefined}>
+      <div className="tlbar">
+        <span className="tlbar__title">Timeline</span>
+        <span className="tlbar__meta">
+          {imageCount} clip{imageCount === 1 ? "" : "s"} · {label(duration)}
+        </span>
+        <span className="tlbar__spacer" />
+        <div className="tlzoom" role="group" aria-label="Timeline zoom">
+          <button type="button" className="tlzoom__btn" onClick={zoomOut} disabled={zoomEff <= 1.001} title="Zoom out (Ctrl + scroll)" aria-label="Zoom out">−</button>
+          <input
+            type="range" className="tlzoom__range" min={0} max={1000} value={zoomSlider}
+            onChange={(e) => setZoom(Math.exp((+e.target.value / 1000) * Math.log(zoomMax)), playheadClientX())}
+            aria-label="Timeline zoom level"
+          />
+          <button type="button" className="tlzoom__btn" onClick={zoomIn} disabled={zoomEff >= zoomMax - 0.001} title="Zoom in (Ctrl + scroll)" aria-label="Zoom in">+</button>
+          <button type="button" className="tlzoom__fit" onClick={zoomFit} title="Fit the whole timeline in view">Fit</button>
+        </div>
+      </div>
+    <div className="tl" ref={scrollRef} style={{ "--tl-min": `${rowW}px` }}>
       <div className="tl__row tl__row--ruler">
         <div className="tl__gutter" aria-hidden="true" />
         <div className="tl__ruler tl__scrub" onPointerDown={onScrubDown} title="Drag to move the playhead">
@@ -200,7 +314,7 @@ export default function Timeline({
         </div>
       </div>
 
-      <div className="tl__row">
+      <div className="tl__row tl__row--lanes">
         <div className="tl__gutter">
           <span className="tl__tag">V</span>
           <span className="tl__tag tl__tag--audio">A</span>
@@ -309,6 +423,7 @@ export default function Timeline({
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

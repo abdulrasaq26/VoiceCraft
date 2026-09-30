@@ -16,13 +16,10 @@ export async function generateCaptionsFlow(editorState, options, onProgress) {
   if (onProgress) onProgress({ status: 'Preparing audio...', progress: 15 });
   
   const float32Data = await preprocessAudioForTranscription(audioInfo.file);
-  
-
 
   // 3. Transcription
-  
   const rawTranscript = await transcribe(float32Data, { provider: 'local-whisper' }, (info) => {
-    if (onProgress) onProgress({ status: info.status, progress: 30 + (info.progress || 0) * 0.5 });
+    if (onProgress) onProgress({ status: info.status, progress: 20 + (info.progress || 0) * 0.65 });
   });
 
   // 4. Validation
@@ -35,5 +32,8 @@ export async function generateCaptionsFlow(editorState, options, onProgress) {
 
   if (onProgress) onProgress({ status: 'Finalizing timeline...', progress: 100 });
   if (captions.length === 0) throw new Error('No speech was detected in the audio file, or transcription failed to extract timing.');
+  // Sections that failed even after a retry were skipped, not fatal; the
+  // caller can tell the user where the gaps are.
+  captions.failedSections = rawTranscript.failedSections || [];
   return captions;
 }

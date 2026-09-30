@@ -145,7 +145,40 @@ body {
   border-radius: 14px; flex-wrap: wrap;
 }
 .nav__brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; min-width: 0; }
-.nav__links { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.nav__links { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Workspace switcher: one segmented control, the current app highlighted. */
+.ws {
+  display: inline-flex; align-items: center; gap: 2px; padding: 3px;
+  background: var(--elev); border: 1px solid var(--line); border-radius: 11px;
+}
+.ws__tab {
+  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px;
+  border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--muted);
+  text-decoration: none; white-space: nowrap; transition: background .12s, color .12s;
+}
+.ws__tab svg, .tbtn svg {
+  width: 15px; height: 15px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round;
+}
+.ws__tab:hover { color: var(--text); background: rgba(255,255,255,.04); }
+.ws__tab.is-on { color: #fff; background: var(--accent); box-shadow: 0 1px 6px rgba(99,102,241,.35); }
+
+/* Toolbar buttons — one shape for every action in the nav. */
+.tbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: 34px; padding: 0 13px; border-radius: 9px; white-space: nowrap;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--line); cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s, transform .05s;
+}
+.tbtn:hover:not(:disabled) { border-color: var(--muted); background: var(--elev); }
+.tbtn:active:not(:disabled) { transform: translateY(1px); }
+.tbtn:disabled { opacity: .7; cursor: progress; }
+.tbtn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tbtn--primary:hover:not(:disabled) { background: #5558e8; border-color: #5558e8; }
+.tbtn--icon { width: 34px; padding: 0; }
+.tbtn--icon svg { width: 17px; height: 17px; }
 
 /* Project sub-bar (back + project name + import pills). */
 .projbar {
@@ -276,24 +309,56 @@ body {
 .build-hint { font-size: 12.5px; color: var(--muted); }
 
 /* ---------- Editor: fills the viewport, no window scroll ---------- */
+/* Three resizable regions: preview over timeline on the left, panels on the
+   right. Editor.js sets --tl-h and --side-w from the draggable splitters. */
 .editor {
   flex: 1; min-height: 0; width: 100%;
-  display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 12px;
+  display: grid; grid-template-columns: minmax(0,1fr) auto min(var(--side-w, 320px), 50vw); gap: 0;
 }
-.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.main > .notes { margin-top: 8px; }
 .side { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 2px; }
 
 .viewer {
-  flex: 1; min-height: 0;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px;
+  flex: 1 1 0; min-height: 160px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 10px 6px;
   display: flex; flex-direction: column;
 }
+/* The frame fills whatever height the splitter leaves; the canvas letterboxes. */
 .viewer__frame {
-  flex: 1; min-height: 300px; background: #000; aspect-ratio: 16/9; max-height: 60vh;
-  border-radius: 10px; overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+  flex: 1; min-height: 0; background: #000;
+  border-radius: 8px; overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
 }
 .viewer__canvas { width: 100%; height: 100%; display: block; object-fit: contain; }
+
+/* ---------- Splitters ---------- */
+.split {
+  flex: none; position: relative; display: grid; place-items: center;
+  outline: none; touch-action: none; z-index: 2;
+}
+.split--y { height: 14px; cursor: row-resize; }
+.split--x { width: 14px; cursor: col-resize; }
+.split__grip {
+  display: block; border-radius: 999px; background: var(--line);
+  transition: background .12s, transform .12s;
+}
+.split--y .split__grip { width: 44px; height: 4px; }
+.split--x .split__grip { width: 4px; height: 44px; }
+.split:hover .split__grip,
+.split:focus-visible .split__grip,
+.split.is-active .split__grip { background: var(--accent); }
+.split--y:hover .split__grip, .split--y.is-active .split__grip { transform: scaleX(1.6); }
+.split--x:hover .split__grip, .split--x.is-active .split__grip { transform: scaleY(1.6); }
+/* A thin guide line across the whole divider while hovering/dragging. */
+.split::before {
+  content: ""; position: absolute; background: var(--accent); opacity: 0; transition: opacity .12s;
+}
+.split--y::before { left: 0; right: 0; top: 50%; height: 1px; }
+.split--x::before { top: 0; bottom: 0; left: 50%; width: 1px; }
+.split:hover::before, .split.is-active::before { opacity: .35; }
+body.is-resizing-y, body.is-resizing-y * { cursor: row-resize !important; user-select: none !important; }
+body.is-resizing-x, body.is-resizing-x * { cursor: col-resize !important; user-select: none !important; }
 
 /* Panels */
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
@@ -415,18 +480,56 @@ body {
 }
 
 /* ---------- Timeline (signature) ---------- */
+.tlwrap {
+  flex: 0 1 var(--tl-h, 250px); min-height: 170px;
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  overflow: hidden;
+}
+.tlbar {
+  flex: none; display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px 7px 14px; border-bottom: 1px solid var(--line-soft);
+  background: rgba(255,255,255,.015);
+}
+.tlbar__title {
+  font-size: 11px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text);
+}
+.tlbar__meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.tlbar__spacer { flex: 1; }
+.tlzoom { display: flex; align-items: center; gap: 6px; }
+.tlzoom__btn, .tlzoom__fit {
+  height: 26px; min-width: 26px; padding: 0 8px; display: grid; place-items: center;
+  font: inherit; font-size: 14px; line-height: 1; color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
+  transition: border-color .12s, color .12s;
+}
+.tlzoom__fit { font-size: 11.5px; font-weight: 600; letter-spacing: .3px; }
+.tlzoom__btn:hover:not(:disabled), .tlzoom__fit:hover { border-color: var(--accent); color: #dfe6ff; }
+.tlzoom__btn:disabled { opacity: .35; cursor: default; }
+.tlzoom__range { width: 120px; accent-color: var(--accent); cursor: pointer; }
+
 .tl {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: 16px; padding: 12px 14px 16px; user-select: none;
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: thin;
+  position: relative; flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  padding: 10px 14px 12px; user-select: none;
+  overflow-x: auto; overflow-y: auto; scrollbar-width: thin;
 }
 .tl::-webkit-scrollbar { height: 8px; }
 .tl::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
 /* Dense timelines set --tl-min (px) so the track widens past the container and
    scrolls, instead of crushing clips into slivers. */
-.tl__row { display: flex; gap: 8px; align-items: stretch; min-width: var(--tl-min, 0px); }
+.tl__row { flex: none; display: flex; gap: 8px; align-items: stretch; min-width: var(--tl-min, 0px); }
 .tl__row--ruler { margin-bottom: 4px; }
-.tl__gutter { flex: none; width: 22px; display: flex; flex-direction: column; gap: 6px; }
+/* The lane row takes the timeline's spare height, so dragging the splitter up
+   gives bigger thumbnails and a taller waveform. */
+.tl__row--lanes { flex: 1 1 auto; min-height: 108px; }
+/* Track headers stay pinned while the zoomed timeline scrolls sideways; the
+   shadow masks the 8px row gap so clips slide cleanly underneath. */
+.tl__gutter {
+  flex: none; width: 22px; display: flex; flex-direction: column; gap: 6px;
+  position: sticky; left: 0; z-index: 8;
+  background: var(--panel); box-shadow: 8px 0 0 var(--panel), -14px 0 0 var(--panel);
+}
 
 .tl__ruler { position: relative; flex: 1; height: 22px; overflow: hidden; }
 .tl__tick {
@@ -437,20 +540,23 @@ body {
   position: absolute; left: 0; top: 13px; width: 1px; height: 5px; background: var(--line);
 }
 
-.tl__track { position: relative; flex: 1; min-width: 0; }
+.tl__track { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* Scrub surfaces: the ruler and the waveform move the playhead. */
 .tl__scrub { cursor: pointer; touch-action: none; }
 .tl__ruler.tl__scrub { border-radius: 6px; }
 .tl__ruler.tl__scrub:hover { background: rgba(255,255,255,.04); }
 .tl__lane { position: relative; border-radius: 8px; background: var(--panel-2); overflow: hidden; }
-.tl__lane--video { height: 62px; }
-.tl__lane--audio { height: 40px; margin-top: 6px; }
+/* Gutter tags and lanes use identical flex sizing so they stay aligned at any
+   timeline height. */
+.tl__lane--video, .tl__tag { flex: 1 1 0; min-height: 62px; }
+.tl__lane--audio, .tl__tag--audio { flex: 0 0 clamp(40px, 30%, 120px); min-height: 40px; }
+.tl__lane--audio { margin-top: 6px; }
 .tl__tag {
-  display: grid; place-items: center; height: 62px; width: 22px;
+  display: grid; place-items: center; width: 22px;
   font-family: var(--font-mono); font-size: 11px; color: var(--faint);
   background: var(--panel-2); border-radius: 6px;
 }
-.tl__tag--audio { height: 40px; color: var(--teal); }
+.tl__tag--audio { color: var(--teal); }
 
 .clip {
   position: absolute; top: 0; bottom: 0; min-width: 2px;
@@ -746,6 +852,15 @@ button:focus-visible, .dz:focus-visible, a:focus-visible {
   .side { overflow: visible; }
   .viewer { flex: none; }
   .viewer__frame { flex: none; aspect-ratio: 16 / 9; }
+  /* The page scrolls here, so the panes take their natural size instead. */
+  .split { display: none; }
+  .main { gap: 12px; }
+  .tlwrap { flex: none; height: auto !important; min-height: 0; }
+  .tl { flex: none; }
+  .tl__row--lanes { flex: none; min-height: 0; }
+  .tl__lane--video, .tl__tag { flex: none; height: 62px; }
+  .tl__lane--audio, .tl__tag--audio { flex: none; height: 40px; }
+  .tlzoom__range { width: 80px; }
   .onboard__zones { grid-template-columns: 1fr; }
 
   /* Touch has no hover: keep tap targets visible/large. */
@@ -762,6 +877,7 @@ button:focus-visible, .dz:focus-visible, a:focus-visible {
   .tl__row { min-width: max(var(--tl-min, 0px), 680px); }
   .tl__track { touch-action: pan-x; cursor: pointer; }
   .tl__lane--video, .tl__tag { height: 78px; }
+  .tl__tag--audio { height: 40px; }
   .clip__meta { font-size: 11px; }
   /* Touch has no hover — keep the resize grip visible. */
   .clip__resize::after { opacity: 1; }
@@ -776,6 +892,9 @@ button:focus-visible, .dz:focus-visible, a:focus-visible {
   .nav__brand { min-width: 0; flex: 0 1 auto; }
   .nav__brand .brand__name { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav__links { flex-wrap: nowrap; gap: 8px; flex: none; }
+  /* Icon-only workspace tabs and toolbar buttons (labels stay in title/aria). */
+  .ws__tab, .tbtn { font-size: 0; gap: 0; padding: 0 9px; }
+  .tbtn--icon { padding: 0; }
   /* Smaller storage ring on phones (applies to the landing too). */
   .stor__badge { width: 34px; height: 34px; }
   .stor__num { font-size: 9.5px; }

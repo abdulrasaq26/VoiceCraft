@@ -357,5 +357,13 @@
   window.addEventListener('blvck:provider-status-changed', updateVisibility);
   window.addEventListener('blvck:tts-provider-changed', updateVisibility);
 
-  updateVisibility();
+  // This script loads before ai-provider.js and tts-providers.js, so an
+  // immediate check always sees no provider and hides the studio. Wait for
+  // every script to run; the Fish health probe has no timeout and can't be
+  // relied on to fire the provider-changed event.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateVisibility, { once: true });
+  } else {
+    updateVisibility();
+  }
 })();

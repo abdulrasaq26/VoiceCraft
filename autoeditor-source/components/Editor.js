@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Timeline from "./Timeline";
+import Splitter from "./Splitter";
 import {
   TRANSITION_LIST, transitionOf,
   MIN_TRANSITION_DURATION, MAX_TRANSITION_DURATION,
@@ -21,6 +22,24 @@ function clock(sec) {
   const m = Math.floor(sec / 60);
   const s = Math.round(sec % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// Resizable workspace: timeline height and side-panel width, remembered
+// across sessions. The preview takes whatever height the timeline leaves.
+const LAYOUT_KEY = "autoeditor.layout.v1";
+const LAYOUT_DEFAULT = { tlH: 250, sideW: 320 };
+const TL_MIN = 170;
+const VIEWER_MIN = 160;
+const SIDE_MIN = 260;
+const SIDE_MAX = 620;
+const MAIN_MIN = 420;
+
+function loadLayout() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "null");
+    if (v && isFinite(v.tlH) && isFinite(v.sideW)) return { ...LAYOUT_DEFAULT, ...v };
+  } catch { /* storage blocked or corrupt */ }
+  return LAYOUT_DEFAULT;
 }
 
 export default function Editor({
@@ -81,6 +100,27 @@ export default function Editor({
   }, []);
   const [pendFile, setPendFile] = useState(null);  // chosen replacement, not yet applied
   const [pendUrl, setPendUrl] = useState(null);
+  const editorRef = useRef(null);
+  const mainRef = useRef(null);
+  const [layout, setLayout] = useState(LAYOUT_DEFAULT);
+  useEffect(() => { setLayout(loadLayout()); }, []);
+  useEffect(() => {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* ignore */ }
+  }, [layout]);
+  // Clamp against the space actually available right now, so the preview and
+  // the editor column can never be squeezed out entirely.
+  const setTlH = useCallback((h) => {
+    const main = mainRef.current;
+    const max = main ? Math.max(TL_MIN, main.clientHeight - VIEWER_MIN - 20) : 900;
+    setLayout((l) => ({ ...l, tlH: Math.round(Math.min(Math.max(h, TL_MIN), max)) }));
+  }, []);
+  const setSideW = useCallback((w) => {
+    const ed = editorRef.current;
+    const max = ed ? Math.min(SIDE_MAX, ed.clientWidth - MAIN_MIN) : SIDE_MAX;
+    setLayout((l) => ({ ...l, sideW: Math.round(Math.min(Math.max(w, SIDE_MIN), Math.max(SIDE_MIN, max))) }));
+  }, []);
+  const resetTlH = useCallback(() => setLayout((l) => ({ ...l, tlH: LAYOUT_DEFAULT.tlH })), []);
+  const resetSideW = useCallback(() => setLayout((l) => ({ ...l, sideW: LAYOUT_DEFAULT.sideW })), []);
   const [mixMode, setMixMode] = useState(false); // Transitions panel in random-mix mode
   const [mixPicks, setMixPicks] = useState(() => new Set()); // ephemeral: chosen transitions for the random mix
   const toggleMix = useCallback((id) => {
@@ -568,8 +608,11 @@ export default function Editor({
   const selectedImageNum = selectedClip && !selectedClip.gap ? imageClips.indexOf(selectedClip) + 1 : 0;
 
   return (
-    <section className="editor">
-      <div className="main">
+    <section
+      className="editor" ref={editorRef}
+      style={{ "--side-w": `${layout.sideW}px`, "--tl-h": `${layout.tlH}px` }}
+    >
+      <div className="main" ref={mainRef}>
         <div className="viewer">
           <div className="viewer__frame">
             <canvas ref={canvasRef} width={dims.width} height={dims.height} className="viewer__canvas" />
@@ -630,7 +673,15 @@ export default function Editor({
           );
         })()}
 
+        <Splitter
+          axis="y" sign={-1} value={layout.tlH}
+          onChange={setTlH} onReset={resetTlH}
+          label="Preview / timeline divider"
+        />
+
         <Timeline
+          height={layout.tlH}
+          playing={playing}
           clips={clips}
           imageEls={imageEls}
           duration={duration}
@@ -653,6 +704,12 @@ export default function Editor({
           onTrimChange={setTrimEnd}
         />
       </div>
+
+      <Splitter
+        axis="x" sign={-1} value={layout.sideW}
+        onChange={setSideW} onReset={resetSideW}
+        label="Editor / panel divider"
+      />
 
       <aside className="side">
         <div className="panel export">

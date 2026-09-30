@@ -155,6 +155,7 @@ export default function Home() {
   // closing the browser mid-render). Shown as a banner and reconnected to.
   const [resume, setResume] = useState(null); // { busy, progress, url, error }
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiMotionText, setAiMotionText] = useState("");
   const [aiMotionResult, setAiMotionResult] = useState(null);
@@ -667,9 +668,13 @@ export default function Home() {
         setGenCapStatus(progress.status);
       });
       
-      setCaptionsTrack(newCaptions);
+      const failed = newCaptions.failedSections || [];
+      setCaptionsTrack([...newCaptions]);
       setCaptionName("Generated from Audio");
       setCaptionsOn(true);
+      if (failed.length) {
+        setError(`Captions generated, but ${failed.length} section${failed.length === 1 ? "" : "s"} couldn't be transcribed and ${failed.length === 1 ? "has" : "have"} no captions: ${failed.join(", ")}.`);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1205,47 +1210,39 @@ export default function Home() {
           <span className="brand__name"><span className="brand__pre">VoiceCraft</span> AutoEditor</span>
           <span className="brand__tag">image + video · voiceover sync</span>
         </div>
-                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-            <div className="app-workspaces" style={{ display: "flex", gap: "8px", marginRight: "16px" }}>
-              <a href="/index.html" className="btn ghost small" style={{textDecoration: "none"}}>&#127897; VoiceCraft</a>
-              <a href="/auto-editor/index.html" className="btn primary small" style={{textDecoration: "none"}}>&#127916; AutoEditor</a>
-              <a href="/browser.html" className="btn ghost small" style={{textDecoration: "none"}}>&#127760; Browser</a>
-            </div>
-            <button
-            onClick={async (e) => {
-              const btn = e.currentTarget;
-              btn.textContent = 'Saving...';
-              await saveCurrent();
-              btn.textContent = 'Saved!';
-              setTimeout(() => { btn.textContent = '&#128190; Save Project'; }, 2000);
+        <nav className="ws" aria-label="Workspaces">
+          <a href="/index.html" className="ws__tab">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            VoiceCraft
+          </a>
+          <a href="/auto-editor/index.html" className="ws__tab is-on" aria-current="page">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M8 5v4M16 5v4"/></svg>
+            AutoEditor
+          </a>
+          <a href="/browser.html" className="ws__tab">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+            Browser
+          </a>
+        </nav>
+        <div className="nav__links">
+          <button
+            type="button"
+            className="tbtn tbtn--primary"
+            disabled={saveState === "saving"}
+            onClick={async () => {
+              setSaveState("saving");
+              try { await saveCurrent(); setSaveState("saved"); }
+              catch { setSaveState("error"); }
+              setTimeout(() => setSaveState("idle"), 2000);
             }}
-            className="btn primary small"
-            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
           >
-            &#128190; Save Project
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M7 3v5h8V3M7 21v-7h10v7"/></svg>
+            {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : "Save"}
           </button>
-            <button
-              onClick={() => setShowAiModal(true)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "0 12px",
-                height: 32,
-                borderRadius: 6,
-                background: "rgba(52, 152, 219, 0.2)",
-                color: "#3498db",
-                border: "1px solid #3498db",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                gap: 6
-              }}
-              title="Import AI Motion"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              AI Motion
-            </button>
+          <button type="button" className="tbtn" onClick={() => setShowAiModal(true)} title="Import AI Motion">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></svg>
+            AI Motion
+          </button>
           <a
             className="ext-link"
             href="https://chromewebstore.google.com/detail/bcmmekkamenpjoogmegiffgemlgikbgf?utm_source=item-share-cb"
@@ -1257,25 +1254,8 @@ export default function Home() {
             <span className="ext-link__text">Get the Extension</span>
           </a>
           <StorageRing storage={storage} />
-          <button 
-            onClick={() => setShowSettingsModal(true)}
-            style={{ 
-              display: "inline-flex", 
-              alignItems: "center", 
-              justifyContent: "center", 
-              padding: "0 12px", 
-              background: "#f1f5f9", 
-              color: "#0f172a", 
-              border: "1px solid #e2e8f0", 
-              borderRadius: "6px",
-              fontSize: 13, 
-              fontWeight: 500,
-              height: 32,
-              cursor: "pointer",
-              marginLeft: 8
-            }}
-          >
-            ⚙ Settings
+          <button type="button" className="tbtn tbtn--icon" onClick={() => setShowSettingsModal(true)} title="Settings" aria-label="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
           </button>
         </div>
       </header>
