@@ -9,10 +9,11 @@ class GenerationReconciler {
         const parsed = window.PromptParser.parse(promptLibrary);
         
         parsed.forEach(p => {
+            const normalizedName = window.NameNormalizer ? window.NameNormalizer.normalize(p.identifier) : p.cleanName;
             this.expectedPrompts.set(p.id, {
                 id: p.id,
                 identifier: p.identifier,
-                cleanName: p.cleanName,
+                cleanName: normalizedName,
                 originalPrompt: p.originalPrompt,
                 promptBody: p.promptBody,
                 status: 'missing',
@@ -37,14 +38,11 @@ class GenerationReconciler {
         for (const asset of assets) {
             let matchedRecord = null;
             
-            const normalizedAssetTitle = window.NameNormalizer ? window.NameNormalizer.normalize(asset.title) : asset.cleanName;
-            
             // Try to match the asset to an expected prompt
             for (const [id, record] of this.expectedPrompts.entries()) {
-                const normalizedPromptId = window.NameNormalizer ? window.NameNormalizer.normalize(record.identifier) : record.identifier;
-                const normalizedPromptName = window.NameNormalizer ? window.NameNormalizer.normalize(record.cleanName) : record.cleanName;
+                const assetName = window.NameNormalizer ? window.NameNormalizer.normalize(asset.title) : asset.cleanName;
                 
-                if (normalizedAssetTitle === normalizedPromptId || normalizedAssetTitle === normalizedPromptName) {
+                if (assetName === record.cleanName) {
                     if (record.status === 'missing') {
                         // Perfect match, consume it immediately for a missing prompt
                         matchedRecord = record;

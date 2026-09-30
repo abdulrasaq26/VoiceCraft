@@ -115,51 +115,44 @@ class DownloadManager {
         // Store the intended filename so onDeterminingFilename can force it
         this.currentDownloadPath = path;
 
-        if (chrome.downloads && chrome.downloads.download) {
-          chrome.downloads.download({
-            url: item.url,
-            filename: path,
-            conflictAction: 'uniquify',
-            saveAs: false
-          }, (downloadId) => {
-            if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-            else resolve(downloadId);
-          });
-        } else {
-          // Electron fallback
-          fetch('http://localhost:3000/api/extension-bridge/download', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: item.url, filename: path })
-          }).then(res => res.json()).then(data => {
-             if (data.error) reject(new Error(data.error));
-             else {
-                const fakeId = Math.floor(Math.random() * 1000000);
-                resolve(fakeId);
-                // fake completion
-                setTimeout(() => {
-                  this.handleDownloadChange({ id: fakeId, state: { current: 'complete' } });
-                }, 500);
-             }
-          }).catch(reject);
-        }
+        chrome.downloads.download({
+          url: item.url,
+          filename: path,
+          conflictAction: 'uniquify',
+          saveAs: false
+        }, (downloadId) => {
+          if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+          else resolve(downloadId);
+        });
       });
     });
   }
 
   bindEvents() {
-    if (chrome.downloads) {
-      chrome.downloads.onChanged.addListener(this.handleDownloadChange.bind(this));
-      chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    chrome.downloads.onChanged.addListener(this.handleDownloadChange.bind(this));
+    
+    // Override filenames explicitly using Chrome's interceptor
+    chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
       if (this.currentDownloadPath) {
           const intended = this.currentDownloadPath;
-          this.currentDownloadPath = null; // consume it
+          this.currentDownloadPath = null;
           suggest({ filename: intended, conflictAction: 'uniquify' });
           return true;
       }
+      
+      if (typeof tryAiMap1 !== 'undefined' && typeof tryAiMap2 !== 'undefined') {
+          if (item.byExtensionId && item.byExtensionId !== chrome.runtime.id) {
+              suggest();
+              return true;
+          }
+          let n = tryAiMap1.get(item.id) || tryAiMap2.get(item.url) || tryAiMap2.get(item.finalUrl);
+          if (n) {
+              suggest({ filename: n, conflictAction: 'uniquify' });
+              return true;
+          }
+      }
       suggest();
     });
-    }
   }
 
   handleDownloadChange(delta) {

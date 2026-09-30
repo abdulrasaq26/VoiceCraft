@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoiceCraft Flow Automator</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <!-- Sign-in gate (covers everything until the user is signed in) -->
+  <div id="authGate" class="auth-gate" hidden>
+    <div class="auth-card">
+      <div class="brand auth-brand">
+        <span class="brand-title">VoiceCraft Flow Automator</span>
+        <span class="brand-sub">Bulk AI Image &amp; Video Gen</span>
+      </div>
+      <h2 class="auth-title">Welcome</h2>
+      <p class="auth-sub">Sign in with Google to start generating.</p>
+      <button id="googleSignIn" class="gbtn">
+        <svg class="gicon" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.97 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.29-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.82.96 4.05l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </button>
+      <div class="auth-err" id="authErr" hidden></div>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="topbar-row">
+      <div class="brand">
+        <span class="brand-title">VoiceCraft Flow Automator</span>
+        <span class="brand-sub">Bulk AI Image &amp; Video Gen</span>
+      </div>
+      <button id="profileBtn" class="avatar avatar-btn" title="Account" aria-label="Account">?</button>
+    </div>
+    <nav class="mainNav">
+      <div class="modeToggle" role="tablist" aria-label="Generation mode">
+        <button type="button" class="active" data-genmode="image"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.8"/><path d="m21 15-4.5-4.5L5 21"/></svg>Images</button>
+        <button type="button" data-genmode="video"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m10 9 5 3-5 3V9Z"/></svg>Videos</button>
+      </div>
+      <a id="discordBtn" class="nav-icon" href="https://discord.gg/R8z9Cmq9N" target="_blank" rel="noopener" title="Join our Discord" aria-label="Join our Discord"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.25.5A18.3 18.3 0 0 1 19 4.9a13.6 13.6 0 0 0-11.6-.5l-.35-.4C5.5 3.7 4 4.2 2.6 4.9-.2 9 .3 13.3 .5 17.4a20 20 0 0 0 5.6 2.9l.7-1.2c-.6-.2-1.2-.5-1.8-.9l.4-.3c3.6 1.7 7.6 1.7 11.1 0l.5.3c-.6.4-1.2.7-1.8.9l.7 1.2a20 20 0 0 0 5.6-2.9c.4-4.8-.7-9-3.7-13Zm-11.8 10c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Zm7 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Z"/></svg></a>
+      <button id="settingsBtn" class="nav-icon" type="button" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </nav>
+  </header>
+
+  <main class="content">
+
+  <!-- Promo: unlimited access $7 (shows once/day; dismissed until next day; hidden for lifetime users) -->
+  <div id="promoBanner" class="promo" hidden>
+    <span class="promo-spark" aria-hidden="true">✦</span>
+    <span class="promo-text"><b>Unlimited access</b> — <span class="amt">$7</span> one-time.</span>
+    <button id="promoClaim" class="promo-claim" type="button">Claim</button>
+    <button id="promoClose" class="promo-close" type="button" title="Dismiss" aria-label="Dismiss">✕</button>
+  </div>
+
+  <!-- GENERATE -->
+  <section id="generate" class="panel active">
+    <div class="status-row">
+      <div class="status-pill" id="conn">Looking for a Flow tab…</div>
+      <!-- #discordBtn and #settingsBtn are moved here (from the nav) at load -->
+    </div>
+
+    <div class="refs">
+      <div class="refs-title"><span>Reference Images</span><span class="hint">Subject · Scene · Style</span></div>
+
+      <div class="ref-row">
+        <div class="ref-row-head"><span class="ref-name">Subject</span><span class="hint">who / what (up to 100)</span>
+          <button class="btn ghost ref-lib" data-kind="subject">Library</button></div>
+        <div class="ref-thumbs" id="thumbs-subject" data-kind="subject"></div>
+      </div>
+
+      <div class="ref-row">
+        <div class="ref-row-head"><span class="ref-name">Scene</span><span class="hint">where it happens (up to 100)</span>
+          <button class="btn ghost ref-lib" data-kind="scene">Library</button></div>
+        <div class="ref-thumbs" id="thumbs-scene" data-kind="scene"></div>
+      </div>
+
+      <div class="ref-row">
+        <div class="ref-row-head"><span class="ref-name">Style</span><span class="hint">visual style / mood (up to 100)</span>
+          <button class="btn ghost ref-lib" data-kind="style">Library</button></div>
+        <div class="ref-thumbs" id="thumbs-style" data-kind="style"></div>
+      </div>
+
+      <input type="file" id="refFile" accept="image/*" multiple hidden />
+    </div>
+
+    <!-- Image/Video settings are moved here (from the Settings dialog markup) at load,
+         below the references so References stays the first section. -->
+    <div id="genSettingsSlot"></div>
+
+    <!-- Per-prompt image references (Image mode only), below Image quality, above prompts -->
+    <div id="imgRefMapRow" class="vframe-map-row">
+      <button type="button" class="btn btn-sm btn-ico" id="imgRefMapBtn"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M8.5 6H13a2.5 2.5 0 0 1 2.5 2.5v1M8.5 18H13a2.5 2.5 0 0 0 2.5-2.5v-1"/></svg>Different image for each prompt…</button>
+      <span class="hint">Give specific prompts their own references (up to 100) — overrides the global ones.</span>
+    </div>
+
+    <div class="prompt-head">
+      <label class="field-label">Prompts <span class="hint" id="promptCount">0 prompts</span></label>
+      <a class="guide-link" href="https://codewithsiddique-04.github.io/VoiceCraft-Flow-Automator-LandingPage/guide.html" target="_blank" rel="noopener">📖 Prompt guide</a>
+    </div>
+
+    <div class="seg" id="promptMode">
+      <button class="seg-btn active" data-mode="upload">Upload File</button>
+      <button class="seg-btn" data-mode="paste">Paste Text</button>
+    </div>
+
+    <div id="upload-pane" class="prompt-pane active">
+      <div class="dropzone" id="dropzone">
+        <div class="dz-icon">⬆</div>
+        <div>Drop a .txt file or click to browse</div>
+        <div class="dz-sub">Loads automatically · separate prompts with a blank line</div>
+      </div>
+      <input type="file" id="promptFile" accept=".txt" hidden />
+    </div>
+
+    <div id="paste-pane" class="prompt-pane">
+      <textarea id="prompts" placeholder="a red apple on a wooden table, soft daylight&#10;&#10;a neon city skyline at night, cinematic"></textarea>
+      <p class="hint">Separate each prompt with a blank line.</p>
+      <div class="row">
+        <button class="btn ghost" id="loadBtn">Load prompts</button>
+      </div>
+    </div>
+
+    <div class="prompt-err" id="promptErr" hidden></div>
+
+    <div class="progress-head">
+      <span>Queue</span>
+      <span class="ph-right"><button class="btn ghost qhist-btn" id="histBtn" title="Queue history" aria-label="Queue history"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button><button class="btn ghost" id="clearBtn" hidden>Clear</button><span id="progressSummary"></span></span>
+    </div>
+    <div class="qtabs" id="qtabs"><button class="qtab active" data-q="main">Main</button></div>
+    <ul id="queue" class="queue"></ul>
+    <div class="queue-empty" id="queueEmpty">No prompts loaded yet — load or paste prompts above.</div>
+  </section>
+
+  <!-- SETTINGS -->
+  <!-- Settings dialog (opened by the gear icon in the header) -->
+  <div id="settingsOverlay" class="lib-overlay" hidden>
+    <div class="lib-box settings-box">
+      <div class="lib-head"><span>Settings</span><button id="settingsClose" class="btn ghost" type="button">✕</button></div>
+      <div class="edit-body settings-body">
+    <label class="field-label">Destination folder name</label>
+    <input type="text" id="folder" placeholder="VoiceCraft" />
+    <p class="hint">Saved under your browser's Downloads folder, in a per-run batch subfolder.</p>
+
+    <!-- IMAGE-ONLY SETTINGS -->
+    <div id="imageSettings">
+      <label class="field-label">Model</label>
+      <div class="radio-group chips-row">
+        <label><input type="radio" name="model" value="Nano Banana Pro" /> Nano Banana Pro</label>
+        <label><input type="radio" name="model" value="Nano Banana 2" checked /> Nano Banana 2</label>
+        <label><input type="radio" name="model" value="Nano Banana Lite" /> Nano Banana Lite</label>
+      </div>
+
+      <label class="field-label">Aspect ratio</label>
+      <div class="radio-group chips-row">
+        <label><input type="radio" name="aspect" value="16:9" checked /> 16:9</label>
+        <label><input type="radio" name="aspect" value="4:3" /> 4:3</label>
+        <label><input type="radio" name="aspect" value="1:1" /> 1:1</label>
+        <label><input type="radio" name="aspect" value="3:4" /> 3:4</label>
+        <label><input type="radio" name="aspect" value="9:16" /> 9:16</label>
+      </div>
+
+      <label class="field-label">Images per prompt</label>
+      <div class="radio-group chips-row">
+        <label><input type="radio" name="count" value="1" checked /> ×1</label>
+        <label><input type="radio" name="count" value="2" /> ×2</label>
+        <label><input type="radio" name="count" value="3" /> ×3</label>
+        <label><input type="radio" name="count" value="4" /> ×4</label>
+      </div>
+
+      <label class="field-label">Image quality</label>
+      <div class="radio-group chips-row">
+        <label><input type="radio" name="quality" value="standard" checked /> Standard</label>
+        <label><input type="radio" name="quality" value="2k" /> 2K upscale</label>
+      </div>
+      <p class="hint">2K uses an extra upscale step with its own daily quota, and falls back to Standard if unavailable.</p>
+    </div>
+
+    <!-- VIDEO-ONLY SETTINGS -->
+    <div id="videoSettings">
+      <label class="field-label">Video model</label>
+      <div class="radio-group chips-row vmodel-row">
+        <label><input type="radio" name="vmodel" value="omni_flash" /><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z"/><path d="M19 14l.7 1.6L21.5 16.5l-1.8.7L19 19l-.7-1.8-1.8-.7 1.8-.9L19 14Z"/></svg>Omni Flash</label>
+        <label><input type="radio" name="vmodel" value="lite" checked /><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20M7 4v5M17 4v5M7 20v-5M17 20v-5"/></svg>Veo 3.1 Lite</label>
+        <label><input type="radio" name="vmodel" value="fast" /><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>Veo 3.1 Fast</label>
+        <label><input type="radio" name="vmodel" value="quality" /><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l3 6-9 12L3 9l3-6Z"/><path d="M3 9h18M9 3 7.5 9 12 21l4.5-12L15 3"/></svg>Veo 3.1 Quality</label>
+      </div>
+
+      <label class="field-label">Aspect ratio</label>
+      <div class="radio-group chips-row">
+        <label><input type="radio" name="vratio" value="16:9" checked /> 16:9</label>
+        <label><input type="radio" name="vratio" value="9:16" /> 9:16</label>
+      </div>
+
+      <label class="field-label">Duration</label>
+      <div class="radio-group chips-row">
+        <label><input type="radio" name="vduration" value="4" /> 4s</label>
+        <label><input type="radio" name="vduration" value="6" /> 6s</label>
+        <label><input type="radio" name="vduration" value="8" checked /> 8s</label>
+        <label><input type="radio" name="vduration" value="10" /> 10s</label>
+      </div>
+
+      <label class="field-label">Videos per prompt</label>
+      <div class="radio-group chips-row">
+        <label><input type="radio" name="vcount" value="1" checked /> ×1</label>
+        <label><input type="radio" name="vcount" value="2" /> ×2</label>
+        <label><input type="radio" name="vcount" value="3" /> ×3</label>
+        <label><input type="radio" name="vcount" value="4" /> ×4</label>
+      </div>
+
+      <label class="field-label">Upscale</label>
+      <div class="radio-group chips-row">
+        <label><input type="radio" name="vupscale" value="none" checked /> None</label>
+        <label><input type="radio" name="vupscale" value="1080p" /> 1080p</label>
+        <label><input type="radio" name="vupscale" value="4k" /> 4K</label>
+      </div>
+      <p class="hint">Upscaling runs an extra Veo step after each video and may use additional quota.</p>
+
+      <label class="field-label">Video mode</label>
+      <div class="radio-group chips-row vmode-row">
+        <label><input type="radio" name="vmode" value="text" checked /><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>Text</label>
+        <label><input type="radio" name="vmode" value="start_frame" /><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/></svg>Start</label>
+        <label><input type="radio" name="vmode" value="start_end_frame" /><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="7" height="12" rx="1"/><rect x="14" y="6" width="7" height="12" rx="1"/></svg>S+E</label>
+        <label><input type="radio" name="vmode" value="reference" /><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/></svg>Ref</label>
+      </div>
+
+      <div id="vFrameSection" class="vframe-section" style="display:none">
+        <label class="field-label">Choose image</label>
+        <div class="vframe-squares" id="vFrameSquares"></div>
+        <p class="hint" id="vFrameHint">Used as the first frame for every prompt.</p>
+        <div class="vframe-map-row">
+          <button type="button" class="btn btn-sm btn-ico" id="vStartMapBtn"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M8.5 6H13a2.5 2.5 0 0 1 2.5 2.5v1M8.5 18H13a2.5 2.5 0 0 0 2.5-2.5v-1"/></svg>Different for each prompt…</button>
+          <span class="hint">Per-prompt frames override the shared ones above.</span>
+        </div>
+      </div>
+
+      <div id="vRefSection" class="vframe-section" style="display:none">
+        <label class="field-label">Reference images <span class="hint" id="vRefCount"></span></label>
+        <div id="vRefList" class="vref-grid"></div>
+        <span class="hint" style="display:block;margin-top:6px">Guide the video's look with up to 4 images (shared by all prompts).</span>
+        <div class="vframe-map-row">
+          <button type="button" class="btn btn-sm btn-ico" id="vRefMapBtn"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M8.5 6H13a2.5 2.5 0 0 1 2.5 2.5v1M8.5 18H13a2.5 2.5 0 0 0 2.5-2.5v-1"/></svg>Different for each prompt…</button>
+          <span class="hint">Assign unique reference images to each prompt.</span>
+        </div>
+      </div>
+
+      <input type="file" id="vFrameFile" accept="image/*" hidden />
+    </div>
+
+    <div class="switch-row">
+      <label class="field-label" for="autoDownload">Auto-download</label>
+      <label class="switch"><input type="checkbox" id="autoDownload" checked /><span class="slider"></span></label>
+    </div>
+
+    <div class="switch-row" id="wmRow">
+      <label class="field-label" for="removeWatermark">Remove watermark</label>
+      <label class="switch"><input type="checkbox" id="removeWatermark" checked /><span class="slider"></span></label>
+    </div>
+    <p class="hint" id="wmHint">Erases the corner logo from downloaded images and videos. Videos are re-encoded to apply it, so they take longer to save.</p>
+
+    <label class="field-label">File naming</label>
+    <div class="radio-group">
+      <label><input type="radio" name="naming" value="seq" checked /> 001_v1, 001_v2, … (per prompt)</label>
+      <label><input type="radio" name="naming" value="seq-prompt" /> 001-prompt_v1, …</label>
+    </div>
+
+    <label class="field-label">Refresh Flow tab every</label>
+    <div class="radio-group chips-row">
+      <label><input type="radio" name="refresh" value="0" /> Off</label>
+      <label><input type="radio" name="refresh" value="3" /> 3</label>
+      <label><input type="radio" name="refresh" value="5" checked /> 5</label>
+      <label><input type="radio" name="refresh" value="10" /> 10</label>
+    </div>
+    <p class="hint">Reloads the Flow tab mid-batch (every N prompts) to keep the session fresh on long runs. The queue continues after each refresh.</p>
+      </div>
+      <div class="lib-foot settings-foot"><span id="saveStatus" class="save-status"></span><button id="saveBtn" class="btn primary" type="button">Save</button></div>
+    </div>
+  </div>
+
+  </main>
+
+  <footer class="footer">
+    <div class="foot" id="footGenerate">
+      <button class="btn primary" id="startBtn" disabled>Start</button>
+      <button class="btn danger" id="stopBtn" disabled>Stop</button>
+    </div>
+  </footer>
+
+  <!-- Account (full screen) -->
+  <div id="acctOverlay" class="screen" hidden>
+    <div class="screen-head">
+      <span class="screen-title">Account</span>
+      <button class="screen-close" id="acctClose" aria-label="Close">✕</button>
+    </div>
+    <div class="screen-body">
+      <div class="acct-head">
+        <div class="avatar avatar-lg" id="acctAvatar">?</div>
+        <div class="acct-name" id="acctName">—</div>
+        <div class="acct-email-pill" id="acctEmail">—</div>
+      </div>
+      <div class="card">
+        <div class="info-row"><span>Login method</span><span class="info-val">Google</span></div>
+      </div>
+      <div class="card">
+        <div class="info-row sub-row"><span>Subscription</span><span class="plan-badge" id="acctPlanBadge">Trial</span></div>
+        <div class="usage" id="acctUsageWrap">
+          <div class="usage-top"><span>Daily usage</span><span id="acctUsageText">— / —</span></div>
+          <div class="usage-bar"><div class="usage-fill" id="acctUsageFill"></div></div>
+          <div class="usage-hint" id="acctUsageHint"></div>
+        </div>
+        <div class="upgrade-list" id="acctUpgrade">
+          <div class="upgrade-title"><span>Upgrade to Lifetime for</span><span class="upgrade-price">$7 <em>one-time</em></span></div>
+          <div class="upgrade-item"><span class="ui-ic">✦</span><div><b>Unlimited generations</b><span>No quota limits</span></div></div>
+          <div class="upgrade-item"><span class="ui-ic">✦</span><div><b>Priority support</b><span>Faster help when you need it</span></div></div>
+          <div class="upgrade-item"><span class="ui-ic">✦</span><div><b>Regular updates</b><span>All future features included</span></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="info-row"><span>Last login</span><span class="info-val" id="acctLastLogin">—</span></div>
+      </div>
+      <div class="card">
+        <div class="info-row"><span>Product tour</span><a class="info-val support-btn" id="replayTour" href="#">Replay</a></div>
+        <div class="info-row" style="margin-top:10px"><span>Fix unusual activity</span><a class="info-val support-btn" id="fixUnusualLink" href="#">Open</a></div>
+      </div>
+    </div>
+    <div class="screen-foot">
+      <button class="btn primary" id="manageSubBtn">Manage Subscription</button>
+      <button class="btn danger" id="signOutBtn" hidden>Sign Out</button>
+    </div>
+  </div>
+
+  <!-- Subscription plans (full screen) -->
+  <div id="plansOverlay" class="screen" hidden>
+    <div class="screen-head">
+      <span class="screen-title">Subscription Plans</span>
+      <button class="screen-close" id="plansClose" aria-label="Close">✕</button>
+    </div>
+    <div class="screen-body">
+      <h2 class="plans-h">Get Lifetime Access</h2>
+      <p class="plans-tagline">One payment. Unlimited bulk generation, forever.</p>
+      <div class="plans-banner" id="plansBanner">— free generations left today</div>
+      <div class="card plan">
+        <div class="plan-top">
+          <div><div class="plan-name">Lifetime</div><div class="plan-desc">One-time payment</div></div>
+          <span class="launch-badge">Launch price</span>
+        </div>
+        <div class="plan-price"><span class="price-amt" id="planPrice">$7</span> <span class="price-unit">one-time</span></div>
+        <ul class="plan-features">
+          <li>Full access to all features</li>
+          <li>Unlimited image &amp; video generation</li>
+          <li>Priority processing</li>
+          <li>Premium support</li>
+          <li>All future updates included</li>
+          <li>No recurring fees ever</li>
+        </ul>
+        <button class="btn primary claim" id="claimBtn">Claim Lifetime Access</button>
+      </div>
+      <div class="trust">
+        <div class="trust-item">✓ Secure checkout</div>
+        <div class="trust-item">✓ SSL encrypted</div>
+        <div class="trust-item">✓ 20-day refund</div>
+        <a class="trust-item link" id="refundLink" href="https://codewithsiddique-04.github.io/VoiceCraft-Flow-Automator-LandingPage/refund.html" target="_blank" rel="noopener">Refund policy</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Library picker -->
+  <div id="libOverlay" class="lib-overlay" hidden>
+    <div class="lib-box">
+      <div class="lib-head"><span id="libTitle">Library</span><button id="libClose" class="btn ghost">✕</button></div>
+      <div class="lib-status" id="libStatus">Loading…</div>
+      <div class="lib-grid" id="libGrid"></div>
+      <div class="lib-foot"><button id="libAdd" class="btn" disabled>Add</button></div>
+    </div>
+  </div>
+
+  <div id="editOverlay" class="lib-overlay" hidden>
+    <div class="lib-box" style="max-width:420px">
+      <div class="lib-head"><span id="editTitle">Edit prompt</span><button id="editClose" class="btn ghost">✕</button></div>
+      <div class="edit-body">
+        <div id="editVideoMode" class="edit-vmode" hidden>
+          <label class="field-label">Video mode <span class="hint">— for this prompt</span></label>
+          <div class="chips-row edit-mode-pills" id="editModePills">
+            <button type="button" data-jm="text">Text</button>
+            <button type="button" data-jm="start_frame">Start</button>
+            <button type="button" data-jm="start_end_frame">S+E</button>
+            <button type="button" data-jm="reference">Ref</button>
+          </div>
+        </div>
+        <div id="editFrameBlock" class="edit-frameblock" hidden>
+          <div class="edit-method" id="editMethod">
+            <button type="button" data-method="tag">Use tag</button>
+            <button type="button" data-method="manual">Select image</button>
+          </div>
+          <div id="editFrameManual" hidden>
+            <div id="editFrameSquares"></div>
+          </div>
+        </div>
+        <textarea id="editText" rows="5" placeholder="Prompt text…"></textarea>
+        <p class="edit-err" id="editErr" hidden>Prompt can't be empty.</p>
+        <p class="edit-warn" id="editWarn" hidden></p>
+        <p class="hint" id="editHint">Use <b>@name</b> to reference an image, <b>#name</b> to name the image this prompt creates.</p>
+      </div>
+      <div class="lib-foot"><button id="editSave" class="btn primary">Save</button></div>
+    </div>
+  </div>
+
+  <div id="histOverlay" class="lib-overlay" hidden>
+    <div class="lib-box" style="max-width:380px">
+      <div class="lib-head"><span id="histTitle">Queue history</span><span class="hist-head-actions"><button id="histClear" class="btn ghost" hidden>Clear all</button><button id="histClose" class="btn ghost">✕</button></span></div>
+      <div class="hist-body" id="histBody"></div>
+    </div>
+  </div>
+
+  <div id="confirmOverlay" class="lib-overlay" hidden>
+    <div class="lib-box" style="max-width:340px">
+      <div class="lib-head"><span id="confirmTitle">Confirm</span><button id="confirmClose" class="btn ghost">✕</button></div>
+      <div class="confirm-body">
+        <p id="confirmMsg"></p>
+        <div class="confirm-btns" id="confirmBtns"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="fixOverlay" class="lib-overlay" hidden>
+    <div class="lib-box fix-box">
+      <div class="lib-head"><span>Fix unusual activity</span><button id="fixClose" class="btn ghost">✕</button></div>
+      <div class="fix-body">
+        <div class="fix-emoji">🧹</div>
+        <p>Google Flow sometimes shows an <b>"unusual activity"</b> block when you generate a lot in a row. It's a Google-side limit — not the extension. Clearing Flow's site data usually clears it.</p>
+        <div class="fix-steps">
+          <div class="fix-steps-label">Steps</div>
+          <ol>
+            <li>Click <b>Open Clear Data Page</b> below.</li>
+            <li>Set <b>Time range → Last hour</b> (or 24 hours).</li>
+            <li>Tick <b>Cookies</b> and <b>Cached images and files</b>.</li>
+            <li>Click <b>Delete data</b>.</li>
+            <li>Sign in to Flow again and press Start.</li>
+          </ol>
+        </div>
+        <button id="fixClearData" class="btn primary" style="width:100%">Open Clear Data Page</button>
+        <p class="fix-note">If it persists, wait a few minutes and try again — only Google can fully clear it.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Page-injected (executeScript) helpers — plain script, runs before the module
+       so globalThis.__inj exists. Kept un-obfuscated (see inject.js / build.mjs). -->
+  <script src="inject.js"></script>
+  <script src="wm.js"></script>
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

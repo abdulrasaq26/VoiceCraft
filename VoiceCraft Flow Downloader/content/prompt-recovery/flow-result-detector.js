@@ -11,7 +11,7 @@ class FlowResultDetector {
           if (item.data && item.data.title) {
               assets.push({
                   title: item.data.title,
-                  cleanName: window.NameNormalizer ? window.NameNormalizer.normalize(item.data.title) : item.data.title.replace(/[\/\\?%*:|"<> \n\r]/g, '-').replace(/--+/g, '-')
+                  cleanName: item.data.title.replace(/[\/\\?%*:|"<> \n\r]/g, '-').replace(/--+/g, '-')
               });
           }
       });

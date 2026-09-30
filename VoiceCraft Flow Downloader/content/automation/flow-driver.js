@@ -10,87 +10,120 @@ class FlowDriver {
 
   async handleJobStart(job) {
     try {
-      // Wait up to 10 seconds for the prompt input to appear (in case page is loading or finishing a generation)
-      let inputAppeared = false;
-      for (let i = 0; i < 40; i++) {
-          if (this.adapter.canEnterPrompt()) {
-              inputAppeared = true;
-              break;
-          }
-          await new Promise(r => setTimeout(r, 250));
-      }
-
-      if (!inputAppeared) {
-        throw new Error('Flow capabilities missing. Cannot find prompt box after waiting 10 seconds.');
-      }
-
       job.status = 'submitting';
       window.AutomatorEvents.emit('JOB_SUBMITTED', job);
 
-      await this.adapter.enterPrompt(job.prompt);
-      await new Promise(r => setTimeout(r, 1500)); // Wait 1.5s for React to mount the Send button after typing
-      // await this.adapter.clickGenerate(); // DISABLED per user request for manual manual bypass
+      // 1. Get auth token
+      const token = await window.TryAiBridge.callMethod('getToken');
+      if (!token) throw new Error("Could not get Google Flow session token. Are you logged in?");
 
-      // VERIFY SUBMISSION: Wait for the input box to clear
-      // If the extension's automated click failed (e.g. due to Home Page SPA routing), this acts as a seamless 
-      // "Manual Override" window. It gives the user up to 5 minutes to manually click Send. Once clicked, the loop continues!
-      let submissionConfirmed = false;
-      let seenText = false; // Track if we ever saw the text in the box
+      // 2. Get reCAPTCHA
+      const recaptcha = await window.TryAiBridge.callMethod('getRecaptcha', '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV', 'generate');
       
-      for (let i = 0; i < 1200; i++) { // 1200 * 250ms = 5 minutes
-          await new Promise(r => setTimeout(r, 250));
-          const input = this.adapter.findElement(this.adapter.selectors.promptInput);
-          
-          if (!input) {
-              submissionConfirmed = true;
-              break;
-          }
-          
-          // Safely get text depending on if it's a textarea or contenteditable
-          const currentText = (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT' ? input.value : input.textContent) || '';
-          
-          if (currentText.trim().length > 0) {
-              seenText = true; // The text was successfully typed and is currently sitting in the box
-          } else if (seenText && currentText.trim() === '') {
-              // The text WAS in the box, and now it is empty. This means the user clicked Send!
-              submissionConfirmed = true;
-              break;
-          }
-      }
+      const projectId = await window.TryAiBridge.callMethod('getProjectId');
+      if (!projectId) throw new Error("Could not determine Project ID from URL.");
 
-      if (!submissionConfirmed) {
-          throw new Error('Submission failed: The prompt input did not clear after clicking Generate.');
-      }
+      const sessionId = ";" + Date.now() + Math.random().toString(36).slice(2);
+      const clientCtx = { 
+          recaptchaContext: { applicationType: "RECAPTCHA_APPLICATION_TYPE_WEB", token: recaptcha }, 
+          projectId: projectId, 
+          tool: "PINHOLE", 
+          sessionId: sessionId 
+      };
+
+      const payload = {
+          clientContext: clientCtx,
+          mediaGenerationContext: { batchId: String(Date.now()) },
+          useNewMedia: true,
+          requests: [{
+              clientContext: clientCtx,
+              imageAspectRatio: "16:9", // Default
+              imageInputs: [],
+              imageModelName: "imagen-3.0-generate-002",
+              seed: 0,
+              structuredPrompt: { parts: [{ text: job.prompt }] }
+          }]
+      };
 
       job.status = 'generating';
       window.AutomatorEvents.emit('GENERATION_STARTED', job);
-      
-      // Since Google Flow might use Shadow DOM which blinds MutationObserver,
-      // we'll aggressively poll the deep DOM every 1 second while generating.
-      const poller = setInterval(() => {
-          if (job.status !== 'generating') {
-              clearInterval(poller);
-              return;
-          }
-          if (window.FlowDetector) {
-              window.FlowDetector.scan();
-          }
-      }, 1000);
 
-      // Safety timeout (60 seconds)
-      this.currentTimeout = setTimeout(() => {
-         if (job.status === 'generating') {
-             console.log(`[FlowDriver] Job ${job.id} timed out waiting for generation.`);
-             job.status = 'timeout';
-             window.AutomatorEvents.emit('JOB_FAILED', job);
-         }
-      }, 60000);
+      // 3. Trigger Generation via TryAiBridge API (TryAiToday injects "generate")
+      const response = await window.TryAiBridge.callMethod('generate', `https://aisandbox-pa.googleapis.com/v1/projects/${projectId}/flowMedia:batchGenerateImages`, JSON.stringify(payload), token);
+
+      if (!response.ok) {
+          throw new Error('API Error: ' + (response.error || response.errText || "Unknown"));
+      }
+
+      // 4. Extract image URLs from response
+      const urls = this.extractUrls(response.data);
+      if (urls.length === 0) {
+          throw new Error("Generation succeeded but no images were found in the response.");
+      }
+
+      // We process only the first generated image for the job, or loop through all.
+      // Usually it generates 4 images per batch, but let's just grab the first one or all of them.
+      for (const [index, rawUrl] of urls.entries()) {
+          // 5. Clean Watermark
+          job.status = 'resolving'; // Update status to show we're doing watermark math
+          window.AutomatorEvents.emit('JOB_UPDATED', job);
+          
+          const cleanRes = await window.TryAiBridge.callMethod('cleanImageBlob', rawUrl, 'auto');
+          
+          if (!cleanRes || cleanRes.error) {
+              console.warn("Watermark removal failed:", cleanRes ? cleanRes.error : "Unknown error");
+              // Fallback to rawUrl if clean fails
+          }
+          
+          const finalUrl = (cleanRes && cleanRes.blobUrl) ? cleanRes.blobUrl : rawUrl;
+          
+          // 6. Queue for Download
+          const mediaId = Math.random().toString(36).substr(2, 9);
+          const mediaItem = {
+              id: mediaId,
+              url: finalUrl,
+              filename: `${job.id}-${index+1}.png`,
+              title: `${job.id}-${index+1}`,
+              prompt: job.prompt,
+              isAutomated: true,
+              project: this.queueManager.project,
+              batch: this.queueManager.batch
+          };
+          
+          // Add to job assets so index.js can find it
+          if (!job.assets) job.assets = [];
+          job.assets.push(mediaItem);
+
+          chrome.runtime.sendMessage({
+              action: 'download',
+              mediaItem: mediaItem
+          });
+          
+          // Wait a moment between downloads
+          await new Promise(r => setTimeout(r, 500));
+      }
 
     } catch (err) {
       console.error('[FlowDriver]', err);
       job.status = 'error';
       window.AutomatorEvents.emit('JOB_FAILED', job);
     }
+  }
+
+  extractUrls(data) {
+      const urls = [];
+      const findUrls = (obj) => {
+          if (typeof obj === 'string' && obj.startsWith('https://') && obj.includes('googleusercontent.com')) {
+              urls.push(obj);
+          } else if (Array.isArray(obj)) {
+              obj.forEach(findUrls);
+          } else if (typeof obj === 'object' && obj !== null) {
+              Object.values(obj).forEach(findUrls);
+          }
+      };
+      findUrls(data);
+      // Filter out duplicate or non-image URLs if necessary, but typical responses just have the image URLs.
+      return [...new Set(urls)];
   }
 }
 

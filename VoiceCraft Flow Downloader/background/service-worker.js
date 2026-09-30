@@ -139,3 +139,8 @@ function mainWorldBypass(payload) {
         }
     }
 }
+
+
+// TryAiToday Background Logic (Patched)
+var tryAiMap1=new Map,tryAiMap2=new Map;
+chrome.runtime.onInstalled.addListener(()=>{chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:!1}).catch(()=>{})});chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:!1}).catch(()=>{});chrome.downloads.onChanged.addListener(e=>{e.state&&(e.state.current==="complete"||e.state.current==="interrupted")&&tryAiMap1.delete(e.id)});chrome.runtime.onMessage.addListener((e,r,n)=>{if(e&&e.type==="DOWNLOAD")return tryAiMap2.set(e.url,e.filename),chrome.downloads.download({url:e.url,filename:e.filename,saveAs:!1,conflictAction:"uniquify"},o=>{if(setTimeout(()=>tryAiMap2.delete(e.url),15e3),chrome.runtime.lastError){n({error:chrome.runtime.lastError.message});return}tryAiMap1.set(o,e.filename),n({id:o})}),!0});

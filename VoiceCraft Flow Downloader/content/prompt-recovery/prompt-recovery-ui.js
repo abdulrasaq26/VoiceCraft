@@ -95,6 +95,42 @@ class PromptRecoveryUI {
           <div id="fpr-unmatched-list" style="display: flex; flex-flow: row wrap; gap: 6px; max-height: 100px; overflow-y: auto; padding-right: 4px;"></div>
         </div>
 
+        <!-- RECOVERY RESULTS TRAY -->
+        <div id="fpr-results" style="display: none; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #a6e3a1; border-radius: 8px; background: rgba(166, 227, 161, 0.05);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+             <div>
+                <div style="font-size: 11px; color: #a6adc8; margin-bottom: 4px;">Original ID</div>
+                <div id="fpr-res-id" style="font-size: 16px; font-weight: bold; color: #a6e3a1;">...</div>
+             </div>
+             <div style="text-align: right;" id="fpr-res-conf-box">
+                <div style="font-size: 11px; color: #a6adc8; margin-bottom: 4px;">Confidence</div>
+                <div id="fpr-res-conf" style="font-size: 16px; font-weight: bold; color: #f9e2af;">...</div>
+             </div>
+          </div>
+          
+          <div>
+            <div style="font-size: 11px; color: #a6adc8; margin-bottom: 4px;">ORIGINAL PROMPT</div>
+            <div id="fpr-res-body" style="background: #11111b; padding: 10px; border-radius: 6px; font-size: 12px; border: 1px solid #313244; color: #bac2de; max-height: 120px; overflow-y: auto;">...</div>
+          </div>
+          
+          <div id="fpr-res-warnings" style="color: #f38ba8; font-size: 11px; display: none;"></div>
+
+          <div style="display: flex; gap: 8px; margin-top: 5px;">
+             <button id="fpr-copy-clean" style="flex: 1; padding: 10px; background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; font-size: 13px; font-weight: bold; cursor: pointer;">Copy Recovered Prompt</button>
+             <button id="fpr-close-recovery" style="padding: 10px; background: #313244; color: #cdd6f4; border: none; border-radius: 4px; font-size: 12px; cursor: pointer;">Cancel</button>
+          </div>
+        </div>
+
+        <!-- FAILED PROMPT (Manual Recovery) -->
+        <div style="background: #181825; padding: 12px; border-radius: 8px; border: 1px solid #313244;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+            <label style="font-size: 11px; font-weight: 600; color: #a6adc8; letter-spacing: 0.5px;">RECOVER UNKNOWN FAILED PROMPT</label>
+            <button id="fpr-clear-failed" style="background: none; border: none; color: #f38ba8; font-size: 10px; cursor: pointer; text-decoration: underline;">Clear</button>
+          </div>
+          <textarea id="fpr-failed" placeholder="Paste a failed prompt text here to find its original ID..." style="width: 100%; height: 60px; background: #11111b; border: 1px solid #313244; border-radius: 6px; color: #cdd6f4; padding: 10px; font-family: monospace; font-size: 12px; resize: vertical; box-sizing: border-box;"></textarea>
+          <button id="fpr-find" style="width: 100%; padding: 8px; background: #b4befe; color: #11111b; border: none; border-radius: 6px; font-weight: bold; font-size: 12px; cursor: pointer; margin-top: 8px;">Find Original Match</button>
+        </div>
+
         <!-- GENERATED LIST -->
         <div id="fpr-generated-section" style="display: none;">
           <div style="font-size: 11px; font-weight: 600; color: #a6e3a1; margin-bottom: 8px; border-bottom: 1px solid #313244; padding-bottom: 4px; letter-spacing: 0.5px;">GENERATED</div>
@@ -192,15 +228,7 @@ Create a consistent character reference...
   }
 
   attachEvents() {
-      if (window.AutomatorEvents) {
-          window.AutomatorEvents.on('ASSET_DETECTED', () => {
-              if (this.reconciler && this.reconciler.expectedPrompts && this.reconciler.expectedPrompts.size > 0) {
-                  this.runReconciliation();
-              }
-          });
-      }
-
-      // TABS
+    // TABS
     const tabRec = this.container.querySelector('#fpr-tab-recovery');
     const tabBuild = this.container.querySelector('#fpr-tab-builder');
     const viewRec = this.container.querySelector('#fpr-view-recovery');
@@ -429,19 +457,26 @@ Create a consistent character reference...
         analyzeBtn.style.display = 'none';
     });
 
+    this.container.querySelector('#fpr-clear-failed').addEventListener('click', () => {
+        failedInput.value = '';
+    });
+
     this.container.querySelector('#fpr-clear-all').addEventListener('click', () => {
         // Missing Recovery
         if (libraryInput) libraryInput.value = '';
+        if (failedInput) failedInput.value = '';
         if (statusDiv) statusDiv.style.display = 'none';
         if (analyzeBtn) analyzeBtn.style.display = 'none';
         
         const dashboard = this.container.querySelector('#fpr-dashboard');
         const missingSec = this.container.querySelector('#fpr-missing-section');
         const genSec = this.container.querySelector('#fpr-generated-section');
+        const results = this.container.querySelector('#fpr-results');
         
         if (dashboard) dashboard.style.display = 'none';
         if (missingSec) missingSec.style.display = 'none';
         if (genSec) genSec.style.display = 'none';
+        if (results) results.style.display = 'none';
         const unmatchSec = this.container.querySelector('#fpr-unmatched-section');
         if (unmatchSec) unmatchSec.style.display = 'none';
 
@@ -467,7 +502,17 @@ Create a consistent character reference...
         this.container.querySelector('#fpr-results').style.display = 'none';
     });
 
-    }
+    this.container.querySelector('#fpr-copy-clean').addEventListener('click', () => {
+        if (this.lastMatchedRecords && this.lastMatchedRecords.length > 0) {
+            const bulkClean = this.lastMatchedRecords.map(record => window.PromptCleaner.clean(record)).join('\n\n');
+            navigator.clipboard.writeText(bulkClean);
+            
+            const btn = this.container.querySelector('#fpr-copy-clean');
+            btn.textContent = `Copied ${this.lastMatchedRecords.length} Prompts!`;
+            setTimeout(() => btn.textContent = 'Copy Recovered Prompt', 2000);
+        }
+    });
+  }
 
   runReconciliation() {
       this.reconciler.reconcile();
@@ -521,16 +566,9 @@ Create a consistent character reference...
           idSpan.innerHTML = `<span style="color:#f38ba8; margin-right:4px;">⚠</span> ${record.identifier}`;
           
           const recoverBtn = document.createElement('button');
-          recoverBtn.textContent = 'Copy Prompt';
+          recoverBtn.textContent = 'Recover';
           recoverBtn.style.cssText = 'background: #45475a; color: #cdd6f4; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; font-weight: bold;';
-          recoverBtn.addEventListener('click', () => {
-              const textToCopy = record.originalPrompt || `${record.identifier}\n${record.promptBody}`;
-              navigator.clipboard.writeText(textToCopy).then(() => {
-                  const orig = recoverBtn.textContent;
-                  recoverBtn.textContent = 'Copied!';
-                  setTimeout(() => recoverBtn.textContent = orig, 2000);
-              });
-          });
+          recoverBtn.addEventListener('click', () => this.showRecoveryForRecord(record));
           
           item.appendChild(idSpan);
           item.appendChild(recoverBtn);
@@ -557,6 +595,79 @@ Create a consistent character reference...
           item.textContent = `✓ ${record.identifier}`;
           list.appendChild(item);
       });
+  }
+
+  showRecoveryForRecord(record) {
+      this.lastMatchedRecords = [record];
+      
+      const resDiv = this.container.querySelector('#fpr-results');
+      resDiv.style.display = 'flex';
+      
+      this.container.querySelector('#fpr-res-id').textContent = record.identifier;
+      this.container.querySelector('#fpr-res-conf-box').style.display = 'none'; // Exact match, no confidence needed
+      this.container.querySelector('#fpr-res-body').textContent = record.promptBody;
+      this.container.querySelector('#fpr-res-warnings').style.display = 'none';
+      
+      // Scroll to results
+      setTimeout(() => resDiv.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50);
+  }
+
+  findMatch() {
+    const rawLibrary = this.container.querySelector('#fpr-library').value;
+    if (!rawLibrary.trim()) {
+        alert("Please paste your original prompts into the library first.");
+        return;
+    }
+    
+    const parsedLibrary = window.PromptParser.parse(rawLibrary);
+    
+    const failedText = this.container.querySelector('#fpr-failed').value;
+    if (!failedText) return;
+    
+    const matcher = new window.PromptMatcher(parsedLibrary);
+    const chunks = failedText.split('\\n').filter(t => t.trim().length > 10);
+    const matchedRecordsMap = new Map();
+    let minConfidence = 1.0;
+    
+    const textBlocks = chunks.length > 0 ? chunks : [failedText];
+    
+    for (const text of textBlocks) {
+        const result = matcher.match(text);
+        if (result.match) {
+            matchedRecordsMap.set(result.identifier, result.matchedPrompt);
+            if (result.confidence < minConfidence) minConfidence = result.confidence;
+        }
+    }
+    
+    const resDiv = this.container.querySelector('#fpr-results');
+    resDiv.style.display = 'flex';
+    this.container.querySelector('#fpr-res-conf-box').style.display = 'block';
+    
+    this.lastMatchedRecords = Array.from(matchedRecordsMap.values());
+    
+    if (this.lastMatchedRecords.length > 0) {
+        const ids = this.lastMatchedRecords.map(r => r.identifier).join(', ');
+        this.container.querySelector('#fpr-res-id').textContent = this.lastMatchedRecords.length > 1 ? `${this.lastMatchedRecords.length} Matches Found` : ids;
+        this.container.querySelector('#fpr-res-conf').textContent = `${Math.round(minConfidence * 100)}% (min)`;
+        
+        let preview = '';
+        if (this.lastMatchedRecords.length === 1) {
+            preview = this.lastMatchedRecords[0].promptBody;
+        } else {
+            preview = `Successfully recovered ${this.lastMatchedRecords.length} distinct prompts:\\n\\n` + ids;
+        }
+        this.container.querySelector('#fpr-res-body').textContent = preview;
+        this.container.querySelector('#fpr-res-warnings').style.display = 'none';
+    } else {
+        this.lastMatchedRecords = [];
+        this.container.querySelector('#fpr-res-id').textContent = 'NONE';
+        this.container.querySelector('#fpr-res-conf').textContent = '0%';
+        this.container.querySelector('#fpr-res-body').textContent = 'No suitable match found in library.';
+        this.container.querySelector('#fpr-res-warnings').style.display = 'block';
+        this.container.querySelector('#fpr-res-warnings').textContent = 'Could not confidently match the provided text.';
+    }
+    
+    setTimeout(() => resDiv.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50);
   }
 
   show() {

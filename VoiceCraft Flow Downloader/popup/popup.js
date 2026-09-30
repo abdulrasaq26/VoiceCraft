@@ -28,24 +28,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnAutomator = document.getElementById('btn-automator');
   if (btnAutomator) {
     btnAutomator.addEventListener('click', async () => {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab) {
-        chrome.tabs.sendMessage(tab.id, { action: 'toggle_automator' }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.error("Could not send message:", chrome.runtime.lastError);
-            if (chrome.runtime.lastError.message.includes("Receiving end does not exist")) {
-                if (confirm("The extension was recently updated. The page needs to be refreshed to reconnect to VoiceCraft Flow Downloader.\n\nRefresh page now?")) {
-                    chrome.tabs.reload(tab.id);
-                    window.close();
-                }
-            } else {
-                alert("Error: " + chrome.runtime.lastError.message);
-            }
-            return;
-          }
-          window.close();
-        });
-      }
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab) {
+            // Using Chrome SidePanel API to open the TryAiToday sidepanel
+            chrome.sidePanel.open({ tabId: tab.id, windowId: tab.windowId }).then(() => window.close()).catch(() => window.close());
+        }
     });
   }
 
