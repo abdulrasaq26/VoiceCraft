@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VoiceCraft Flow Downloader",
-  "version": "1.0",
+  "version": "0.5.4",
   "description": "Download media from Google Flow",
   "permissions": [
     "downloads",
@@ -9,7 +9,10 @@
     "scripting",
     "storage",
     "webRequest",
-    "offscreen"
+    "offscreen",
+    "sidePanel",
+    "tabs",
+    "identity"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -35,8 +38,11 @@
   "options_page": "options/options.html",
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "<all_urls>"
+      ],
       "js": [
+        "content/automation/host-bridge.js",
         "storage/project-store.js",
         "content/automation/event-bus.js",
         "content/automation/job.js",
@@ -44,6 +50,7 @@
         "content/automation/asset-matcher.js",
         "content/automation/flow-selectors.js",
         "content/automation/automator-adapter.js",
+        "content/automation/tryai-bridge.js",
         "content/automation/flow-driver.js",
         "content/detection/fingerprint.js",
         "content/detection/flow-adapter.js",
@@ -58,6 +65,10 @@
         "content/prompt-recovery/flow-result-detector.js",
         "content/prompt-recovery/generation-reconciler.js",
         "content/prompt-recovery/prompt-parser.js",
+        "content/prompt-recovery/prompt-normalizer.js",
+        "content/prompt-recovery/similarity-engine.js",
+        "content/prompt-recovery/prompt-matcher.js",
+        "content/prompt-recovery/prompt-cleaner.js",
         "content/prompt-recovery/prompt-recovery-ui.js",
         "content/ui/media-item.js",
         "content/ui/media-tray.js",
@@ -72,9 +83,16 @@
     {
       "resources": [
         "content/ui/styles.css",
-        "icons/*"
+        "icons/*",
+        "TryAiToday/0.4.7_0/inject.js",
+        "TryAiToday/0.4.7_0/wm.js"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "<all_urls>"
+      ]
     }
-  ]
+  ],
+  "side_panel": {
+    "default_path": "TryAiToday/0.4.7_0/sidepanel.html"
+  }
 }

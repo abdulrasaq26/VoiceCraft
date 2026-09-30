@@ -62,8 +62,9 @@
     });
   }
 
-  // Listen for messages from popup
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Listen for messages from popup (and, inside VoiceCraft Studio, from the
+  // browser toolbar via content/host-bridge.js).
+  const handleExtensionMessage = (message, sender, sendResponse) => {
     if (message.action === 'toggle_automator') {
       automatorPanel.toggle();
       sendResponse({ status: 'toggled' });
@@ -108,7 +109,7 @@
       if (window.AutomatorEvents && message.status === 'downloaded') {
         // We find the job that has this asset
         const job = queueManager.jobs.find(j => j.assets && j.assets.some(a => a.id === message.mediaId));
-        if (job) {
+        if (job && job.status !== 'completed') {
           job.status = 'completed';
           window.AutomatorEvents.emit('JOB_COMPLETED', job);
           queueManager.saveToStorage();
@@ -122,6 +123,8 @@
         }
       }
     }
-  });
+  };
+  chrome.runtime.onMessage.addListener(handleExtensionMessage);
+  window.__vcDispatchExtensionMessage = handleExtensionMessage;
 
 })();

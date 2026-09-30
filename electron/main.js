@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, shell, ipcMain, session, dialog } from 'electron';
+import { app, BrowserWindow, Menu, shell, dialog } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
@@ -91,17 +91,8 @@ app.whenReady().then(async () => {
     await startServer(PORT);
     await waitForServer();
     
-    // 2. Load Extension
-    try {
-      const extPath = path.join(__dirname, '../VoiceCraft Flow Downloader');
-      const browserSession = session.fromPartition('persist:browser');
-      await browserSession.loadExtension(extPath);
-      console.log('[VoiceCraft] Extension loaded successfully');
-    } catch (extErr) {
-      console.warn('[VoiceCraft] Failed to load extension:', extErr);
-    }
-
-    // 3. Create Window
+    // 2. Create Window. The built-in browser loads the Flow extension into
+    // each profile's session itself (BrowserManager.ensureSession).
     createWindow();
   } catch (err) {
     console.error('[VoiceCraft] Startup error:', err);
