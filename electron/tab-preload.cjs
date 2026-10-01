@@ -2,7 +2,15 @@
 // relays between the Flow Downloader content scripts (via window.postMessage,
 // see content/host-bridge.js) and the main process, which provides what
 // Electron's extension support lacks (chrome.downloads, chrome.scripting).
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, webFrame } = require('electron');
+
+// Google sign-in pages see a standard Firefox (see browser-manager.js): hide
+// the Chromium-only navigator.userAgentData there too, before the page runs.
+if (/^accounts\.google\.com$/i.test(location.hostname)) {
+  webFrame.executeJavaScript(
+    "try { Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => undefined, configurable: true }); } catch (e) {}"
+  ).catch(() => {});
+}
 
 const TO_HOST = 'voicecraft-flow:to-host';
 const TO_EXT = 'voicecraft-flow:to-ext';

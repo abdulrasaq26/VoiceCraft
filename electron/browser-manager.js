@@ -38,6 +38,14 @@ function cleanUserAgent(ua) {
   return ua.replace(/\s([A-Za-z][\w.-]*)\/(\S+)/g, (m, name) => (keep.has(name) ? m : ''));
 }
 
+// Google refuses to sign in from browsers it takes for embedded apps
+// ("This browser or app may not be secure"). On Google's sign-in pages only,
+// tabs present themselves as standard Firefox, whose sign-in Google accepts;
+// everywhere else they stay Chrome. The sign-in cookies then serve Flow etc.
+const SIGNIN_HOST = /^accounts\.google\.com$/i;
+const SIGNIN_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0';
+const isSignin = (url) => { try { return SIGNIN_HOST.test(new URL(url).hostname); } catch { return false; } };
+
 function partitionFor(profileId) {
   return !profileId || profileId === 'default' ? 'persist:browser' : `persist:browser-${profileId}`;
 }
@@ -191,7 +199,14 @@ export class BrowserManager {
       const u = d.referrer || (d.webContents && !d.webContents.isDestroyed() ? d.webContents.getURL() : '') || '';
       return /^https:\/\/(flow\.google\.com|labs\.google)\//.test(u);
     };
-    ses.webRequest.onBeforeSendHeaders({ urls: ['https://*.googleapis.com/*', 'https://flow.google.com/*', 'https://labs.google/*'] }, (d, cb) => {
+    ses.webRequest.onBeforeSendHeaders({ urls: ['https://*.googleapis.com/*', 'https://flow.google.com/*', 'https://labs.google/*', 'https://accounts.google.com/*'] }, (d, cb) => {
+      // Google sign-in pages: the Firefox identity, without Chromium's client hints.
+      if (isSignin(d.url)) {
+        const h = { ...d.requestHeaders, 'User-Agent': SIGNIN_UA };
+        for (const k of Object.keys(h)) if (/^sec-ch-ua/i.test(k)) delete h[k];
+        cb({ requestHeaders: h });
+        return;
+      }
       try {
         if (fromFlow(d) && /^(GET|POST|PATCH|PUT|DELETE)$/.test(d.method) && d.resourceType !== 'image' && d.resourceType !== 'media') {
           const u = new URL(d.url);
@@ -690,6 +705,7 @@ export class BrowserManager {
     const dbg = wc.debugger;
     const attach = async () => {
       if (wc.isDestroyed() || dbg.isAttached()) return;
+      if (isSignin(wc.getURL())) return; // Google's sign-in treats an attached debugger as automation
       try {
         dbg.attach('1.3');
         await dbg.sendCommand('Page.enable');
@@ -718,7 +734,11 @@ export class BrowserManager {
       }
     });
     // A new document needs the interception again.
-    wc.on('did-start-navigation', (e, url, inPlace, isMainFrame) => { if (isMainFrame && !inPlace) setTimeout(attach, 0); });
+    wc.on('did-start-navigation', (e, url, inPlace, isMainFrame) => {
+      if (!isMainFrame || inPlace) return;
+      if (isSignin(url)) { try { if (dbg.isAttached()) dbg.detach(); } catch { /* gone */ } return; }
+      setTimeout(attach, 0);
+    });
     wc.on('dom-ready', attach);
     attach();
   }
@@ -757,6 +777,13 @@ export class BrowserManager {
     const wc = tab.view.webContents;
     const id = tab.id;
     this.watchFileChooser(tab);
+    // Sign-in identity for this tab while it's on Google's sign-in pages.
+    const normalUA = wc.getUserAgent();
+    wc.on('did-start-navigation', (e, url, inPlace, isMainFrame) => {
+      if (!isMainFrame) return;
+      const want = isSignin(url) ? SIGNIN_UA : normalUA;
+      if (wc.getUserAgent() !== want) wc.setUserAgent(want);
+    });
 
     wc.on('did-start-loading', () => { tab.loading = true; this.notify(id); });
     wc.on('did-stop-loading', () => {
