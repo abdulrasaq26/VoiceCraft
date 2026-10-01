@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>New tab</title>
+  <link rel="icon" href="/brand/frameloom-icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="studio-tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--vc-background); color: var(--vc-text); font: 14px/1.45 var(--vc-font); }
+    main { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 24px 16px 12vh; }
+    .logo { width: 52px; height: 52px; border-radius: 13px; display: block; }
+    form { width: min(620px, 100%); }
+    input {
+      width: 100%; height: 48px; padding: 0 20px; border-radius: 999px; outline: 0;
+      border: 1px solid var(--vc-border); background: var(--vc-surface); color: var(--vc-text); font: inherit; font-size: 15px;
+    }
+    input:focus { border-color: var(--vc-primary); }
+    .tiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+    .tile { width: 112px; padding: 14px 8px 12px; border-radius: var(--vc-radius); text-decoration: none; color: var(--vc-text); text-align: center; background: var(--vc-surface); border: 1px solid var(--vc-border-soft); }
+    .tile:hover { border-color: var(--vc-border); background: var(--vc-surface-elevated); }
+    .tile b { display: grid; place-items: center; width: 36px; height: 36px; margin: 0 auto 8px; border-radius: 10px; background: var(--vc-primary-soft); color: var(--vc-primary-text); font-size: 15px; }
+    .tile span { font-size: 12.5px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="logo" src="/brand/frameloom-mark.svg" alt="" width="52" height="52">
+    <form id="f" autocomplete="off">
+      <input id="q" type="text" placeholder="Search or type a URL" autofocus spellcheck="false" />
+    </form>
+    <nav class="tiles">
+      <a class="tile" href="https://flow.google.com/"><b>F</b><span>Google Flow</span></a>
+      <a class="tile" href="https://arena.ai/"><b>A</b><span>Arena</span></a>
+      <a class="tile" href="https://www.youtube.com/"><b>Y</b><span>YouTube</span></a>
+      <a class="tile" href="https://drive.google.com/"><b>D</b><span>Drive</span></a>
+    </nav>
+  </main>
+  <script>
+    // Same rules as the address bar: a URL opens, anything else is searched.
+    const ENGINES = {
+      google: 'https://www.google.com/search?q=',
+      bing: 'https://www.bing.com/search?q=',
+      duckduckgo: 'https://duckduckgo.com/?q=',
+      brave: 'https://search.brave.com/search?q=',
+    };
+    const engine = ENGINES[new URLSearchParams(location.search).get('engine')] || ENGINES.google;
+    document.getElementById('f').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = document.getElementById('q').value.trim();
+      if (!v) return;
+      const looksLikeUrl = /^[a-z][\w+.-]*:\/\//i.test(v) || (/^[^\s]+\.[a-z]{2,}(\/|:|$)/i.test(v) && !/\s/.test(v));
+      location.href = looksLikeUrl ? (/^[a-z][\w+.-]*:\/\//i.test(v) ? v : 'https://' + v) : engine + encodeURIComponent(v);
+    });
+  </script>
+</body>
+</html>

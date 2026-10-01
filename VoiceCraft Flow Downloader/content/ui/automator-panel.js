@@ -11,14 +11,7 @@
   };
 
   const CSS = `
-:host {
-  all: initial;
-  --vc-background: #0d0d0f; --vc-surface: #161619; --vc-surface-elevated: #202026;
-  --vc-border: #2c2c33; --vc-border-soft: #232329;
-  --vc-primary: #6366f1; --vc-primary-hover: #5558e8; --vc-primary-text: #c7c9ff;
-  --vc-accent: #e8b64c; --vc-text: #f2f2f4; --vc-text-muted: #9b9ba3; --vc-text-faint: #62626c;
-  --vc-success: #6cc98f; --vc-danger: #e06c6c;
-}
+:host { all: initial; }
 * { box-sizing: border-box; }
 .panel {
   position: fixed; top: 16px; right: 16px; z-index: 2147483646; width: 392px;
@@ -28,7 +21,7 @@
   box-shadow: 0 18px 50px rgba(0,0,0,.55); overflow: hidden;
 }
 .head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; border-bottom: 1px solid var(--vc-border-soft); cursor: default; }
-.logo { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font-weight: 800; font-size: 12px; color: #fff; background: linear-gradient(135deg,#6366f1,#8b5cf6); }
+.logo { width: 24px; height: 24px; border-radius: 6px; display: block; flex: none; }
 .title { font-weight: 700; font-size: 14px; flex: 1; }
 .pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--vc-border-soft); color: var(--vc-text-muted); }
 .pill.running { background: rgba(99,102,241,.2); color: var(--vc-primary-text); }
@@ -139,11 +132,11 @@ textarea:focus, input:focus, select:focus { border-color: var(--vc-primary); }
       this.container.id = 'fmd-automator-host';
       this.container.style.display = 'none';
       this.shadow = this.container.attachShadow({ mode: 'open' });
-      this.shadow.innerHTML = `<style>${CSS}</style>
+      this.shadow.innerHTML = `<style>${window.VC_THEME_CSS || ''}${CSS}</style>
 <div class="panel" id="panel">
   <div class="head">
-    <span class="logo">V</span>
-    <span class="title">VoiceCraft Automator</span>
+    <img class="logo" src="${chrome.runtime.getURL('icons/frameloom-mark.svg')}" alt="">
+    <span class="title">Flow Automator</span>
     <span class="pill" id="state">Idle</span>
     <button class="ib" id="min" title="Minimize">–</button>
     <button class="ib" id="close" title="Close">✕</button>

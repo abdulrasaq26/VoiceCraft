@@ -95,6 +95,19 @@ export async function saveProject(record) {
   return rec;
 }
 
+// Where the user left off (playhead, timeline view, selection), saved on its
+// own and often — without touching the edit or its "last edited" time.
+// One read-write transaction, so it can't interleave with a full save.
+export async function saveResumeState(id, resume) {
+  return tx(STORE_PROJECTS, "readwrite", async (s) => {
+    const rec = await reqP(s.get(id));
+    if (!rec) return null;
+    rec.data = { ...(rec.data || {}), resume, playhead: resume.playheadTime || 0 };
+    await reqP(s.put(rec));
+    return rec;
+  });
+}
+
 export async function renameProject(id, name) {
   const rec = await getProject(id);
   if (!rec) return null;

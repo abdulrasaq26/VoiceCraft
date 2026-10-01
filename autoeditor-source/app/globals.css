@@ -31,17 +31,7 @@
 
 * { box-sizing: border-box; }
 
-/* Dark, subtle scrollbars — the default OS bars (white/grey) clash with the
-   theme. Firefox uses scrollbar-color; WebKit/Chromium uses the pseudo-els. */
-* { scrollbar-width: thin; scrollbar-color: #3a4353 transparent; }
-*::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb {
-  background: #3a4353; border-radius: 8px;
-  border: 2px solid transparent; background-clip: padding-box;
-}
-*::-webkit-scrollbar-thumb:hover { background: #4a5568; background-clip: padding-box; }
-*::-webkit-scrollbar-corner { background: transparent; }
+/* Scrollbars: studio-tokens.css (one style for the whole studio). */
 
 html, body { height: 100%; }
 body {
@@ -512,10 +502,8 @@ body.is-resizing-x, body.is-resizing-x * { cursor: col-resize !important; user-s
   position: relative; flex: 1; min-height: 0;
   display: flex; flex-direction: column;
   padding: 10px 14px 12px; user-select: none;
-  overflow-x: auto; overflow-y: auto; scrollbar-width: thin;
+  overflow-x: auto; overflow-y: auto;
 }
-.tl::-webkit-scrollbar { height: 8px; }
-.tl::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
 /* Dense timelines set --tl-min (px) so the track widens past the container and
    scrolls, instead of crushing clips into slivers. */
 .tl__row { flex: none; display: flex; gap: 8px; align-items: stretch; min-width: var(--tl-min, 0px); }
@@ -1316,7 +1304,7 @@ button:focus-visible, .dz:focus-visible, a:focus-visible {
 .onboard .passets { margin-top: 22px; text-align: left; }
 
 /* ---------- Projects page: tools, selection, counts ---------- */
-.ph__logo-v { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-weight: 800; font-size: 13px; margin-right: 2px; }
+.ph__logo-v { width: 28px; height: 28px; border-radius: 7px; display: block; flex: none; margin-right: 2px; }
 .ph__accent { color: var(--accent); }
 .ph__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 .ph__tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -1341,3 +1329,55 @@ button:focus-visible, .dz:focus-visible, a:focus-visible {
 .pcard__check.on { background: var(--accent); border-color: var(--accent); }
 .pcard__counts { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--text); margin-top: 4px; }
 .pcard__counts:empty { display: none; }
+
+/* "Resuming from 12:37" — shown briefly when a project reopens */
+.resume-note {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 50;
+  padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  background: var(--vc-surface-elevated); color: var(--text); border: 1px solid var(--vc-primary);
+  box-shadow: var(--vc-shadow-sm); pointer-events: none;
+  animation: resume-note-in .25s ease-out, resume-note-out .4s ease-in 3.6s forwards;
+}
+@keyframes resume-note-in { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes resume-note-out { to { opacity: 0; } }
+
+/* ---------- Workspace: hideable side panels, timeline focus mode ---------- */
+.editor { transition: grid-template-columns .22s ease; position: relative; }
+.editor > .side { transition: opacity .18s ease; }
+.editor.is-side-closed { grid-template-columns: minmax(0,1fr) 0 0; }
+.editor.is-side-closed > .side { opacity: 0; pointer-events: none; overflow: hidden; visibility: hidden; }
+.editor.is-side-closed > .split--x { visibility: hidden; pointer-events: none; }
+.side-reopen {
+  position: absolute; right: -6px; top: 50%; transform: translateY(-50%); z-index: 5;
+  width: 22px; height: 64px; display: grid; place-items: center; padding: 0;
+  border: 1px solid var(--line); border-right: 0; border-radius: 9px 0 0 9px;
+  background: var(--panel-2); color: var(--muted); cursor: pointer;
+}
+.side-reopen:hover { color: var(--text); background: var(--vc-primary-soft); }
+.side-reopen svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wsbar { display: inline-flex; gap: 4px; margin-left: 6px; }
+.wsbtn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px;
+  border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.wsbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.wsbtn:hover { color: var(--text); border-color: var(--faint); }
+.wsbtn.is-on { color: var(--vc-primary-text); border-color: rgba(99,102,241,.55); background: var(--vc-primary-soft); }
+/* Focus mode: the page header and project bar step aside too. */
+body.ae-focus .nav, body.ae-focus .projbar, body.ae-focus .resume { display: none; }
+body.ae-focus .app { padding-top: 8px; padding-bottom: 8px; gap: 8px; max-width: 100vw; }
+
+/* ---------- Renders: finished videos kept with the project ---------- */
+.renders__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.renders__list { display: flex; flex-direction: column; gap: 8px; }
+.rver { border: 1px solid var(--line-soft); border-radius: 10px; padding: 9px 10px; background: var(--elev); }
+.rver__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rver__v { flex: none; font: 700 11px var(--font-mono); padding: 2px 6px; border-radius: 5px; background: var(--vc-primary-soft); color: var(--vc-primary-text); }
+.rver__name { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rver__st { flex: none; font-size: 11px; font-weight: 700; color: var(--green); }
+.rver__st.is-warn { color: var(--vc-warning); }
+.rver__meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 5px 0 8px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rver__acts { display: flex; flex-wrap: wrap; gap: 5px; }
+.cap-act--pri { border-color: rgba(99,102,241,.55) !important; color: var(--vc-primary-text) !important; }
+.rver__del:hover:not(:disabled) { color: var(--bad) !important; border-color: var(--bad) !important; }

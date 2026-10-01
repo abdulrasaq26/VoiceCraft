@@ -14,8 +14,12 @@ export const DEFAULT_SETTINGS = {
   defaultZoom: 1,
   downloadDir: '',                 // '' = the OS Downloads folder
   askWhereToSave: false,
-  proxyMode: 'system',             // system | direct | fixed
-  proxyRules: '',
+  // Browser-wide proxy (electron/browser-proxy.js); tabs can override it.
+  proxy: { type: 'system' },
+  // The first and second tab open these; later tabs open the new-tab page.
+  firstTabUrl: 'https://flow.google.com/',
+  secondTabUrl: 'https://arena.ai/',
+  newTabPage: 'ntp',               // ntp | home
   flowTools: 'auto',               // auto | always | never
   saveHistory: true,
   activeProfile: 'default',
@@ -35,6 +39,17 @@ export class BrowserStore {
         session: raw.session || null,
       };
     } catch { /* first run or unreadable: start fresh */ }
+    // Older versions stored the proxy as proxyMode + proxyRules.
+    const st = this.data.settings;
+    if ('proxyMode' in st) {
+      if (!st.proxy || st.proxy.type === 'system') {
+        st.proxy = st.proxyMode === 'direct' ? { type: 'direct' }
+          : st.proxyMode === 'fixed' && st.proxyRules ? { type: 'custom', rules: st.proxyRules, bypass: '<local>' }
+          : { type: 'system' };
+      }
+      delete st.proxyMode;
+      delete st.proxyRules;
+    }
     if (!this.data.settings.profiles.some((p) => p.id === 'default')) {
       this.data.settings.profiles.unshift({ id: 'default', name: 'Default' });
     }

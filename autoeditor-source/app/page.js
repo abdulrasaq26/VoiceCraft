@@ -21,10 +21,12 @@ import Editor from "../components/Editor";
 import ProjectsHome from "../components/ProjectsHome";
 import StorageRing from "../components/StorageRing";
 import ProjectAssets from "../components/ProjectAssets";
+import RendersPanel from "../components/RendersPanel";
 import { DialogHost, showAlert, showConfirm, showPrompt } from "../components/Dialog";
 import {
   requestPersist, storageEstimate, listProjects, getProject, saveProject,
   renameProject, deleteProject, getMedia, syncMedia, newId,
+  saveResumeState,
 } from "../lib/projectStore";
 
 function loadImageEl(file) {
@@ -167,10 +169,50 @@ export default function Home() {
   const [currentProject, setCurrentProject] = useState(null); // { id, name, createdAt }
   const [storage, setStorage] = useState({ usage: 0, quota: 0 });
   const [loadingProject, setLoadingProject] = useState(false);
+  // (kept in a ref for the resume-state writer, defined further down)
   const saveRef = useRef(null);
   const idRef = useRef(0);
   const playheadRef = useRef(0);
   const [initialPlayhead, setInitialPlayhead] = useState(0);
+
+  // ---- Resume state: where the user left off in each project ---------------
+  // { playheadTime, lastViewedAt, lastEditedAt, activeTrack, selectedClipId,
+  //   selectedCaptionId, zoomLevel, scrollLeft } — part of the project record
+  // (data.resume). Written on its own at most every 1.5s while it changes,
+  // and right away when the project closes or the app goes to the background.
+  const resumeRef = useRef({ pid: null, state: {} });
+  const resumeTimerRef = useRef(null);
+  const [resumeView, setResumeView] = useState(null); // { token, ...state } handed to the Editor
+  const flushResume = useCallback(async () => {
+    clearTimeout(resumeTimerRef.current);
+    resumeTimerRef.current = null;
+    const { pid, state, dirty } = resumeRef.current;
+    if (!pid || !dirty) return;
+    resumeRef.current.dirty = false;
+    try { await saveResumeState(pid, { ...state, lastViewedAt: Date.now() }); } catch (_) { /* storage unavailable */ }
+  }, []);
+  const loadingRef = useRef(false); // no position reports while a project loads
+  const noteResume = useCallback((patch) => {
+    const r = resumeRef.current;
+    if (!r.pid || loadingRef.current) return;
+    let changed = false;
+    for (const k of Object.keys(patch)) if (r.state[k] !== patch[k]) { r.state[k] = patch[k]; changed = true; }
+    if (!changed) return;
+    r.dirty = true;
+    if (!resumeTimerRef.current) resumeTimerRef.current = setTimeout(flushResume, 1500);
+  }, [flushResume]);
+  const startResume = useCallback((pid, saved) => {
+    clearTimeout(resumeTimerRef.current);
+    resumeTimerRef.current = null;
+    resumeRef.current = { pid, state: { ...(saved || {}) }, dirty: false };
+    setResumeView({ token: Date.now() + Math.random(), ...(saved || {}) });
+  }, []);
+  useEffect(() => {
+    const away = () => { if (document.visibilityState === "hidden") flushResume(); };
+    document.addEventListener("visibilitychange", away);
+    window.addEventListener("pagehide", flushResume);
+    return () => { document.removeEventListener("visibilitychange", away); window.removeEventListener("pagehide", flushResume); };
+  }, [flushResume]);
   const nextId = () => `s${idRef.current++}`;
 
   // Composition (undoable): slots + per-clip transition choices, snapshotted together.
@@ -580,10 +622,13 @@ export default function Home() {
   }, [resetDoc]);
 
   const newProject = useCallback(() => {
+    flushResume();
     resetAllState();
-    setCurrentProject({ id: newId(), name: "Untitled project", createdAt: Date.now() });
+    const id = newId();
+    startResume(id, null);
+    setCurrentProject({ id, name: "Untitled project", createdAt: Date.now() });
     setView("editor");
-  }, [resetAllState]);
+  }, [resetAllState, flushResume, startResume]);
 
   // A small JPEG thumbnail from the first image, stored with the project.
   const makeThumb = useCallback(() => {
@@ -616,6 +661,7 @@ export default function Home() {
     idCounter: idRef.current,
     built,
     playhead: playheadRef.current,
+    resume: { ...resumeRef.current.state, playheadTime: playheadRef.current, lastEditedAt: Date.now() },
   }), [aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd,
       motionByName, trimByName, volumeByName, fitByName,
       captionsTrack, captionName, captionsOn, captionStyle, captionAnimation, captionOverrides, captionSize, captionLineHeight, captionFontScale,
@@ -692,6 +738,7 @@ export default function Home() {
   };
 
   const openProject = useCallback(async (id) => {
+    await flushResume(); // the project being left keeps its place
     const rec = await getProject(id);
     if (!rec) return;
     const d = rec.data || {};
@@ -754,10 +801,13 @@ export default function Home() {
       setCaptionFontScale(cp.captionFontScale ?? null);
       idRef.current = d.idCounter || newSlots.length;
       setBuilt(!!d.built);
-      setInitialPlayhead(d.playhead || 0);
-      playheadRef.current = d.playhead || 0;
+      const saved = d.resume && typeof d.resume === "object" ? d.resume : { playheadTime: d.playhead || 0 };
+      if (saved.playheadTime == null) saved.playheadTime = d.playhead || 0;
+      setInitialPlayhead(saved.playheadTime);
+      playheadRef.current = saved.playheadTime;
+      startResume(id, saved);
     } finally { setLoadingProject(false); }
-  }, [resetDoc, resetAllState]);
+  }, [resetDoc, resetAllState, flushResume, startResume]);
 
   // navigator.storage.estimate() lags behind an IndexedDB delete/write, so re-poll
   // a few times to catch the freed/added space without needing a manual refresh.
@@ -805,6 +855,7 @@ export default function Home() {
   // AutoEditor follows the studio's project, tells it which one is open, and
   // imports assets on request.
   const [studioOn, setStudioOn] = useState(false);
+  const slotsRef = useRef([]); // the latest timeline, for import de-duplication
   const [projectAssets, setProjectAssets] = useState([]);
   const studioRef = useRef({});
   const ensureRef = useRef(null);
@@ -821,16 +872,37 @@ export default function Home() {
       const rec = await getProject(id);
       if (rec) await openProject(id);
       else {
+        await flushResume();
         resetAllState();
+        startResume(id, null);
         setCurrentProject({ id, name: name || "Untitled project", createdAt: Date.now() });
         setView("editor");
       }
     })();
     ensureRef.current = { id, promise };
     try { await promise; } finally { if (ensureRef.current && ensureRef.current.id === id) ensureRef.current = null; }
-  }, [openProject, resetAllState]);
+  }, [openProject, resetAllState, flushResume, startResume]);
 
   const assetUrl = useCallback((a) => (window.studio ? window.studio.assetUrl(a.projectId, a.id) : ""), []);
+
+  // A finished render goes into the project's renders folder (streamed in
+  // chunks — videos can be large) and shows up in the Renders panel.
+  const saveRenderToProject = useCallback(async (blob, meta) => {
+    const S = window.studio;
+    const proj = studioRef.current.currentProject;
+    if (!S || !proj || !blob) return null;
+    const job = await S.renderBegin({ projectId: proj.id, projectName: proj.name || "Untitled project" });
+    try {
+      const CHUNK = 16 * 1024 * 1024;
+      for (let at = 0; at < blob.size; at += CHUNK) {
+        await S.renderChunk(job.id, await blob.slice(at, at + CHUNK).arrayBuffer());
+      }
+      return await S.renderFinish(job.id, meta);
+    } catch (e) {
+      try { await S.renderAbort(job.id); } catch (_) { /* gone */ }
+      throw e;
+    }
+  }, []);
 
   // Bring project assets into this edit: images/videos by their timestamp
   // names, the newest audio as the voiceover, the newest captions.
@@ -843,7 +915,11 @@ export default function Home() {
       return new File([blob], a.filename, { type: mime });
     };
     const newest = (t) => list.filter((a) => a.type === t).sort((x, y) => y.createdAt - x.createdAt)[0];
-    const visuals = list.filter((a) => a.type === "image" || a.type === "video");
+    // Timestamp-named media replace the clip at that second; others are added
+    // once — sending the same picture again doesn't duplicate it.
+    const onTimeline = new Set(slotsRef.current.filter((x) => !x.empty).map((x) => (x.file && x.file.name) || (x.img && x.img.fileName)).filter(Boolean));
+    const visuals = list.filter((a) => (a.type === "image" || a.type === "video")
+      && (parseTimestampName(a.filename) != null || !onTimeline.has(a.filename)));
     if (visuals.length) await addImages(await Promise.all(visuals.map(toFile)));
     const audio = newest("audio");
     if (audio) await onAudio([await toFile(audio)], audio.duration || null);
@@ -864,6 +940,8 @@ export default function Home() {
     return slots.some((s) => !s.empty && ((s.file && s.file.name === a.filename) || (s.img && s.img.fileName === a.filename)));
   }, [audioFile, captionName, slots]);
 
+  loadingRef.current = loadingProject;
+  slotsRef.current = slots;
   studioRef.current = { currentProject, loadingProject, ensureProject, importAssets, newProject, backToProjects };
 
   // Tell the studio which project is open here.
@@ -913,6 +991,10 @@ export default function Home() {
         const cp = studioRef.current.currentProject;
         if (cp && a.projectId === cp.id) setProjectAssets((prev) => (prev.some((x) => x.id === a.id) ? prev : [...prev, a]));
       }),
+      S.onAssetUpdated && S.onAssetUpdated((a) => {
+        const cp = studioRef.current.currentProject;
+        if (cp && a && a.projectId === cp.id) setProjectAssets((prev) => prev.map((x) => (x.id === a.id ? a : x)));
+      }),
       S.onAssetRemoved(({ projectId, assetId }) => {
         const cp = studioRef.current.currentProject;
         if (cp && projectId === cp.id) setProjectAssets((prev) => prev.filter((x) => x.id !== assetId));
@@ -948,6 +1030,14 @@ export default function Home() {
   }, []);
   const wcCancelRef = useRef(false);
   const onWebCodecsCancel = useCallback(() => { wcCancelRef.current = true; }, []);
+
+  const [doneMsg, setDoneMsg] = useState(null);       // transient "render complete" toast
+  const doneTimerRef = useRef(0);
+  const flashDone = useCallback((msg) => {
+    setDoneMsg(msg);
+    clearTimeout(doneTimerRef.current);
+    doneTimerRef.current = setTimeout(() => setDoneMsg(null), 6000);
+  }, []);
 
   const onRender = useCallback(async () => {
     cancelRef.current = false;
@@ -991,6 +1081,12 @@ export default function Home() {
       });
       const safeUrl = (blob && (blob instanceof Blob || blob instanceof File)) ? URL.createObjectURL(blob) : null;
       setOutUrl(safeUrl);
+      if (safeUrl && window.studio && studioRef.current.currentProject) {
+        try {
+          const saved = await saveRenderToProject(blob, { duration: exportDuration, width: renderDims.width, height: renderDims.height, fps, engine: "ffmpeg" });
+          if (saved) flashDone(`Saved “${saved.filename}” to the project`);
+        } catch (e) { setError("Rendered, but couldn't save it to the project: " + (e.message || e)); }
+      }
     } catch (e) {
       if (!cancelRef.current) setError(e.message || String(e));
     } finally {
@@ -998,19 +1094,12 @@ export default function Home() {
     }
   }, [clips, exportDuration, imagesByName, videosByName, audioFile, renderDims, fps, transitionsByName, transitionDuration,
       motionByName, motionAmount, trimByName, volumeByName, fitByName, videoInfoByName, fadeIn, fadeOut,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
+      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, saveRenderToProject, flashDone]);
 
   // --- SPIKE: WebCodecs GPU render (video-only, no audio). Proves the pipeline. ---
   const [wcBusy, setWcBusy] = useState(false);
   const [wcProgress, setWcProgress] = useState(0);
   const [wcPhase, setWcPhase] = useState("Rendering");
-  const [doneMsg, setDoneMsg] = useState(null);       // transient "render complete" toast
-  const doneTimerRef = useRef(0);
-  const flashDone = useCallback((msg) => {
-    setDoneMsg(msg);
-    clearTimeout(doneTimerRef.current);
-    doneTimerRef.current = setTimeout(() => setDoneMsg(null), 6000);
-  }, []);
   const [wcOk, setWcOk] = useState(false);
   const [serverAvailable, setServerAvailable] = useState(false); // ffmpeg backend reachable?
   const [wcEnabled, setWcEnabled] = useState(true); // WebCodecs on by default (desktop)
@@ -1100,7 +1189,15 @@ export default function Home() {
       // codec/rate) — the video still saves. Surface that clearly so a silent, soundless
       // file isn't a surprise.
       const audioIssue = logs.find((l) => /audio failed|produced no audio/i.test(l));
-      if (blob) { // in-memory result → download; a streamed render is already on disk
+      if (blob && window.studio && studioRef.current.currentProject) {
+        // In the studio: keep it with the project (Renders panel).
+        setWcPhase("Saving");
+        const saved = await saveRenderToProject(blob, {
+          duration: exportDuration, width: renderDims.width, height: renderDims.height, fps, engine: "webcodecs",
+          audioIssue: audioIssue ? "no-audio" : null,
+        });
+        flashDone(audioIssue ? `Saved “${saved.filename}” — no audio` : `Saved “${saved.filename}” to the project`);
+      } else if (blob) { // in-memory result → download; a streamed render is already on disk
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url; a.download = fileName; a.click();
@@ -1154,7 +1251,7 @@ export default function Home() {
       setWcPhase("Rendering");
     }
   }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, audioFile,
-      videosByName, videoInfoByName, fitByName, trimByName, volumeByName, currentProject, flashDone, wcProfile,
+      videosByName, videoInfoByName, fitByName, trimByName, volumeByName, currentProject, flashDone, wcProfile, saveRenderToProject,
       captionsOn, captionCues, captionOpts, fadeIn, fadeOut]);
 
   // Browser can't export video (no H.264 WebCodecs, no render backend) — block the
@@ -1166,7 +1263,7 @@ export default function Home() {
           <img className="unsupported__logo" src="/logo.svg" width="52" height="52" alt="" />
           <h1 className="unsupported__h">Open in Chrome, Edge, or Safari</h1>
           <p className="unsupported__p">
-            <span className="unsupported__brand">VoiceCraft AutoEditor</span> exports video using your
+            <span className="unsupported__brand">Frameloom AutoEditor</span> exports video using your
             browser’s built-in video encoder — which this browser doesn’t have.
           </p>
           <p className="unsupported__p">
@@ -1212,24 +1309,27 @@ export default function Home() {
       )}
       <header className="nav">
         <div className="nav__brand">
-          <img className="brand__logo" src="/logo.svg" alt="" width="28" height="28" />
-          <span className="brand__name"><span className="brand__pre">VoiceCraft</span> AutoEditor</span>
+          <img className="brand__logo" src="/brand/frameloom-mark.svg" alt="" width="28" height="28" />
+          <span className="brand__name"><span className="brand__pre">Frameloom</span> AutoEditor</span>
           <span className="brand__tag">image + video · voiceover sync</span>
         </div>
-        <nav className="ws" aria-label="Workspaces">
-          <a href="/index.html" className="ws__tab">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-            VoiceCraft
-          </a>
-          <a href="/auto-editor/index.html" className="ws__tab is-on" aria-current="page">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M8 5v4M16 5v4"/></svg>
-            AutoEditor
-          </a>
-          <a href="/browser.html" className="ws__tab">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
-            Browser
-          </a>
-        </nav>
+        {/* Inside VoiceCraft Studio the studio bar switches modules. */}
+        {!studioOn && (
+          <nav className="ws" aria-label="Workspaces">
+            <a href="/index.html" className="ws__tab">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+              VoiceCraft
+            </a>
+            <a href="/auto-editor/index.html" className="ws__tab is-on" aria-current="page">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M8 5v4M16 5v4"/></svg>
+              AutoEditor
+            </a>
+            <a href="/browser.html" className="ws__tab">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+              Browser
+            </a>
+          </nav>
+        )}
         <div className="nav__links">
           <button
             type="button"
@@ -1403,7 +1503,17 @@ export default function Home() {
               onAdd={importAssets} onRemove={removeAsset} projectName={currentProject.name}
             />
           ) : null}
-          initialTime={initialPlayhead} onTimeChange={(t) => { playheadRef.current = t; }}
+          rendersPanel={studioOn && currentProject ? (
+            <RendersPanel
+              renders={projectAssets.filter((a) => a.source === "render")}
+              onRenderNew={wcOk ? onWebCodecsTest : onRender}
+              renderBusy={busy || wcBusy}
+              canRender={clips.length > 0 && (wcOk || serverAvailable)}
+            />
+          ) : null}
+          initialTime={initialPlayhead}
+          onTimeChange={(t) => { playheadRef.current = t; noteResume({ playheadTime: Math.round(t * 1000) / 1000 }); }}
+          resume={resumeView} onResumeChange={noteResume}
           clips={clips} imageEls={imageEls} audioUrl={audioUrl}
           duration={audioDuration} peaks={peaks} dims={dims}
           aspect={aspect} setAspect={setAspect} fps={fps} setFps={setFps}

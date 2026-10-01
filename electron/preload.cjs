@@ -1,13 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 window.addEventListener('DOMContentLoaded', () => {
-  if (document.title === '') document.title = 'VoiceCraft Studio';
-  // Inside the studio the studio bar is the navigation, so each module hides
-  // its own workspace switcher.
-  document.documentElement.classList.add('vc-studio');
-  const st = document.createElement('style');
-  st.textContent = '.vc-studio .app-workspaces, .vc-studio nav.ws { display: none !important; }';
-  document.head.appendChild(st);
+  if (document.title === '') document.title = 'Frameloom Studio';
 });
 
 // Host-page API for the built-in browser (public/browser.js).
@@ -56,6 +50,14 @@ contextBridge.exposeInMainWorld('electronBrowser', {
 
   // data
   setSettings: (patch) => ipcRenderer.invoke('browser:set-settings', patch),
+  restoreSession: () => ipcRenderer.invoke('browser:restore-session'),
+  getNetwork: () => ipcRenderer.invoke('browser:get-network'),
+  setProxy: (args) => ipcRenderer.invoke('browser:set-proxy', args),
+  flowDiagnostics: () => ipcRenderer.invoke('browser:flow-diagnostics'),
+  answerFileChooser: (requestId, answer) => ipcRenderer.send('browser:file-chooser-result', { requestId, ...answer }),
+  onFileChooser: (cb) => { const fn = (e, d) => cb(d); ipcRenderer.on('browser:file-chooser', fn); return () => ipcRenderer.removeListener('browser:file-chooser', fn); },
+  onToast: (cb) => { const fn = (e, d) => cb(d); ipcRenderer.on('browser:toast', fn); return () => ipcRenderer.removeListener('browser:toast', fn); },
+  testProxy: (args) => ipcRenderer.invoke('browser:test-proxy', args),
   pickDownloadDir: () => ipcRenderer.invoke('browser:pick-download-dir'),
   clearData: (profileId, what) => ipcRenderer.invoke('browser:clear-data', { profileId, what }),
   bookmarks: (op, args = {}) => ipcRenderer.invoke('browser:bookmarks', { op, ...args }),
@@ -81,6 +83,15 @@ contextBridge.exposeInMainWorld('electronBrowser', {
 // Studio: modules, the current project and its asset library (electron/studio.js).
 contextBridge.exposeInMainWorld('studio', {
   getState: () => ipcRenderer.invoke('studio:get-state'),
+  // Renders: the page streams the finished file to the project's renders
+  // folder in chunks (begin → chunk… → finish, or abort).
+  renderBegin: (args) => ipcRenderer.invoke('studio:render-begin', args),
+  renderChunk: (id, bytes) => ipcRenderer.invoke('studio:render-chunk', { id, bytes }),
+  renderFinish: (id, meta) => ipcRenderer.invoke('studio:render-finish', { id, meta }),
+  renderAbort: (id) => ipcRenderer.invoke('studio:render-abort', { id }),
+  assetAction: (projectId, assetId, action, name) => ipcRenderer.invoke('studio:asset-action', { projectId, assetId, action, name }),
+  useForUpload: (projectId, assetId) => ipcRenderer.invoke('studio:use-for-upload', { projectId, assetId }),
+  onAssetUpdated: listen('studio:asset-updated'),
   editorReady: () => ipcRenderer.send('studio:editor-ready'),
   switchTo: (module) => ipcRenderer.send('studio:switch', module),
   setProject: (project) => ipcRenderer.invoke('studio:set-project', project),

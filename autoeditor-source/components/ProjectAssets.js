@@ -12,8 +12,10 @@ const GROUPS = [
 // The studio project's media (VoiceCraft narration, Flow results, captions…),
 // live: new assets appear as they're produced. "Add" puts one into this edit;
 // images and videos named like 2-33 land at 2:33 on the timeline.
-export default function ProjectAssets({ assets, inTimeline, onAdd, onRemove, assetUrl, projectName }) {
+export default function ProjectAssets({ assets: all, inTimeline, onAdd, onRemove, assetUrl, projectName }) {
   const [open, setOpen] = useState(true);
+  // Finished renders have their own panel.
+  const assets = useMemo(() => all.filter((a) => a.source !== "render"), [all]);
   const [busy, setBusy] = useState(null);
   const groups = useMemo(() => {
     const g = {};

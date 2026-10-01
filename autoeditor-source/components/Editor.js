@@ -28,7 +28,7 @@ function clock(sec) {
 // Resizable workspace: timeline height and side-panel width, remembered
 // across sessions. The preview takes whatever height the timeline leaves.
 const LAYOUT_KEY = "autoeditor.layout.v1";
-const LAYOUT_DEFAULT = { tlH: 250, sideW: 320 };
+const LAYOUT_DEFAULT = { tlH: 250, sideW: 320, sideOpen: true };
 const TL_MIN = 170;
 const VIEWER_MIN = 160;
 const SIDE_MIN = 260;
@@ -38,7 +38,7 @@ const MAIN_MIN = 420;
 function loadLayout() {
   try {
     const v = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "null");
-    if (v && isFinite(v.tlH) && isFinite(v.sideW)) return { ...LAYOUT_DEFAULT, ...v };
+    if (v && isFinite(v.tlH) && isFinite(v.sideW)) return { ...LAYOUT_DEFAULT, ...v, sideOpen: v.sideOpen !== false };
   } catch { /* storage blocked or corrupt */ }
   return LAYOUT_DEFAULT;
 }
@@ -63,7 +63,8 @@ export default function Editor({
   captionName, captionError, onCaptionFile, removeCaptions, generatingCaptions, genCapStatus, onGenerateCaptions,
   captionAnimation, setCaptionAnimation, captionOverrides, setCaptionOverrides,
   captionOpts, setCaptionsTrack, onExportCaptions,
-  initialTime = 0, onTimeChange, assetsPanel = null,
+  initialTime = 0, onTimeChange, assetsPanel = null, rendersPanel = null,
+  resume = null, onResumeChange,
 }) {
   const canvasRef = useRef(null);
   const audioRef = useRef(null);
@@ -91,6 +92,8 @@ export default function Editor({
   const [selectedCut, setSelectedCut] = useState(null); // selected clip name (drives transition)
   const [currentType, setCurrentType] = useState("fade");
   const [inspect, setInspect] = useState(null);   // slot name open in the inspector
+  const inspectRef = useRef(null);
+  inspectRef.current = inspect;
   const [dismissedWarn, setDismissedWarn] = useState(() => new Set()); // hidden warning texts
   // On touch devices, accept="image/*"/"video/*" makes Android open Google Photos,
   // which renames files and breaks the timestamp. Dropping accept opens the Files
@@ -105,9 +108,11 @@ export default function Editor({
   const editorRef = useRef(null);
   const mainRef = useRef(null);
   const [layout, setLayout] = useState(LAYOUT_DEFAULT);
+  const focusSaveRef = useRef(null); // pre-focus sizes while focus mode is on
   useEffect(() => { setLayout(loadLayout()); }, []);
   useEffect(() => {
-    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* ignore */ }
+    // (in focus mode, remember the layout from before it)
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(focusSaveRef.current ? { ...layout, ...focusSaveRef.current } : layout)); } catch { /* ignore */ }
   }, [layout]);
   // Clamp against the space actually available right now, so the preview and
   // the editor column can never be squeezed out entirely.
@@ -122,8 +127,78 @@ export default function Editor({
     setLayout((l) => ({ ...l, sideW: Math.round(Math.min(Math.max(w, SIDE_MIN), Math.max(SIDE_MIN, max))) }));
   }, []);
   const resetTlH = useCallback(() => setLayout((l) => ({ ...l, tlH: LAYOUT_DEFAULT.tlH })), []);
+
+  // ---- Workspace: hide the side panels, or focus on the timeline ----------
+  // Side panels: remembered with the layout. Focus mode: side panels, page
+  // header and the studio bar step aside and the timeline gets most of the
+  // height; leaving it puts everything back exactly as it was.
+  const [focus, setFocus] = useState(false);
+  const focusRef = useRef(false);
+  focusRef.current = focus;
+  const toggleSide = useCallback(() => setLayout((l) => ({ ...l, sideOpen: !l.sideOpen })), []);
+  const setFocusMode = useCallback((on) => {
+    setFocus((was) => {
+      if (was === on) return was;
+      if (on) {
+        setLayout((l) => { focusSaveRef.current = { tlH: l.tlH, sideOpen: l.sideOpen }; return { ...l, sideOpen: false }; });
+        // Once the header is gone, give the timeline ~60% of the editor.
+        setTimeout(() => {
+          const main = mainRef.current;
+          if (main) setLayout((l) => ({ ...l, tlH: Math.round(Math.max(l.tlH, main.clientHeight * 0.6)) }));
+        }, 60);
+      } else if (focusSaveRef.current) {
+        const prev = focusSaveRef.current;
+        focusSaveRef.current = null;
+        setLayout((l) => ({ ...l, ...prev }));
+      }
+      document.body.classList.toggle("ae-focus", on);
+      if (typeof window !== "undefined" && window.studio) window.studio.setFocusMode(on);
+      return on;
+    });
+  }, []);
+  // The studio ended focus mode (another module was opened): follow it.
+  useEffect(() => {
+    const S = typeof window !== "undefined" && window.studio;
+    if (!S || !S.onFocusMode) return undefined;
+    return S.onFocusMode(({ on }) => { if (!on) setFocusMode(false); });
+  }, [setFocusMode]);
+  useEffect(() => () => { document.body.classList.remove("ae-focus"); }, []);
+
   const resetSideW = useCallback(() => setLayout((l) => ({ ...l, sideW: LAYOUT_DEFAULT.sideW })), []);
   const [selectedCaptionId, setSelectedCaptionId] = useState(null);
+
+  // ---- Resume where the user left off --------------------------------------
+  // `resume` = { token, playheadTime, selectedClipId, selectedCaptionId, ... }
+  // from the project; applied when its token changes (a project opened).
+  const [resumeNote, setResumeNote] = useState(null);
+  const resumePendingRef = useRef(null); // playhead to keep when the project's audio arrives
+  useEffect(() => {
+    if (!resume || !resume.token) return undefined;
+    const t = Math.max(0, resume.playheadTime || 0);
+    setTimeState(t);
+    timeRef.current = t;
+    resumePendingRef.current = t;
+    const a = audioRef.current;
+    if (a && a.readyState >= 1) { try { a.currentTime = Math.min(t, a.duration || t); } catch (_) {} }
+    setSelectedCut(resume.selectedClipId || null);
+    setSelectedCaptionId(resume.selectedCaptionId || null);
+    if (t >= 1) {
+      setResumeNote(`Resuming from ${tc(t)}`);
+      const id = setTimeout(() => setResumeNote(null), 4000);
+      return () => clearTimeout(id);
+    }
+    setResumeNote(null);
+    return undefined;
+  }, [resume && resume.token]); // eslint-disable-line react-hooks/exhaustive-deps
+  const resumeChangeRef = useRef(onResumeChange);
+  resumeChangeRef.current = onResumeChange;
+  useEffect(() => {
+    if (resumeChangeRef.current) resumeChangeRef.current({
+      selectedClipId: selectedCut || null,
+      selectedCaptionId: selectedCaptionId || null,
+      activeTrack: selectedCaptionId ? "captions" : "clips",
+    });
+  }, [selectedCut, selectedCaptionId]);
   const [mixMode, setMixMode] = useState(false); // Transitions panel in random-mix mode
   const [mixPicks, setMixPicks] = useState(() => new Set()); // ephemeral: chosen transitions for the random mix
   const toggleMix = useCallback((id) => {
@@ -320,7 +395,17 @@ export default function Editor({
   useEffect(() => { drawRef.current = draw; }, [draw]);
   useEffect(() => { timeRef.current = time; }, [time]);
   useEffect(() => { draw(time); }, [time, draw]);
-  useEffect(() => { setTime(0); }, [audioUrl]);
+  // New voiceover → playhead to the start; a project being resumed keeps its place.
+  useEffect(() => {
+    const p = resumePendingRef.current;
+    if (p != null) {
+      if (!audioUrl) return; // its audio is still loading
+      resumePendingRef.current = null;
+      setTime(p);
+      return;
+    }
+    setTime(0);
+  }, [audioUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Elapsed render timer.
   useEffect(() => {
@@ -376,6 +461,20 @@ export default function Editor({
     if (a.seeking) pendingSeekRef.current = c;
     else { pendingSeekRef.current = null; try { a.currentTime = c; } catch (_) {} }
   }, [duration]);
+  // A freshly loaded voiceover starts at 0: put it where the playhead is
+  // (a resumed project), or play would jump back to the start.
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return undefined;
+    const sync = () => {
+      const t = timeRef.current || 0;
+      if (t > 0 && Math.abs(a.currentTime - t) > 0.05) { try { a.currentTime = Math.min(t, a.duration || t); } catch (_) {} }
+    };
+    if (a.readyState >= 1) sync();
+    a.addEventListener("loadedmetadata", sync);
+    return () => a.removeEventListener("loadedmetadata", sync);
+  }, [audioUrl]);
+
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -410,6 +509,8 @@ export default function Editor({
       else if (e.code === "ArrowRight") { e.preventDefault(); seek(time + (e.shiftKey ? 5 : 1)); }
       else if (e.code === "ArrowLeft") { e.preventDefault(); seek(time - (e.shiftKey ? 5 : 1)); }
       else if (e.key === "Home") { e.preventDefault(); seek(0); }
+      else if ((e.ctrlKey || e.metaKey) && e.code === "Backslash") { e.preventDefault(); if (e.shiftKey) setFocusMode(!focusRef.current); else toggleSide(); }
+      else if (e.key === "Escape" && focusRef.current && !inspectRef.current) { e.preventDefault(); setFocusMode(false); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -441,7 +542,7 @@ export default function Editor({
 
   return (
     <section
-      className="editor" ref={editorRef}
+      className={`editor${layout.sideOpen ? "" : " is-side-closed"}${focus ? " is-focus" : ""}`} ref={editorRef}
       style={{ "--side-w": `${layout.sideW}px`, "--tl-h": `${layout.tlH}px` }}
     >
       <div className="main" ref={mainRef}>
@@ -469,6 +570,21 @@ export default function Editor({
                 className="hbtn" onClick={redo} disabled={!canRedo}
                 title="Redo (Ctrl+Shift+Z)" aria-label="Redo"
               >↻</button>
+            </div>
+            <div className="wsbar" role="group" aria-label="Workspace">
+              <button
+                type="button" className={`wsbtn${layout.sideOpen ? "" : " is-on"}`} onClick={toggleSide}
+                title={layout.sideOpen ? "Hide side panels (Ctrl+\\)" : "Show side panels (Ctrl+\\)"} aria-pressed={!layout.sideOpen}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
+              </button>
+              <button
+                type="button" className={`wsbtn${focus ? " is-on" : ""}`} onClick={() => setFocusMode(!focus)}
+                title={focus ? "Leave timeline focus (Esc)" : "Focus on the timeline (Ctrl+Shift+\\)"} aria-pressed={focus}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+                <span>{focus ? "Exit focus" : "Focus"}</span>
+              </button>
             </div>
             {active && (
               <div className="nowclip">
@@ -511,7 +627,9 @@ export default function Editor({
           label="Preview / timeline divider"
         />
 
+        {resumeNote && <div className="resume-note" role="status">{resumeNote}</div>}
         <Timeline
+          resumeView={resume} onViewChange={onResumeChange}
           height={layout.tlH}
           playing={playing}
           captions={captionCues} captionsOn={captionsOn}
@@ -540,6 +658,11 @@ export default function Editor({
         />
       </div>
 
+      {!layout.sideOpen && (
+        <button type="button" className="side-reopen" onClick={toggleSide} title="Show side panels (Ctrl+\\)" aria-label="Show side panels">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+      )}
       <Splitter
         axis="x" sign={-1} value={layout.sideW}
         onChange={setSideW} onReset={resetSideW}
@@ -648,6 +771,8 @@ export default function Editor({
           {outUrl && <a className="download" href={outUrl} download="story.mp4">↓ Download MP4</a>}
           {error && <div className="note note--bad">{error}</div>}
         </div>
+
+        {rendersPanel}
 
         <div className="panel transitions">
           <div className="transitions__head">

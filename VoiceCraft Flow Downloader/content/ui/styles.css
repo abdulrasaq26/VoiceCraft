@@ -1,26 +1,7 @@
 /* content/ui/styles.css — Flow Downloader tray (inside its shadow root).
    Colours follow VoiceCraft Studio's --vc-* tokens (public/studio-tokens.css). */
 
-:host {
-  all: initial;
-  --vc-background: #0d0d0f;
-  --vc-surface: #161619;
-  --vc-surface-elevated: #202026;
-  --vc-border: #2c2c33;
-  --vc-border-soft: #232329;
-  --vc-primary: #6366f1;
-  --vc-primary-hover: #5558e8;
-  --vc-primary-text: #c7c9ff;
-  --vc-accent: #e8b64c;
-  --vc-text: #f2f2f4;
-  --vc-text-muted: #9b9ba3;
-  --vc-text-faint: #62626c;
-  --vc-success: #6cc98f;
-  --vc-danger: #e06c6c;
-  --vc-radius: 10px;
-  --vc-radius-sm: 7px;
-  --vc-font: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
-}
+:host { all: initial; } /* tokens + scrollbars: content/ui/vc-theme.js */
 * { box-sizing: border-box; }
 
 .fmd-tray-container {
@@ -52,9 +33,7 @@
 .fmd-logo {
   width: 24px; height: 24px; flex: none;
   border-radius: 7px;
-  display: grid; place-items: center;
-  font-weight: 800; font-size: 12px; color: #fff;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  display: block;
 }
 .fmd-header-title { flex: 1; font-weight: 700; font-size: 14px; }
 .fmd-header-sub { display: block; font-weight: 500; font-size: 11px; color: var(--vc-text-faint); }
@@ -145,9 +124,6 @@
   color: var(--vc-text-faint);
   font-size: 12px;
 }
-.fmd-media-grid::-webkit-scrollbar { width: 6px; }
-.fmd-media-grid::-webkit-scrollbar-thumb { background: var(--vc-border); border-radius: 4px; }
-.fmd-media-grid::-webkit-scrollbar-track { background: transparent; }
 
 .fmd-media-item {
   position: relative;
@@ -253,4 +229,17 @@
   transition: background .15s;
 }
 .fmd-btn-primary:hover:not(:disabled) { background: var(--vc-primary-hover); }
+.fmd-footer-main { display: flex; gap: 8px; }
+.fmd-footer-main .fmd-btn-primary { flex: 1.2; }
+.fmd-btn-send {
+  flex: 1; height: 38px; padding: 0 10px;
+  border: 1px solid rgba(99, 102, 241, .55); border-radius: var(--vc-radius);
+  background: var(--vc-primary-soft); color: var(--vc-primary-text);
+  font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.fmd-btn-send:hover:not(:disabled) { background: rgba(99, 102, 241, .26); color: #fff; }
+.fmd-btn-send:disabled { opacity: .45; cursor: default; }
+.fmd-send-note { margin-top: 8px; font-size: 12px; line-height: 1.4; }
+.fmd-send-note.ok { color: var(--vc-success); }
+.fmd-send-note.bad { color: var(--vc-danger); }
 .fmd-btn-primary:disabled { background: var(--vc-surface-elevated); color: var(--vc-text-faint); cursor: default; }

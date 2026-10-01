@@ -2,11 +2,16 @@
 // viewport element. The host page (public/browser.html) owns the UI; this
 // class owns the pages, their sessions, downloads, menus and the bridge that
 // lets the Flow Downloader extension work without Chrome-only APIs.
-import { WebContentsView, BrowserWindow, session, ipcMain, Menu, clipboard, shell, app, dialog } from 'electron';
+import { WebContentsView, BrowserWindow, session, ipcMain, Menu, clipboard, shell, app, dialog, net } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { BrowserStore } from './browser-store.js';
+import {
+  normalizeProxy, validateProxy, publicProxy, proxyFromForm,
+  applyToSession, copyCookies, testProxy, pruneBridges,
+} from './browser-proxy.js';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,14 +92,17 @@ export class BrowserManager {
     this.hidden = false;            // a host modal covers the viewport
     this.attachedId = null;         // tab whose view is in the window now
     this.sessions = new Map();      // partition -> Promise<Session>
+    this.tabSessions = new Set();   // partitions that belong to tabs with their own proxy
+    this.sessionCreds = new Map();  // partition -> proxy sign-in its proxy will ask for (or null)
+    this.baseUrl = '';              // the app's local server (new-tab page)
     this.downloads = new Map();     // download id -> record
     this.dlCounter = 0;
     this.pendingFlow = [];          // Flow bridge downloads awaiting will-download
     this.closedTabs = [];           // for "reopen closed tab"
     this.mainWorldSrc = null;
 
+    this.removeOldTabSessions();
     this.setupIPC();
-    this.applyProxy(this.store.settings);
 
     this.watchHost(this.host);
     app.on('before-quit', () => this.store.flush());
@@ -132,44 +140,199 @@ export class BrowserManager {
 
   // ---------------------------------------------------------------- sessions
   ensureSession(profileId) {
-    const partition = partitionFor(profileId);
+    return this.ensurePartition(partitionFor(profileId));
+  }
+
+  // A browsing session with everything a tab needs: user agent, downloads,
+  // the Flow extension, and its proxy. Profile sessions follow the global
+  // proxy; a tab's own session (`tabProxy`) has its own and starts with a
+  // copy of its profile's cookies.
+  ensurePartition(partition, { tabProxy = null, seedFrom = null } = {}) {
     if (this.sessions.has(partition)) return this.sessions.get(partition);
     const p = (async () => {
       const ses = session.fromPartition(partition);
       ses.setUserAgent(cleanUserAgent(ses.getUserAgent()));
       ses.on('will-download', (e, item, wc) => this.onWillDownload(item, wc));
-      await this.applyProxyTo(ses, this.store.settings);
+      this.watchFlowApi(ses, partition);
+      this.sessionCreds.set(partition, await applyToSession(ses, tabProxy || this.globalProxy()));
+      if (seedFrom) await copyCookies(await this.ensurePartition(seedFrom), ses);
       const ext = flowExtensionPath();
       if (fs.existsSync(path.join(ext, 'manifest.json'))) {
         try {
           const loaded = ses.getAllExtensions ? ses.getAllExtensions() : [];
-          if (!loaded.some((x) => x.name === 'VoiceCraft Flow Downloader')) {
+          if (!loaded.some((x) => (x.name === 'Frameloom Flow Tools' || x.name === 'VoiceCraft Flow Downloader'))) {
             const info = await ses.loadExtension(ext, { allowFileAccess: true });
             this.extensionInfo = { name: info.name, version: info.version, path: ext, loaded: true };
           }
         } catch (err) {
-          this.extensionInfo = { name: 'VoiceCraft Flow Downloader', path: ext, loaded: false, error: err.message };
+          this.extensionInfo = { name: 'Frameloom Flow Tools', path: ext, loaded: false, error: err.message };
           console.warn('[Browser] extension failed to load:', err.message);
         }
       } else {
-        this.extensionInfo = { name: 'VoiceCraft Flow Downloader', path: ext, loaded: false, error: 'Extension folder not found' };
+        this.extensionInfo = { name: 'Frameloom Flow Tools', path: ext, loaded: false, error: 'Extension folder not found' };
       }
       return ses;
     })();
     this.sessions.set(partition, p);
+    if (tabProxy) this.tabSessions.add(partition);
     return p;
   }
 
-  async applyProxyTo(ses, s) {
-    try {
-      if (s.proxyMode === 'direct') await ses.setProxy({ mode: 'direct' });
-      else if (s.proxyMode === 'fixed' && s.proxyRules) await ses.setProxy({ mode: 'fixed_servers', proxyRules: s.proxyRules });
-      else await ses.setProxy({ mode: 'system' });
-    } catch (e) { console.warn('[Browser] proxy:', e.message); }
+  globalProxy() { return normalizeProxy(this.store.settings.proxy); }
+
+  // Google Flow's new site (flow.google.com) signs its API calls itself; the
+  // Automator reuses that sign-in rather than a session endpoint the new site
+  // no longer has. Kept in memory per session, never saved. Which endpoints
+  // Flow calls (paths only) is kept for the diagnostics in Settings.
+  watchFlowApi(ses, partition) {
+    this.flowAuth = this.flowAuth || new Map();   // partition -> { authorization, authUser, at }
+    this.flowCalls = this.flowCalls || new Map(); // "METHOD host/path" -> { n, at, auth }
+    const fromFlow = (d) => {
+      const u = d.referrer || (d.webContents && !d.webContents.isDestroyed() ? d.webContents.getURL() : '') || '';
+      return /^https:\/\/(flow\.google\.com|labs\.google)\//.test(u);
+    };
+    ses.webRequest.onBeforeSendHeaders({ urls: ['https://*.googleapis.com/*', 'https://flow.google.com/*', 'https://labs.google/*'] }, (d, cb) => {
+      try {
+        if (fromFlow(d) && /^(GET|POST|PATCH|PUT|DELETE)$/.test(d.method) && d.resourceType !== 'image' && d.resourceType !== 'media') {
+          const u = new URL(d.url);
+          const h = d.requestHeaders || {};
+          const auth = h.Authorization || h.authorization || '';
+          const key = `${d.method} ${u.host}${u.pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')}`;
+          if (/googleapis\.com$/.test(u.host) || /\/api\//.test(u.pathname)) {
+            const c = this.flowCalls.get(key) || { n: 0 };
+            this.flowCalls.set(key, { n: c.n + 1, at: Date.now(), auth: auth ? auth.split(' ')[0] : c.auth || '' });
+            if (this.flowCalls.size > 300) this.flowCalls.delete(this.flowCalls.keys().next().value);
+          }
+          if (auth && /googleapis\.com$/.test(u.host)) {
+            this.flowAuth.set(partition, { authorization: auth, authUser: h['X-Goog-AuthUser'] || h['x-goog-authuser'] || null, at: Date.now() });
+          }
+        }
+      } catch { /* never block a request over bookkeeping */ }
+      cb({});
+    });
   }
 
-  async applyProxy(s) {
-    for (const p of this.sessions.values()) this.applyProxyTo(await p, s);
+  flowDiagnostics() {
+    const calls = [...(this.flowCalls || new Map()).entries()].sort((a, b) => b[1].at - a[1].at)
+      .map(([k, v]) => `${k}  ×${v.n}${v.auth ? '  [' + v.auth + ']' : ''}`);
+    const auth = [...(this.flowAuth || new Map()).values()].sort((a, b) => b.at - a.at)[0];
+    return { signedInSeen: !!auth, authScheme: auth ? auth.authorization.split(' ')[0] : null, seenAt: auth ? auth.at : null, calls };
+  }
+
+  // Sessions of proxied tabs from earlier runs (restored tabs get new ones).
+  removeOldTabSessions() {
+    const dir = path.join(app.getPath('userData'), 'Partitions');
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch { return; }
+    for (const n of names) {
+      if (!/^browser-tab-[0-9a-f-]{36}$/i.test(n)) continue;
+      try { fs.rmSync(path.join(dir, n), { recursive: true, force: true }); } catch { /* in use; next time */ }
+    }
+  }
+
+  // The browser-wide proxy goes to every profile session (tab sessions keep theirs).
+  async applyGlobalProxy() {
+    const g = this.globalProxy();
+    for (const [partition, p] of this.sessions) {
+      if (!this.tabSessions.has(partition)) this.sessionCreds.set(partition, await applyToSession(await p, g));
+    }
+    this.pruneBridges();
+  }
+
+  // Download a URL the way a tab would — its cookies, its proxy — from the
+  // main process. Requests made through a tab's own session crash Electron 33
+  // (it has the extension loaded), so a plain helper session with the same
+  // proxy carries them, with the tab's cookies attached.
+  async fetchForTab(tab, url, timeoutMs = 60000) {
+    this.fetchSessions = this.fetchSessions || new Map();
+    let helper = this.fetchSessions.get(tab.partition);
+    if (!helper) {
+      helper = session.fromPartition('media-fetch-' + this.fetchSessions.size + '-' + Date.now());
+      helper.setUserAgent(cleanUserAgent(helper.getUserAgent()));
+      this.fetchSessions.set(tab.partition, helper);
+    }
+    const creds = await applyToSession(helper, tab.proxy || this.globalProxy());
+    const tabSes = (await this.sessions.get(tab.partition)) || session.fromPartition(tab.partition);
+    let cookie = '';
+    try { cookie = (await tabSes.cookies.get({ url })).map((c) => `${c.name}=${c.value}`).join('; '); } catch { /* none */ }
+    return new Promise((resolve, reject) => {
+      const req = net.request({ url, session: helper, useSessionCookies: false });
+      if (cookie) req.setHeader('Cookie', cookie);
+      const chunks = [];
+      let tries = 0;
+      const timer = setTimeout(() => { try { req.abort(); } catch { /* gone */ } reject(new Error('Timed out')); }, timeoutMs);
+      req.on('login', (authInfo, cb) => { if (authInfo.isProxy && creds && tries++ < 1) cb(creds.username, creds.password); else cb(); });
+      req.on('response', (res) => {
+        if (res.statusCode >= 400) { clearTimeout(timer); res.on('data', () => {}); reject(new Error('HTTP ' + res.statusCode)); return; }
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          clearTimeout(timer);
+          const ct = res.headers['content-type'];
+          resolve({ buffer: Buffer.concat(chunks), mime: String(Array.isArray(ct) ? ct[0] : ct || '').split(';')[0] || null });
+        });
+      });
+      req.on('error', (e) => { clearTimeout(timer); reject(e); });
+      req.end();
+    });
+  }
+
+  // SOCKS5 sign-in bridges nothing uses any more are closed.
+  pruneBridges() {
+    pruneBridges([this.globalProxy(), ...[...this.tabs.values()].map((t) => t.proxy).filter(Boolean)]);
+  }
+
+  // A tab's own session goes away with the last tab using it.
+  releasePartition(partition) {
+    if (!this.tabSessions.has(partition)) return;
+    if ([...this.tabs.values()].some((t) => t.partition === partition)) return;
+    const p = this.sessions.get(partition);
+    this.sessions.delete(partition);
+    this.tabSessions.delete(partition);
+    this.sessionCreds.delete(partition);
+    setTimeout(() => this.pruneBridges(), 0);
+    if (p) p.then((ses) => ses.clearStorageData().catch(() => {})).catch(() => {});
+  }
+
+  // Settings as the UI sees them: the proxy without its password.
+  publicSettings() {
+    return { ...this.store.settings, proxy: publicProxy(this.store.settings.proxy, 'global') };
+  }
+
+  networkState() {
+    return {
+      global: publicProxy(this.store.settings.proxy, 'global'),
+      tabs: this.order.map((id) => this.tabs.get(id)).filter((t) => t && t.proxy)
+        .map((t) => {
+          let title = t.title;
+          if (!title || title === 'New tab') { try { title = new URL(t.url).host; } catch { title = 'Tab'; } }
+          return { id: t.id, title, proxy: publicProxy(t.proxy, 'tab') };
+        }),
+    };
+  }
+
+  // Put a tab on its own proxy (or back on the browser-wide one). The page's
+  // session can't change, so the tab is rebuilt in place with the same URL.
+  async setTabProxy(tabId, proxy, { savedProxy } = {}) {
+    const tab = this.tabs.get(tabId);
+    if (!tab) return null;
+    const idx = this.order.indexOf(tabId);
+    const wasActive = this.activeTabId === tabId;
+    const url = tab.error ? tab.error.url : tab.url;
+    const newId = await this.createTab(url, tab.profileId, { index: idx, background: !wasActive, proxy, savedProxy });
+    this.closeTab(tabId, { replaced: true });
+    if (wasActive) this.activateTab(newId);
+    return newId;
+  }
+
+  // What a new tab opens when no URL is given: Flow first, Arena second,
+  // then the new-tab page (or the home page, if the user prefers).
+  defaultTabUrl() {
+    const s = this.store.settings;
+    const n = this.order.length;
+    if (n === 0 && s.firstTabUrl) return s.firstTabUrl;
+    if (n === 1 && s.secondTabUrl) return s.secondTabUrl;
+    if (s.newTabPage === 'home' || !this.baseUrl) return s.homepage;
+    return `${this.baseUrl}/newtab.html?engine=${encodeURIComponent(s.searchEngine || 'google')}`;
   }
 
   // --------------------------------------------------------------------- IPC
@@ -185,9 +348,10 @@ export class BrowserManager {
     handle('browser:init', () => ({
       tabs: this.order.map((id) => this.tabData(id)),
       activeTabId: this.activeTabId,
-      settings: this.store.settings,
+      settings: this.publicSettings(),
       bookmarks: this.store.data.bookmarks,
-      session: this.store.data.session,
+      hasSession: !!(this.store.data.session && this.store.data.session.tabs && this.store.data.session.tabs.length),
+      newTabUrl: this.baseUrl ? `${this.baseUrl}/newtab.html` : '',
       downloads: [...this.downloads.values()].map((d) => this.dlData(d)),
       extension: this.extensionInfo || null,
       versions: { app: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
@@ -195,6 +359,17 @@ export class BrowserManager {
     }));
 
     handle('browser:create-tab', ({ url, profileId, background, index } = {}) => this.createTab(url, profileId, { background, index }));
+    // Last session's tabs (with their proxies), restored here so stored
+    // proxy secrets never pass through the UI.
+    handle('browser:restore-session', async () => {
+      const sess = this.store.data.session;
+      if (!sess || !Array.isArray(sess.tabs) || !sess.tabs.length) return null;
+      const ids = [];
+      for (const t of sess.tabs) ids.push(await this.createTab(t.url, t.profileId, { background: true, proxy: t.proxy || null, savedProxy: t.savedProxy || null }));
+      const pick = ids[Math.min(sess.active || 0, ids.length - 1)];
+      if (pick) this.activateTab(pick);
+      return ids;
+    });
     on('browser:close-tab', (tabId) => this.closeTab(tabId));
     on('browser:activate-tab', (tabId) => this.activateTab(tabId));
     on('browser:set-order', (ids) => {
@@ -203,7 +378,7 @@ export class BrowserManager {
     });
     handle('browser:reopen-closed', () => {
       const last = this.closedTabs.pop();
-      return last ? this.createTab(last.url, last.profileId, { index: last.index }) : null;
+      return last ? this.createTab(last.url, last.profileId, { index: last.index, proxy: last.proxy || null }) : null;
     });
 
     on('browser:navigate', ({ tabId, input }) => {
@@ -254,17 +429,70 @@ export class BrowserManager {
     // Settings / data
     handle('browser:set-settings', async (patch) => {
       const prev = this.store.settings;
-      const s = this.store.setSettings(patch || {});
-      if (patch && ('proxyMode' in patch || 'proxyRules' in patch)) await this.applyProxy(s);
+      patch = { ...(patch || {}) };
+      delete patch.proxy; // only through browser:set-proxy
+      const s = this.store.setSettings(patch);
       if (patch && 'defaultZoom' in patch && prev.defaultZoom !== s.defaultZoom) {
         for (const t of this.tabs.values()) { t.view.webContents.setZoomFactor(s.defaultZoom); this.notify(t.id); }
       }
-      return s;
+      return this.publicSettings();
+    });
+
+    // ---- network / proxy ----
+    handle('browser:get-network', () => this.networkState());
+    // { scope: 'tab' | 'global', tabId, form, follow, action }
+    //   follow: tab back to the browser proxy; action: 'disable' | 'enable' | 'remove'
+    handle('browser:set-proxy', async ({ scope, tabId, form, follow, action } = {}) => {
+      if (scope === 'tab' && action) {
+        const tab = this.tabs.get(tabId);
+        if (!tab) return { ok: false, error: 'That tab is gone.' };
+        let newId = tabId;
+        if (action === 'disable' && tab.proxy) newId = await this.setTabProxy(tabId, null, { savedProxy: tab.proxy });
+        else if (action === 'enable' && tab.savedProxy) newId = await this.setTabProxy(tabId, { ...tab.savedProxy, enabled: true });
+        else if (action === 'remove') {
+          if (tab.proxy) newId = await this.setTabProxy(tabId, null);
+          else { tab.savedProxy = null; this.notify(tabId); this.saveSession(); }
+        }
+        return { ok: true, tabId: newId, network: this.networkState() };
+      }
+      if (scope !== 'tab' && action) {
+        const cur = this.globalProxy();
+        const next = action === 'remove' ? { type: 'system' } : { ...cur, enabled: action === 'enable' };
+        this.store.setSettings({ proxy: normalizeProxy(next) });
+        await this.applyGlobalProxy();
+        for (const id of this.order) this.notify(id);
+        return { ok: true, settings: this.publicSettings(), network: this.networkState() };
+      }
+      if (scope === 'tab') {
+        const tab = this.tabs.get(tabId);
+        if (!tab) return { ok: false, error: 'That tab is gone.' };
+        let proxy = null;
+        if (!follow) {
+          proxy = proxyFromForm(form || {}, tab.proxy);
+          const err = validateProxy(proxy);
+          if (err) return { ok: false, error: err };
+          if (proxy.type === 'system') proxy = null; // = follow the browser
+        }
+        const newId = await this.setTabProxy(tabId, proxy);
+        return { ok: true, tabId: newId, network: this.networkState() };
+      }
+      const proxy = proxyFromForm(form || {}, this.globalProxy());
+      const err = validateProxy(proxy);
+      if (err) return { ok: false, error: err };
+      this.store.setSettings({ proxy });
+      await this.applyGlobalProxy();
+      for (const id of this.order) this.notify(id);
+      return { ok: true, settings: this.publicSettings(), network: this.networkState() };
+    });
+    handle('browser:test-proxy', async ({ form, scope, tabId } = {}) => {
+      const prev = scope === 'tab' ? (this.tabs.get(tabId) || {}).proxy : this.globalProxy();
+      return testProxy(proxyFromForm(form || {}, prev));
     });
     handle('browser:pick-download-dir', async () => {
       const r = await dialog.showOpenDialog(this.mainWindow, { properties: ['openDirectory', 'createDirectory'], defaultPath: this.downloadDir() });
-      if (r.canceled || !r.filePaths[0]) return this.store.settings;
-      return this.store.setSettings({ downloadDir: r.filePaths[0] });
+      if (r.canceled || !r.filePaths[0]) return this.publicSettings();
+      this.store.setSettings({ downloadDir: r.filePaths[0] });
+      return this.publicSettings();
     });
     handle('browser:clear-data', async ({ profileId, what }) => {
       const ses = await this.ensureSession(profileId || 'default');
@@ -321,6 +549,37 @@ export class BrowserManager {
         e.sender.executeJavaScript(src, true).catch((err) => console.warn('[Browser] inject-main:', err.message));
       } catch (err) { console.warn('[Browser] inject-main:', err.message); }
     });
+    on('browser:file-chooser-result', ({ requestId, paths, browse } = {}) => {
+      const resolve = this.fileChoosers && this.fileChoosers.get(requestId);
+      if (!resolve) return;
+      this.fileChoosers.delete(requestId);
+      resolve({ paths: Array.isArray(paths) ? paths.map(String) : [], browse: !!browse });
+    });
+
+    // Flow Downloader → AutoEditor. Only a Flow tab may add media to the
+    // project (any other site could otherwise push files into it).
+    ipcMain.handle('flow-host:import-media', async (e, { items } = {}) => {
+      const tab = this.tabByWebContents(e.sender);
+      if (!tab || !this.onImportMedia) return { ok: false, error: 'Not available here.' };
+      let host = '';
+      try { host = new URL(e.sender.getURL()).host; } catch { /* no URL */ }
+      const own = this.baseUrl && e.sender.getURL().startsWith(this.baseUrl + '/__t/');
+      if (!own && !/(^|\.)flow\.google\.com$|(^|\.)labs\.google$/.test(host)) return { ok: false, error: 'Only Google Flow pages can send media to the AutoEditor.' };
+      return this.onImportMedia(items || [], (url) => this.fetchForTab(tab, url));
+    });
+
+    // The Automator, on Flow's new site: the sign-in Flow's own calls use.
+    ipcMain.handle('flow-host:get-flow-auth', (e) => {
+      const tab = this.tabByWebContents(e.sender);
+      if (!tab) return null;
+      let host = '';
+      try { host = new URL(e.sender.getURL()).host; } catch { /* none */ }
+      if (!/(^|\.)flow\.google\.com$|(^|\.)labs\.google$/.test(host)) return null;
+      const a = this.flowAuth && this.flowAuth.get(tab.partition);
+      return a && Date.now() - a.at < 50 * 60 * 1000 ? { authorization: a.authorization, authUser: a.authUser } : null;
+    });
+    handle('browser:flow-diagnostics', () => this.flowDiagnostics());
+
     // Studio hand-offs from the Automator.
     ipcMain.on('flow-host:send-to-editor', (e, { flowMediaIds } = {}) => {
       if (this.tabByWebContents(e.sender) && this.onSendToEditor) this.onSendToEditor(flowMediaIds || null);
@@ -362,13 +621,28 @@ export class BrowserManager {
     this.notify(tab.id);
   }
 
-  async createTab(url, profileId, { background = false, index, openerWc } = {}) {
+  // `proxy`: this tab's own proxy (its own session); `shareWith`: open in an
+  // existing tab's session (pages opened from a proxied tab stay on its proxy).
+  async createTab(url, profileId, { background = false, index, openerWc, proxy = null, shareWith = null, savedProxy = null } = {}) {
     profileId = profileId || this.store.settings.activeProfile || 'default';
     if (!this.store.settings.profiles.some((p) => p.id === profileId)) profileId = 'default';
-    await this.ensureSession(profileId);
+    url = url || this.defaultTabUrl();
+
+    let partition = partitionFor(profileId);
+    if (shareWith && shareWith.proxy && this.sessions.has(shareWith.partition)) {
+      partition = shareWith.partition;
+      proxy = shareWith.proxy;
+    } else if (proxy) {
+      proxy = normalizeProxy(proxy);
+      // Persistent (Electron loads extensions — the Flow tools — only into
+      // persistent sessions); its folder is cleared when the tab closes and
+      // removed at the next start.
+      partition = 'persist:browser-tab-' + crypto.randomUUID();
+      await this.ensurePartition(partition, { tabProxy: proxy, seedFrom: partitionFor(profileId) });
+    }
+    await this.ensurePartition(partition);
 
     const tabId = 'tab-' + (++this.tabCounter);
-    const partition = partitionFor(profileId);
     const view = new WebContentsView({
       webPreferences: {
         partition,
@@ -387,6 +661,8 @@ export class BrowserManager {
     const tab = {
       id: tabId, url: url || this.store.settings.homepage, title: 'New tab', favicon: null,
       loading: true, profileId, partition, view, error: null, crashed: false, audible: false,
+      proxy: proxy || null, proxyAuthTries: 0,
+      savedProxy: proxy ? null : (savedProxy ? normalizeProxy(savedProxy) : null), // its own proxy, switched off
     };
     this.tabs.set(tabId, tab);
     if (typeof index === 'number' && index >= 0 && index <= this.order.length) this.order.splice(index, 0, tabId);
@@ -405,9 +681,82 @@ export class BrowserManager {
     return tabId;
   }
 
+  // A website's file picker (<input type=file>) opens the studio's project
+  // picker instead: the project's renders and media first, the computer one
+  // click away. Chromium's DevTools protocol lets us catch the picker and
+  // hand the input its files; the page can't tell the difference.
+  watchFileChooser(tab) {
+    const wc = tab.view.webContents;
+    const dbg = wc.debugger;
+    const attach = async () => {
+      if (wc.isDestroyed() || dbg.isAttached()) return;
+      try {
+        dbg.attach('1.3');
+        await dbg.sendCommand('Page.enable');
+        await dbg.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true });
+      } catch (e) { /* another debugger owns it: the normal dialog is used */ }
+    };
+    dbg.on('message', async (e, method, params) => {
+      if (method !== 'Page.fileChooserOpened') return;
+      const { backendNodeId, mode } = params || {};
+      let accept = '';
+      try {
+        await dbg.sendCommand('DOM.enable');
+        const { object } = await dbg.sendCommand('DOM.resolveNode', { backendNodeId });
+        const r = await dbg.sendCommand('Runtime.callFunctionOn', {
+          objectId: object.objectId, functionDeclaration: 'function () { return this.accept || ""; }', returnByValue: true,
+        });
+        accept = (r && r.result && r.result.value) || '';
+      } catch { /* no accept info */ }
+      try {
+        const files = await this.pickFiles(tab, { multiple: mode === 'selectMultiple', accept });
+        if (files && files.length) await dbg.sendCommand('DOM.setFileInputFiles', { files, backendNodeId });
+      } catch (err) {
+        console.warn('[Browser] file picker:', err.message);
+      } finally {
+        try { await dbg.sendCommand('DOM.disable'); } catch { /* fine */ }
+      }
+    });
+    // A new document needs the interception again.
+    wc.on('did-start-navigation', (e, url, inPlace, isMainFrame) => { if (isMainFrame && !inPlace) setTimeout(attach, 0); });
+    wc.on('dom-ready', attach);
+    attach();
+  }
+
+  // Ask the browser UI which files to give the page (or open the OS dialog).
+  async pickFiles(tab, { multiple, accept }) {
+    const files = this.getProjectFiles ? this.getProjectFiles() : null;
+    const browseOS = async () => {
+      const filters = [];
+      const exts = String(accept || '').split(',').map((x) => x.trim()).filter((x) => x.startsWith('.')).map((x) => x.slice(1));
+      if (exts.length) filters.push({ name: 'Allowed files', extensions: exts });
+      if (/video\//.test(accept)) filters.push({ name: 'Videos', extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'] });
+      if (/image\//.test(accept)) filters.push({ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] });
+      if (/audio\//.test(accept)) filters.push({ name: 'Audio', extensions: ['mp3', 'wav', 'm4a', 'ogg', 'flac'] });
+      filters.push({ name: 'All files', extensions: ['*'] });
+      const r = await dialog.showOpenDialog(this.mainWindow, {
+        properties: multiple ? ['openFile', 'multiSelections'] : ['openFile'], filters,
+        defaultPath: files && files.rendersDir && fs.existsSync(files.rendersDir) ? files.rendersDir : undefined,
+      });
+      return r.canceled ? [] : r.filePaths;
+    };
+    if (!files || !this.host || this.host.isDestroyed() || !this.moduleVisible) return browseOS();
+    const requestId = 'fc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const answer = await new Promise((resolve) => {
+      this.fileChoosers = this.fileChoosers || new Map();
+      this.fileChoosers.set(requestId, resolve);
+      this.send('browser:file-chooser', { requestId, multiple: !!multiple, accept, site: (() => { try { return new URL(tab.view.webContents.getURL()).host; } catch { return ''; } })(), ...files });
+    });
+    if (answer && answer.browse) return browseOS();
+    // Only files the studio offered can come back (the UI can't name others).
+    const allowed = new Set([...(files.renders || []), ...(files.media || [])].map((f) => f.path));
+    return ((answer && answer.paths) || []).filter((p) => allowed.has(p));
+  }
+
   wireTab(tab) {
     const wc = tab.view.webContents;
     const id = tab.id;
+    this.watchFileChooser(tab);
 
     wc.on('did-start-loading', () => { tab.loading = true; this.notify(id); });
     wc.on('did-stop-loading', () => {
@@ -493,6 +842,17 @@ export class BrowserManager {
 
     wc.on('context-menu', (e, params) => this.showPageMenu(tab, params));
 
+    // Proxy sign-in (HTTP/HTTPS proxies): the tab's own proxy, or the
+    // browser-wide one. Give up after a wrong answer instead of looping.
+    wc.on('login', (e, details, authInfo, callback) => {
+      if (!authInfo.isProxy) return;
+      e.preventDefault();
+      const creds = this.sessionCreds.get(tab.partition);
+      if (creds && tab.proxyAuthTries++ < 2) callback(creds.username, creds.password);
+      else callback();
+    });
+    wc.on('did-finish-load', () => { tab.proxyAuthTries = 0; });
+
     wc.setWindowOpenHandler((details) => {
       // Real popups (sign-in flows that talk back to window.opener) stay popups.
       if (details.disposition === 'new-window') {
@@ -505,7 +865,7 @@ export class BrowserManager {
           },
         };
       }
-      this.createTab(details.url, tab.profileId, { background: details.disposition === 'background-tab', openerWc: wc });
+      this.createTab(details.url, tab.profileId, { background: details.disposition === 'background-tab', openerWc: wc, shareWith: tab });
       return { action: 'deny' };
     });
   }
@@ -539,13 +899,13 @@ export class BrowserManager {
     return null;
   }
 
-  closeTab(tabId) {
+  closeTab(tabId, { replaced = false } = {}) {
     const tab = this.tabs.get(tabId);
     if (!tab) return;
     const idx = this.order.indexOf(tabId);
     const url = tab.error ? tab.error.url : tab.url;
-    if (url && !url.startsWith('data:')) {
-      this.closedTabs.push({ url, profileId: tab.profileId, index: idx });
+    if (!replaced && url && !url.startsWith('data:')) {
+      this.closedTabs.push({ url, profileId: tab.profileId, index: idx, proxy: tab.proxy });
       if (this.closedTabs.length > 25) this.closedTabs.shift();
     }
     if (this.attachedId === tabId) {
@@ -556,6 +916,7 @@ export class BrowserManager {
     this.order.splice(idx, 1);
     // Actually tear the page down, or its audio/timers keep running.
     try { if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close(); } catch { /* already gone */ }
+    this.releasePartition(tab.partition);
 
     if (this.activeTabId === tabId) {
       this.activeTabId = null;
@@ -636,6 +997,8 @@ export class BrowserManager {
       error: t.error,
       crashed: t.crashed,
       flowPanel: t.flowPanel || null,
+      net: publicProxy(t.proxy || this.store.settings.proxy, t.proxy ? 'tab' : 'global'),
+      netOff: t.savedProxy ? publicProxy(t.savedProxy, 'tab') : null,
     };
   }
 
@@ -648,7 +1011,7 @@ export class BrowserManager {
     clearTimeout(this.sessionTimer);
     this.sessionTimer = setTimeout(() => {
       const tabs = this.order.map((id) => this.tabs.get(id)).filter(Boolean)
-        .map((t) => ({ url: t.error ? t.error.url : t.url, profileId: t.profileId }))
+        .map((t) => ({ url: t.error ? t.error.url : t.url, profileId: t.profileId, proxy: t.proxy || undefined, savedProxy: t.savedProxy || undefined }))
         .filter((t) => t.url && !t.url.startsWith('data:'));
       if (!tabs.length) return; // keep the last real session if everything was closed
       this.store.setSession({ tabs, active: Math.max(0, this.order.indexOf(this.activeTabId)) });
@@ -725,10 +1088,11 @@ export class BrowserManager {
     const cmd = (c) => () => this.send('browser:command', { cmd: c, tabId });
     const muted = tab.view.webContents.isAudioMuted();
     Menu.buildFromTemplate([
-      { label: 'New tab to the right', click: () => this.createTab(this.store.settings.homepage, tab.profileId, { index: idx + 1 }) },
+      { label: 'New tab to the right', click: () => this.createTab(null, tab.profileId, { index: idx + 1 }) },
       { type: 'separator' },
       { label: 'Reload', click: () => tab.view.webContents.reload() },
-      { label: 'Duplicate', click: () => this.createTab(tab.error ? tab.error.url : tab.url, tab.profileId, { index: idx + 1 }) },
+      { label: 'Duplicate', click: () => this.createTab(tab.error ? tab.error.url : tab.url, tab.profileId, { index: idx + 1, proxy: tab.proxy }) },
+      { label: tab.proxy ? 'Use the browser proxy for this tab' : 'Proxy for this tab…', click: tab.proxy ? () => this.setTabProxy(tabId, null) : cmd('tab-proxy') },
       { label: muted ? 'Unmute site' : 'Mute site', click: () => { tab.view.webContents.setAudioMuted(!muted); this.notify(tabId); } },
       { label: 'Bookmark tab', click: cmd('bookmark') },
       { type: 'separator' },
@@ -749,7 +1113,7 @@ export class BrowserManager {
       { label: 'New tab', accelerator: 'Ctrl+T', click: cmd('new-tab') },
       {
         label: 'New tab in profile',
-        submenu: s.profiles.map((p) => ({ label: p.name, click: () => this.createTab(s.homepage, p.id) })),
+        submenu: s.profiles.map((p) => ({ label: p.name, click: () => this.createTab(null, p.id) })),
       },
       { label: 'Reopen closed tab', accelerator: 'Ctrl+Shift+T', enabled: this.closedTabs.length > 0, click: cmd('reopen-tab') },
       { type: 'separator' },

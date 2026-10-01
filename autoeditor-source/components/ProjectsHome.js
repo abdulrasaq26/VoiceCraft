@@ -90,8 +90,8 @@ export default function ProjectsHome({ projects, onNew, onOpen, onRename, onDele
       <header className="ph__topbar">
         <div className="ph__bar">
           <div className="ph__brand">
-            <span className="ph__logo-v">V</span>
-            <span className="ph__name">Voice<span className="ph__accent">Craft</span> AutoEditor</span>
+            <img className="ph__logo-v" src="/brand/frameloom-mark.svg" alt="" width="28" height="28" />
+            <span className="ph__name">Frame<span className="ph__accent">loom</span> AutoEditor</span>
           </div>
           <div className="ph__actions">
             <StorageRing storage={storage} />

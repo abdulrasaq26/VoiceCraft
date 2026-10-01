@@ -113,8 +113,20 @@
 
     async connect(force = false) {
       if (this.session && !force) return this.session;
-      const s = await call('session', [], 20000);
-      if (!s || !s.token) throw new Error((s && s.error) || 'Not signed in to Flow.');
+      let s = await call('session', [], 20000);
+      if ((!s || !s.token) && window.__vcHost) {
+        // flow.google.com has no session endpoint: use the sign-in Flow's own
+        // API calls carry (the studio sees them; Flow makes some on load).
+        for (let i = 0; i < 6 && !(s && s.token); i++) {
+          const a = await window.__vcHost.request('get-flow-auth', {}, 5000);
+          if (a && a.authorization) s = { token: a.authorization, authUser: a.authUser || null, base: location.origin, fromPage: true };
+          else await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+      if (!s || !s.token) {
+        throw new Error((s && s.error && !window.__vcHost ? s.error : null)
+          || "Couldn't find your Flow sign-in. Open your Flow project in this tab, make sure you're signed in, wait for it to load, then try again.");
+      }
       this.session = s;
       return s;
     }

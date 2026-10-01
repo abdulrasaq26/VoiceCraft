@@ -1,14 +1,16 @@
 // content/detection/detector.js
 
+// Finds media in the page and hands it to the shared registry
+// (content/detection/media-registry.js), which de-duplicates it and keeps it.
+// Elements are processed every time they're seen, so a name Flow renders
+// after the picture still reaches the registry.
 class DOMDetector {
-  constructor(onMediaDetected) {
-    this.onMediaDetected = onMediaDetected; // Callback when new media is found
-    this.detectedFingerprints = new Set();
+  constructor() {
+    this.registry = window.FlowMediaRegistry;
   }
 
-  reset() {
-    this.detectedFingerprints.clear();
-  }
+  // Kept for callers; the registry is per Flow project and never forgets.
+  reset() {}
 
   scan() {
     const queryDeep = (selector, root = document) => {
@@ -16,7 +18,7 @@ class DOMDetector {
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
       let node;
       while ((node = walker.nextNode())) {
-        if (node.shadowRoot) {
+        if (node.shadowRoot && !/^(fmd-|flow-media-downloader-host)/.test(node.id || '')) { // not our own panels
           results = results.concat(queryDeep(selector, node.shadowRoot));
         }
       }
@@ -40,6 +42,7 @@ class DOMDetector {
                 if (!url.startsWith('data:')) { // skip inline
                     const virtualImg = document.createElement('img');
                     virtualImg.src = url;
+                    virtualImg.__fmdHost = div; // names and ids come from the real tile
                     const rect = div.getBoundingClientRect();
                     Object.defineProperty(virtualImg, 'clientWidth', { value: rect.width });
                     Object.defineProperty(virtualImg, 'clientHeight', { value: rect.height });
@@ -57,18 +60,7 @@ class DOMDetector {
     }
 
     const normalized = window.MediaNormalizer.normalize(element);
-    
-    if (normalized) {
-      if (!this.detectedFingerprints.has(normalized.fingerprint)) {
-        this.detectedFingerprints.add(normalized.fingerprint);
-        
-        normalized.status = 'selected'; 
-        
-        if (this.onMediaDetected) {
-          this.onMediaDetected(normalized);
-        }
-      }
-    }
+    if (normalized) this.registry.ingest(normalized);
   }
 }
 

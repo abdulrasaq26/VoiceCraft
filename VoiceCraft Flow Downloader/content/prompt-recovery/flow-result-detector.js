@@ -1,21 +1,11 @@
+// content/prompt-recovery/flow-result-detector.js
+// Named Flow results, from the shared media registry (not the tray's list,
+// which the user can clear or filter).
 class FlowResultDetector {
-  /**
-   * Scans the page (via FlowTray) for generated assets
-   * Returns an array of clean titles/names.
-   */
   static getDetectedAssets() {
-      const assets = [];
-      if (!window.FlowTray) return assets;
-      
-      window.FlowTray.mediaItems.forEach(item => {
-          if (item.data && item.data.title) {
-              assets.push({
-                  title: item.data.title,
-                  cleanName: item.data.title.replace(/[\/\\?%*:|"<> \n\r]/g, '-').replace(/--+/g, '-')
-              });
-          }
-      });
-      return assets;
+    const reg = window.FlowMediaRegistry;
+    if (!reg) return [];
+    return reg.all().filter((a) => a.name).map((a) => ({ title: a.name, cleanName: a.name, key: a.key, flowId: a.flowId }));
   }
 }
 window.FlowResultDetector = FlowResultDetector;

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "VoiceCraft Flow Downloader",
+  "name": "Frameloom Flow Tools",
   "version": "0.5.4",
   "description": "Download media from Google Flow",
   "permissions": [
@@ -48,6 +48,7 @@
         "content/detection/flow-adapter.js",
         "content/detection/name-normalizer.js",
         "content/detection/media-normalizer.js",
+        "content/detection/media-registry.js",
         "content/detection/detector.js",
         "content/detection/mutation-observer.js",
         "content/detection/network-media.js",
@@ -62,6 +63,7 @@
         "content/prompt-recovery/prompt-matcher.js",
         "content/prompt-recovery/prompt-cleaner.js",
         "content/prompt-recovery/prompt-recovery-ui.js",
+        "content/ui/vc-theme.js",
         "content/ui/floating-panel.js",
         "content/ui/media-item.js",
         "content/ui/media-tray.js",

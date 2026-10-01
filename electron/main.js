@@ -4,9 +4,17 @@ import { fileURLToPath } from 'url';
 import http from 'http';
 import { BrowserManager } from './browser-manager.js';
 import { Studio, registerAssetScheme } from './studio.js';
+import { BRAND } from './brand.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
+
+// The app's data stays in the folder earlier versions used, whatever the
+// app is called now (projects, browser sign-ins and settings live there).
+if (app.isPackaged && !app.commandLine.hasSwitch('user-data-dir')) {
+  app.setPath('userData', path.join(app.getPath('appData'), BRAND.dataDir));
+}
+app.setName(BRAND.name);
 
 // MUST be set before server.js is imported.
 // Prevents server.js auto-start (avoids duplicate-listen errors when
@@ -53,7 +61,7 @@ function createWindow() {
     height:    840,
     minWidth:  960,
     minHeight: 600,
-    title:     'VoiceCraft Studio',
+    title:     BRAND.name,
     icon:      path.join(__dirname, 'icon.ico'),
     backgroundColor: '#0a0a0a',  // match app dark theme
     show: false,
@@ -66,6 +74,7 @@ function createWindow() {
   });
 
   browserManager = new BrowserManager(mainWindow);
+  browserManager.baseUrl = DEV_URL; // new-tab page
   Menu.setApplicationMenu(null);
 
   // The window shows the studio bar; each module runs in its own persistent
@@ -74,6 +83,8 @@ function createWindow() {
   browserManager.onFlowAsset = (savePath, meta) => studio.addFlowAsset({ savePath, meta });
   browserManager.onModuleKey = (input) => studio.moduleKey(input);
   browserManager.onSendToEditor = (flowMediaIds) => studio.sendFlowToEditor(flowMediaIds);
+  browserManager.onImportMedia = (items, fetchUrl) => studio.importFlowMedia(items, fetchUrl);
+  browserManager.getProjectFiles = () => studio.projectFiles();
   browserManager.getStudioProject = () => studio.state.project;
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url).catch(() => {});
@@ -100,7 +111,7 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error('[VoiceCraft] Startup error:', err);
     dialog.showErrorBox(
-      'VoiceCraft Studio — startup error',
+      `${BRAND.name} — startup error`,
       `The internal server could not start:\n\n${err.message}`
     );
     app.quit();

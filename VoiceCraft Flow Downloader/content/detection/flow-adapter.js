@@ -1,7 +1,18 @@
 // content/detection/flow-adapter.js
 
 class FlowAdapter {
+  // The studio's own panels (Downloader, Automator, Prompt Recovery) and
+  // anything the extension itself shows are never Flow media.
+  static isOwnUI(element) {
+    const src = String(element.currentSrc || element.src || '');
+    if (src.startsWith('chrome-extension:')) return true;
+    const root = element.getRootNode && element.getRootNode();
+    const host = root && root.host;
+    return !!(host && /^(fmd-|flow-media-downloader-host)/.test(host.id || ''));
+  }
+
   static shouldIgnore(element) {
+    if (FlowAdapter.isOwnUI(element)) return true;
     // V1 heuristic: ignore very small images (likely UI icons)
     const tagName = element.tagName.toLowerCase();
     
@@ -92,12 +103,25 @@ class FlowAdapter {
       }
     } catch (e) {}
 
-    // Try finding text in nearby sibling or parent (aggressive)
+    // Try finding text in nearby sibling or parent, but only inside this
+    // result's own tile: an ancestor that holds more than one real picture is
+    // the grid, and its text belongs to other results (a name that hasn't
+    // rendered yet must stay unknown, not borrow a neighbour's).
+    const pictures = (el) => {
+      let n = 0;
+      for (const m of el.querySelectorAll('img, video')) {
+        const r = m.getBoundingClientRect();
+        if ((r.width >= 100 && r.height >= 60) || m.tagName === 'VIDEO') n++;
+        if (n > 1) break;
+      }
+      return n;
+    };
     try {
-      let current = element.parentElement;
+      let current = /^(IMG|VIDEO)$/.test(element.tagName) ? element.parentElement : element; // a background-image tile is its own container
       for (let i = 0; i < 8; i++) { // search up 8 levels
         if (!current) break;
-        
+        if (pictures(current) > 1) break;
+
         const textElements = current.querySelectorAll('span, p, h1, h2, h3, h4');
         for (const el of textElements) {
            const text = el.textContent.trim();

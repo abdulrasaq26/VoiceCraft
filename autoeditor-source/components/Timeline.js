@@ -42,6 +42,7 @@ export default function Timeline({
   onSeek, onScrubStart, onScrubEnd, onOpen, onAdd, onDeleteGap, onResizeBoundary,
   trimEnd, onTrimChange, height, playing,
   captions, captionsOn, selectedCaptionId, onCaptionSelect, onCaptionRetime,
+  resumeView = null, onViewChange,
 }) {
   const trackRef = useRef(null);
   const scrollRef = useRef(null);
@@ -72,6 +73,38 @@ export default function Timeline({
   const zoomEff = zoom == null ? autoZoom : zoom;
   const zoomMax = Math.max(ZOOM_MAX_FLOOR, autoZoom * 4);
   const rowW = viewW ? Math.round(viewW * zoomEff) : autoW;
+
+  // ---- Resume: this project's zoom and scroll position -------------------
+  // Applied when a project opens (`resumeView.token` changes); the scroll is
+  // set once the row has its zoomed width.
+  const pendingScrollRef = useRef(null);
+  useEffect(() => {
+    if (!resumeView || !resumeView.token) return;
+    if (resumeView.zoomLevel != null && isFinite(resumeView.zoomLevel) && resumeView.zoomLevel >= 1) setZoomState(resumeView.zoomLevel);
+    pendingScrollRef.current = resumeView.scrollLeft != null ? resumeView.scrollLeft : null;
+  }, [resumeView && resumeView.token]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const want = pendingScrollRef.current;
+    if (want == null || !el || !viewW || !clips.length || !duration) return; // wait for the real timeline
+    if (el.scrollWidth - el.clientWidth >= want || el.scrollWidth <= el.clientWidth + 1) {
+      el.scrollLeft = want;
+      pendingScrollRef.current = null;
+    }
+  }, [rowW, viewW, clips.length, duration]);
+  const viewChangeRef = useRef(onViewChange);
+  viewChangeRef.current = onViewChange;
+  useEffect(() => { if (zoom != null && viewChangeRef.current) viewChangeRef.current({ zoomLevel: zoom }); }, [zoom]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    const onScroll = () => {
+      if (pendingScrollRef.current != null) return; // still restoring
+      if (viewChangeRef.current) viewChangeRef.current({ scrollLeft: Math.round(el.scrollLeft) });
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Keep the point under `anchorX` (client px) fixed while zooming.
   const anchorRef = useRef(null);

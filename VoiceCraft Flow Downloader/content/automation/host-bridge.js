@@ -20,6 +20,18 @@
   const pending = new Map(); // requestId -> callback
   let seq = 0;
 
+  // A request the app answers (e.g. 'import-media'): resolves with its result.
+  window.__vcHost = {
+    request(type, fields, timeoutMs = 300000) {
+      return new Promise((resolve) => {
+        const requestId = 'r' + (++seq);
+        const timer = setTimeout(() => { pending.delete(requestId); resolve({ ok: false, error: 'The app did not answer.' }); }, timeoutMs);
+        pending.set(requestId, (result) => { clearTimeout(timer); resolve(result); });
+        post(Object.assign({ type, requestId }, fields));
+      });
+    },
+  };
+
   // ---- download naming: mirrors background/download-manager.js ----
   function getSettings() {
     return new Promise((resolve) => {

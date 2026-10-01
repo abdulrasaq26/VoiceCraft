@@ -3,36 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VoiceCraft — Browser</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d0d0f'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle' fill='%236366f1' font-family='sans-serif' font-weight='bold'%3EV%3C/text%3E%3C/svg%3E" />
+  <title>Browser — Frameloom Studio</title>
+  <link rel="icon" href="/brand/frameloom-icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="studio-tokens.css" />
   <link rel="stylesheet" href="browser.css" />
 </head>
 <body>
-  <!-- App header: same workspace switcher as the other VoiceCraft tools -->
-  <header class="apphdr" id="app-header">
-    <div class="apphdr__brand">
-      <span class="apphdr__logo">V</span>
-      <span class="apphdr__name">Voice<span>Craft</span></span>
-      <span class="apphdr__tag">Browser</span>
-    </div>
-    <nav class="ws" aria-label="Workspaces">
-      <a href="/index.html" class="ws__tab">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-        VoiceCraft
-      </a>
-      <a href="/auto-editor/index.html" class="ws__tab">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M8 5v4M16 5v4"/></svg>
-        AutoEditor
-      </a>
-      <a href="/browser.html" class="ws__tab is-on" aria-current="page">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
-        Browser
-      </a>
-    </nav>
-    <span class="apphdr__spacer"></span>
-  </header>
-
   <!-- Tab strip -->
   <div class="tabstrip" id="tabstrip">
     <div class="tabs" id="tabs" role="tablist"></div>
@@ -57,6 +33,7 @@
       <svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>
     </button>
 
+    <button class="netchip" id="net-chip" title="Network for this tab" hidden></button>
     <div class="omnibox" id="omnibox">
       <span class="omnibox__icon" id="omnibox-icon" title="">
         <svg class="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
@@ -133,7 +110,7 @@
       <div class="empty" id="not-desktop" hidden>
         <div class="empty__logo">V</div>
         <h2>Desktop app required</h2>
-        <p>The built-in browser runs inside the VoiceCraft Studio desktop app. Open VoiceCraft Studio to use it.</p>
+        <p>The built-in browser runs inside the Frameloom Studio desktop app. Open Frameloom Studio to use it.</p>
       </div>
     </div>
 
@@ -151,6 +128,27 @@
   </div>
 
   <!-- Settings (hides the page view while open so it can't cover this) -->
+  <!-- A website's file picker: the project's files first (see BrowserManager.pickFiles) -->
+  <div class="modal" id="filepick" hidden role="dialog" aria-modal="true" aria-labelledby="fp-title">
+    <div class="fp">
+      <div class="fp__head">
+        <div class="fp__titles">
+          <h2 id="fp-title">Choose a file to upload</h2>
+          <p class="fp__sub" id="fp-sub"></p>
+        </div>
+        <button class="icon-btn" id="fp-close" title="Cancel (Esc)" aria-label="Cancel"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="fp__body" id="fp-body"></div>
+      <div class="fp__foot">
+        <button class="btn" id="fp-browse">Browse this PC…</button>
+        <span class="fp__grow"></span>
+        <button class="btn" id="fp-cancel">Cancel</button>
+        <button class="btn btn--primary" id="fp-use" disabled>Upload</button>
+      </div>
+    </div>
+  </div>
+  <div class="apptoast" id="app-toast" role="status" hidden></div>
+
   <div class="modal" id="settings" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="settings">
       <nav class="settings__nav" id="settings-nav">

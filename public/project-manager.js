@@ -219,6 +219,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Inside VoiceCraft Studio the studio bar switches modules; the page's own
+  // workspace links are for the standalone web version only.
+  if (window.studio) document.querySelectorAll('.app-workspaces').forEach((el) => el.remove());
+
   // ---- VoiceCraft Studio: one current project for every module ----
   // The studio's project is VoiceCraft's project too: picking one elsewhere
   // makes the next save (and "Send to AutoEditor") go into it.

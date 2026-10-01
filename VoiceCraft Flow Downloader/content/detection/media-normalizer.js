@@ -5,13 +5,13 @@ class MediaNormalizer {
     if (!element) return null;
 
     const tagName = element.tagName.toLowerCase();
-    
+
     if (tagName === 'img') {
       return this.normalizeImage(element);
     } else if (tagName === 'video') {
       return this.normalizeVideo(element);
     }
-    
+
     return null;
   }
 
@@ -23,7 +23,7 @@ class MediaNormalizer {
     try {
         if (el.alt) metadata.labels.push(el.alt);
         if (el.title) metadata.labels.push(el.title);
-        
+
         let parent = el.parentElement;
         let depth = 0;
         while (parent && depth < 3) {
@@ -43,15 +43,16 @@ class MediaNormalizer {
     // Try to get the best resolution URL
     const url = img.currentSrc || img.src;
     if (!url) return null;
-    
+
     // Skip tiny inline data for V1 unless it was specifically extracted from a Canvas
-    if (url.startsWith('data:') && img.dataset.isCanvas !== 'true') return null; 
+    if (url.startsWith('data:') && img.dataset.isCanvas !== 'true') return null;
 
     const width = img.naturalWidth || img.width || img.clientWidth;
     const height = img.naturalHeight || img.height || img.clientHeight;
 
-    const title = window.FlowAdapter ? window.FlowAdapter.getTitle(img) : null;
-    
+    const host = img.__fmdHost || img; // background images: the tile that shows them
+    const title = window.FlowAdapter ? window.FlowAdapter.getTitle(host) : null;
+
     if (title && title.length > 3) {
       window.lastDetectedFlowTitle = title;
     }
@@ -68,14 +69,14 @@ class MediaNormalizer {
       status: 'detected',
       fingerprint: fingerprint,
       title: title,
-      element: img,
-      metadata: this.extractMetadata(img)
+      element: host,
+      metadata: this.extractMetadata(host)
     };
   }
 
   static normalizeVideo(video) {
     const url = video.currentSrc || video.src;
-    
+
     // Check for <source> elements if no direct src
     let finalUrl = url;
     if (!finalUrl) {

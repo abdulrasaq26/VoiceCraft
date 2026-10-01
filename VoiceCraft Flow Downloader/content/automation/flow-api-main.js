@@ -65,7 +65,8 @@
     if (method !== 'GET') inflight = ac;
     try {
       const headers = {};
-      if (token) headers.Authorization = 'Bearer ' + token;
+      // A bare token (old Flow) or a whole header Flow itself used (new Flow).
+      if (token) headers.Authorization = /^[A-Za-z0-9]+HASH\s|^Bearer\s/.test(token) ? token : 'Bearer ' + token;
       if (body != null) headers['Content-Type'] = 'text/plain;charset=UTF-8';
       const r = await fetch(url, {
         method, headers, credentials: 'include', signal: ac.signal,

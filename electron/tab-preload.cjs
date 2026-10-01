@@ -31,6 +31,20 @@ window.addEventListener('message', async (e) => {
     ipcRenderer.send('flow-host:inject-main', { file: String(d.file || '') });
   } else if (d.type === 'panel-state') {
     ipcRenderer.send('flow-host:panel-state', { open: d.open || null });
+  } else if (d.type === 'import-media') {
+    // Flow Downloader → AutoEditor. Bytes (ArrayBuffer) or URLs; the main
+    // process fetches URLs with this tab's session.
+    const items = Array.isArray(d.items) ? d.items.slice(0, 1000).map((it) => ({
+      name: String(it.name || '').slice(0, 200), type: it.type === 'video' ? 'video' : 'image',
+      url: typeof it.url === 'string' ? it.url : '', mime: typeof it.mime === 'string' ? it.mime : '',
+      key: String(it.key || '').slice(0, 300), flowMediaId: String(it.flowMediaId || '').slice(0, 200),
+      bytes: it.bytes instanceof ArrayBuffer ? it.bytes : null,
+    })) : [];
+    const result = await ipcRenderer.invoke('flow-host:import-media', { items });
+    window.postMessage({ channel: TO_EXT, type: 'reply', replyTo: d.requestId, result }, '*');
+  } else if (d.type === 'get-flow-auth') {
+    const result = await ipcRenderer.invoke('flow-host:get-flow-auth');
+    window.postMessage({ channel: TO_EXT, type: 'reply', replyTo: d.requestId, result }, '*');
   } else if (d.type === 'send-to-editor') {
     ipcRenderer.send('flow-host:send-to-editor', { flowMediaIds: Array.isArray(d.flowMediaIds) ? d.flowMediaIds.map(String) : null });
   } else if (d.type === 'get-project') {

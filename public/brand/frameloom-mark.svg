@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="64 64 896 896" width="896" height="896">
+  <title>Frameloom Studio</title>
+  <defs>
+    <linearGradient id="flm-bg" x1="96" y1="96" x2="928" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B5CF0"/>
+      <stop offset="0.55" stop-color="#7342E8"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <linearGradient id="flm-sheen" x1="512" y1="64" x2="512" y2="600" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="flm-play" x1="620" y1="610" x2="780" y2="790" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD98A"/>
+      <stop offset="1" stop-color="#F2A93B"/>
+    </linearGradient>
+  </defs>
+  <!-- squircle tile -->
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="url(#flm-bg)"/>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="url(#flm-sheen)"/>
+  <!-- the woven F: middle bar passes under the stem, top bar over it -->
+  <rect x="282" y="470" width="372" height="124" rx="62" fill="#FFFFFF" fill-opacity="0.92"/>
+  <rect x="282" y="236" width="148" height="552" rx="74" fill="#FFFFFF" stroke="url(#flm-bg)" stroke-width="30"/>
+  <rect x="282" y="236" width="474" height="148" rx="74" fill="#FFFFFF" stroke="url(#flm-bg)" stroke-width="30"/>
+  <!-- play: the finished video -->
+  <path d="M618 642 C618 612 640 600 666 615 L774 677 C800 692 800 718 774 733 L666 795 C640 810 618 798 618 768 Z" fill="url(#flm-play)"/>
+</svg>

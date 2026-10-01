@@ -11,6 +11,8 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const GLOBE = '<svg class="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>';
   const ICON = {
+    lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+    globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
     close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     sound: '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9Z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>',
     muted: '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9Z"/><path d="M22 9l-6 6M16 9l6 6"/></svg>',
@@ -97,7 +99,9 @@
       ? `<span class="tab__profile" style="background:${profileColor(t.profileId)}" title="Profile: ${esc((state.settings.profiles.find((p) => p.id === t.profileId) || {}).name || t.profileId)}"></span>` : '';
     const audio = t.audible || t.muted
       ? `<button class="tab__audio" data-act="mute" title="${t.muted ? 'Unmute tab' : 'Mute tab'}">${t.muted ? ICON.muted : ICON.sound}</button>` : '';
-    el.innerHTML = `<span class="tab__icon">${icon}</span>${profileDot}<span class="tab__title">${esc(t.title || 'New tab')}</span>${audio}<button class="tab__close" data-act="close" title="Close tab (Ctrl+W)" aria-label="Close tab">${ICON.close}</button>`;
+    const netBadge = t.net && t.net.scope === 'tab'
+      ? `<span class="tab__net" title="This tab has its own proxy: ${esc(t.net.summary)}">${ICON.lock}</span>` : '';
+    el.innerHTML = `<span class="tab__icon">${icon}</span>${profileDot}${netBadge}<span class="tab__title">${esc(t.title || 'New tab')}</span>${audio}<button class="tab__close" data-act="close" title="Close tab (Ctrl+W)" aria-label="Close tab">${ICON.close}</button>`;
     return el;
   }
 
@@ -167,7 +171,7 @@
   });
 
   function newTab(url, opts = {}) {
-    return EB.createTab(url || state.settings.homepage, opts.profileId || state.settings.activeProfile, opts);
+    return EB.createTab(url || null, opts.profileId || state.settings.activeProfile, opts);
   }
   function closeTab(id) { if (id) EB.closeTab(id); }
   function activate(id) { if (id && id !== state.active) EB.activateTab(id); }
@@ -209,13 +213,28 @@
     return /^https:\/\/([a-z0-9-]+\.)*(flow\.google\.com|labs\.google)(\/|$)/i.test(url || '');
   }
 
+  const isNewTabPage = (url) => !!(state.newTabUrl && url && url.startsWith(state.newTabUrl));
   function displayUrl(url) {
-    if (!url || url.startsWith('data:')) return '';
+    if (!url || url.startsWith('data:') || isNewTabPage(url)) return '';
     return url;
+  }
+
+  // Toolbar chip: how the active tab reaches the network.
+  function renderNetChip() {
+    const chip = $('net-chip');
+    const t = activeTab();
+    chip.hidden = !t || !t.net;
+    if (!t || !t.net) return;
+    const n = t.net;
+    const proxied = !['direct', 'system'].includes(n.type);
+    chip.className = 'netchip' + (n.scope === 'tab' ? ' is-tab' : proxied ? ' is-proxy' : '');
+    chip.innerHTML = `${proxied ? ICON.lock : ICON.globe}<span>${esc(n.label)}</span><span class="netchip__scope">${n.scope === 'tab' ? 'Tab' : 'Global'}</span>`;
+    chip.title = `${n.scope === 'tab' ? 'This tab' : 'Whole browser'}: ${n.summary} — click to change`;
   }
 
   function renderToolbar() {
     const t = activeTab();
+    renderNetChip();
     els.back.disabled = !t || !t.canGoBack;
     els.forward.disabled = !t || !t.canGoForward;
     els.reload.disabled = !t;
@@ -224,7 +243,7 @@
     if (!state.editingAddress || document.activeElement !== els.address) {
       els.address.value = t ? displayUrl(t.url) : '';
     }
-    const url = t ? t.url || '' : '';
+    const url = t && !isNewTabPage(t.url) ? t.url || '' : '';
     els.omniIcon.className = 'omnibox__icon ' + (url.startsWith('https://') ? 'is-secure' : url.startsWith('http://') ? 'is-insecure' : 'is-search');
     els.omniIcon.title = url.startsWith('https://') ? 'Connection is secure' : url.startsWith('http://') ? 'Connection is not secure' : '';
     const bookmarked = !!(t && state.bookmarks.some((b) => b.url === t.url));
@@ -550,7 +569,7 @@
   // ----------------------------------------------------------------- commands
   // Focus mode: full screen with the app header gone — tabs, toolbar and the
   // Flow tools stay. Only the layout changes; pages are never reloaded.
-  function setFocus(on, fromWindow = false) {
+  function setFocus(on, fromWindow = false, fromStudio = false) {
     on = !!on;
     if (document.body.classList.contains('is-fullscreen')) return; // a video owns the screen
     document.body.classList.toggle('is-focus', on);
@@ -558,10 +577,14 @@
     b.setAttribute('aria-pressed', String(on));
     b.title = on ? 'Exit focus mode (F11)' : 'Focus mode — full screen, toolbar stays (F11)';
     if (!fromWindow) EB.setWindowFullscreen(on);
-    if (window.studio) window.studio.setFocusMode(on); // the studio bar steps aside too
+    if (window.studio && !fromStudio) window.studio.setFocusMode(on); // the studio bar steps aside too
     requestAnimationFrame(syncBounds);
   }
   function toggleFocus() { setFocus(!document.body.classList.contains('is-focus')); }
+  // The studio ended focus mode (another module was opened): follow.
+  if (window.studio && window.studio.onFocusMode) {
+    window.studio.onFocusMode(({ on }) => { if (!on && document.body.classList.contains('is-focus')) setFocus(false, false, true); });
+  }
   $('btn-focus').addEventListener('click', toggleFocus);
   $('btn-settings').addEventListener('click', () => openSettings());
   // Leaving OS full screen some other way also leaves focus mode.
@@ -591,6 +614,7 @@
     'focus-mode': () => toggleFocus(),
     devtools: () => state.active && EB.openDevTools(state.active),
     settings: () => openSettings(),
+    'tab-proxy': (tabId) => { if (tabId) activate(tabId); netForm = null; netScope = 'tab'; openSettings('network'); },
     'toggle-bookmarks-bar': async () => {
       state.settings = await EB.setSettings({ showBookmarksBar: !state.settings.showBookmarksBar });
       renderBookmarksBar();
@@ -659,11 +683,13 @@
   };
   let section = 'general';
 
-  function openSettings(sec) {
+  async function openSettings(sec) {
     if (sec) section = sec;
     state.settingsOpen = true;
     $('settings').hidden = false;
     setPageHidden(true);
+    netForm = null;
+    if (section === 'network') state.network = await EB.getNetwork();
     renderSettings();
   }
   function closeSettings() {
@@ -673,10 +699,11 @@
   }
   $('settings-close').addEventListener('click', closeSettings);
   $('settings').addEventListener('mousedown', (e) => { if (e.target.id === 'settings') closeSettings(); });
-  $('settings-nav').addEventListener('click', (e) => {
+  $('settings-nav').addEventListener('click', async (e) => {
     const b = e.target.closest('button[data-sec]');
     if (!b) return;
     section = b.dataset.sec;
+    if (section === 'network') { netForm = null; state.network = await EB.getNetwork(); }
     renderSettings();
   });
 
@@ -747,10 +774,7 @@
       </div>
       <div class="card">${row('Add a profile', 'For a second Google account, a client, or testing.', '<input type="text" id="new-profile-name" placeholder="Profile name"><button class="btn btn--primary btn--sm" data-act="add-profile">Add</button>')}</div>`;
     } else if (section === 'network') {
-      html = `<div class="card">
-        ${row('Proxy', 'Applies to every browser profile.', select('proxyMode', s.proxyMode, [['system', 'Use system proxy settings'], ['direct', 'No proxy (direct)'], ['fixed', 'Manual proxy']]))}
-        ${s.proxyMode === 'fixed' ? row('Proxy rules', 'e.g. <span class="mono">http=proxy:8080;https=proxy:8080</span> or <span class="mono">socks5://127.0.0.1:1080</span>', `<input type="text" class="wide" id="proxy-rules" value="${esc(s.proxyRules)}"><button class="btn btn--sm btn--primary" data-act="save-proxy">Apply</button>`) : ''}
-      </div>`;
+      html = renderNetwork();
     } else if (section === 'flow') {
       const ext = state.extension;
       const status = ext ? (ext.loaded ? `<span class="status-ok">Loaded</span> · v${esc(ext.version || '')}` : `<span class="status-bad">Not loaded</span> — ${esc(ext.error || '')}`) : '<span class="status-bad">Not loaded yet</span> — open a tab first';
@@ -761,7 +785,11 @@
       <div class="card">
         ${row('VoiceCraft Flow Downloader', status + (ext && ext.path ? `<br><span class="mono">${esc(ext.path)}</span>` : ''), '')}
         ${row('Downloads', 'Flow Downloader files save to <span class="mono">' + esc(s.downloadDir || state.defaultDownloadDir) + '\\Flow Media Downloader</span>.', '<button class="btn btn--sm" data-act="open-dir">Open folder</button>')}
-      </div>`;
+      </div>
+      <div class="card__h">Flow connection</div>
+      <div class="card" id="flow-diag">${row('Checking…', '', '')}</div>`;
+      setTimeout(renderFlowDiag, 0);
+
     } else if (section === 'shortcuts') {
       const keys = [
         ['New tab', 'Ctrl+T'], ['Close tab', 'Ctrl+W'], ['Reopen closed tab', 'Ctrl+Shift+T'], ['Next / previous tab', 'Ctrl+Tab / Ctrl+Shift+Tab'],
@@ -774,7 +802,7 @@
     } else if (section === 'about') {
       const v = state.versions;
       html = `<div class="card">
-        ${row('VoiceCraft Studio', 'Built-in browser', `<span class="mono">v${esc(v.app)}</span>`)}
+        ${row('Frameloom Studio', 'Built-in browser', `<span class="mono">v${esc(v.app)}</span>`)}
         ${row('Chromium', '', `<span class="mono">${esc(v.chrome)}</span>`)}
         ${row('Electron', '', `<span class="mono">${esc(v.electron)}</span>`)}
         ${row('Node.js', '', `<span class="mono">${esc(v.node)}</span>`)}
@@ -782,6 +810,215 @@
     }
     $('settings-body').innerHTML = html;
   }
+
+  // Settings → Flow tools: what the studio has seen of Google Flow's API
+  // (paths only — no tokens), to tell "not signed in" from "Flow changed".
+  async function renderFlowDiag() {
+    const box = $('flow-diag');
+    if (!box || !EB.flowDiagnostics) return;
+    const d = await EB.flowDiagnostics();
+    const when = d.seenAt ? new Date(d.seenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    box.innerHTML = row('Flow sign-in', 'The Automator uses the sign-in Flow’s own page sends. Open a Flow project and it’s picked up.',
+      d.signedInSeen ? `<span class="status-ok">Seen</span> <span class="mono">${esc(d.authScheme || '')} · ${esc(when)}</span>` : '<span class="status-bad">Not seen yet</span>')
+      + row('Flow API calls seen', `${d.calls.length} endpoint${d.calls.length === 1 ? '' : 's'} (paths only, no secrets)`,
+        '<button class="btn btn--sm" data-act="copy-flow-diag">Copy for support</button>')
+      + (d.calls.length ? `<div class="set"><div class="mono" style="max-height:160px;overflow:auto;white-space:pre">${esc(d.calls.slice(0, 40).join(String.fromCharCode(10)))}</div></div>` : '');
+  }
+
+  // ---- website file pickers: the project's files first ----
+  // BrowserManager catches a page's <input type=file> and asks here; the
+  // answer is the chosen project files, "browse the PC", or nothing.
+  const FP_ICON = {
+    video: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>',
+    image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>',
+    audio: '<svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>',
+  };
+  let fpReq = null;
+  const fpPick = new Set();
+  const fpSize = (b) => (b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round((b || 0) / 1e3)) + ' KB');
+  const fpClock = (s) => { if (!s) return ''; s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+  // Does a file fit the input's accept="…" list?
+  function fpAccepts(f, accept) {
+    const list = String(accept || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+    if (!list.length) return true;
+    const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+    return list.some((a) => a === ext || a === f.type + '/*' || (a.includes('/') && a.split('/')[0] === f.type));
+  }
+  function fpRender() {
+    const d = fpReq;
+    const renders = (d.renders || []).filter((f) => fpAccepts(f, d.accept));
+    const media = (d.media || []).filter((f) => fpAccepts(f, d.accept));
+    const row = (f, isRender) => {
+      const on = fpPick.has(f.path);
+      const bits = [isRender && f.version ? 'v' + f.version : '', fpClock(f.duration), fpSize(f.size), new Date(f.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })].filter(Boolean);
+      return `<label class="fp__row${on ? ' is-on' : ''}">
+        <input type="${d.multiple ? 'checkbox' : 'radio'}" name="fp" value="${esc(f.path)}"${on ? ' checked' : ''}>
+        <span class="fp__ic${isRender ? ' is-render' : ''}">${FP_ICON[f.type] || FP_ICON.image}</span>
+        <span class="fp__name"><b>${esc(f.name)}</b><span>${esc(bits.join(' · '))}</span></span>
+        ${f.pinned ? '<span class="fp__pin">Picked for upload</span>' : ''}
+      </label>`;
+    };
+    let html = '';
+    if (!d.project) html = '<p class="fp__empty">No project is open in the studio. Pick one in the studio bar to see its renders here, or browse this PC.</p>';
+    else if (!renders.length && !media.length) html = `<p class="fp__empty">Nothing in “${esc(d.project)}” matches what this site accepts${d.accept ? ' (' + esc(d.accept) + ')' : ''}. Browse this PC instead.</p>`;
+    else {
+      if (renders.length) html += `<div class="fp__sec">Renders · ${esc(d.project)}</div>` + renders.map((f) => row(f, true)).join('');
+      if (media.length) html += '<div class="fp__sec">Project media</div>' + media.map((f) => row(f, false)).join('');
+    }
+    $('fp-body').innerHTML = html;
+    $('fp-use').disabled = fpPick.size === 0;
+    $('fp-use').textContent = fpPick.size > 1 ? `Upload ${fpPick.size} files` : 'Upload';
+  }
+  function fpAnswer(answer) {
+    if (!fpReq) return;
+    EB.answerFileChooser(fpReq.requestId, answer);
+    fpReq = null;
+    $('filepick').hidden = true;
+    setPageHidden(false);
+  }
+  if (EB.onFileChooser) {
+    EB.onFileChooser((d) => {
+      if (fpReq) fpAnswer({ paths: [] }); // a newer picker replaces an open one
+      fpReq = d;
+      fpPick.clear();
+      const pinned = (d.renders || []).find((f) => f.pinned && fpAccepts(f, d.accept));
+      if (pinned) fpPick.add(pinned.path);
+      $('fp-sub').textContent = `${d.site || 'This site'} wants ${d.multiple ? 'files' : 'a file'}${d.accept ? ' (' + d.accept + ')' : ''}.`;
+      fpRender();
+      $('filepick').hidden = false;
+      setPageHidden(true);
+    });
+  }
+  $('fp-body').addEventListener('change', (e) => {
+    const inp = e.target.closest('input[name=fp]');
+    if (!inp || !fpReq) return;
+    if (!fpReq.multiple) fpPick.clear();
+    if (inp.checked) fpPick.add(inp.value); else fpPick.delete(inp.value);
+    fpRender();
+  });
+  $('fp-body').addEventListener('dblclick', (e) => {
+    const inp = e.target.closest('.fp__row') && e.target.closest('.fp__row').querySelector('input');
+    if (inp && fpReq && !fpReq.multiple) fpAnswer({ paths: [inp.value] });
+  });
+  $('fp-use').addEventListener('click', () => fpAnswer({ paths: [...fpPick] }));
+  $('fp-browse').addEventListener('click', () => fpAnswer({ browse: true }));
+  $('fp-cancel').addEventListener('click', () => fpAnswer({ paths: [] }));
+  $('fp-close').addEventListener('click', () => fpAnswer({ paths: [] }));
+  $('filepick').addEventListener('mousedown', (e) => { if (e.target.id === 'filepick') fpAnswer({ paths: [] }); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && fpReq) { e.preventDefault(); e.stopPropagation(); fpAnswer({ paths: [] }); } }, true);
+
+  // Short notices from the studio ("ready to upload", …).
+  let appToastTimer = 0;
+  if (EB.onToast) {
+    EB.onToast(({ text }) => {
+      const t = $('app-toast');
+      t.textContent = text;
+      t.hidden = false;
+      clearTimeout(appToastTimer);
+      appToastTimer = setTimeout(() => { t.hidden = true; }, 7000);
+    });
+  }
+
+  // ---- network & proxy ----
+  // Apply to the current tab (its own session) or the whole browser.
+  let netScope = 'tab';
+  let netForm = null; // what's being edited; kept across re-renders
+  const NET_TYPES = [['direct', 'Direct'], ['system', 'System'], ['socks5', 'SOCKS5'], ['http', 'HTTP'], ['https', 'HTTPS'], ['custom', 'Custom']];
+  const formFrom = (p) => ({ type: p.type, host: p.host || '', port: p.port || '', username: p.username || '', password: '', hasPassword: !!p.hasPassword, rules: p.rules || '', bypass: p.bypass || '<local>' });
+
+  function renderNetwork() {
+    const t = activeTab();
+    const g = state.settings.proxy || { type: 'system', label: 'System', summary: 'System' };
+    if (!t && netScope === 'tab') netScope = 'global';
+    if (!netForm) {
+      // A tab that follows the browser starts on "Browser setting".
+      netForm = netScope === 'tab' && t && t.net && t.net.scope !== 'tab' ? formFrom({ type: 'system' }) : formFrom(netScope === 'tab' && t && t.net ? t.net : g);
+    }
+    const f = netForm;
+    const icon = (p) => (['direct', 'system'].includes(p.type) ? ICON.globe : ICON.lock);
+    const others = ((state.network && state.network.tabs) || []).filter((x) => !t || x.id !== t.id);
+    const opt = (name, v, label, on) => `<label class="nf__opt${on ? ' is-on' : ''}"><input type="radio" name="${name}" value="${v}" data-net="${name}"${on ? ' checked' : ''}>${label}</label>`;
+    const hostPort = ['socks5', 'http', 'https'].includes(f.type);
+    const auth = ['http', 'https', 'socks5'].includes(f.type);
+    return `<div class="card__h">Now</div>
+      <div class="card">
+        ${row('Entire browser', 'Every tab that has no proxy of its own.', `<span class="netnow">${icon(g)}${esc(g.summary)}${g.type !== 'system' && g.enabled === false ? ' · off' : ''}</span>`
+          + (g.type !== 'system' ? `<button class="btn btn--sm" data-act="net-do" data-scope="global" data-do="${g.enabled === false ? 'enable' : 'disable'}">${g.enabled === false ? 'Turn on' : 'Turn off'}</button><button class="btn btn--sm btn--danger" data-act="net-do" data-scope="global" data-do="remove">Remove</button>` : ''))}
+        ${t ? row('This tab', esc(t.title || displayUrl(t.url) || 'New tab'),
+          t.net && t.net.scope === 'tab'
+            ? `<span class="netnow">${ICON.lock}${esc(t.net.summary)}</span><button class="btn btn--sm" data-act="net-do" data-scope="tab" data-id="${esc(t.id)}" data-do="disable">Turn off</button><button class="btn btn--sm btn--danger" data-act="net-do" data-scope="tab" data-id="${esc(t.id)}" data-do="remove">Remove</button>`
+            : t.netOff
+              ? `<span class="netnow">Own proxy off (${esc(t.netOff.summary)})</span><button class="btn btn--sm" data-act="net-do" data-scope="tab" data-id="${esc(t.id)}" data-do="enable">Turn on</button><button class="btn btn--sm btn--danger" data-act="net-do" data-scope="tab" data-id="${esc(t.id)}" data-do="remove">Remove</button>`
+              : '<span class="netnow">Follows the browser</span>') : ''}
+        ${others.map((x) => row(esc(x.title || 'Tab'), 'Has its own proxy', `<span class="netnow">${ICON.lock}${esc(x.proxy.summary)}</span><button class="btn btn--sm" data-act="net-follow" data-id="${esc(x.id)}">Use browser setting</button>`)).join('')}
+      </div>
+      <div class="card__h">Change</div>
+      <div class="card"><div class="nf">
+        <div class="nf__row"><span class="nf__k">Apply to</span><div class="nf__opts">
+          ${t ? opt('scope', 'tab', 'Current tab', netScope === 'tab') : ''}${opt('scope', 'global', 'Entire browser', netScope === 'global')}
+        </div></div>
+        <div class="nf__row"><span class="nf__k">Proxy</span><div class="nf__opts">
+          ${NET_TYPES.map(([v, l]) => opt('type', v, netScope === 'tab' && v === 'system' ? 'Browser setting' : l, f.type === v)).join('')}
+        </div></div>
+        ${hostPort ? `<div class="nf__row"><span class="nf__k">Server</span>
+          <input type="text" class="nf__host" data-nf="host" placeholder="host or IP" value="${esc(f.host)}" spellcheck="false">
+          <input type="number" class="nf__port" data-nf="port" placeholder="port" min="1" max="65535" value="${esc(f.port)}"></div>` : ''}
+        ${f.type === 'custom' ? `<div class="nf__row"><span class="nf__k">Rules</span>
+          <input type="text" class="nf__wide" data-nf="rules" placeholder="http=host:8080;https=host:8080 · socks5://host:1080 · or a PAC script URL" value="${esc(f.rules)}" spellcheck="false"></div>` : ''}
+        ${auth ? `<div class="nf__row"><span class="nf__k">Sign-in</span>
+          <input type="text" class="nf__host" data-nf="username" placeholder="username (optional)" value="${esc(f.username)}" autocomplete="off" spellcheck="false">
+          <input type="password" class="nf__host" data-nf="password" placeholder="${f.hasPassword ? 'saved — leave empty to keep' : 'password'}" autocomplete="new-password"></div>` : ''}
+        ${f.type === 'socks5' ? '<div class="nf__note">With a username and password, the studio signs in to the SOCKS5 server through a private bridge on this computer (Chromium can’t sign in to SOCKS5 itself). Host names are resolved by the proxy.</div>' : ''}
+        ${!['direct', 'system'].includes(f.type) ? `<div class="nf__row"><span class="nf__k">Bypass</span>
+          <input type="text" class="nf__wide" data-nf="bypass" placeholder="&lt;local&gt;, *.example.com" value="${esc(f.bypass)}" spellcheck="false"></div>` : ''}
+        ${netScope === 'tab' ? '<div class="nf__note">The tab reloads in its own private session with this proxy, starting with this profile’s sign-ins. Pages it opens stay on the same proxy. Other tabs aren’t affected.</div>'
+          : '<div class="nf__note">Every tab without its own proxy switches right away.</div>'}
+        <div class="nf__actions">
+          <button class="btn btn--sm" data-act="net-test" ${f.type === 'system' || f.type === 'direct' ? 'disabled' : ''}>Test connection</button>
+          <button class="btn btn--sm btn--primary" data-act="net-apply">Apply</button>
+          <span class="nf__result" id="nf-result"></span>
+        </div>
+      </div></div>`;
+  }
+
+  async function netAction(act, btn) {
+    const t = activeTab();
+    const res = $('nf-result');
+    const form = { ...netForm };
+    delete form.hasPassword;
+    btn.disabled = true;
+    res.className = 'nf__result';
+    res.textContent = act === 'net-test' ? 'Testing…' : 'Applying…';
+    try {
+      if (act === 'net-test') {
+        const r = await EB.testProxy({ form, scope: netScope, tabId: t && t.id });
+        res.className = 'nf__result ' + (r.ok ? 'ok' : 'bad');
+        res.textContent = r.ok ? `Connected · ${r.ms} ms${r.via ? ` · via ${r.via}` : ''}` : `Failed: ${r.error || 'HTTP ' + r.status}`;
+      } else {
+        const r = await EB.setProxy({ scope: netScope, tabId: t && t.id, form });
+        if (!r || !r.ok) { res.className = 'nf__result bad'; res.textContent = (r && r.error) || 'Could not apply'; return; }
+        if (r.settings) state.settings = r.settings;
+        state.network = r.network;
+        netForm = null;
+        renderSettings();
+        renderToolbar();
+        toast(netScope === 'tab' ? 'Proxy set for this tab' : 'Browser proxy applied');
+      }
+    } finally { btn.disabled = false; }
+  }
+
+  $('settings-body').addEventListener('input', (e) => {
+    const k = e.target.dataset && e.target.dataset.nf;
+    if (k && netForm) netForm[k] = e.target.value;
+  });
+  $('settings-body').addEventListener('change', (e) => {
+    const k = e.target.dataset && e.target.dataset.net;
+    if (!k) return;
+    if (k === 'scope') { netScope = e.target.value; netForm = null; }
+    else netForm.type = e.target.value;
+    renderSettings();
+  });
+  $('net-chip').addEventListener('click', () => { netScope = 'tab'; netForm = null; openSettings('network'); });
 
   $('settings-body').addEventListener('change', async (e) => {
     const el = e.target;
@@ -825,8 +1062,27 @@
       renderSettings();
     } else if (act === 'open-dir') {
       EB.openDownloadDir();
-    } else if (act === 'save-proxy') {
-      await save({ proxyRules: $('proxy-rules').value.trim() }, 'Proxy applied');
+    } else if (act === 'net-test' || act === 'net-apply') {
+      await netAction(act, b);
+    } else if (act === 'copy-flow-diag') {
+      const d = await EB.flowDiagnostics();
+      await navigator.clipboard.writeText([`Flow sign-in seen: ${d.signedInSeen ? 'yes (' + d.authScheme + ')' : 'no'}`, ...d.calls].join(String.fromCharCode(10)));
+      toast('Copied');
+    } else if (act === 'net-do') {
+      const scope = b.dataset.scope;
+      const r = await EB.setProxy({ scope, tabId: b.dataset.id, action: b.dataset.do });
+      if (r && r.ok) {
+        if (r.settings) state.settings = r.settings;
+        state.network = r.network;
+        netForm = null;
+        toast({ disable: 'Proxy turned off', enable: 'Proxy turned on', remove: 'Proxy removed' }[b.dataset.do] || 'Done');
+      }
+      renderSettings();
+      renderToolbar();
+    } else if (act === 'net-follow') {
+      const r = await EB.setProxy({ scope: 'tab', tabId: b.dataset.id, follow: true });
+      if (r && r.ok) { state.network = r.network; netForm = null; toast('Tab uses the browser proxy again'); }
+      renderSettings();
     } else if (act === 'add-profile') {
       const name = $('new-profile-name').value.trim();
       if (!name) { $('new-profile-name').focus(); return; }
@@ -871,6 +1127,7 @@
   async function start() {
     const init = await EB.init();
     state.settings = init.settings;
+    state.newTabUrl = init.newTabUrl || '';
     state.bookmarks = init.bookmarks || [];
     state.versions = init.versions || {};
     state.extension = init.extension;
@@ -888,15 +1145,8 @@
     EB.mount(bounds());
 
     if (!init.tabs.length) {
-      const sess = init.session;
-      if (state.settings.startup === 'restore' && sess && Array.isArray(sess.tabs) && sess.tabs.length) {
-        const ids = [];
-        for (const t of sess.tabs) ids.push(await EB.createTab(t.url, t.profileId, { background: true }));
-        const pick = ids[Math.min(sess.active || 0, ids.length - 1)];
-        if (pick) EB.activateTab(pick);
-      } else {
-        newTab();
-      }
+      const restored = state.settings.startup === 'restore' && init.hasSession ? await EB.restoreSession() : null;
+      if (!restored || !restored.length) newTab();
     }
     // Refresh the extension status once a session exists.
     setTimeout(async () => { const again = await EB.init(); state.extension = again.extension; }, 3000);

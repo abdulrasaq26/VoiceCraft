@@ -26,12 +26,12 @@ class MediaItemUI {
       mediaEl = document.createElement('img');
       mediaEl.src = this.data.thumbnail;
     }
-    
+
     // Auto-remove garbage API endpoints caught by NetworkObserver that fail to render as images
     mediaEl.onerror = () => {
        this.remove();
     };
-    
+
     div.appendChild(mediaEl);
 
     // Status overlay (for downloading/queued/error)
@@ -88,6 +88,20 @@ class MediaItemUI {
     });
 
     return div;
+  }
+
+  setTitle(title) {
+    this.data.title = title;
+    this.element.title = title;
+    let badge = this.element.querySelector('.fmd-res-badge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'fmd-res-badge';
+      this.element.appendChild(badge);
+    }
+    const shown = title.replace(/[\/\\?%*:|"<> \n\r]/g, '-').replace(/--+/g, '-');
+    badge.textContent = shown;
+    badge.title = shown;
   }
 
   toggleSelection() {

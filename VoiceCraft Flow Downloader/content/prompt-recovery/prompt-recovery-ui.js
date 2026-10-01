@@ -9,16 +9,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   const CSS = `
-:host {
-  all: initial;
-  --vc-background: #0d0d0f; --vc-surface: #161619; --vc-surface-elevated: #202026;
-  --vc-border: #2c2c33; --vc-border-soft: #232329;
-  --vc-primary: #6366f1; --vc-primary-hover: #5558e8; --vc-primary-text: #c7c9ff;
-  --vc-accent: #e8b64c; --vc-text: #f2f2f4; --vc-text-muted: #9b9ba3; --vc-text-faint: #62626c;
-  --vc-success: #6cc98f; --vc-danger: #e06c6c;
-  --vc-font: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
-  --vc-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
-}
+:host { all: initial; }
 * { box-sizing: border-box; }
 .panel {
   position: fixed; top: 5vh; left: 50%; transform: translateX(-50%);
@@ -31,7 +22,7 @@
   z-index: 2147483645; overflow: hidden;
 }
 .head { display: flex; align-items: center; gap: 10px; padding: 11px 10px 11px 14px; border-bottom: 1px solid var(--vc-border-soft); }
-.logo { width: 24px; height: 24px; flex: none; border-radius: 7px; display: grid; place-items: center; font-weight: 800; font-size: 12px; color: #fff; background: linear-gradient(135deg,#6366f1,#8b5cf6); }
+.logo { width: 24px; height: 24px; flex: none; border-radius: 6px; display: block; }
 .title { flex: 1; font-weight: 700; font-size: 14px; }
 .title small { display: block; font-weight: 500; font-size: 11px; color: var(--vc-text-faint); }
 .ib { width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--vc-text-muted); cursor: pointer; font-size: 15px; display: grid; place-items: center; }
@@ -41,8 +32,6 @@
 .tab:hover { color: var(--vc-text); }
 .tab.on { color: #fff; border-bottom-color: var(--vc-primary); }
 .view { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; flex: 1; min-height: 0; }
-.view::-webkit-scrollbar, .list::-webkit-scrollbar { width: 6px; }
-.view::-webkit-scrollbar-thumb, .list::-webkit-scrollbar-thumb { background: var(--vc-border); border-radius: 4px; }
 .card { background: var(--vc-background); border: 1px solid var(--vc-border-soft); border-radius: 10px; padding: 12px; }
 .step { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .step__n { width: 18px; height: 18px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 800; background: var(--vc-surface-elevated); color: var(--vc-text-muted); }
@@ -75,7 +64,16 @@ textarea:focus { border-color: var(--vc-primary); }
 .stat.gen b { color: var(--vc-success); } .stat.mis b { color: var(--vc-danger); }
 .bar { height: 5px; border-radius: 3px; background: var(--vc-surface-elevated); overflow: hidden; margin-bottom: 10px; }
 .bar i { display: block; height: 100%; width: 0; background: var(--vc-success); transition: width .3s; }
-.crawl { font-size: 11.5px; color: var(--vc-primary-text); margin-bottom: 8px; }
+.live { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 10px; border-radius: 8px; background: var(--vc-surface); border: 1px solid var(--vc-border-soft); font-size: 12px; }
+.live__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--vc-text-faint); flex: none; }
+.live.is-busy .live__dot { width: 12px; height: 12px; background: none; border: 2px solid var(--vc-primary); border-right-color: transparent; animation: fpr-spin .8s linear infinite; }
+.live.is-done .live__dot { background: var(--vc-success); }
+.live.is-watch .live__dot { background: var(--vc-success); box-shadow: 0 0 0 3px rgba(108,201,143,.18); }
+.live.is-error .live__dot { background: var(--vc-danger); }
+.live__t { font-weight: 700; }
+.live__n { margin-left: auto; color: var(--vc-text-faint); font-variant-numeric: tabular-nums; }
+@keyframes fpr-spin { to { transform: rotate(360deg); } }
+.chip.fresh { background: rgba(108,201,143,.25); border-color: var(--vc-success); }
 .list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
 .miss { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; background: var(--vc-surface); border: 1px solid var(--vc-border-soft); border-left: 3px solid var(--vc-danger); }
 .miss input { accent-color: var(--vc-primary); margin: 0; }
@@ -105,6 +103,8 @@ textarea:focus { border-color: var(--vc-primary); }
     constructor() {
       this.reconciler = new window.GenerationReconciler();
       this.selectedMissing = new Set();
+      this.fresh = new Set();     // prompts that just turned up in Flow
+      this.crawl = null;
       this.createDOM();
       this.attachEvents();
     }
@@ -115,10 +115,10 @@ textarea:focus { border-color: var(--vc-primary); }
       this.host = document.createElement('div');
       this.host.id = 'fmd-prompt-recovery-host';
       this.shadow = this.host.attachShadow({ mode: 'open' });
-      this.shadow.innerHTML = `<style>${CSS}</style>
+      this.shadow.innerHTML = `<style>${window.VC_THEME_CSS || ''}${CSS}</style>
 <div class="panel" id="fmd-prompt-recovery">
   <div class="head" id="fpr-header">
-    <span class="logo">V</span>
+    <img class="logo" src="${chrome.runtime.getURL('icons/frameloom-mark.svg')}" alt="">
     <div class="title">Prompt Recovery<small>Find prompts that never made it into the project</small></div>
     <button class="btn sm bad" id="fpr-clear-all" title="Clear everything in this panel">Clear all</button>
     <button class="ib" id="fpr-close" title="Close">✕</button>
@@ -139,16 +139,16 @@ textarea:focus { border-color: var(--vc-primary); }
     </div>
 
     <div class="card" id="fpr-dashboard" hidden>
-      <div class="step"><span class="step__n">2</span><span class="step__l">Scan the Flow project</span></div>
+      <div class="step"><span class="step__n">2</span><span class="step__l">Flow project</span></div>
+      <div class="live" id="fpr-live"><span class="live__dot"></span><span class="live__t" id="fpr-live-t">Ready</span><span id="fpr-live-d"></span><span class="live__n" id="fpr-live-n"></span></div>
       <div class="stats">
         <div class="stat"><b id="fpr-stat-exp">0</b><span>Expected</span></div>
         <div class="stat gen"><b id="fpr-stat-gen">0</b><span>Generated</span></div>
         <div class="stat mis"><b id="fpr-stat-mis">0</b><span>Missing</span></div>
       </div>
-      <div class="bar"><i id="fpr-stat-bar"></i></div>
-      <div class="crawl" id="fpr-crawler-status" hidden><span id="fpr-crawler-state-text">Crawler idle</span> · <span id="fpr-crawler-stats-text">Waiting…</span></div>
+      <div class="bar" title="Share of your prompts that have a result in Flow"><i id="fpr-stat-bar"></i></div>
       <div class="row">
-        <button class="btn grow" id="fpr-scan-flow" title="Scroll through the whole project so every result is counted">Scan whole project</button>
+        <button class="btn grow" id="fpr-scan-flow" title="Go through the whole project again so every result is counted">Scan again</button>
         <button class="btn bad" id="fpr-stop-crawl" hidden>Stop</button>
       </div>
     </div>
@@ -333,36 +333,23 @@ textarea:focus { border-color: var(--vc-primary); }
 
       analyzeBtn.addEventListener('click', () => {
         if (!libraryInput.value.trim()) return;
+        this.saveLibrary(libraryInput.value);
         if (window.FlowDetector) window.FlowDetector.scan(); // count what's on screen right away
         this.reconciler.initialize(libraryInput.value);
         this.runReconciliation();
+        this.startCrawl(); // then go through the whole project by itself
       });
 
-      const btnCrawl = this.$('fpr-scan-flow');
-      const btnStop = this.$('fpr-stop-crawl');
-      btnCrawl.addEventListener('click', () => {
-        if (!window.FlowCrawlerInstance) {
-          if (window.FlowDetector) window.FlowDetector.scan();
-          setTimeout(() => this.runReconciliation(), 100);
-          return;
-        }
-        btnCrawl.hidden = true;
-        btnStop.hidden = false;
-        this.$('fpr-crawler-status').hidden = false;
-        const updateUI = (stats) => {
-          this.$('fpr-crawler-state-text').textContent = stats.state === 'COMPLETE' ? 'Scan complete' : stats.state === 'STOPPED' ? 'Scan stopped' : 'Scanning…';
-          this.$('fpr-crawler-stats-text').textContent = `${stats.discovered} found`;
-          this.runReconciliation(); // live
-          if (stats.state === 'COMPLETE' || stats.state === 'STOPPED') {
-            btnStop.hidden = true;
-            btnCrawl.hidden = false;
-            window.FlowCrawlerInstance.unsubscribe(updateUI);
-          }
-        };
-        window.FlowCrawlerInstance.subscribe(updateUI);
-        window.FlowCrawlerInstance.start();
+      // Live: results Flow shows from now on (regenerations included).
+      this.reconciler.onChange(({ changed }) => {
+        for (const r of changed) this.fresh.add(r.identifier);
+        this.scheduleRender();
       });
-      btnStop.addEventListener('click', () => { if (window.FlowCrawlerInstance) window.FlowCrawlerInstance.stop(); });
+      if (window.FlowMediaRegistry) window.FlowMediaRegistry.subscribe(() => this.scheduleLive());
+      if (window.FlowCrawlerInstance) window.FlowCrawlerInstance.subscribe((st) => { this.crawl = st; this.scheduleRender(); });
+
+      this.$('fpr-scan-flow').addEventListener('click', () => this.startCrawl());
+      this.$('fpr-stop-crawl').addEventListener('click', () => { if (window.FlowCrawlerInstance) window.FlowCrawlerInstance.stop(); });
 
       this.$('fpr-missing-list').addEventListener('change', (e) => {
         const cb = e.target.closest('input[type=checkbox]');
@@ -409,12 +396,85 @@ textarea:focus { border-color: var(--vc-primary); }
           'fpr-ref-results', 'fpr-img-results', 'fpr-batch-viewer']) this.$(id).hidden = true;
         this.selectedMissing = new Set();
         this.lastMatchedRecords = [];
+        this.reconciler.initialize('');
+        this.saveLibrary('');
       });
     }
 
-    runReconciliation() {
-      this.reconciler.reconcile();
+    // ---- crawl + live status ----
+    startCrawl() {
+      const c = window.FlowCrawlerInstance;
+      if (!c) { if (window.FlowDetector) window.FlowDetector.scan(); this.scheduleRender(); return; }
+      if (!c.isRunning) c.start();
+      this.scheduleRender();
+    }
+
+    scheduleRender() {
+      if (this.renderTimer) return;
+      this.renderTimer = setTimeout(() => { this.renderTimer = null; this.renderAll(); }, 150);
+    }
+    scheduleLive() {
+      if (this.liveTimer) return;
+      this.liveTimer = setTimeout(() => { this.liveTimer = null; this.renderLive(); }, 250);
+    }
+
+    renderAll() {
+      if (!this.reconciler.expectedPrompts.size) { this.renderLive(); return; }
+      this.runReconciliation(false);
+    }
+
+    // Scanning / Waiting for Flow / Processing / Complete / Error — with real
+    // counts only (how far a crawl has to go isn't knowable up front).
+    renderLive() {
+      const c = window.FlowCrawlerInstance;
+      const st = c ? c.stats() : null;
+      const reg = window.FlowMediaRegistry;
+      const status = st ? st.status : 'idle';
+      const busy = st && st.running;
+      const LABEL = {
+        scanning: ['Scanning Google Flow…', 'is-busy'], waiting: ['Waiting for Flow…', 'is-busy'],
+        processing: ['Processing…', 'is-busy'], complete: ['Complete — watching for new results', 'is-watch'],
+        stopped: ['Stopped — watching for new results', 'is-done'], error: ['Error', 'is-error'], idle: ['Watching for results', 'is-watch'],
+      };
+      const [text, cls] = LABEL[busy ? status : (status === 'idle' ? 'idle' : status)] || LABEL.idle;
+      const live = this.$('fpr-live');
+      live.className = 'live ' + cls;
+      this.$('fpr-live-t').textContent = text;
+      this.$('fpr-live-d').textContent = status === 'error' && st.error ? st.error : '';
+      this.$('fpr-live-n').textContent = reg ? `${reg.size} assets checked · ${reg.named} named` : '';
+      this.$('fpr-scan-flow').hidden = !!busy;
+      this.$('fpr-stop-crawl').hidden = !busy;
+    }
+
+    // The prompt list, per Flow project, so reopening the panel (or Flow)
+    // picks up where you were.
+    libraryKey() {
+      const m = /\/project\/([^/?#]+)/.exec(location.pathname);
+      return 'vcRecovery:' + (m ? m[1] : location.pathname);
+    }
+    saveLibrary(text) {
+      try { chrome.storage.local.set({ [this.libraryKey()]: text || '' }); } catch (e) { /* no storage */ }
+    }
+    restoreLibrary() {
+      const input = this.$('fpr-library');
+      if (input.value.trim()) return;
+      try {
+        const key = this.libraryKey();
+        chrome.storage.local.get(key, (r) => {
+          const text = r && r[key];
+          if (!text || input.value.trim()) return;
+          input.value = text;
+          input.dispatchEvent(new Event('input'));
+          this.reconciler.initialize(text);
+          this.runReconciliation();
+        });
+      } catch (e) { /* no storage */ }
+    }
+
+    runReconciliation(full = true) {
+      if (full) this.reconciler.reconcile();
       const stats = this.reconciler.getStats();
+      this.renderLive();
       this.$('fpr-dashboard').hidden = false;
       this.$('fpr-stat-exp').textContent = stats.expected;
       this.$('fpr-stat-gen').textContent = stats.generated;
@@ -454,7 +514,9 @@ textarea:focus { border-color: var(--vc-primary); }
       const generated = this.reconciler.getGeneratedPrompts();
       this.$('fpr-generated-section').hidden = generated.length === 0;
       this.$('fpr-generated-n').textContent = generated.length ? String(generated.length) : '';
-      this.$('fpr-generated-list').innerHTML = generated.map((r) => `<span class="chip">✓ ${esc(r.identifier)}</span>`).join('');
+      this.$('fpr-generated-list').innerHTML = generated.map((r) => `<span class="chip${this.fresh.has(r.identifier) ? ' fresh' : ''}" title="${esc(r.assetIds.length)} result(s) in Flow">✓ ${esc(r.identifier)}</span>`).join('');
+      // Newly generated ones stand out briefly.
+      if (this.fresh.size) { clearTimeout(this.freshTimer); this.freshTimer = setTimeout(() => { this.fresh.clear(); this.renderGeneratedList(); }, 4000); }
     }
 
     // Show recovered prompts (exact, from the library) ready to copy.
@@ -518,6 +580,8 @@ textarea:focus { border-color: var(--vc-primary); }
 
     show() {
       this.container.style.display = 'flex';
+      this.restoreLibrary();
+      this.renderLive();
       if (window.FloatingPanelManager) window.FloatingPanelManager.restorePosition('prompt-recovery');
     }
 

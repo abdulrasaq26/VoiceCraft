@@ -15,7 +15,10 @@ class MediaTray {
     this.container.id = 'flow-media-downloader-host';
     this.shadow = this.container.attachShadow({ mode: 'closed' });
 
-    // Inject styles
+    // Shared studio theme (tokens, scrollbars), then the tray's own styles
+    const theme = document.createElement('style');
+    theme.textContent = window.VC_THEME_CSS || '';
+    this.shadow.appendChild(theme);
     const styleLink = document.createElement('link');
     styleLink.rel = 'stylesheet';
     styleLink.href = chrome.runtime.getURL('content/ui/styles.css');
@@ -28,7 +31,7 @@ class MediaTray {
 
     tray.innerHTML = `
       <div class="fmd-header">
-        <span class="fmd-logo">V</span>
+        <img class="fmd-logo" src="${chrome.runtime.getURL('icons/frameloom-mark.svg')}" alt="">
         <div class="fmd-header-title">Flow Downloader<span class="fmd-header-sub" id="fmd-sub">Images and videos found in this project</span></div>
         <button class="fmd-close-btn" title="Close">✕</button>
       </div>
@@ -51,7 +54,11 @@ class MediaTray {
           <button class="fmd-btn-text fmd-btn-text--danger" id="btn-delete-invalid" title="Remove items whose name isn't a timestamp like 0-21">Remove unnamed</button>
           <span class="fmd-sel-count" id="fmd-sel-count"></span>
         </div>
-        <button class="fmd-btn-primary" id="btn-download" disabled>Download</button>
+        <div class="fmd-footer-main">
+          <button class="fmd-btn-primary" id="btn-download" disabled>Download</button>
+          <button class="fmd-btn-send" id="btn-send-editor" hidden disabled title="Add the selected pictures to the studio project and open them in the AutoEditor">Send to AutoEditor</button>
+        </div>
+        <div class="fmd-send-note" id="fmd-send-note" hidden></div>
       </div>
     `;
 
@@ -61,6 +68,10 @@ class MediaTray {
     this.trayEl = tray;
     this.gridEl = tray.querySelector('#media-grid');
     this.btnDownload = tray.querySelector('#btn-download');
+    this.btnSend = tray.querySelector('#btn-send-editor');
+    // Inside VoiceCraft Studio, selected media can go straight to the AutoEditor.
+    this.inStudio = !!(window.__vcHost && document.documentElement.hasAttribute('data-voicecraft-host'));
+    this.btnSend.hidden = !this.inStudio;
 
     this.bindEvents();
     this.makeDraggable();
@@ -81,29 +92,31 @@ class MediaTray {
     const btnCrawl = this.shadow.querySelector('#fmd-btn-crawl');
     const btnStop = this.shadow.querySelector('#fmd-btn-stop');
     const crawlStatus = this.shadow.querySelector('#fmd-crawl-status');
-    
+
     if (btnCrawl) {
         btnCrawl.addEventListener('click', () => {
             if (window.FlowCrawlerInstance) {
                 btnCrawl.hidden = true;
                 btnStop.hidden = false;
                 crawlStatus.hidden = false;
-                
+
                 const updateUI = (stats) => {
-                    crawlStatus.textContent = stats.state;
-                    if (stats.state === 'COMPLETE' || stats.state === 'STOPPED') {
+                    const label = { scanning: 'Scanning…', waiting: 'Waiting for Flow…', processing: 'Processing…',
+                        complete: 'Done', stopped: 'Stopped', error: 'Error' }[stats.status] || '';
+                    crawlStatus.textContent = `${label} ${stats.discovered} found`;
+                    if (!stats.running) {
                         btnStop.hidden = true;
                         btnCrawl.hidden = false;
                         window.FlowCrawlerInstance.unsubscribe(updateUI);
                         setTimeout(() => { crawlStatus.hidden = true; }, 3000);
                     }
                 };
-                
+
                 window.FlowCrawlerInstance.subscribe(updateUI);
                 window.FlowCrawlerInstance.start();
             }
         });
-        
+
         btnStop.addEventListener('click', () => {
             if (window.FlowCrawlerInstance) {
                 window.FlowCrawlerInstance.stop();
@@ -113,7 +126,7 @@ class MediaTray {
 
     this.shadow.querySelector('.fmd-close-btn').addEventListener('click', () => this.hide());
 
-    
+
     // Filters
     this.currentFilter = 'all';
     const filterBtns = this.shadow.querySelectorAll('.fmd-filter-btn');
@@ -149,7 +162,7 @@ class MediaTray {
     this.shadow.querySelector('#btn-delete-invalid').addEventListener('click', () => {
       const invalidKeys = [];
       const validFormat = /^\d+-\d+$/;
-      
+
       this.mediaItems.forEach((item, key) => {
           let name = item.data.title || '';
           if (name) {
@@ -159,7 +172,7 @@ class MediaTray {
               invalidKeys.push(key);
           }
       });
-      
+
       invalidKeys.forEach(key => {
           const item = this.mediaItems.get(key);
           if (item && item.ui && item.ui.element) {
@@ -167,15 +180,17 @@ class MediaTray {
           }
           this.mediaItems.delete(key);
       });
-      
+
       this.updateFooter();
     });
+
+    this.btnSend.addEventListener('click', () => this.sendToEditor());
 
     this.btnDownload.addEventListener('click', async () => {
       const selected = Array.from(this.mediaItems.values())
         .filter(item => item.data.status === 'selected')
         .map(item => item.data);
-      
+
       if (selected.length === 0) return;
 
       this.btnDownload.disabled = true;
@@ -218,6 +233,64 @@ class MediaTray {
     });
   }
 
+  // Selected items, in the tray's (name) order, into the studio project and
+  // the AutoEditor. Blob media are read here; web URLs are fetched by the app
+  // with this tab's session.
+  async sendToEditor() {
+    const selected = Array.from(this.mediaItems.values())
+      .filter((item) => item.data.status === 'selected')
+      .map((item) => item.data);
+    if (!selected.length || !window.__vcHost) return;
+    const note = this.shadow.querySelector('#fmd-send-note');
+    const reg = window.FlowMediaRegistry;
+    this.btnSend.disabled = true;
+    this.btnSend.textContent = 'Preparing…';
+    note.hidden = true;
+    try {
+      const items = [];
+      for (const d of selected) {
+        const asset = reg && reg.all().find((a) => a.id === d.id);
+        const it = {
+          name: d.title || (asset && (asset.name || asset.guessName)) || 'flow',
+          type: d.type, key: d.fingerprint || '', flowMediaId: (asset && asset.flowId) || '', url: d.url,
+        };
+        if (String(d.url).startsWith('blob:')) {
+          // Pictures: the same conversion the downloader uses; videos: raw bytes.
+          const r = d.type === 'image' ? await window.MediaResolver.resolve(d) : d;
+          if (r.url && r.url.startsWith('data:')) it.url = r.url;
+          else {
+            const res = await fetch(d.url);
+            it.bytes = await res.arrayBuffer();
+            it.mime = res.headers.get('content-type') || '';
+            it.url = '';
+          }
+        }
+        items.push(it);
+      }
+      this.btnSend.textContent = `Sending ${items.length}…`;
+      const res = await window.__vcHost.request('import-media', { items });
+      note.hidden = false;
+      if (!res || !res.ok) {
+        note.className = 'fmd-send-note bad';
+        note.textContent = (res && res.error) || 'Could not send to the AutoEditor.';
+      } else {
+        const bits = [];
+        if (res.added) bits.push(`${res.added} added`);
+        if (res.existing) bits.push(`${res.existing} already in the project`);
+        if (res.failed && res.failed.length) bits.push(`${res.failed.length} failed`);
+        note.className = 'fmd-send-note ok';
+        note.textContent = `Sent to “${res.project}”: ${bits.join(' · ') || 'nothing new'}`;
+      }
+    } catch (e) {
+      note.hidden = false;
+      note.className = 'fmd-send-note bad';
+      note.textContent = 'Could not send: ' + (e && e.message ? e.message : e);
+    } finally {
+      this.btnSend.disabled = false;
+      this.updateFooter();
+    }
+  }
+
   flashDownload(text) {
     this.btnDownload.textContent = text;
     clearTimeout(this.flashTimer);
@@ -240,7 +313,7 @@ class MediaTray {
 
   addMedia(mediaData) {
     this.init();
-    
+
     if (this.mediaItems.has(mediaData.id)) return;
 
     const ui = new window.MediaItemUI(mediaData, {
@@ -252,7 +325,7 @@ class MediaTray {
     });
 
     this.mediaItems.set(mediaData.id, { data: mediaData, ui });
-    
+
     // Convert to array and sort alphanumerically by title
     const sortedEntries = Array.from(this.mediaItems.entries()).sort((a, b) => {
         const titleA = a[1].data.title || '';
@@ -262,14 +335,26 @@ class MediaTray {
 
     // Reconstruct the map in sorted order
     this.mediaItems = new Map(sortedEntries);
-    
+
     // Re-render the grid in the correct order
     this.gridEl.innerHTML = '';
     this.mediaItems.forEach(item => {
         this.gridEl.appendChild(item.ui.element);
     });
-    
+
     this.updateFooter();
+  }
+
+  // A registry entry's name arrived later: show it.
+  updateMedia(asset) {
+    const item = this.mediaItems.get(asset.id);
+    if (!item) return;
+    const title = asset.name || asset.guessName || null;
+    if (title && title !== item.data.title) {
+      item.data.title = title;
+      item.ui.setTitle(title);
+    }
+    if (asset.element) item.data.element = asset.element;
   }
 
   clearAll() {
@@ -307,9 +392,13 @@ class MediaTray {
          if (item.data.type === 'video') vidCount++;
       }
     });
-    
+
     this.btnDownload.textContent = count ? `Download ${count} item${count === 1 ? '' : 's'}` : 'Select items to download';
     this.btnDownload.disabled = count === 0;
+    if (this.btnSend && this.btnSend.textContent.indexOf('…') < 0) {
+      this.btnSend.disabled = count === 0;
+      this.btnSend.textContent = count ? `Send ${count} to AutoEditor` : 'Send to AutoEditor';
+    }
 
     // Filter counts
     const total = imgCount + vidCount;
