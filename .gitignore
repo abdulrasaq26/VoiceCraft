@@ -54,6 +54,8 @@ dist/
 #!kaggle_director/**/*.py
 #!build_kaggle_notebook.py
 *.cjs
+# ...but the Electron preloads are app code
+!electron/*.cjs
 !electron/preload.cjs
 electron_log*.txt
 test-ext.js
