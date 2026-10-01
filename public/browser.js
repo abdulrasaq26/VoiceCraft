@@ -237,6 +237,11 @@
     els.zoom.textContent = Math.round(z * 100) + '%';
     const mode = state.settings.flowTools;
     els.flowtools.hidden = !t || mode === 'never' || (mode === 'auto' && !isFlowUrl(url));
+    for (const [panel, id] of Object.entries(FLOW_BUTTONS)) {
+      const on = !!(t && t.flowPanel === panel);
+      $(id).classList.toggle('is-on', on);
+      $(id).setAttribute('aria-pressed', String(on));
+    }
   }
 
   els.back.addEventListener('click', () => state.active && EB.goBack(state.active));
@@ -280,15 +285,15 @@
   });
   els.address.addEventListener('input', () => { state.editingAddress = true; });
 
-  // Flow tools → extension content scripts in the active tab.
-  function flow(action, btn) {
-    if (!state.active) return;
-    EB.flowCommand(state.active, action);
-    if (btn) { btn.classList.add('is-flash'); setTimeout(() => btn.classList.remove('is-flash'), 350); }
+  // Flow tools → the extension's shared panel manager in the active tab
+  // (content/automation/host-bridge.js). Each button opens its panel, or
+  // closes it if it's already open; opening one closes the others.
+  const FLOW_BUTTONS = { downloader: 'btn-flow-downloader', automator: 'btn-flow-automator', 'prompt-recovery': 'btn-prompt-recovery' };
+  for (const [panel, id] of Object.entries(FLOW_BUTTONS)) {
+    $(id).addEventListener('click', () => {
+      if (state.active) EB.flowCommand(state.active, { action: 'toggle-panel', panel });
+    });
   }
-  $('btn-flow-downloader').addEventListener('click', (e) => flow('scan', e.currentTarget));
-  $('btn-flow-automator').addEventListener('click', (e) => flow('toggle_automator', e.currentTarget));
-  $('btn-prompt-recovery').addEventListener('click', (e) => flow('toggle_recovery', e.currentTarget));
 
   // ---------------------------------------------------------------- bookmarks
   async function toggleBookmark() {
@@ -543,9 +548,23 @@
   });
 
   // ----------------------------------------------------------------- commands
-  function toggleFocus() {
-    document.body.classList.toggle('is-focus');
+  // Focus mode: full screen with the app header gone — tabs, toolbar and the
+  // Flow tools stay. Only the layout changes; pages are never reloaded.
+  function setFocus(on, fromWindow = false) {
+    on = !!on;
+    if (document.body.classList.contains('is-fullscreen')) return; // a video owns the screen
+    document.body.classList.toggle('is-focus', on);
+    const b = $('btn-focus');
+    b.setAttribute('aria-pressed', String(on));
+    b.title = on ? 'Exit focus mode (F11)' : 'Focus mode — full screen, toolbar stays (F11)';
+    if (!fromWindow) EB.setWindowFullscreen(on);
+    requestAnimationFrame(syncBounds);
   }
+  function toggleFocus() { setFocus(!document.body.classList.contains('is-focus')); }
+  $('btn-focus').addEventListener('click', toggleFocus);
+  $('btn-settings').addEventListener('click', () => openSettings());
+  // Leaving OS full screen some other way also leaves focus mode.
+  EB.onWindowFullscreen(({ on }) => { if (!on && document.body.classList.contains('is-focus')) setFocus(false, true); });
 
   const commands = {
     'new-tab': () => newTab(),

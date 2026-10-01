@@ -35,6 +35,7 @@
   const flowDriver = new window.FlowDriver(queueManager, automatorAdapter);
   const assetMatcher = new window.AssetMatcher(queueManager);
   const automatorPanel = new window.AutomatorPanel(queueManager, automatorAdapter);
+  window.FlowAutomatorPanel = automatorPanel; // for the VoiceCraft toolbar's panel toggles
 
   if (window.AutomatorEvents) {
     window.AutomatorEvents.on('ASSET_MATCHED', async (eventData) => {

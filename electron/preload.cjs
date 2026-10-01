@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronBrowser', {
   unmount: () => ipcRenderer.send('browser:unmount'),
   resize: (bounds) => ipcRenderer.send('browser:resize', bounds),
   setHidden: (hidden) => ipcRenderer.send('browser:set-hidden', hidden),
+  setWindowFullscreen: (on) => ipcRenderer.send('browser:set-window-fullscreen', on),
   init: () => ipcRenderer.invoke('browser:init'),
 
   // tabs
@@ -68,4 +69,5 @@ contextBridge.exposeInMainWorld('electronBrowser', {
   onDownloadRemoved: listen('browser:download-removed'),
   onDownloadsReset: listen('browser:downloads-reset'),
   onPageFullscreen: listen('browser:page-fullscreen'),
+  onWindowFullscreen: listen('browser:window-fullscreen'),
 });

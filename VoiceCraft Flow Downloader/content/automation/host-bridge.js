@@ -110,6 +110,67 @@
     pump();
   }
 
+  // ---- extension panels: one shared open/close manager ----
+  // The panels' own DOM is the source of truth, so closing one with its own
+  // ✕ button is picked up too. Opening a panel closes the others.
+  const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !== '';
+  const panels = {
+    downloader: {
+      el: () => window.FlowTray && window.FlowTray.trayEl,
+      isOpen() { return !!(window.FlowTray && window.FlowTray.isVisible && shown(this.el())); },
+      open: () => deliver({ action: 'scan' }), // fresh scan, then shows the tray
+      close: () => window.FlowTray && window.FlowTray.hide(),
+    },
+    automator: {
+      el: () => window.FlowAutomatorPanel && window.FlowAutomatorPanel.container,
+      isOpen() { return shown(this.el()); },
+      open: () => window.FlowAutomatorPanel && window.FlowAutomatorPanel.show(),
+      close: () => {
+        const p = window.FlowAutomatorPanel;
+        if (p) { p.isVisible = false; p.container.style.display = 'none'; }
+      },
+    },
+    'prompt-recovery': {
+      el: () => window.promptRecoveryUI && window.promptRecoveryUI.container,
+      isOpen() { return shown(this.el()) && this.el().style.display === 'flex'; },
+      open: () => {
+        if (!window.promptRecoveryUI && window.PromptRecoveryUI) window.promptRecoveryUI = new window.PromptRecoveryUI();
+        if (window.promptRecoveryUI) window.promptRecoveryUI.show();
+      },
+      close: () => window.promptRecoveryUI && window.promptRecoveryUI.hide(),
+    },
+  };
+  const openPanel = () => Object.keys(panels).find((k) => { try { return panels[k].isOpen(); } catch (e) { return false; } }) || null;
+  let lastReported;
+  const reportPanels = () => {
+    const open = openPanel();
+    if (open !== lastReported) { lastReported = open; post({ type: 'panel-state', open }); }
+  };
+  const watched = new WeakSet();
+  const watchPanels = () => {
+    for (const k of Object.keys(panels)) {
+      const el = panels[k].el();
+      if (el && !watched.has(el)) {
+        watched.add(el);
+        new MutationObserver(reportPanels).observe(el, { attributes: true, attributeFilter: ['style'] });
+      }
+    }
+  };
+  const extensionPanelManager = {
+    toggle(name) {
+      const p = panels[name];
+      if (!p) return;
+      if (p.isOpen()) p.close();
+      else {
+        for (const k of Object.keys(panels)) if (k !== name && panels[k].isOpen()) panels[k].close();
+        p.open();
+      }
+      // Panels can be created lazily by open(); watch them, then report.
+      setTimeout(() => { watchPanels(); reportPanels(); }, 50);
+    },
+  };
+  window.__vcPanels = extensionPanelManager;
+
   // ---- messages from the app ----
   window.addEventListener('message', (e) => {
     const d = e.data;
@@ -120,6 +181,8 @@
       if (cb) cb(d.result);
     } else if (d.type === 'message' && d.message) {
       const m = d.message;
+      if (m.action === 'toggle-panel') { extensionPanelManager.toggle(m.panel); return; }
+      if (m.action === 'query-panels') { lastReported = undefined; watchPanels(); reportPanels(); return; }
       if (m.action === 'downloadProgress' && (m.status === 'downloaded' || m.status === 'error')) {
         const resolve = waiting.get(m.mediaId);
         waiting.delete(m.mediaId);

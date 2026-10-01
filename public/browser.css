@@ -120,6 +120,11 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 .icon-btn--sm { width: 26px; height: 26px; border-radius: 6px; }
 .icon-btn--sm svg { width: 15px; height: 15px; }
 .newtab { margin-bottom: 2px; }
+#btn-focus .i-exit { display: none; }
+body.is-focus #btn-focus .i-exit { display: block; }
+body.is-focus #btn-focus .i-enter { display: none; }
+body.is-focus #btn-focus { color: var(--accent-2); background: rgba(99,102,241,.14); }
+.tool.is-on { background: var(--accent); border-color: var(--accent); color: #fff; }
 #btn-reload .i-stop { display: none; }
 #btn-reload.is-loading .i-stop { display: block; }
 #btn-reload.is-loading .i-reload { display: none; }

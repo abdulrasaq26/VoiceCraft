@@ -96,6 +96,7 @@ export class BrowserManager {
       if (isMainFrame && !inPlace) { this.mounted = false; this.syncAttachment(); }
     });
     app.on('before-quit', () => this.store.flush());
+    mainWindow.on('leave-full-screen', () => this.send('browser:window-fullscreen', { on: false }));
   }
 
   send(channel, payload) {
@@ -211,12 +212,16 @@ export class BrowserManager {
     on('browser:stop-find', (tabId) => { const wc = this.wc(tabId); if (wc) wc.stopFindInPage('clearSelection'); });
 
     on('browser:tab-menu', ({ tabId }) => this.showTabMenu(tabId));
+    // Focus mode fills the screen; only the window changes, pages are untouched.
+    on('browser:set-window-fullscreen', (on) => {
+      if (this.mainWindow.isFullScreen() !== !!on) this.mainWindow.setFullScreen(!!on);
+    });
     on('browser:app-menu', ({ x, y }) => this.showAppMenu(x, y));
 
     // Flow tools on the toolbar → the extension's content scripts in the tab.
     on('browser:flow-command', ({ tabId, action }) => {
       const wc = this.wc(tabId);
-      if (wc) wc.send('flow-host:to-ext', { action });
+      if (wc) wc.send('flow-host:to-ext', typeof action === 'object' && action ? action : { action });
     });
 
     // Settings / data
@@ -280,6 +285,10 @@ export class BrowserManager {
 
     // ---- Flow bridge (from the tab preload, not the host page) ----
     ipcMain.on('flow-host:download', (e, req) => this.flowDownload(e.sender, req));
+    ipcMain.on('flow-host:panel-state', (e, { open } = {}) => {
+      const tab = this.tabByWebContents(e.sender);
+      if (tab && tab.flowPanel !== (open || null)) { tab.flowPanel = open || null; this.notify(tab.id); }
+    });
     ipcMain.handle('flow-host:exec-main-world', (e, payload) => this.flowExecMainWorld(e.sender, payload));
   }
 
@@ -381,6 +390,7 @@ export class BrowserManager {
       tab.error = null;
       tab.url = url;
       tab.favicon = null;
+      tab.flowPanel = null; // a new document starts with no extension panel open
       this.store.addHistory(url, wc.getTitle());
       this.notify(id);
     });
@@ -481,7 +491,6 @@ export class BrowserManager {
     if (k === 'f5') return i.shift || ctrl ? 'hard-reload' : 'reload';
     if (k === 'f11') return 'focus-mode';
     if (k === 'f12' || (ctrl && i.shift && k === 'i')) return 'devtools';
-    if (k === 'escape') return 'escape';
     return null;
   }
 
@@ -580,6 +589,7 @@ export class BrowserManager {
       profileId: t.profileId,
       error: t.error,
       crashed: t.crashed,
+      flowPanel: t.flowPanel || null,
     };
   }
 
