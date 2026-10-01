@@ -311,7 +311,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--vc-primary); }
         if (th) { const [jid, i] = th.dataset.prev.split('|'); this.openPreview(jid, +i); return; }
         const b = x.target.closest('[data-act]');
         if (!b) return;
-        if (b.dataset.act === 'retry') e.retry(b.dataset.id);
+        if (b.dataset.act === 'retry') { e.retry(b.dataset.id); if (e.state === 'idle') e.start(); }
         if (b.dataset.act === 'remove') e.remove(b.dataset.id);
         if (b.dataset.act === 'send') { e.sendToEditor([b.dataset.id]); this.flashEl(b, '✓'); }
       });
@@ -443,7 +443,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--vc-primary); }
               ${this.thumbsHtml(j, isCur)}
             </div>
             <div class="ja">
-              ${j.status === 'error' ? `<button class="ib" data-act="retry" data-id="${esc(j.id)}" title="Retry">↻</button>` : ''}
+              ${j.status === 'error' || (j.status === 'completed' && !isCur) ? `<button class="ib" data-act="retry" data-id="${esc(j.id)}" title="${j.status === 'error' ? 'Retry' : 'Regenerate'}">↻</button>` : ''}
               ${e.inStudio && e.studioProject && (j.outputs || []).some((o) => o.name) && j.status === 'completed' ? `<button class="ib" data-act="send" data-id="${esc(j.id)}" title="Send to AutoEditor">⇥</button>` : ''}
               ${!isCur ? `<button class="ib" data-act="remove" data-id="${esc(j.id)}" title="Remove">✕</button>` : ''}
             </div>

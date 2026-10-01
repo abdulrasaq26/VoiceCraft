@@ -53,6 +53,9 @@
     const blocks = /\n\s*\n/.test(src) ? src.split(/\n\s*\n/) : src.split('\n');
     let n = startNumber || 1;
     const out = [];
+    // A line with only a #name and/or [TYPE] (e.g. "#00-00" above its prompt)
+    // belongs to the prompt that follows it.
+    let carryName = null, carryType = null;
     for (let raw of blocks) {
       raw = raw.trim();
       if (!raw) continue;
@@ -64,8 +67,17 @@
       }
       const tm = raw.match(/^\[(IMAGE|VIDEO)\]\s*/i);
       if (tm) { type = tm[1].toLowerCase(); raw = raw.slice(tm[0].length); }
+      // "#00-00: prompt" / "#00-00 - prompt": drop the separator.
+      if (name) raw = raw.replace(/^[:\-–—.)]+\s*/, '');
       const prompt = raw.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
-      if (!prompt) continue;
+      if (!prompt) {
+        if (name) carryName = name;
+        if (type) carryType = type;
+        continue;
+      }
+      if (!name && carryName) name = carryName;
+      if (!type && carryType) type = carryType;
+      carryName = null; carryType = null;
       // Only prompts without their own name use up an automatic number.
       if (!name) { name = String(n).padStart(3, '0'); n++; }
       out.push({ name, id: '#' + name, type: type || defaultType || 'image', prompt });

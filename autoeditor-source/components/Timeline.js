@@ -452,6 +452,12 @@ export default function Timeline({
                     </span>
                   )}
                   {fname && <span className="clip__name">{fname}</span>}
+                  {onDeleteGap && (
+                    <button
+                      type="button" className="clip__del" title="Delete clip (the previous clip stretches over it)"
+                      onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onDeleteGap(c.name); }}
+                    >✕</button>
+                  )}
                   {i < clips.length - 1 && (
                     <span
                       className="clip__resize"

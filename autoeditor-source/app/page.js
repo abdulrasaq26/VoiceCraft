@@ -295,11 +295,16 @@ export default function Home() {
   }, [commitDoc]);
 
   // Completely delete a gap slot, allowing the previous clip to stretch.
+  // The lead-in gap isn't a slot: deleting it starts the first clip at 0.
   const deleteGap = useCallback((id) => {
-    commitDoc((d) => ({
-      ...d,
-      slots: d.slots.filter((s) => s.id !== id),
-    }));
+    commitDoc((d) => {
+      if (id === LEAD_IN) {
+        const first = d.slots.filter((s) => s.seconds != null).sort((a, b) => a.seconds - b.seconds)[0];
+        if (!first) return d;
+        return { ...d, slots: d.slots.map((s) => (s === first ? { ...s, seconds: 0 } : s)) };
+      }
+      return { ...d, slots: d.slots.filter((s) => s.id !== id) };
+    });
   }, [commitDoc]);
 
   // Fill a gap. LEAD_IN adds a new slot at 0; otherwise fill the empty slot.
