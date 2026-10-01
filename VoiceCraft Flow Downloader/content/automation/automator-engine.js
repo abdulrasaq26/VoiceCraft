@@ -21,14 +21,21 @@
     videoTimeout: 600,        // seconds to wait for a video
     retries: 1,               // extra attempts for a prompt that fails
     autoDownload: true,
+    renameInFlow: true,       // name generated pictures in Flow so later prompts can @reference them
+    refs: [],                 // default references: [{ mediaId, handle }] for prompts without @name
     project: 'Flow Automator',
     batch: 'Batch 01',
   };
 
   // ---- prompt parsing -------------------------------------------------
   // Blocks separated by blank lines are prompts (multi-line prompts allowed);
-  // with no blank lines at all, each line is a prompt. A block may start with
-  // an id ("#12" / "#scene-3") and/or a type tag ("[IMAGE]" / "[VIDEO]").
+  // with no blank lines at all, each line is a prompt.
+  //   #00-00 / #[scene one]  the prompt's name — files save as "00-00", and the
+  //                          picture is named "00-00" in Flow (@00-00 later)
+  //   [IMAGE] / [VIDEO]      type, at the start
+  //   @hero / @[old hero]    use that picture from the Flow project as a reference
+  const NAME_RE = /(^|\s)#\[([^\]]+)\]|(^|\s)#([\p{L}0-9_-]+)/u;
+
   function parsePrompts(text, defaultType, startNumber) {
     const src = String(text || '').replace(/\r/g, '').trim();
     if (!src) return [];
@@ -38,19 +45,31 @@
     for (let raw of blocks) {
       raw = raw.trim();
       if (!raw) continue;
-      let id = null, type = null;
-      let m = raw.match(/^(#[\w-]+)\s*/);
-      if (m) { id = m[1]; raw = raw.slice(m[0].length); }
-      m = raw.match(/^\[(IMAGE|VIDEO)\]\s*/i);
-      if (m) { type = m[1].toLowerCase(); raw = raw.slice(m[0].length); }
-      const prompt = raw.replace(/\s*\n\s*/g, ' ').trim();
+      let name = null, type = null;
+      const nm = NAME_RE.exec(raw);
+      if (nm) {
+        name = (nm[2] || nm[4]).trim();
+        raw = (raw.slice(0, nm.index) + ' ' + raw.slice(nm.index + nm[0].length)).trim();
+      }
+      const tm = raw.match(/^\[(IMAGE|VIDEO)\]\s*/i);
+      if (tm) { type = tm[1].toLowerCase(); raw = raw.slice(tm[0].length); }
+      const prompt = raw.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
       if (!prompt) continue;
-      // Only prompts without their own id use up an automatic number.
-      if (!id) { id = '#' + String(n).padStart(3, '0'); n++; }
-      out.push({ id, type: type || defaultType || 'image', prompt });
+      // Only prompts without their own name use up an automatic number.
+      if (!name) { name = String(n).padStart(3, '0'); n++; }
+      out.push({ name, id: '#' + name, type: type || defaultType || 'image', prompt });
     }
     return out;
   }
+
+  // File-safe version of a prompt name.
+  const fileStem = (name) => String(name || '').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_').replace(/^[._]+|[._]+$/g, '').slice(0, 80) || 'image';
+  // Handles match case-insensitively, with or without a file extension.
+  const handleKeys = (h) => {
+    const k = String(h || '').trim().toLowerCase();
+    const bare = k.replace(/\.(png|jpe?g|webp|gif|bmp|heic|avif)$/i, '');
+    return bare && bare !== k ? [k, bare] : [k];
+  };
 
   // ---- page helpers ------------------------------------------------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,6 +86,9 @@
       this.downloadWaiters = new Map(); // mediaId -> resolve(status)
       this.abort = null;
       this.log = [];
+      this.handles = new Map();  // handle key -> [{ mediaId, handle, createTime, session }]
+      this.libraryInfo = null;   // last library() result, for the picker
+      this.libraryAt = 0;
       this.loaded = this.load();
     }
 
@@ -97,8 +119,8 @@
       clearTimeout(this._saveTimer);
       this._saveTimer = setTimeout(() => {
         try {
-          const jobs = this.jobs.map(({ id, type, prompt, status, attempts, error, results, finishedAt }) =>
-            ({ id, type, prompt, status, attempts, error, results, finishedAt }));
+          const jobs = this.jobs.map(({ id, name, type, prompt, status, attempts, error, results, outputs, finishedAt }) =>
+            ({ id, name, type, prompt, status, attempts, error, results, outputs, finishedAt }));
           chrome.storage.local.set({ [STORE_KEY]: { settings: this.settings, jobs } });
         } catch (e) { /* ignore */ }
       }, 300);
@@ -112,7 +134,7 @@
 
     nextNumber() {
       let max = 0;
-      for (const j of this.jobs) { const m = /^#(\d+)$/.exec(j.id); if (m) max = Math.max(max, +m[1]); }
+      for (const j of this.jobs) { const m = /^(\d+)$/.exec(j.name || ''); if (m) max = Math.max(max, +m[1]); }
       return max + 1;
     }
 
@@ -121,10 +143,10 @@
       const taken = new Set(this.jobs.map((j) => j.id));
       let added = 0;
       for (const p of parsed) {
-        let id = p.id;
-        for (let k = 2; taken.has(id); k++) id = `${p.id}-${k}`;
+        let id = p.id, name = p.name;
+        for (let k = 2; taken.has(id); k++) { id = `${p.id}-${k}`; name = `${p.name}-${k}`; }
         taken.add(id);
-        this.jobs.push({ id, type: p.type, prompt: p.prompt, status: 'waiting', attempts: 0, error: null, results: 0 });
+        this.jobs.push({ id, name, type: p.type, prompt: p.prompt, status: 'waiting', attempts: 0, error: null, results: 0, outputs: [] });
         added++;
       }
       this.save();
@@ -139,10 +161,10 @@
     }
     retry(id) {
       const j = this.jobs.find((x) => x.id === id);
-      if (j && j !== this.current) { j.status = 'waiting'; j.error = null; j.attempts = 0; this.save(); this.emit(); }
+      if (j && j !== this.current) { j.status = 'waiting'; j.error = null; j.attempts = 0; j.outputs = []; this.save(); this.emit(); }
     }
     retryFailed() {
-      for (const j of this.jobs) if (j.status === 'error') { j.status = 'waiting'; j.error = null; j.attempts = 0; }
+      for (const j of this.jobs) if (j.status === 'error') { j.status = 'waiting'; j.error = null; j.attempts = 0; j.outputs = []; }
       this.save(); this.emit();
     }
     clearDone() {
@@ -155,7 +177,7 @@
       this.save(); this.emit();
     }
     failedPromptsText() {
-      return this.jobs.filter((j) => j.status === 'error').map((j) => `${j.id} [${j.type.toUpperCase()}] ${j.prompt}`).join('\n\n');
+      return this.jobs.filter((j) => j.status === 'error').map((j) => `#${j.name || j.id.replace(/^#/, '')} [${j.type.toUpperCase()}] ${j.prompt}`).join('\n\n');
     }
 
     counts() {
@@ -167,6 +189,72 @@
         else c.active++;
       }
       return c;
+    }
+
+    // ---- the project's pictures ----
+    remember(handle, mediaId, createTime, session) {
+      for (const k of handleKeys(handle)) {
+        const list = this.handles.get(k) || [];
+        const hit = list.find((x) => x.mediaId === mediaId);
+        if (hit) { if (session) hit.session = true; continue; }
+        list.push({ handle, mediaId, createTime: createTime || new Date().toISOString(), session: !!session });
+        this.handles.set(k, list);
+      }
+    }
+
+    // Pictures made in this run win, then the newest.
+    lookup(handle) {
+      const list = this.handles.get(String(handle || '').trim().toLowerCase());
+      if (!list || !list.length) return null;
+      return [...list].sort((a, b) => (b.session - a.session) || String(b.createTime).localeCompare(String(a.createTime)))[0].mediaId;
+    }
+
+    async loadLibrary() {
+      const lib = await this.api.library();
+      if (this.libraryInfo && this.libraryInfo.projectId !== lib.projectId) this.handles.clear(); // another project
+      // Keep this run's own names; refresh everything else.
+      for (const [k, list] of this.handles) {
+        const keep = list.filter((x) => x.session);
+        if (keep.length) this.handles.set(k, keep); else this.handles.delete(k);
+      }
+      for (const n of lib.named) this.remember(n.handle, n.mediaId, n.createTime, false);
+      this.libraryInfo = lib;
+      this.libraryAt = Date.now();
+      // Default references that have been deleted from the project drop out.
+      const alive = new Set(lib.pictures.map((p) => p.mediaId));
+      const refs = (this.settings.refs || []).filter((r) => alive.has(r.mediaId));
+      if (refs.length !== (this.settings.refs || []).length) this.settings.refs = refs;
+      this.save();
+      this.emit();
+      return lib;
+    }
+
+    toggleRef(mediaId, handle) {
+      const refs = [...(this.settings.refs || [])];
+      const i = refs.findIndex((r) => r.mediaId === mediaId);
+      if (i >= 0) refs.splice(i, 1); else refs.push({ mediaId, handle: handle || null });
+      this.setSettings({ refs });
+    }
+
+    // Upload pictures, name each after its file, and use them as references.
+    async uploadRefs(files) {
+      let ok = 0;
+      for (const f of files) {
+        try {
+          const mediaId = await this.api.upload(f);
+          this.remember(f.name, mediaId, null, true);
+          const refs = [...(this.settings.refs || [])];
+          if (!refs.some((r) => r.mediaId === mediaId)) refs.push({ mediaId, handle: f.name });
+          this.settings.refs = refs;
+          ok++;
+          this.note(`Uploaded ${f.name} — use it as @${f.name.replace(/\.[^.]+$/, '')}`);
+        } catch (e) {
+          this.note(`Upload failed: ${f.name} — ${e.message}`);
+        }
+      }
+      this.save();
+      try { await this.loadLibrary(); } catch (_) { this.emit(); }
+      return ok;
     }
 
     // ---- run control ----
@@ -235,6 +323,26 @@
         await this.api.connect();
         const want = Math.max(1, Math.min(4, +st.expected || 1));
         const results = [];
+        job.outputs = [];
+
+        // @references → prompt parts + image inputs.
+        let parts = null, imageInputs = [];
+        if (/(^|[\s(["'])@\S/.test(job.prompt)) {
+          if (job.type === 'video') {
+            throw Object.assign(new Error('@references work for images only — remove them from this video prompt.'), { final: true });
+          }
+          if (!this.libraryAt || Date.now() - this.libraryAt > 60000) await this.loadLibrary();
+          let r = window.VCResolveReferences(job.prompt, (h) => this.lookup(h));
+          if (r.missing.length) { await this.loadLibrary(); r = window.VCResolveReferences(job.prompt, (h) => this.lookup(h)); }
+          if (r.missing.length) {
+            throw Object.assign(new Error(`No picture named ${r.missing.map((m) => '@' + m).join(', ')} in this Flow project.`), { final: true });
+          }
+          parts = r.parts;
+          imageInputs = window.VCToImageInputs(r.refs);
+        }
+        if (!imageInputs.length && job.type === 'image' && (st.refs || []).length) {
+          imageInputs = window.VCToImageInputs(st.refs.map((x) => x.mediaId));
+        }
         for (let n = 1; n <= want; n++) {
           if (stopped()) throw Object.assign(new Error('Stopped'), { stopped: true });
           set('generating', want > 1 ? `${n} of ${want}` : '');
@@ -243,9 +351,18 @@
               ? await this.api.generateVideo(
                 { prompt: job.prompt, quality: st.videoQuality, ratio: st.videoRatio },
                 { timeoutSec: st.videoTimeout, shouldStop: stopped, onPoll: (s) => set('generating', `${want > 1 ? `${n} of ${want} · ` : ''}${s}s`) })
-              : await this.api.generateImage({ prompt: job.prompt, model: st.model, aspect: st.aspect });
+              : await this.api.generateImage({ prompt: job.prompt, parts, imageInputs, model: st.model, aspect: st.aspect });
             results.push(r);
             job.results = results.length;
+            job.outputs.push({ name: r.name || null, url: r.url, thumb: r.thumb || r.url, type: job.type });
+            this.save(); this.emit();
+            // Name it in Flow so later prompts can use @name (newest wins).
+            if (job.type === 'image' && st.renameInFlow && job.name && r.name) {
+              if (r.workflowId) {
+                this.api.rename(r.workflowId, job.name).catch((e) => this.note(`${job.id}: couldn't name it in Flow — ${e.message}`));
+              }
+              this.remember(job.name, r.name, null, true);
+            }
           } catch (e) {
             // Keep what already succeeded; fail outright on stop/limits/blocks.
             if (e.stopped || e.fatal || !results.length) throw e;
@@ -286,7 +403,8 @@
 
     download(job, r, index, total) {
       const mediaId = 'vca_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-      const stem = total > 1 ? `${job.id}_${index}` : job.id;
+      const base = fileStem(job.name || job.id.replace(/^#/, ''));
+      const stem = total > 1 ? `${base}_v${index}` : base;
       const mediaItem = {
         id: mediaId, url: r.url, type: job.type, mimeType: job.type === 'video' ? 'video/mp4' : 'image/png', title: stem,
         isAutomated: true, project: this.settings.project, batch: this.settings.batch, jobId: stem,

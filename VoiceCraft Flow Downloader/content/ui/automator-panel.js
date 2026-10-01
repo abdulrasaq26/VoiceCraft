@@ -90,6 +90,34 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
 .log div { padding: 6px 0; border-bottom: 1px solid #1f1f25; color: #c4c4cc; }
 .log time { font-family: Consolas, monospace; font-size: 11px; color: #6d6d78; margin-right: 8px; }
 .min .tabs, .min .body { display: none; }
+.thumbs { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.th { width: 64px; height: 64px; border-radius: 7px; overflow: hidden; background: #0d0d10; border: 1px solid #2e2e36; cursor: zoom-in; position: relative; padding: 0; }
+.th img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.th.pending { cursor: default; display: grid; place-items: center; }
+.th .vid { position: absolute; right: 3px; bottom: 3px; font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 3px; background: rgba(0,0,0,.7); color: #fff; }
+.spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #2e2e36; border-top-color: #8b8ef8; animation: sp .8s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+.refs { margin-top: 12px; border: 1px solid #24242b; border-radius: 10px; }
+.refs > summary { list-style: none; cursor: pointer; padding: 9px 11px; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 12.5px; }
+.refs > summary::-webkit-details-marker { display: none; }
+.refs > summary::before { content: "▸"; color: #6d6d78; transition: transform .12s; }
+.refs[open] > summary::before { transform: rotate(90deg); }
+.refs__n { font-size: 11px; color: #9b9ba3; font-weight: 400; }
+.refs__body { padding: 0 11px 11px; }
+.refgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; max-height: 236px; overflow-y: auto; margin-top: 8px; }
+.ref { position: relative; aspect-ratio: 1; border-radius: 7px; overflow: hidden; border: 2px solid transparent; background: #0d0d10; cursor: pointer; padding: 0; }
+.ref img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ref.on { border-color: #6366f1; }
+.ref.on::after { content: "✓"; position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; border-radius: 50%; background: #6366f1; color: #fff; font-size: 10px; display: grid; place-items: center; font-weight: 700; }
+.ref__h { position: absolute; left: 0; right: 0; bottom: 0; font-size: 9.5px; padding: 2px 4px; background: rgba(0,0,0,.72); color: #e4e4ea; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.lb { position: absolute; inset: 0; z-index: 5; background: #0e0e11; display: none; flex-direction: column; }
+.lb.on { display: flex; }
+.lb__bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #24242b; }
+.lb__t { flex: 1; font-weight: 700; font-family: Consolas, monospace; color: #c7c9ff; }
+.lb__view { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px; }
+.lb__view img, .lb__view video { max-width: 100%; max-height: 100%; border-radius: 8px; }
+.lb__nav { display: flex; justify-content: space-between; padding: 0 12px 12px; }
+.panel { position: fixed; }
 `;
 
   class AutomatorPanel {
@@ -117,13 +145,28 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
   </div>
   <div class="body">
     <div class="sec on" data-sec="queue">
-      <textarea id="input" spellcheck="false" placeholder="Paste prompts — one per line, or separate multi-line prompts with a blank line.&#10;&#10;Optional at the start of a prompt: an id (#12) and a type ([IMAGE] or [VIDEO])."></textarea>
+      <textarea id="input" spellcheck="false" placeholder="Paste prompts — one per line, or separate multi-line prompts with a blank line.&#10;&#10;#00-00 names a prompt (files save as 00-00). [VIDEO] makes it a video. @name uses a picture from the project as a reference."></textarea>
       <div class="row" style="margin-top:8px">
         <button class="btn sm" id="import">Import .txt</button>
         <input type="file" id="file" accept=".txt,text/plain" hidden>
         <span class="hint grow" id="detected" style="margin:0"></span>
         <button class="btn sm pri" id="add">Add to queue</button>
       </div>
+      <details class="refs" id="refs">
+        <summary>References <span class="refs__n" id="refsN"></span></summary>
+        <div class="refs__body">
+          <div class="hint" style="margin:0">Pictures from this Flow project. Write <b>@name</b> in a prompt to use a specific one; ticked pictures are used for prompts without an @.</div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn sm" id="refUpload">Upload…</button>
+            <input type="file" id="refFile" accept="image/*" multiple hidden>
+            <button class="btn sm" id="refReload">Refresh</button>
+            <span class="grow"></span>
+            <button class="btn sm" id="refClear">Untick all</button>
+          </div>
+          <div class="refgrid" id="refGrid"></div>
+          <div class="hint" id="refMsg"></div>
+        </div>
+      </details>
       <div class="prog">
         <div class="prog__txt"><span id="progtxt">Queue is empty</span><span id="progpct"></span></div>
         <div class="bar" id="bar"></div>
@@ -164,12 +207,19 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
         <select data-k="retries"><option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
       <div class="f"><div><div class="f__l">Download results</div><div class="f__d">Save each prompt's results automatically</div></div>
         <select data-k="autoDownload"><option value="true">On</option><option value="false">Off</option></select></div>
+      <div class="f"><div><div class="f__l">Name pictures in Flow</div><div class="f__d">#00-00 prompts are named 00-00 in Flow, so later prompts can use @00-00</div></div>
+        <select data-k="renameInFlow"><option value="true">On</option><option value="false">Off</option></select></div>
       <div class="f"><div><div class="f__l">Project folder</div></div><input type="text" data-k="project" maxlength="80"></div>
       <div class="f"><div><div class="f__l">Batch folder</div></div><input type="text" data-k="batch" maxlength="80"></div>
       <div class="path" id="path"></div>
       <div class="note">Open a Flow project and stay signed in. Results are added to the project on screen and use your Flow credits, like pressing Generate yourself. Daily limits and blocks from Google pause the queue.</div>
     </div>
     <div class="sec" data-sec="log"><div class="log" id="log"></div></div>
+  </div>
+  <div class="lb" id="lb">
+    <div class="lb__bar"><span class="lb__t" id="lbT"></span><a class="btn sm" id="lbOpen" target="_blank" rel="noopener">Open full size</a><button class="ib" id="lbClose" title="Close">✕</button></div>
+    <div class="lb__view" id="lbView"></div>
+    <div class="lb__nav"><button class="btn sm" id="lbPrev">‹ Previous</button><button class="btn sm" id="lbNext">Next ›</button></div>
   </div>
 </div>`;
 
@@ -222,7 +272,28 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
         if (!t) return;
         try { await navigator.clipboard.writeText(t); this.flash('copyFailed', 'Copied'); } catch (_) { input.value = t; countDetected(); }
       });
+      this.$('refs').addEventListener('toggle', () => { if (this.$('refs').open && !e.libraryInfo) this.reloadRefs(); });
+      this.$('refReload').addEventListener('click', () => this.reloadRefs());
+      this.$('refUpload').addEventListener('click', () => this.$('refFile').click());
+      this.$('refFile').addEventListener('change', async (x) => {
+        const files = [...(x.target.files || [])];
+        x.target.value = '';
+        if (!files.length) return;
+        this.$('refMsg').textContent = `Uploading ${files.length} picture${files.length === 1 ? '' : 's'}…`;
+        const n = await e.uploadRefs(files);
+        this.$('refMsg').textContent = n === files.length ? '' : `${files.length - n} upload${files.length - n === 1 ? '' : 's'} failed — see Activity.`;
+      });
+      this.$('refClear').addEventListener('click', () => e.setSettings({ refs: [] }));
+      this.$('refGrid').addEventListener('click', (x) => {
+        const b = x.target.closest('[data-mid]');
+        if (b) e.toggleRef(b.dataset.mid, b.dataset.h || null);
+      });
+      this.$('lbClose').addEventListener('click', () => this.$('lb').classList.remove('on'));
+      this.$('lbPrev').addEventListener('click', () => this.openPreview(this.lbJob, this.lbIndex - 1));
+      this.$('lbNext').addEventListener('click', () => this.openPreview(this.lbJob, this.lbIndex + 1));
       this.$('list').addEventListener('click', (x) => {
+        const th = x.target.closest('[data-prev]');
+        if (th) { const [jid, i] = th.dataset.prev.split('|'); this.openPreview(jid, +i); return; }
         const b = x.target.closest('[data-act]');
         if (!b) return;
         if (b.dataset.act === 'retry') e.retry(b.dataset.id);
@@ -235,12 +306,63 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
       this.shadow.querySelectorAll('[data-k]').forEach((el) => el.addEventListener('change', () => {
         const k = el.dataset.k;
         let v = el.value;
-        if (k === 'autoDownload') v = v === 'true';
+        if (k === 'autoDownload' || k === 'renameInFlow') v = v === 'true';
         else if (['expected', 'delay', 'videoTimeout', 'retries'].includes(k)) v = Math.max(0, +v || 0);
         else if (k === 'project' || k === 'batch') v = v.trim() || (k === 'project' ? 'Flow Automator' : 'Batch 01');
         e.setSettings({ [k]: v });
         this.syncSettings();
       }));
+    }
+
+    thumbsHtml(j, isCur) {
+      const outs = j.outputs || [];
+      const want = Math.max(1, +this.engine.settings.expected || 1);
+      const pending = isCur && ['submitting', 'generating'].includes(j.status) ? Math.max(0, want - outs.length) : 0;
+      if (!outs.length && !pending) return '';
+      const items = outs.map((o, i) => `<button class="th" data-prev="${esc(j.id)}|${i}" title="Preview">
+          <img src="${esc(o.thumb || o.url)}" alt="" loading="lazy" onerror="this.style.opacity=0">${o.type === 'video' ? '<span class="vid">VIDEO</span>' : ''}</button>`);
+      for (let i = 0; i < pending; i++) items.push('<span class="th pending"><span class="spin"></span></span>');
+      return `<div class="thumbs">${items.join('')}</div>`;
+    }
+
+    openPreview(jobId, index) {
+      const j = this.engine.jobs.find((x) => x.id === jobId);
+      const outs = (j && j.outputs) || [];
+      if (!outs.length) return;
+      const i = (index + outs.length) % outs.length;
+      const o = outs[i];
+      this.lbJob = jobId; this.lbIndex = i;
+      this.$('lbT').textContent = `${j.id}${outs.length > 1 ? `  (${i + 1}/${outs.length})` : ''}`;
+      this.$('lbOpen').href = o.url;
+      this.$('lbView').innerHTML = o.type === 'video'
+        ? `<video src="${esc(o.url)}" controls autoplay loop playsinline></video>`
+        : `<img src="${esc(o.url)}" alt="">`;
+      this.$('lbPrev').disabled = this.$('lbNext').disabled = outs.length < 2;
+      this.$('lb').classList.add('on');
+    }
+
+    async reloadRefs() {
+      this.$('refMsg').textContent = 'Loading pictures from this Flow project…';
+      try {
+        await this.engine.loadLibrary();
+        this.$('refMsg').textContent = '';
+      } catch (err) {
+        this.$('refMsg').textContent = err.message;
+      }
+      this.renderRefs();
+    }
+
+    renderRefs() {
+      const e = this.engine;
+      const sel = new Set((e.settings.refs || []).map((r) => r.mediaId));
+      this.$('refsN').textContent = sel.size ? `${sel.size} ticked` : '';
+      const lib = e.libraryInfo;
+      if (!lib) { if (!this.$('refGrid').children.length) this.$('refGrid').innerHTML = ''; return; }
+      const pics = lib.pictures.slice(0, 120);
+      this.$('refGrid').innerHTML = pics.length
+        ? pics.map((pic) => `<button class="ref${sel.has(pic.mediaId) ? ' on' : ''}" data-mid="${esc(pic.mediaId)}" data-h="${esc(pic.handle || '')}" title="${esc(pic.handle ? '@' + pic.handle : (pic.uploaded ? 'Uploaded picture' : 'Generated picture'))}">
+            <img src="${esc(e.api.thumbUrl(pic.mediaId))}" alt="" loading="lazy">${pic.handle ? `<span class="ref__h">@${esc(pic.handle)}</span>` : ''}</button>`).join('')
+        : '<div class="hint" style="grid-column:1/-1">No pictures in this project yet — upload some.</div>';
     }
 
     flash(id, text) {
@@ -298,6 +420,7 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
               <div class="jt__top"><span class="jt__id">${esc(j.id)}</span><span class="tag ${j.type}">${j.type.toUpperCase()}</span><span class="jt__st">${esc(label + extra)}</span></div>
               <div class="jt__p" title="${esc(j.prompt)}">${esc(j.prompt)}</div>
               ${j.error ? `<div class="jt__err">${esc(j.error)}</div>` : ''}
+              ${this.thumbsHtml(j, isCur)}
             </div>
             <div class="ja">
               ${j.status === 'error' ? `<button class="ib" data-act="retry" data-id="${esc(j.id)}" title="Retry">↻</button>` : ''}
@@ -309,6 +432,7 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
         if (cur && running) cur.scrollIntoView({ block: 'nearest' });
       }
 
+      this.renderRefs();
       this.$('log').innerHTML = e.log.length
         ? e.log.map((l) => `<div><time>${new Date(l.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>${esc(l.msg)}</div>`).join('')
         : '<div class="empty">Nothing yet.</div>';

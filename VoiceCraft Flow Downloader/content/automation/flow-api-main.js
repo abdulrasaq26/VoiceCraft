@@ -58,16 +58,18 @@
   }
 
   let inflight = null;
-  async function post(url, body, token) {
+  // One HTTP request from the page. method: GET | POST | PATCH. GETs to Flow's
+  // own API (no token) ride on the page's cookies.
+  async function request(url, method, body, token) {
     const ac = new AbortController();
-    inflight = ac;
+    if (method !== 'GET') inflight = ac;
     try {
+      const headers = {};
+      if (token) headers.Authorization = 'Bearer ' + token;
+      if (body != null) headers['Content-Type'] = 'text/plain;charset=UTF-8';
       const r = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8', Authorization: 'Bearer ' + token },
-        credentials: 'include',
-        body: typeof body === 'string' ? body : JSON.stringify(body),
-        signal: ac.signal,
+        method, headers, credentials: 'include', signal: ac.signal,
+        body: body == null ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
       });
       const text = await r.text();
       let data = null;
@@ -79,11 +81,13 @@
       if (inflight === ac) inflight = null;
     }
   }
+  const post = (url, body, token) => request(url, 'POST', body, token);
 
   const methods = {
     session,
     recaptcha,
     post,
+    request,
     abort: () => { if (inflight) inflight.abort(); return true; },
     projectId: () => { const m = /\/project\/([a-f0-9-]+)/i.exec(location.pathname + location.href); return m ? m[1] : null; },
     ping: () => true,

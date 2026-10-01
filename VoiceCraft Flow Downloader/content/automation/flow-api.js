@@ -133,11 +133,11 @@
 
     abort() { return rawCall('abort', [], 2000); }
 
-    // POST with one automatic session refresh.
-    async post(url, makeBody) {
+    // Authenticated request with one automatic session refresh.
+    async post(url, makeBody, method = 'POST') {
       for (let attempt = 0; attempt < 2; attempt++) {
         const s = await this.connect(attempt > 0);
-        const res = await call('post', [url, await makeBody(), s.token], 300000);
+        const res = await call('request', [url, method, await makeBody(), s.token], 300000);
         if (res && res.ok) return res;
         const d = describe(res);
         if (d.expired && attempt === 0) continue;
@@ -152,9 +152,76 @@
       const base = (this.session && this.session.base) || 'https://labs.google/fx';
       return `${base}/api/trpc/media.getMediaUrlRedirect?name=${encodeURIComponent(name)}`;
     }
+    thumbUrl(name) {
+      return this.mediaUrl(name) + '&mediaUrlType=MEDIA_URL_TYPE_THUMBNAIL';
+    }
 
-    // One image. Returns { url, name }.
-    async generateImage({ prompt, model, aspect }) {
+    // ---- the project's pictures (for @references and the picker) ----
+    // Named pictures (Flow "workflows" with a display name) are addressable as
+    // @name; uploads and generated images are listed for the picker. Trashed
+    // ones are left out.
+    async library() {
+      const s = await this.connect();
+      const projectId = await this.projectId();
+      const input = encodeURIComponent(JSON.stringify({ json: { projectId } }));
+      const res = await call('request', [`${s.base}/api/trpc/flow.projectInitialData?input=${input}`, 'GET', null, null], 60000);
+      if (!res || !res.ok) throw new Error("Couldn't read this Flow project's pictures" + (res && res.status ? ` (${res.status})` : '') + '.');
+      const root = res.data && res.data.result && res.data.result.data && res.data.result.data.json && res.data.result.data.json.projectContents;
+      const named = [], archived = new Set();
+      if (root) {
+        for (const key of Object.keys(root)) {
+          if (!Array.isArray(root[key])) continue;
+          for (const w of root[key]) {
+            const md = w && w.metadata;
+            if (!md || !md.displayName || !md.primaryMediaId) continue;
+            if (md.archived) { archived.add(md.primaryMediaId); continue; }
+            named.push({ handle: md.displayName, mediaId: md.primaryMediaId, workflowId: w.name || null, createTime: md.createTime || md.updateTime || '' });
+          }
+        }
+      }
+      const pictures = [];
+      for (const m of (root && root.media) || []) {
+        if (!m || !m.name || !m.image || archived.has(m.name)) continue;
+        const createTime = (m.mediaMetadata && m.mediaMetadata.createTime) || '';
+        pictures.push({ mediaId: m.name, uploaded: !!m.image.userUploadedImage, createTime });
+      }
+      const handleOf = new Map(named.map((n) => [n.mediaId, n.handle]));
+      for (const p of pictures) p.handle = handleOf.get(p.mediaId) || null;
+      pictures.sort((a, b) => String(b.createTime).localeCompare(String(a.createTime)));
+      return { projectId, named: named.filter((n) => !archived.has(n.mediaId)), pictures };
+    }
+
+    // Upload a picture from disk into the project. Returns its media id.
+    async upload(file) {
+      const projectId = await this.projectId();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(new Error("Couldn't read " + file.name));
+        fr.readAsDataURL(file);
+      });
+      const res = await this.post(`${API}/v1/flow/uploadImage`, async () => JSON.stringify({
+        clientContext: { projectId, tool: 'PINHOLE' },
+        fileName: file.name, imageBytes: String(dataUrl).split(',')[1],
+        isHidden: false, isUserUploaded: true, mimeType: file.type || 'image/png',
+      }));
+      const name = res.data && res.data.media && res.data.media.name;
+      if (!name) throw new Error(`Flow didn't accept ${file.name}.`);
+      return name;
+    }
+
+    // Give a generated picture a name in Flow, so later prompts can use @name.
+    async rename(workflowId, displayName) {
+      const projectId = await this.projectId();
+      await this.post(`${API}/v1/flowWorkflows/${workflowId}`, async () => JSON.stringify({
+        workflow: { name: workflowId, projectId, metadata: { displayName } },
+        updateMask: 'metadata.displayName',
+      }), 'PATCH');
+    }
+
+    // One image. `parts` (text and @reference pieces) and `imageInputs` come
+    // from resolveReferences(). Returns { name, url, thumb, workflowId }.
+    async generateImage({ prompt, parts, imageInputs, model, aspect }) {
       const projectId = await this.projectId();
       const res = await this.post(`${API}/v1/projects/${projectId}/flowMedia:batchGenerateImages`, async () => {
         const ctx = {
@@ -168,23 +235,23 @@
           requests: [{
             clientContext: ctx,
             imageAspectRatio: IMAGE_ASPECTS[aspect] || IMAGE_ASPECTS['16:9'],
-            imageInputs: [],
+            imageInputs: imageInputs || [],
             imageModelName: IMAGE_MODELS[model] || IMAGE_MODELS['nano-banana-2'],
             seed: seed(),
-            structuredPrompt: { parts: [{ text: prompt }] },
+            structuredPrompt: { parts: parts && parts.length ? parts : [{ text: prompt }] },
           }],
         });
       });
       const data = res.data || {};
-      let name = null, fife = null;
-      for (const w of data.workflows || []) { if (w && w.metadata && w.metadata.primaryMediaId) { name = w.metadata.primaryMediaId; break; } }
+      let name = null, fife = null, workflowId = null;
+      for (const w of data.workflows || []) { if (w && w.metadata && w.metadata.primaryMediaId) { name = w.metadata.primaryMediaId; workflowId = w.name || null; break; } }
       for (const m of data.media || []) {
         if (!name && m && (m.name || m.mediaId)) name = m.name || m.mediaId;
         const f = m && m.image && m.image.generatedImage && m.image.generatedImage.fifeUrl;
         if (f && !fife) fife = f;
       }
       if (!name && !fife) throw new Error('Flow finished but returned no image (it may have been filtered).');
-      return { name, url: name ? this.mediaUrl(name) : fife };
+      return { name, workflowId, url: name ? this.mediaUrl(name) : fife, thumb: name ? this.thumbUrl(name) : fife };
     }
 
     // One video: submit, then poll until Flow reports it done. Returns { url, name }.
@@ -226,7 +293,7 @@
         const m = st.data && st.data.media && st.data.media[0];
         const ms = m && m.mediaMetadata && m.mediaMetadata.mediaStatus;
         const status = ms && ms.mediaGenerationStatus;
-        if (/^MEDIA_GENERATION_STATUS_(COMPLETED?|SUCCESSFUL)$/.test(status || '')) return { name, url: this.mediaUrl(name) };
+        if (/^MEDIA_GENERATION_STATUS_(COMPLETED?|SUCCESSFUL)$/.test(status || '')) return { name, url: this.mediaUrl(name), thumb: this.thumbUrl(name) };
         if (status === 'MEDIA_GENERATION_STATUS_FAILED') {
           throw new Error('Flow rejected the video: ' + String(ms.failureReason || ms.errorMessage || 'no reason given').slice(0, 120));
         }
@@ -235,5 +302,33 @@
     }
   }
 
+  // Split a prompt into text and @reference parts. `lookup(handle)` returns a
+  // media id or null. "@hero" or "@[hero with spaces]"; a handle matches with
+  // or without its file extension, case-insensitively.
+  function resolveReferences(text, lookup, max = 100) {
+    const parts = [], refs = [], missing = [];
+    const re = /@\[([^\]]+)\]|@([\p{L}0-9_.-]+)/gu;
+    let last = 0, m;
+    while ((m = re.exec(text))) {
+      // Only a word-initial @ is a reference (not an e-mail address).
+      if (m.index > 0 && !/[\s(["'“‘,]/.test(text[m.index - 1])) continue;
+      const handle = (m[1] || m[2]).trim().replace(/[.,;:!?]+$/, '');
+      // "@hero." — keep the full stop in the text, not in the handle.
+      if (!m[1]) re.lastIndex = m.index + 1 + handle.length;
+      const mediaId = lookup(handle);
+      if (!mediaId) { missing.push(handle); continue; }
+      if (m.index > last) parts.push({ text: text.slice(last, m.index) });
+      parts.push({ reference: { media: { handle, mediaId } } });
+      if (!refs.includes(mediaId) && refs.length < max) refs.push(mediaId);
+      last = re.lastIndex;
+    }
+    if (last < text.length) parts.push({ text: text.slice(last) });
+    if (!parts.length) parts.push({ text });
+    return { parts, refs, missing };
+  }
+  const toImageInputs = (ids) => [...new Set(ids)].slice(0, 100).map((name) => ({ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name }));
+
   window.VCFlowApi = FlowApi;
+  window.VCResolveReferences = resolveReferences;
+  window.VCToImageInputs = toImageInputs;
 })();
