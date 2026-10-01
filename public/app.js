@@ -1982,6 +1982,23 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
     if (url) downloadBlobUrl(url, itemFileName(item));
   }
 
+  // Save audio (and optional captions) to the studio project and hand them to
+  // the AutoEditor, which imports them into that project's edit.
+  async function sendAssetsToEditor(entries) {
+    const project = await window.VCProject.ensure();
+    const ids = [];
+    for (const e of entries) {
+      const asset = await window.studio.addAsset({
+        projectId: project.id, bytes: await e.blob.arrayBuffer(), filename: e.filename,
+        type: e.type, mime: e.blob.type || null, source: 'voicecraft', duration: e.duration || null,
+        metadata: e.metadata || {},
+      });
+      ids.push(asset.id);
+    }
+    window.studio.sendToEditor(project.id, ids);
+    return project;
+  }
+
   // [VoiceCraft Integration] Handoff generated audio to AutoEditor feature
   async function sendToAutoEditor(item) {
     const url = urls.get(item.index);
@@ -1990,6 +2007,11 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       const res = await fetch(url);
       const blob = await res.blob();
       const file = new File([blob], itemFileName(item), { type: blob.type || 'audio/wav' });
+      if (window.studio) {
+        const project = await sendAssetsToEditor([{ blob, filename: file.name, type: 'audio', metadata: { part: item.index + 1 } }]);
+        showStatus(`Sent ${file.name} to ${project.name} in the AutoEditor.`, 'success');
+        return;
+      }
       
       const win = window.open('/auto-editor/index.html', '_blank');
       // Wait for AutoEditor to load and register its listener
@@ -2040,7 +2062,19 @@ Emotion: light and good-humored, with an audible smile behind most sentences. Wa
       const cues = await computeCues();
       const srtText = toSRT(cues);
 
-      // 3. Save to IDB for AutoEditor to pick up
+      // 3. In the studio: save narration + captions to the project and hand
+      //    them to the (already running) AutoEditor.
+      if (window.studio) {
+        const base = sanitizeName(batch.project || 'narration') || 'narration';
+        const project = await sendAssetsToEditor([
+          { blob: res.blob, filename: `${base}.wav`, type: 'audio', duration: res.seconds, metadata: { parts: items.length } },
+          { blob: new Blob([srtText], { type: 'text/plain' }), filename: `${base}.srt`, type: 'caption' },
+        ]);
+        showStatus(`Sent narration and subtitles to ${project.name} in the AutoEditor.`, 'success');
+        return;
+      }
+
+      // Outside the studio: save to IDB for AutoEditor to pick up
       await idbPut("transfer_audio", res.blob);
       await idbPut("transfer_audio_duration", res.seconds);
       await idbPut("transfer_srt", srtText);

@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
 import { BrowserManager } from './browser-manager.js';
+import { Studio, registerAssetScheme } from './studio.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -41,6 +42,10 @@ function waitForServer(maxMs = 15_000, intervalMs = 200) {
 
 let mainWindow = null;
 let browserManager = null;
+let studio = null;
+
+// Must happen before the app is ready.
+registerAssetScheme();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -63,25 +68,23 @@ function createWindow() {
   browserManager = new BrowserManager(mainWindow);
   Menu.setApplicationMenu(null);
 
+  // The window shows the studio bar; each module runs in its own persistent
+  // view below it (electron/studio.js).
+  studio = new Studio(mainWindow, { baseUrl: DEV_URL, browserManager });
+  browserManager.onFlowAsset = (savePath, meta) => studio.addFlowAsset({ savePath, meta });
+  browserManager.onModuleKey = (input) => studio.moduleKey(input);
+  browserManager.onSendToEditor = (flowMediaIds) => studio.sendFlowToEditor(flowMediaIds);
+  browserManager.getStudioProject = () => studio.state.project;
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(DEV_URL) || url.startsWith('http://localhost:')) {
-      return { 
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          icon: path.join(__dirname, 'icon.ico'),
-          backgroundColor: '#0a0a0a',
-          autoHideMenuBar: true
-        }
-      };
-    }
-    shell.openExternal(url);
+    shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
+  mainWindow.webContents.once('did-finish-load', () => studio.switchTo(studio.state.lastModule || 'voicecraft'));
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.on('closed', () => { mainWindow = null; });
 
-  mainWindow.loadURL(DEV_URL);
+  mainWindow.loadURL(DEV_URL + '/studio-shell.html');
 }
 
 app.whenReady().then(async () => {

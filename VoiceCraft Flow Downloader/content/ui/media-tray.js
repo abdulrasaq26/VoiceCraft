@@ -28,28 +28,30 @@ class MediaTray {
 
     tray.innerHTML = `
       <div class="fmd-header">
-        <div class="fmd-header-title">VoiceCraft Flow Downloader</div>
-        <button class="fmd-close-btn">&times;</button>
+        <span class="fmd-logo">V</span>
+        <div class="fmd-header-title">Flow Downloader<span class="fmd-header-sub" id="fmd-sub">Images and videos found in this project</span></div>
+        <button class="fmd-close-btn" title="Close">✕</button>
       </div>
-      <div class="fmd-filter-bar" style="display: flex; align-items: center;">
-        <button class="fmd-filter-btn active" data-filter="all" id="filter-all">All (0)</button>
-        <button class="fmd-filter-btn" data-filter="image" id="filter-img">Images (0)</button>
-        <button class="fmd-filter-btn" data-filter="video" id="filter-vid">Videos (0)</button>
-        
-        <div style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
-            <div id="fmd-crawl-status" style="display: none; font-size: 10px; font-weight: bold; color: #89b4fa;">IDLE</div>
-            <button id="fmd-btn-crawl" style="background: #89b4fa; color: #11111b; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer;">Auto-Crawl</button>
-            <button id="fmd-btn-stop" style="display: none; background: #f38ba8; color: #11111b; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer;">Stop</button>
+      <div class="fmd-filter-bar">
+        <div class="fmd-seg" role="tablist">
+          <button class="fmd-filter-btn active" data-filter="all" id="filter-all">All 0</button>
+          <button class="fmd-filter-btn" data-filter="image" id="filter-img">Images 0</button>
+          <button class="fmd-filter-btn" data-filter="video" id="filter-vid">Videos 0</button>
         </div>
+        <span class="fmd-grow"></span>
+        <span class="fmd-crawl-status" id="fmd-crawl-status" hidden>IDLE</span>
+        <button class="fmd-btn" id="fmd-btn-crawl" title="Scroll through the whole project and collect everything">Auto-crawl</button>
+        <button class="fmd-btn fmd-btn--danger" id="fmd-btn-stop" hidden>Stop</button>
       </div>
       <div class="fmd-media-grid" id="media-grid"></div>
       <div class="fmd-footer">
         <div class="fmd-footer-actions">
-          <button class="fmd-btn-text" id="btn-select-all">Select All</button>
+          <button class="fmd-btn-text" id="btn-select-all">Select all</button>
           <button class="fmd-btn-text" id="btn-clear">Clear</button>
-          <button class="fmd-btn-text" id="btn-delete-invalid" style="color: #f38ba8; margin-left: 10px;">Delete Invalid</button>
+          <button class="fmd-btn-text fmd-btn-text--danger" id="btn-delete-invalid" title="Remove items whose name isn't a timestamp like 0-21">Remove unnamed</button>
+          <span class="fmd-sel-count" id="fmd-sel-count"></span>
         </div>
-        <button class="fmd-btn-primary" id="btn-download">Download (0)</button>
+        <button class="fmd-btn-primary" id="btn-download" disabled>Download</button>
       </div>
     `;
 
@@ -65,48 +67,11 @@ class MediaTray {
   }
 
   makeDraggable() {
-    const header = this.shadow.querySelector('.fmd-header');
-    let isDragging = false;
-    let currentX = 0;
-    let currentY = 0;
-    let initialX = 0;
-    let initialY = 0;
-
-    header.addEventListener('mousedown', (e) => {
-        if (e.target.tagName === 'BUTTON') return;
-        
-        // Grab exact pixel coordinates relative to viewport
-        const rect = this.trayEl.getBoundingClientRect();
-        
-        // Set exact top/left and clear bottom/right constraints so it moves freely
-        this.trayEl.style.bottom = 'auto';
-        this.trayEl.style.right = 'auto';
-        this.trayEl.style.top = rect.top + 'px';
-        this.trayEl.style.left = rect.left + 'px';
-        this.trayEl.style.transform = 'none';
-
-        initialX = e.clientX - rect.left;
-        initialY = e.clientY - rect.top;
-        isDragging = true;
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (isDragging) {
-            e.preventDefault();
-            currentX = e.clientX - initialX;
-            currentY = e.clientY - initialY;
-            
-            // Constrain top boundary so header is always grabbable
-            if (currentY < 0) currentY = 0;
-            
-            this.trayEl.style.left = currentX + 'px';
-            this.trayEl.style.top = currentY + 'px';
-        }
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (!isDragging) return;
-        isDragging = false;
+    if (!window.FloatingPanelManager) return;
+    window.FloatingPanelManager.register('downloader', {
+      el: this.trayEl,
+      handle: this.shadow.querySelector('.fmd-header'),
+      isOpen: () => this.isVisible,
     });
   }
 
@@ -120,17 +85,17 @@ class MediaTray {
     if (btnCrawl) {
         btnCrawl.addEventListener('click', () => {
             if (window.FlowCrawlerInstance) {
-                btnCrawl.style.display = 'none';
-                btnStop.style.display = 'block';
-                crawlStatus.style.display = 'block';
+                btnCrawl.hidden = true;
+                btnStop.hidden = false;
+                crawlStatus.hidden = false;
                 
                 const updateUI = (stats) => {
                     crawlStatus.textContent = stats.state;
                     if (stats.state === 'COMPLETE' || stats.state === 'STOPPED') {
-                        btnStop.style.display = 'none';
-                        btnCrawl.style.display = 'block';
+                        btnStop.hidden = true;
+                        btnCrawl.hidden = false;
                         window.FlowCrawlerInstance.unsubscribe(updateUI);
-                        setTimeout(() => crawlStatus.style.display = 'none', 3000);
+                        setTimeout(() => { crawlStatus.hidden = true; }, 3000);
                     }
                 };
                 
@@ -155,8 +120,8 @@ class MediaTray {
     filterBtns.forEach(btn => {
       btn.addEventListener('click', (e) => {
         filterBtns.forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        this.currentFilter = e.target.dataset.filter;
+        btn.classList.add('active');
+        this.currentFilter = btn.dataset.filter;
         this.applyFilter();
       });
     });
@@ -243,19 +208,27 @@ class MediaTray {
         this.btnDownload.disabled = false;
         selected.forEach(s => s.status = 'queued');
         this.updateFooter();
+        this.flashDownload(`Queued ${selected.length} ✓`);
 
       } catch (err) {
         console.error("Error during resolution", err);
         this.btnDownload.disabled = false;
-        this.btnDownload.textContent = 'Error';
+        this.flashDownload('Could not resolve media — try again');
       }
     });
+  }
+
+  flashDownload(text) {
+    this.btnDownload.textContent = text;
+    clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => this.updateFooter(), 1800);
   }
 
   show() {
     this.init();
     this.trayEl.style.display = 'flex';
     this.isVisible = true;
+    if (window.FloatingPanelManager) window.FloatingPanelManager.restorePosition('downloader');
   }
 
   hide() {
@@ -313,7 +286,7 @@ class MediaTray {
     this.mediaItems.forEach(item => {
       if (!item.ui || !item.ui.element) return;
       if (this.currentFilter === 'all' || item.data.type === this.currentFilter) {
-        item.ui.element.style.display = 'block';
+        item.ui.element.style.display = '';
       } else {
         item.ui.element.style.display = 'none';
       }
@@ -335,14 +308,15 @@ class MediaTray {
       }
     });
     
-    this.btnDownload.textContent = `Download (${count})`;
+    this.btnDownload.textContent = count ? `Download ${count} item${count === 1 ? '' : 's'}` : 'Select items to download';
     this.btnDownload.disabled = count === 0;
 
-    // Update filter badges
+    // Filter counts
     const total = imgCount + vidCount;
-    this.shadow.querySelector('#filter-all').textContent = `All (${total})`;
-    this.shadow.querySelector('#filter-img').textContent = `Images (${imgCount})`;
-    this.shadow.querySelector('#filter-vid').textContent = `Videos (${vidCount})`;
+    this.shadow.querySelector('#filter-all').textContent = `All ${total}`;
+    this.shadow.querySelector('#filter-img').textContent = `Images ${imgCount}`;
+    this.shadow.querySelector('#filter-vid').textContent = `Videos ${vidCount}`;
+    this.shadow.querySelector('#fmd-sel-count').textContent = count ? `${count} selected` : '';
   }
 }
 

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "./studio-tokens.css";
 import "./globals.css";
 import { parseTimestampName } from "../lib/timestamp";
 import { buildTimeline, trimClips, LEAD_IN } from "../lib/timeline";
@@ -19,6 +20,7 @@ import Dropzone from "../components/Dropzone";
 import Editor from "../components/Editor";
 import ProjectsHome from "../components/ProjectsHome";
 import StorageRing from "../components/StorageRing";
+import ProjectAssets from "../components/ProjectAssets";
 import { DialogHost, showAlert, showConfirm, showPrompt } from "../components/Dialog";
 import {
   requestPersist, storageEstimate, listProjects, getProject, saveProject,
@@ -297,6 +299,9 @@ export default function Home() {
   }, []);
 
   // ---- Audio/SRT Load Hook (from VoiceCraft DB) ----
+  // Runs on load, and again whenever the studio says VoiceCraft just sent
+  // something (the AutoEditor stays open in the studio, so it won't reload).
+  const checkTransferRef = useRef(null);
   useEffect(() => {
     async function checkTransfer() {
       if (typeof window === "undefined" || !window.indexedDB) return;
@@ -344,11 +349,7 @@ export default function Home() {
           if (projectId) match = allProjs.find(p => p.id === projectId);
           if (!match) match = allProjs.find(p => p.name === projectName);
           
-          if (match) {
-            await openProject(match.id);
-          } else {
-            setCurrentProject({ id: projectId || Date.now().toString(), name: projectName, createdAt: Date.now() });
-          }
+          await studioRef.current.ensureProject((match && match.id) || projectId || Date.now().toString(), projectName);
           await delFromDb("transfer_project");
           await delFromDb("transfer_projectId");
         }
@@ -371,6 +372,7 @@ export default function Home() {
         console.error("Failed to check transfer DB:", err);
       }
     }
+    checkTransferRef.current = checkTransfer;
     checkTransfer();
   }, [onAudio, onCaptionFile, setView]);
   const captionCues = captionsTrack;
@@ -782,8 +784,10 @@ export default function Home() {
     setCurrentProject((p) => (p && p.id === id ? { ...p, name } : p));
     setProjects(await listProjects());
   }, []);
-  const onDeleteProject = useCallback(async (id) => {
-    await deleteProject(id);
+  const onDeleteProject = useCallback(async (ids) => {
+    const list = Array.isArray(ids) ? ids : [ids];
+    for (const id of list) await deleteProject(id);
+    if (window.studio) await window.studio.deleteProjectAssets(list);
     setProjects(await listProjects());
     refreshStorage();
   }, [refreshStorage]);
@@ -794,6 +798,146 @@ export default function Home() {
     });
     if (name && name.trim()) onRenameProject(currentProject.id, name.trim());
   }, [currentProject, onRenameProject]);
+
+  // ---- VoiceCraft Studio: shared project + asset library ----
+  // The studio (electron/studio.js) holds the current project for every module
+  // and the project's assets (narration, Flow results, captions). The
+  // AutoEditor follows the studio's project, tells it which one is open, and
+  // imports assets on request.
+  const [studioOn, setStudioOn] = useState(false);
+  const [projectAssets, setProjectAssets] = useState([]);
+  const studioRef = useRef({});
+  const ensureRef = useRef(null);
+  useEffect(() => { setStudioOn(!!(typeof window !== "undefined" && window.studio)); }, []);
+
+  // Open project `id` (or start it, if it only exists in the studio so far).
+  // Concurrent calls for the same project share one open.
+  const ensureProject = useCallback(async (id, name) => {
+    const st = studioRef.current;
+    if (st.currentProject && st.currentProject.id === id && !st.loadingProject) { setView("editor"); return; }
+    if (ensureRef.current && ensureRef.current.id === id) return ensureRef.current.promise;
+    const promise = (async () => {
+      try { if (saveRef.current) await saveRef.current(); } catch (_) {}
+      const rec = await getProject(id);
+      if (rec) await openProject(id);
+      else {
+        resetAllState();
+        setCurrentProject({ id, name: name || "Untitled project", createdAt: Date.now() });
+        setView("editor");
+      }
+    })();
+    ensureRef.current = { id, promise };
+    try { await promise; } finally { if (ensureRef.current && ensureRef.current.id === id) ensureRef.current = null; }
+  }, [openProject, resetAllState]);
+
+  const assetUrl = useCallback((a) => (window.studio ? window.studio.assetUrl(a.projectId, a.id) : ""), []);
+
+  // Bring project assets into this edit: images/videos by their timestamp
+  // names, the newest audio as the voiceover, the newest captions.
+  const importAssets = useCallback(async (list) => {
+    if (!list || !list.length) return;
+    const toFile = async (a) => {
+      const blob = await (await fetch(assetUrl(a))).blob();
+      const mime = blob.type && blob.type !== "application/octet-stream" ? blob.type
+        : a.mime || (a.type === "image" ? "image/png" : a.type === "video" ? "video/mp4" : a.type === "audio" ? "audio/wav" : "text/plain");
+      return new File([blob], a.filename, { type: mime });
+    };
+    const newest = (t) => list.filter((a) => a.type === t).sort((x, y) => y.createdAt - x.createdAt)[0];
+    const visuals = list.filter((a) => a.type === "image" || a.type === "video");
+    if (visuals.length) await addImages(await Promise.all(visuals.map(toFile)));
+    const audio = newest("audio");
+    if (audio) await onAudio([await toFile(audio)], audio.duration || null);
+    const cap = newest("caption");
+    if (cap) await onCaptionFile(await toFile(cap));
+    setView("editor");
+  }, [assetUrl, addImages, onAudio, onCaptionFile]);
+
+  const removeAsset = useCallback(async (a) => {
+    if (!window.studio) return;
+    const ok = await showConfirm(`Remove “${a.filename}” from the project? It stays in your edit if it's already there.`, { title: "Remove asset", okText: "Remove", danger: true });
+    if (ok) await window.studio.removeAsset(a.projectId, a.id);
+  }, []);
+
+  const inTimeline = useCallback((a) => {
+    if (a.type === "audio") return !!(audioFile && audioFile.name === a.filename);
+    if (a.type === "caption") return !!(captionName && captionName === a.filename);
+    return slots.some((s) => !s.empty && ((s.file && s.file.name === a.filename) || (s.img && s.img.fileName === a.filename)));
+  }, [audioFile, captionName, slots]);
+
+  studioRef.current = { currentProject, loadingProject, ensureProject, importAssets, newProject, backToProjects };
+
+  // Tell the studio which project is open here.
+  useEffect(() => {
+    if (window.studio && currentProject) window.studio.setProject({ id: currentProject.id, name: currentProject.name || "Untitled project" });
+  }, [currentProject && currentProject.id, currentProject && currentProject.name]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // This project's assets, kept live.
+  useEffect(() => {
+    let alive = true;
+    if (!window.studio || !currentProject) { setProjectAssets([]); return undefined; }
+    window.studio.assets(currentProject.id).then((list) => { if (alive) setProjectAssets(list || []); });
+    return () => { alive = false; };
+  }, [currentProject && currentProject.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A project opened here that has assets but an empty edit starts with them.
+  const autoImportedRef = useRef(new Set());
+  useEffect(() => {
+    if (!currentProject || loadingProject || !projectAssets.length) return;
+    if (autoImportedRef.current.has(currentProject.id)) return;
+    autoImportedRef.current.add(currentProject.id);
+    const emptyEdit = !audioFile && !slots.some((s) => !s.empty);
+    if (emptyEdit) importAssets(projectAssets.filter((a) => a.type !== "other"));
+  }, [currentProject, loadingProject, projectAssets]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const S = window.studio;
+    if (!S) return undefined;
+    const offs = [
+      S.onProjectChanged(async (p) => {
+        const st = studioRef.current;
+        if (!p) {
+          // Project closed (or deleted) in the studio: save and go to the list.
+          if (st.currentProject) {
+            await st.backToProjects();
+            setCurrentProject(null);
+          }
+          return;
+        }
+        if (st.currentProject && st.currentProject.id === p.id) {
+          if (p.name && p.name !== st.currentProject.name) setCurrentProject((c) => (c ? { ...c, name: p.name } : c));
+          return;
+        }
+        await st.ensureProject(p.id, p.name);
+      }),
+      S.onAssetAdded((a) => {
+        const cp = studioRef.current.currentProject;
+        if (cp && a.projectId === cp.id) setProjectAssets((prev) => (prev.some((x) => x.id === a.id) ? prev : [...prev, a]));
+      }),
+      S.onAssetRemoved(({ projectId, assetId }) => {
+        const cp = studioRef.current.currentProject;
+        if (cp && projectId === cp.id) setProjectAssets((prev) => prev.filter((x) => x.id !== assetId));
+      }),
+      S.onImportAssets(async ({ projectId, assetIds }) => {
+        const st = studioRef.current;
+        if (projectId) {
+          const cur = (await S.getState()).project;
+          await st.ensureProject(projectId, cur && cur.id === projectId ? cur.name : undefined);
+        }
+        const all = await S.assets(projectId);
+        await studioRef.current.importAssets(assetIds ? all.filter((a) => assetIds.includes(a.id)) : all);
+      }),
+      S.onCheckTransfer(() => { if (checkTransferRef.current) checkTransferRef.current(); }),
+      S.onNewProject(() => studioRef.current.newProject()),
+      S.onShowProjects(() => studioRef.current.backToProjects()),
+      S.onProjectsDeleted(async () => setProjects(await listProjects())),
+    ];
+    // Start on the studio's project (it may have been picked before this
+    // module was opened), then take any queued hand-offs.
+    S.getState().then(async (st) => {
+      if (st.project && !studioRef.current.currentProject) await studioRef.current.ensureProject(st.project.id, st.project.name);
+    }).finally(() => S.editorReady && S.editorReady());
+    return () => offs.forEach((off) => off && off());
+  }, []);
 
   const cancelRef = useRef(false);
   const onCancel = useCallback(() => {
@@ -1101,16 +1245,6 @@ export default function Home() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M7 3v5h8V3M7 21v-7h10v7"/></svg>
             {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : "Save"}
           </button>
-          <a
-            className="ext-link"
-            href="https://chromewebstore.google.com/detail/bcmmekkamenpjoogmegiffgemlgikbgf?utm_source=item-share-cb"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Get the VoiceCraft Flow Automator Chrome extension"
-          >
-            <span className="ext-link__icon" aria-hidden="true">🧩</span>
-            <span className="ext-link__text">Get the Extension</span>
-          </a>
           <StorageRing storage={storage} />
         </div>
       </header>
@@ -1254,9 +1388,21 @@ export default function Home() {
                   : `${tray.length} image${tray.length > 1 ? "s" : ""} · ready to build`}
             </span>
           </div>
+          {studioOn && currentProject ? (
+            <ProjectAssets
+              assets={projectAssets} inTimeline={inTimeline} assetUrl={assetUrl}
+              onAdd={importAssets} onRemove={removeAsset} projectName={currentProject.name}
+            />
+          ) : null}
         </section>
       ) : (
         <Editor
+          assetsPanel={studioOn && currentProject ? (
+            <ProjectAssets
+              assets={projectAssets} inTimeline={inTimeline} assetUrl={assetUrl}
+              onAdd={importAssets} onRemove={removeAsset} projectName={currentProject.name}
+            />
+          ) : null}
           initialTime={initialPlayhead} onTimeChange={(t) => { playheadRef.current = t; }}
           clips={clips} imageEls={imageEls} audioUrl={audioUrl}
           duration={audioDuration} peaks={peaks} dims={dims}

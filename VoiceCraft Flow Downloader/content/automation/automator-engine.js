@@ -89,6 +89,8 @@
       this.handles = new Map();  // handle key -> [{ mediaId, handle, createTime, session }]
       this.libraryInfo = null;   // last library() result, for the picker
       this.libraryAt = 0;
+      this.studioProject = null; // VoiceCraft Studio's current project (results go into it)
+      this.inStudio = !!(document.documentElement && document.documentElement.hasAttribute('data-voicecraft-host'));
       this.loaded = this.load();
     }
 
@@ -189,6 +191,23 @@
         else c.active++;
       }
       return c;
+    }
+
+    // ---- VoiceCraft Studio ----
+    setStudioProject(p) { this.studioProject = p; this.emit(); }
+
+    // Hand results to the AutoEditor (all Flow results of the project if no jobs given).
+    sendToEditor(jobIds) {
+      if (!this.inStudio) return false;
+      let ids = null;
+      if (jobIds) {
+        ids = [];
+        for (const j of this.jobs) if (jobIds.includes(j.id)) for (const o of j.outputs || []) if (o.name) ids.push(o.name);
+        if (!ids.length) return false;
+      }
+      window.postMessage({ channel: 'voicecraft-flow:to-host', type: 'send-to-editor', flowMediaIds: ids }, '*');
+      this.note(ids ? `Sent ${ids.length} result${ids.length === 1 ? '' : 's'} to the AutoEditor` : 'Sent all Flow results to the AutoEditor');
+      return true;
     }
 
     // ---- the project's pictures ----
@@ -408,6 +427,7 @@
       const mediaItem = {
         id: mediaId, url: r.url, type: job.type, mimeType: job.type === 'video' ? 'video/mp4' : 'image/png', title: stem,
         isAutomated: true, project: this.settings.project, batch: this.settings.batch, jobId: stem,
+        prompt: job.prompt, flowMediaId: r.name || '',
       };
       return new Promise((resolve) => {
         const timer = setTimeout(() => { this.downloadWaiters.delete(mediaId); resolve('timeout'); }, 180000);

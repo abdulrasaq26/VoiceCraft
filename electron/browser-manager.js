@@ -71,6 +71,12 @@ function uniquePath(p) {
 export class BrowserManager {
   constructor(mainWindow) {
     this.mainWindow = mainWindow;
+    // The page that shows the browser UI (public/browser.html). In the studio
+    // it's the Browser module's own view, placed below the studio bar.
+    this.host = mainWindow.webContents;
+    this.offset = { x: 0, y: 0 };
+    this.moduleVisible = true;
+    this.onFlowAsset = null; // studio hook: (savePath, meta) for finished Flow downloads
     this.store = new BrowserStore();
     this.tabs = new Map();          // tabId -> tab
     this.order = [];                // tab ids in strip order
@@ -90,17 +96,38 @@ export class BrowserManager {
     this.setupIPC();
     this.applyProxy(this.store.settings);
 
-    // Leaving browser.html (workspace switch, reload) must take the pages off
-    // screen even if the page's own unmount message never arrives.
-    mainWindow.webContents.on('did-start-navigation', (e, url, inPlace, isMainFrame) => {
-      if (isMainFrame && !inPlace) { this.mounted = false; this.syncAttachment(); }
-    });
+    this.watchHost(this.host);
     app.on('before-quit', () => this.store.flush());
     mainWindow.on('leave-full-screen', () => this.send('browser:window-fullscreen', { on: false }));
   }
 
   send(channel, payload) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) this.mainWindow.webContents.send(channel, payload);
+    if (this.host && !this.host.isDestroyed()) this.host.send(channel, payload);
+  }
+
+  // Leaving browser.html (reload, navigation) must take the pages off screen
+  // even if the page's own unmount message never arrives.
+  watchHost(wc) {
+    wc.on('did-start-navigation', (e, url, inPlace, isMainFrame) => {
+      if (isMainFrame && !inPlace && wc === this.host) { this.mounted = false; this.syncAttachment(); }
+    });
+  }
+
+  setHost(wc) {
+    if (wc === this.host) return;
+    this.host = wc;
+    this.watchHost(wc);
+  }
+
+  setOffset(offset) {
+    this.offset = offset || { x: 0, y: 0 };
+    this.applyBounds();
+  }
+
+  // The studio shows/hides the Browser module; tab pages follow it.
+  setModuleVisible(visible) {
+    this.moduleVisible = !!visible;
+    this.syncAttachment(true);
   }
 
   // ---------------------------------------------------------------- sessions
@@ -147,8 +174,8 @@ export class BrowserManager {
 
   // --------------------------------------------------------------------- IPC
   setupIPC() {
-    const on = (ch, fn) => ipcMain.on(ch, (e, arg) => { if (e.sender === this.mainWindow.webContents) fn(arg, e); });
-    const handle = (ch, fn) => ipcMain.handle(ch, (e, arg) => (e.sender === this.mainWindow.webContents ? fn(arg, e) : null));
+    const on = (ch, fn) => ipcMain.on(ch, (e, arg) => { if (e.sender === this.host) fn(arg, e); });
+    const handle = (ch, fn) => ipcMain.handle(ch, (e, arg) => (e.sender === this.host ? fn(arg, e) : null));
 
     on('browser:mount', (bounds) => { this.mounted = true; if (bounds) this.bounds = bounds; this.syncAttachment(); });
     on('browser:unmount', () => { this.mounted = false; this.syncAttachment(); });
@@ -294,6 +321,11 @@ export class BrowserManager {
         e.sender.executeJavaScript(src, true).catch((err) => console.warn('[Browser] inject-main:', err.message));
       } catch (err) { console.warn('[Browser] inject-main:', err.message); }
     });
+    // Studio hand-offs from the Automator.
+    ipcMain.on('flow-host:send-to-editor', (e, { flowMediaIds } = {}) => {
+      if (this.tabByWebContents(e.sender) && this.onSendToEditor) this.onSendToEditor(flowMediaIds || null);
+    });
+    ipcMain.handle('flow-host:get-project', (e) => (this.tabByWebContents(e.sender) && this.getStudioProject ? this.getStudioProject() : null));
     ipcMain.on('flow-host:panel-state', (e, { open } = {}) => {
       const tab = this.tabByWebContents(e.sender);
       if (tab && tab.flowPanel !== (open || null)) { tab.flowPanel = open || null; this.notify(tab.id); }
@@ -345,6 +377,9 @@ export class BrowserManager {
         nodeIntegration: false,
         sandbox: true,
         spellcheck: true,
+        // Keep Flow (and the Automator in it) running at full speed while the
+        // tab or the whole Browser module is in the background.
+        backgroundThrottling: false,
       },
     });
     view.setBackgroundColor('#ffffff');
@@ -448,6 +483,7 @@ export class BrowserManager {
     // Shortcuts pressed while a page has focus never reach the host page.
     wc.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
+      if (this.onModuleKey && this.onModuleKey(input)) { event.preventDefault(); return; }
       const cmd = this.shortcutFor(input);
       if (cmd) {
         event.preventDefault();
@@ -542,9 +578,9 @@ export class BrowserManager {
 
   // Exactly one view is attached: the active tab, while the browser is on
   // screen and no host modal is covering it.
-  syncAttachment() {
-    const want = this.mounted && !this.hidden && this.activeTabId && this.tabs.has(this.activeTabId) ? this.activeTabId : null;
-    if (this.attachedId === want) { this.applyBounds(); return; }
+  syncAttachment(raise = false) {
+    const want = this.mounted && this.moduleVisible && !this.hidden && this.activeTabId && this.tabs.has(this.activeTabId) ? this.activeTabId : null;
+    if (this.attachedId === want && !(raise && want)) { this.applyBounds(); return; }
     if (this.attachedId && this.tabs.has(this.attachedId)) {
       try { this.mainWindow.contentView.removeChildView(this.tabs.get(this.attachedId).view); } catch { /* ignore */ }
     }
@@ -558,11 +594,12 @@ export class BrowserManager {
 
   applyBounds() {
     if (!this.attachedId || !this.tabs.has(this.attachedId)) return;
-    // Host-page CSS pixels → window DIPs (the host page may be zoomed).
-    const z = this.mainWindow.webContents.getZoomFactor() || 1;
+    // Host-page CSS pixels → window DIPs (the host page may be zoomed and,
+    // in the studio, sits below the studio bar).
+    const z = (this.host && !this.host.isDestroyed() && this.host.getZoomFactor()) || 1;
     const b = this.bounds;
     this.tabs.get(this.attachedId).view.setBounds({
-      x: Math.round(b.x * z), y: Math.round(b.y * z),
+      x: Math.round(b.x * z + this.offset.x), y: Math.round(b.y * z + this.offset.y),
       width: Math.max(0, Math.round(b.width * z)), height: Math.max(0, Math.round(b.height * z)),
     });
   }
@@ -795,6 +832,10 @@ export class BrowserManager {
       d.item = null;
       this.send('browser:download-updated', this.dlData(d));
       if (flow) this.flowProgress(flow, state === 'completed' ? 'downloaded' : 'error', state === 'completed' ? 100 : 0);
+      // Flow results also become assets of the studio's current project.
+      if (flow && state === 'completed' && d.savePath && this.onFlowAsset) {
+        try { this.onFlowAsset(d.savePath, flow.meta); } catch (e) { console.warn('[Browser] project asset:', e.message); }
+      }
     });
   }
 
@@ -810,7 +851,7 @@ export class BrowserManager {
   flowDownload(sender, req) {
     const tab = this.tabByWebContents(sender);
     if (!tab || !req || !req.url) return;
-    const flow = { url: req.url, relPath: req.relPath || 'Flow Media Downloader/download', mediaId: req.mediaId, wc: sender };
+    const flow = { url: req.url, relPath: req.relPath || 'Flow Media Downloader/download', mediaId: req.mediaId, wc: sender, meta: req.meta || null };
     this.pendingFlow.push(flow);
     this.flowProgress(flow, 'downloading', 0);
     try {
@@ -824,6 +865,14 @@ export class BrowserManager {
       const i = this.pendingFlow.indexOf(flow);
       if (i >= 0) { this.pendingFlow.splice(i, 1); this.flowProgress(flow, 'error', 0); }
     }, 60000);
+  }
+
+  // A message to the Flow extension in every open tab.
+  broadcastToTabs(message) {
+    for (const t of this.tabs.values()) {
+      const wc = t.view.webContents;
+      if (!wc.isDestroyed()) wc.send('flow-host:to-ext', message);
+    }
   }
 
   flowProgress(flow, status, progress) {

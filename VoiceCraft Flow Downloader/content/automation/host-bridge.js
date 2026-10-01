@@ -94,7 +94,14 @@
       const { item, batchId } = queue.shift();
       deliver({ action: 'downloadProgress', mediaId: item.id, status: 'downloading', progress: 0 });
       const done = new Promise((resolve) => waiting.set(item.id, resolve));
-      post({ type: 'download', url: item.url, mediaId: item.id, relPath: buildRelPath(item, settings, batchId) });
+      post({
+        type: 'download', url: item.url, mediaId: item.id, relPath: buildRelPath(item, settings, batchId),
+        // Lets VoiceCraft Studio file the result under the current project.
+        meta: {
+          source: item.isAutomated ? 'flow-automator' : 'flow-downloader',
+          name: item.jobId || item.title || '', prompt: item.prompt || '', type: item.type || '', flowMediaId: item.flowMediaId || '',
+        },
+      });
       await done;
     }
     busy = false;
@@ -227,4 +234,5 @@
   }
 
   post({ type: 'hello' });
+  post({ type: 'get-project' }); // which VoiceCraft Studio project results go into
 })();

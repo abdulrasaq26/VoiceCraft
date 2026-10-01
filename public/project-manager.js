@@ -90,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
         vcDb.close();
       }
 
+      if (window.studio) await window.studio.setProject({ id: currentProjectId, name: title });
       saveBtn.textContent = 'Saved!';
       setTimeout(() => {
         saveBtn.textContent = '💾 Save Project';
@@ -138,6 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Set the current ID
     localStorage.setItem('blvck-tts:currentProjectId', rec.id);
+    if (window.studio) await window.studio.setProject({ id: rec.id, name: rec.name || 'Untitled project' });
     
     // Restore localStorage
     if (rec.vcState.settings) localStorage.setItem(LS_KEYS.settings, JSON.stringify(rec.vcState.settings));
@@ -216,6 +218,51 @@ document.addEventListener('DOMContentLoaded', () => {
       listContainer.innerHTML = '<p>Error loading projects.</p>';
     }
   }
+
+  // ---- VoiceCraft Studio: one current project for every module ----
+  // The studio's project is VoiceCraft's project too: picking one elsewhere
+  // makes the next save (and "Send to AutoEditor") go into it.
+  function adoptProject(p) {
+    if (!p) {
+      // Closed in the studio: the next save or send starts a new project.
+      currentProjectId = null;
+      localStorage.removeItem('blvck-tts:currentProjectId');
+      return;
+    }
+    currentProjectId = p.id;
+    localStorage.setItem('blvck-tts:currentProjectId', p.id);
+    if (titleInput && p.name && titleInput.value.trim() !== p.name) {
+      titleInput.value = p.name;
+      titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  if (window.studio) {
+    window.studio.onProjectChanged(adoptProject);
+    window.studio.getState().then((st) => {
+      if (st.project) adoptProject(st.project);
+      else if (currentProjectId) {
+        // VoiceCraft already had a project from before the studio: share it.
+        window.SharedDB.getProject(currentProjectId).then((rec) => {
+          if (rec) window.studio.setProject({ id: rec.id, name: rec.name || 'Untitled project' });
+        }).catch(() => {});
+      }
+    });
+  }
+
+  // The project VoiceCraft is working in — created from the title if needed.
+  window.VCProject = {
+    async ensure() {
+      let rec = currentProjectId ? await window.SharedDB.getProject(currentProjectId) : null;
+      if (!rec) {
+        const title = (titleInput && titleInput.value.trim()) || 'Untitled project';
+        currentProjectId = window.SharedDB.newId();
+        rec = await window.SharedDB.saveProject({ id: currentProjectId, name: title, createdAt: Date.now(), data: {} });
+        localStorage.setItem('blvck-tts:currentProjectId', currentProjectId);
+      }
+      if (window.studio) await window.studio.setProject({ id: rec.id, name: rec.name || 'Untitled project' });
+      return { id: rec.id, name: rec.name || 'Untitled project' };
+    },
+  };
 
   if (saveBtn) saveBtn.addEventListener('click', saveProject);
   if (loadBtn) loadBtn.addEventListener('click', showProjects);

@@ -1,21 +1,22 @@
+/* Colours come from the studio design tokens (studio-tokens.css). */
 :root {
-  --bg: #0d0d0f;
+  --bg: var(--vc-background);
   --chrome: #131316;
   --chrome-2: #18181c;
-  --panel: #161619;
-  --panel-2: #202026;
-  --line: #2c2c33;
-  --line-soft: #232329;
-  --text: #f2f2f4;
-  --muted: #9b9ba3;
-  --faint: #62626c;
-  --accent: #6366f1;
+  --panel: var(--vc-surface);
+  --panel-2: var(--vc-surface-elevated);
+  --line: var(--vc-border);
+  --line-soft: var(--vc-border-soft);
+  --text: var(--vc-text);
+  --muted: var(--vc-text-muted);
+  --faint: var(--vc-text-faint);
+  --accent: var(--vc-primary);
   --accent-2: #8b8ef8;
-  --ok: #6cc98f;
-  --bad: #e06c6c;
-  --warn: #e8b64c;
-  --font: "Segoe UI", system-ui, -apple-system, sans-serif;
-  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --ok: var(--vc-success);
+  --bad: var(--vc-error);
+  --warn: var(--vc-warning);
+  --font: var(--vc-font);
+  --mono: var(--vc-font-mono);
 }
 
 * { box-sizing: border-box; }
@@ -356,3 +357,4 @@ body.is-fullscreen .bmbar, body.is-fullscreen .findbar, body.is-fullscreen .side
   .tool { font-size: 0; gap: 0; padding: 0 7px; }
   .side { width: 300px; }
 }
+.vc-studio .apphdr { display: none; }

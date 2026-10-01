@@ -1,0 +1,51 @@
+/* Copy of public/studio-tokens.css — keep the two in sync. */
+/* VoiceCraft Studio design tokens — the one source of colour, type, radius,
+   spacing and elevation for every module (VoiceCraft, AutoEditor, Browser,
+   the Flow tools, Projects, Settings). Module stylesheets map their own
+   variable names onto these. Based on the existing VoiceCraft identity:
+   indigo for navigation/selection/primary actions, gold for the main
+   "make it" actions (Generate, Render). */
+:root {
+  /* surfaces */
+  --vc-background: #0d0d0f;
+  --vc-surface: #161619;
+  --vc-surface-elevated: #202026;
+  --vc-surface-sunken: #0b0b0d;
+  --vc-border: #2c2c33;
+  --vc-border-soft: #232329;
+
+  /* brand */
+  --vc-primary: #6366f1;
+  --vc-primary-hover: #5558e8;
+  --vc-primary-soft: rgba(99, 102, 241, 0.16);
+  --vc-primary-text: #c7c9ff;
+  --vc-accent: #e8b64c;
+  --vc-accent-hover: #f2c766;
+  --vc-accent-text: #1a1406;
+
+  /* text */
+  --vc-text: #f2f2f4;
+  --vc-text-muted: #9b9ba3;
+  --vc-text-faint: #62626c;
+
+  /* status */
+  --vc-success: #6cc98f;
+  --vc-warning: #e8b64c;
+  --vc-error: #e06c6c;
+  --vc-success-soft: rgba(108, 201, 143, 0.12);
+  --vc-error-soft: rgba(224, 108, 108, 0.12);
+
+  /* shape & type */
+  --vc-radius-sm: 7px;
+  --vc-radius: 10px;
+  --vc-radius-lg: 14px;
+  --vc-font: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --vc-font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --vc-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --vc-shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.35);
+  --vc-space-1: 4px;
+  --vc-space-2: 8px;
+  --vc-space-3: 12px;
+  --vc-space-4: 16px;
+  --vc-space-5: 24px;
+}

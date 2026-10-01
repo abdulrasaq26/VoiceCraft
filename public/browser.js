@@ -558,6 +558,7 @@
     b.setAttribute('aria-pressed', String(on));
     b.title = on ? 'Exit focus mode (F11)' : 'Focus mode — full screen, toolbar stays (F11)';
     if (!fromWindow) EB.setWindowFullscreen(on);
+    if (window.studio) window.studio.setFocusMode(on); // the studio bar steps aside too
     requestAnimationFrame(syncBounds);
   }
   function toggleFocus() { setFocus(!document.body.classList.contains('is-focus')); }

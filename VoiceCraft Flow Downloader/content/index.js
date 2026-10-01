@@ -36,7 +36,10 @@
   // Listen for messages from popup (and, inside VoiceCraft Studio, from the
   // browser toolbar via content/host-bridge.js).
   const handleExtensionMessage = (message, sender, sendResponse) => {
-    if (message.action === 'toggle_automator') {
+    if (message.action === 'studio-project') {
+      automatorEngine.setStudioProject(message.project || null);
+      sendResponse({ status: 'ok' });
+    } else if (message.action === 'toggle_automator') {
       automatorPanel.toggle();
       sendResponse({ status: 'toggled' });
     } else if (message.action === 'toggle_recovery') {

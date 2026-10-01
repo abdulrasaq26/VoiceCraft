@@ -37,12 +37,11 @@ class MediaItemUI {
     // Status overlay (for downloading/queued/error)
     const overlay = document.createElement('div');
     overlay.className = 'fmd-media-overlay';
-    overlay.style.display = 'none';
     div.appendChild(overlay);
     this.overlayEl = overlay;
 
     const badge = document.createElement('div');
-    badge.className = 'fmd-media-badge';
+    badge.className = 'fmd-media-badge' + (this.data.type === 'video' ? '' : ' is-image');
     badge.textContent = this.data.type === 'video' ? 'VID' : 'IMG';
     div.appendChild(badge);
 
@@ -65,7 +64,7 @@ class MediaItemUI {
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'fmd-remove-btn';
-    removeBtn.innerHTML = '&times;'; 
+    removeBtn.textContent = '✕';
     removeBtn.title = "Remove from list";
     div.appendChild(removeBtn);
 
@@ -106,25 +105,18 @@ class MediaItemUI {
   }
 
   updateSelectionState() {
-    // Reset classes
+    const st = this.data.status;
     this.element.classList.remove('selected', 'downloading', 'error', 'downloaded');
-    
-    // Set base style
-    if (this.data.status === 'selected' || this.data.status === 'queued') {
-      this.element.classList.add('selected');
-      this.overlayEl.style.display = 'none';
-    } else if (this.data.status === 'downloading') {
-      this.element.classList.add('downloading');
+    if (st === 'selected' || st === 'queued') this.element.classList.add('selected');
+    const overlay = {
+      downloading: ['downloading', '⏳', 'Saving…'],
+      downloaded: ['downloaded', '✓', 'Saved'],
+      error: ['error', '⚠', 'Failed · retry'],
+    }[st];
+    if (overlay) {
+      this.element.classList.add(overlay[0]);
       this.overlayEl.style.display = 'flex';
-      this.overlayEl.innerHTML = `<span style="font-size: 24px; color: white;">&#8987;</span>`; // Hourglass
-    } else if (this.data.status === 'downloaded') {
-      this.element.classList.add('downloaded');
-      this.overlayEl.style.display = 'flex';
-      this.overlayEl.innerHTML = `<span style="font-size: 24px; color: #4CAF50;">&#10003;</span>`; // Checkmark
-    } else if (this.data.status === 'error') {
-      this.element.classList.add('error');
-      this.overlayEl.style.display = 'flex';
-      this.overlayEl.innerHTML = `<span style="font-size: 24px; color: #F44336;">&#9888;</span><br><span style="font-size: 10px; color: white; margin-top: 4px;">Retry</span>`; // Warning
+      this.overlayEl.innerHTML = `<span class="fmd-ov-icon">${overlay[1]}</span><span>${overlay[2]}</span>`;
     } else {
       this.overlayEl.style.display = 'none';
     }

@@ -63,7 +63,7 @@ export default function Editor({
   captionName, captionError, onCaptionFile, removeCaptions, generatingCaptions, genCapStatus, onGenerateCaptions,
   captionAnimation, setCaptionAnimation, captionOverrides, setCaptionOverrides,
   captionOpts, setCaptionsTrack, onExportCaptions,
-  initialTime = 0, onTimeChange,
+  initialTime = 0, onTimeChange, assetsPanel = null,
 }) {
   const canvasRef = useRef(null);
   const audioRef = useRef(null);
@@ -547,6 +547,7 @@ export default function Editor({
       />
 
       <aside className="side">
+        {assetsPanel}
         <div className="panel export">
           <h2 className="panel__h">Export</h2>
 

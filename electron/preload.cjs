@@ -2,6 +2,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 window.addEventListener('DOMContentLoaded', () => {
   if (document.title === '') document.title = 'VoiceCraft Studio';
+  // Inside the studio the studio bar is the navigation, so each module hides
+  // its own workspace switcher.
+  document.documentElement.classList.add('vc-studio');
+  const st = document.createElement('style');
+  st.textContent = '.vc-studio .app-workspaces, .vc-studio nav.ws { display: none !important; }';
+  document.head.appendChild(st);
 });
 
 // Host-page API for the built-in browser (public/browser.js).
@@ -70,4 +76,31 @@ contextBridge.exposeInMainWorld('electronBrowser', {
   onDownloadsReset: listen('browser:downloads-reset'),
   onPageFullscreen: listen('browser:page-fullscreen'),
   onWindowFullscreen: listen('browser:window-fullscreen'),
+});
+
+// Studio: modules, the current project and its asset library (electron/studio.js).
+contextBridge.exposeInMainWorld('studio', {
+  getState: () => ipcRenderer.invoke('studio:get-state'),
+  editorReady: () => ipcRenderer.send('studio:editor-ready'),
+  switchTo: (module) => ipcRenderer.send('studio:switch', module),
+  setProject: (project) => ipcRenderer.invoke('studio:set-project', project),
+  assets: (projectId) => ipcRenderer.invoke('studio:assets', { projectId }),
+  assetCounts: (ids) => ipcRenderer.invoke('studio:asset-counts', ids),
+  addAsset: (asset) => ipcRenderer.invoke('studio:add-asset', asset),
+  removeAsset: (projectId, assetId) => ipcRenderer.invoke('studio:remove-asset', { projectId, assetId }),
+  deleteProjectAssets: (ids) => ipcRenderer.invoke('studio:delete-project-assets', ids),
+  sendToEditor: (projectId, assetIds) => ipcRenderer.send('studio:send-to-editor', { projectId, assetIds }),
+  projectMenu: (x, y, projects) => ipcRenderer.send('studio:project-menu', { x, y, projects }),
+  setFocusMode: (on) => ipcRenderer.send('studio:focus-mode', !!on),
+  assetUrl: (projectId, assetId) => `vcasset://${encodeURIComponent(projectId)}/${encodeURIComponent(assetId)}`,
+  onModuleChanged: listen('studio:module-changed'),
+  onProjectChanged: listen('studio:project-changed'),
+  onAssetAdded: listen('studio:asset-added'),
+  onAssetRemoved: listen('studio:asset-removed'),
+  onProjectsDeleted: listen('studio:projects-deleted'),
+  onImportAssets: listen('studio:import-assets'),
+  onCheckTransfer: listen('studio:check-transfer'),
+  onNewProject: listen('studio:new-project'),
+  onShowProjects: listen('studio:show-projects'),
+  onFocusMode: listen('studio:focus-mode'),
 });

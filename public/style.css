@@ -1,14 +1,15 @@
+/* Colours come from the studio design tokens (studio-tokens.css). */
 :root {
-  --bg: #0d0d0f;
-  --card: #161619;
-  --card-border: #26262b;
-  --panel: #0f0f12;
-  --text: #f2f2f4;
-  --text-dim: #9b9ba3;
-  --accent: #e8b64c;
-  --accent-hover: #f2c766;
-  --danger: #e06c6c;
-  --success: #6cc98f;
+  --bg: var(--vc-background);
+  --card: var(--vc-surface);
+  --card-border: var(--vc-border-soft);
+  --panel: var(--vc-surface-sunken);
+  --text: var(--vc-text);
+  --text-dim: var(--vc-text-muted);
+  --accent: var(--vc-accent);
+  --accent-hover: var(--vc-accent-hover);
+  --danger: var(--vc-error);
+  --success: var(--vc-success);
   --elite: #e8b64c;
   --premium: #8ab4f8;
   --standard: #9b9ba3;

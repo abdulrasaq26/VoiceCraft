@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VoiceCraft Studio</title>
+  <link rel="stylesheet" href="studio-tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--vc-background); color: var(--vc-text); font: 13px/1.4 var(--vc-font); overflow: hidden; user-select: none; }
+    svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+    .bar { height: 44px; display: flex; align-items: center; gap: 14px; padding: 0 12px; border-bottom: 1px solid var(--vc-border-soft); background: var(--vc-background); }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; white-space: nowrap; }
+    .logo { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-weight: 800; font-size: 12px; }
+    .brand b { color: var(--vc-primary-text); font-weight: 700; }
+    .brand small { color: var(--vc-text-faint); font-weight: 600; font-size: 11px; letter-spacing: .5px; }
+    .mods { display: flex; gap: 2px; padding: 3px; background: var(--vc-surface); border: 1px solid var(--vc-border); border-radius: var(--vc-radius); }
+    .mod { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 13px; border: 0; border-radius: var(--vc-radius-sm); background: transparent; color: var(--vc-text-muted); font: inherit; font-weight: 600; cursor: pointer; position: relative; }
+    .mod:hover { color: var(--vc-text); background: rgba(255,255,255,.04); }
+    .mod.on { color: #fff; background: var(--vc-primary); }
+    .mod .dot { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--vc-success); display: none; }
+    .mod.live .dot { display: block; }
+    .grow { flex: 1; }
+    .proj { display: inline-flex; align-items: center; gap: 8px; height: 30px; max-width: 360px; padding: 0 10px 0 12px; border-radius: var(--vc-radius); border: 1px solid var(--vc-border); background: var(--vc-surface); color: var(--vc-text); font: inherit; cursor: pointer; }
+    .proj:hover { border-color: var(--vc-text-muted); }
+    .proj__k { color: var(--vc-text-faint); font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; }
+    .proj__n { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .proj__n.none { color: var(--vc-text-muted); font-weight: 500; }
+    .proj__c { color: var(--vc-text-muted); font-family: var(--vc-font-mono); font-size: 11px; white-space: nowrap; }
+    .toast { position: fixed; right: 12px; top: 7px; height: 30px; display: none; align-items: center; gap: 8px; padding: 0 12px; border-radius: 999px; background: var(--vc-success-soft); border: 1px solid rgba(108,201,143,.45); color: var(--vc-text); font-size: 12px; font-weight: 600; }
+    .toast.on { display: inline-flex; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="brand"><span class="logo">V</span><span>Voice<b>Craft</b></span><small>STUDIO</small></div>
+    <nav class="mods" aria-label="Modules">
+      <button class="mod" data-mod="voicecraft"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>VoiceCraft<span class="dot"></span></button>
+      <button class="mod" data-mod="autoeditor"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M8 5v4M16 5v4"/></svg>AutoEditor<span class="dot"></span></button>
+      <button class="mod" data-mod="browser"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Browser<span class="dot"></span></button>
+    </nav>
+    <span class="grow"></span>
+    <button class="proj" id="proj" title="Current project — the voice, Flow results and edit all belong to it">
+      <span class="proj__k">Project</span>
+      <span class="proj__n none" id="projName">None — pick or create one</span>
+      <span class="proj__c" id="projCount"></span>
+      <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="shared-db.js"></script>
+  <script>
+    (() => {
+      const S = window.studio;
+      if (!S) return;
+      const $ = (id) => document.getElementById(id);
+      let project = null;
+
+      function setActive(mod, loaded) {
+        document.querySelectorAll('.mod').forEach((b) => {
+          b.classList.toggle('on', b.dataset.mod === mod);
+          if (loaded) b.classList.toggle('live', loaded.includes(b.dataset.mod) && b.dataset.mod !== mod);
+        });
+      }
+
+      async function refreshCount() {
+        if (!project) { $('projCount').textContent = ''; return; }
+        const c = (await S.assetCounts([project.id]))[project.id] || {};
+        const parts = [];
+        if (c.audio) parts.push(`${c.audio} 🎙`);
+        if (c.image) parts.push(`${c.image} 🖼`);
+        if (c.video) parts.push(`${c.video} 🎬`);
+        $('projCount').textContent = parts.join('  ');
+      }
+
+      function showProject(p) {
+        project = p;
+        $('projName').textContent = p ? p.name : 'None — pick or create one';
+        $('projName').classList.toggle('none', !p);
+        refreshCount();
+      }
+
+      let toastTimer = 0;
+      function toast(text) {
+        $('toast').textContent = text;
+        $('toast').classList.add('on');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => $('toast').classList.remove('on'), 3500);
+      }
+
+      document.querySelectorAll('.mod').forEach((b) => b.addEventListener('click', () => S.switchTo(b.dataset.mod)));
+      $('proj').addEventListener('click', async (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        let projects = [];
+        try { projects = (await window.SharedDB.listProjects()).map((p) => ({ id: p.id, name: p.name })); } catch (_) { /* none */ }
+        S.projectMenu(r.left, r.bottom + 4, projects);
+      });
+
+      S.onModuleChanged(async ({ module }) => { const st = await S.getState(); setActive(module, st.loaded); });
+      S.onProjectChanged((p) => showProject(p));
+      S.onAssetAdded((a) => {
+        if (project && a.projectId === project.id) {
+          refreshCount();
+          toast(`${a.filename} added to ${project.name}`);
+        }
+      });
+      S.onAssetRemoved(() => refreshCount());
+
+      // Ctrl+Shift+1/2/3 switch modules from anywhere in the bar.
+      window.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey && ['1', '2', '3'].includes(e.key)) S.switchTo(['voicecraft', 'autoeditor', 'browser'][+e.key - 1]);
+      });
+
+      S.getState().then((st) => { setActive(st.active, st.loaded); showProject(st.project); });
+    })();
+  </script>
+</body>
+</html>

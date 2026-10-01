@@ -129,6 +129,8 @@ class DownloadManager {
   }
 
   bindEvents() {
+    // Hosts without chrome.downloads (VoiceCraft Studio saves through its own bridge).
+    if (!chrome.downloads) return;
     chrome.downloads.onChanged.addListener(this.handleDownloadChange.bind(this));
     
     // Override filenames explicitly using Chrome's interceptor
