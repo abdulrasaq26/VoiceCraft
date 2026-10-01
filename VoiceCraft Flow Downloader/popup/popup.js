@@ -30,8 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnAutomator.addEventListener('click', async () => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab) {
-            // Using Chrome SidePanel API to open the TryAiToday sidepanel
-            chrome.sidePanel.open({ tabId: tab.id, windowId: tab.windowId }).then(() => window.close()).catch(() => window.close());
+            chrome.tabs.sendMessage(tab.id, { action: 'toggle_automator' }, () => { void chrome.runtime.lastError; window.close(); });
         }
     });
   }

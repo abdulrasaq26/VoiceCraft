@@ -140,17 +140,6 @@ class DownloadManager {
           return true;
       }
       
-      if (typeof tryAiMap1 !== 'undefined' && typeof tryAiMap2 !== 'undefined') {
-          if (item.byExtensionId && item.byExtensionId !== chrome.runtime.id) {
-              suggest();
-              return true;
-          }
-          let n = tryAiMap1.get(item.id) || tryAiMap2.get(item.url) || tryAiMap2.get(item.finalUrl);
-          if (n) {
-              suggest({ filename: n, conflictAction: 'uniquify' });
-              return true;
-          }
-      }
       suggest();
     });
   }

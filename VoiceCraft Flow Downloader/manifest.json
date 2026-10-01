@@ -10,9 +10,7 @@
     "storage",
     "webRequest",
     "offscreen",
-    "sidePanel",
-    "tabs",
-    "identity"
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -43,15 +41,10 @@
       ],
       "js": [
         "content/automation/host-bridge.js",
-        "storage/project-store.js",
         "content/automation/event-bus.js",
-        "content/automation/job.js",
-        "content/automation/queue-manager.js",
-        "content/automation/asset-matcher.js",
         "content/automation/flow-selectors.js",
         "content/automation/automator-adapter.js",
-        "content/automation/tryai-bridge.js",
-        "content/automation/flow-driver.js",
+        "content/automation/automator-engine.js",
         "content/detection/fingerprint.js",
         "content/detection/flow-adapter.js",
         "content/detection/name-normalizer.js",
@@ -83,16 +76,11 @@
     {
       "resources": [
         "content/ui/styles.css",
-        "icons/*",
-        "TryAiToday/0.4.7_0/inject.js",
-        "TryAiToday/0.4.7_0/wm.js"
+        "icons/*"
       ],
       "matches": [
         "<all_urls>"
       ]
     }
-  ],
-  "side_panel": {
-    "default_path": "TryAiToday/0.4.7_0/sidepanel.html"
-  }
+  ]
 }

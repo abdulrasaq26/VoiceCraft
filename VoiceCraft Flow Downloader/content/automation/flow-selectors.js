@@ -4,6 +4,7 @@ window.FlowSelectors = {
       // Ignore extension's own elements!
       if (el.id && el.id.startsWith('fmd-')) return false;
       if (el.closest && el.closest('.fmd-automator-container')) return false;
+      if (el.getRootNode && el.getRootNode().host && /^(fmd-automator-host|flow-media-downloader-host)$/.test(el.getRootNode().host.id)) return false;
       if (el.closest && el.closest('#flow-media-downloader-host')) return false;
 
       const rect = el.getBoundingClientRect();
@@ -16,7 +17,7 @@ window.FlowSelectors = {
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
       let node;
       while ((node = walker.nextNode())) {
-        if (node.shadowRoot && node.id !== 'flow-media-downloader-host') {
+        if (node.shadowRoot && node.id !== 'flow-media-downloader-host' && node.id !== 'fmd-automator-host') {
           results = results.concat(queryDeep(selector, node.shadowRoot));
         }
       }
@@ -88,7 +89,7 @@ window.FlowSelectors = {
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
       let node;
       while ((node = walker.nextNode())) {
-        if (node.shadowRoot && node.id !== 'flow-media-downloader-host') {
+        if (node.shadowRoot && node.id !== 'flow-media-downloader-host' && node.id !== 'fmd-automator-host') {
           results = results.concat(queryDeep(selector, node.shadowRoot));
         }
       }

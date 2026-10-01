@@ -27,41 +27,11 @@
   const flowCrawler = new window.FlowCrawler(detector, tray);
   window.FlowCrawlerInstance = flowCrawler;
 
-  // Initialize V3 Automator Engine
-  const queueManager = new window.QueueManager();
-  queueManager.loadFromStorage();
-  
-  const automatorAdapter = new window.FlowAutomatorAdapter();
-  const flowDriver = new window.FlowDriver(queueManager, automatorAdapter);
-  const assetMatcher = new window.AssetMatcher(queueManager);
-  const automatorPanel = new window.AutomatorPanel(queueManager, automatorAdapter);
+  // VoiceCraft Automator: queue prompts and run them through Flow's own UI.
+  const automatorEngine = new window.VCAutomatorEngine(new window.FlowAutomatorAdapter());
+  const automatorPanel = new window.AutomatorPanel(automatorEngine);
+  window.VCAutomator = automatorEngine;
   window.FlowAutomatorPanel = automatorPanel; // for the VoiceCraft toolbar's panel toggles
-
-  if (window.AutomatorEvents) {
-    window.AutomatorEvents.on('ASSET_MATCHED', async (eventData) => {
-      const { job, media } = eventData;
-      
-      // Auto-resolve to PNG/MP4
-      const resolvedMedia = await window.MediaResolver.resolve(media);
-      resolvedMedia.status = 'downloading';
-      
-      job.status = 'downloading';
-      window.AutomatorEvents.emit('DOWNLOAD_STARTED', job);
-      
-      chrome.runtime.sendMessage({
-        action: 'download',
-        mediaItem: resolvedMedia,
-        tabId: null // Handled dynamically
-      });
-    });
-
-    window.AutomatorEvents.on('JOB_FAILED', (job) => {
-        queueManager.saveToStorage();
-        if (queueManager.isRunning) {
-            queueManager.processNext();
-        }
-    });
-  }
 
   // Listen for messages from popup (and, inside VoiceCraft Studio, from the
   // browser toolbar via content/host-bridge.js).
@@ -106,23 +76,8 @@
         tray.updateFooter();
       }
       
-      // Also notify Automator if active
-      if (window.AutomatorEvents && message.status === 'downloaded') {
-        // We find the job that has this asset
-        const job = queueManager.jobs.find(j => j.assets && j.assets.some(a => a.id === message.mediaId));
-        if (job && job.status !== 'completed') {
-          job.status = 'completed';
-          window.AutomatorEvents.emit('JOB_COMPLETED', job);
-          queueManager.saveToStorage();
-          queueManager.processNext(); // Loop to next job!
-        }
-      } else if (window.AutomatorEvents && message.status === 'error') {
-        const job = queueManager.jobs.find(j => j.assets && j.assets.some(a => a.id === message.mediaId));
-        if (job) {
-          job.status = 'error';
-          window.AutomatorEvents.emit('JOB_FAILED', job);
-        }
-      }
+      // The Automator waits on its own downloads.
+      automatorEngine.onDownloadProgress(message);
     }
   };
   chrome.runtime.onMessage.addListener(handleExtensionMessage);
