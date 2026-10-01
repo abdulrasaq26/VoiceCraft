@@ -4,6 +4,41 @@
 // Electron's extension support lacks (chrome.downloads, chrome.scripting).
 const { ipcRenderer, webFrame } = require('electron');
 
+// flow.google.com wraps the page's reCAPTCHA execute() so that tokens asked
+// for by anything but Flow's own code are stamped "extension_hijack_detected"
+// (Google then rejects the request as unusual activity). Before any page
+// script runs, watch the grecaptcha → enterprise → execute assignments and
+// keep the genuine (native) execute as window.__vcRealExecute; the public one
+// stays native too. Flow's own code uses its private copy, so Flow is unaffected.
+const RECAPTCHA_TRAP = `(function () {
+  if (window.__vcRecapTrap) return; window.__vcRecapTrap = true;
+  var isNative = function (fn) { try { return typeof fn === 'function' && Function.prototype.toString.call(fn).indexOf('[native code]') >= 0; } catch (_) { return false; } };
+  var keep = function (ent, fn) { try { var b = fn.bind(ent); window.__vcRealExecute = function (k, o) { return b(k, o); }; } catch (_) {} };
+  var trapExecute = function (ent) {
+    if (!ent || ent.__vcTrapped) return;
+    var current; try { current = ent.execute; } catch (_) {}
+    if (isNative(current)) keep(ent, current);
+    try {
+      Object.defineProperty(ent, 'execute', { configurable: true, enumerable: true,
+        get: function () { return current; },
+        set: function (v) { if (isNative(v)) { current = v; keep(ent, v); } else if (!isNative(current)) { current = v; } } });
+      ent.__vcTrapped = true;
+    } catch (_) { if (isNative(current)) keep(ent, current); }
+  };
+  var trapGre = function (gre) {
+    if (!gre || gre.__vcGreTrapped) return; gre.__vcGreTrapped = true;
+    var ent; try { ent = gre.enterprise; } catch (_) {}
+    if (ent) { trapExecute(ent); return; }
+    try { Object.defineProperty(gre, 'enterprise', { configurable: true, enumerable: true, get: function () { return ent; }, set: function (v) { ent = v; trapExecute(v); } }); } catch (_) {}
+  };
+  if (window.grecaptcha) { trapGre(window.grecaptcha); return; }
+  var g;
+  try { Object.defineProperty(window, 'grecaptcha', { configurable: true, enumerable: true, get: function () { return g; }, set: function (v) { g = v; trapGre(v); } }); } catch (_) {}
+})();`;
+if (/(^|\.)flow\.google\.com$/i.test(location.hostname)) {
+  webFrame.executeJavaScript(RECAPTCHA_TRAP).catch(() => {});
+}
+
 // Google sign-in pages see a standard Firefox (see browser-manager.js): hide
 // the Chromium-only navigator.userAgentData there too, before the page runs.
 if (/^accounts\.google\.com$/i.test(location.hostname)) {

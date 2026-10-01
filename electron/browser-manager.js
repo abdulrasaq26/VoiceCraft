@@ -711,8 +711,59 @@ export class BrowserManager {
         dbg.attach('1.3');
         await dbg.sendCommand('Page.enable');
         await dbg.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true });
+        // Developer capture (FRAMELOOM_CAPTURE=1 only): Flow's RPC traffic to
+        // userData/flow-capture.jsonl, to build against the real API.
+        if (process.env.FRAMELOOM_CAPTURE === '1') await dbg.sendCommand('Network.enable');
       } catch (e) { /* another debugger owns it: the normal dialog is used */ }
     };
+    if (process.env.FRAMELOOM_CAPTURE === '1') {
+      // Every non-static request from the page, logged when sent; responses
+      // (streamed ones too) appended as they arrive.
+      const out = path.join(app.getPath('userData'), 'flow-capture.jsonl');
+      const scrub = (s) => String(s || '').replace(/([?&])at=[^&]*/g, '$1at=<removed>');
+      const skip = /\.(js|css|png|jpe?g|gif|webp|svg|woff2?|ttf|ico|mp4|webm)(\?|$)|fonts\.g|gstatic\.com|google-analytics|googletagmanager|play\.google\.com\/log|\/gen_204|ogads-pa|flow-content\.google|lh3\.googleusercontent/i;
+      const live = new Map(); // requestId -> { chunks, streamed }
+      const write = (o) => { try { fs.appendFileSync(out, JSON.stringify({ t: Date.now(), ...o }) + '\n'); } catch { /* best effort */ } };
+      dbg.on('message', async (e, method, params) => {
+        try {
+          if (method === 'Network.requestWillBeSent') {
+            const u = params.request.url;
+            if (!/^https:/.test(u) || skip.test(u) || ['Image', 'Media', 'Font', 'Stylesheet', 'Script'].includes(params.type)) return;
+            live.set(params.requestId, { chunks: [], streamed: false });
+            write({ id: params.requestId, phase: 'request', type: params.type, method: params.request.method, url: scrub(u), body: scrub(params.request.postData).slice(0, 100000) });
+          } else if (method === 'Network.responseReceived' && live.has(params.requestId)) {
+            write({ id: params.requestId, phase: 'head', status: params.response.status, mime: params.response.mimeType });
+            if (/channel|bind|stream|rpc/i.test(params.response.url)) {
+              try {
+                const r = await dbg.sendCommand('Network.streamResourceContent', { requestId: params.requestId });
+                const rec = live.get(params.requestId);
+                if (rec) {
+                  rec.streamed = true;
+                  if (r && r.bufferedData) rec.chunks.push(Buffer.from(r.bufferedData, 'base64').toString('utf8'));
+                }
+              } catch { /* not streamable */ }
+            }
+          } else if (method === 'Network.dataReceived' && live.has(params.requestId) && params.data) {
+            const rec = live.get(params.requestId);
+            rec.chunks.push(Buffer.from(params.data, 'base64').toString('utf8'));
+            if (rec.chunks.join('').length > 4000) { write({ id: params.requestId, phase: 'data', body: rec.chunks.join('').slice(0, 100000) }); rec.chunks = []; }
+          } else if ((method === 'Network.loadingFinished' || method === 'Network.loadingFailed') && live.has(params.requestId)) {
+            const rec = live.get(params.requestId);
+            live.delete(params.requestId);
+            let body = rec.chunks.join('');
+            if (!rec.streamed && method === 'Network.loadingFinished') {
+              try { const r = await dbg.sendCommand('Network.getResponseBody', { requestId: params.requestId }); body = r.base64Encoded ? '<binary>' : String(r.body || ''); } catch { /* none */ }
+            }
+            write({ id: params.requestId, phase: method === 'Network.loadingFailed' ? 'failed' : 'end', body: body.slice(0, 100000) });
+          }
+        } catch { /* capture is best effort */ }
+      });
+      // Streamed responses still open: flush what arrived every few seconds.
+      const flusher = setInterval(() => {
+        if (wc.isDestroyed()) { clearInterval(flusher); return; }
+        for (const [id, rec] of live) if (rec.chunks.length) { write({ id, phase: 'data', body: rec.chunks.join('').slice(0, 100000) }); rec.chunks = []; }
+      }, 3000);
+    }
     dbg.on('message', async (e, method, params) => {
       if (method !== 'Page.fileChooserOpened') return;
       const { backendNodeId, mode } = params || {};

@@ -18,6 +18,10 @@
     '16:9': 'IMAGE_ASPECT_RATIO_LANDSCAPE', '4:3': 'IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE', '1:1': 'IMAGE_ASPECT_RATIO_SQUARE',
     '3:4': 'IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR', '9:16': 'IMAGE_ASPECT_RATIO_PORTRAIT',
   };
+  // flow.google.com's image request uses numeric aspect codes (3 = 16:9 seen
+  // in Flow's own request; the rest follow the same enum order).
+  const NEW_IMAGE_ASPECTS = { '1:1': 1, '9:16': 2, '16:9': 3, '4:3': 4, '3:4': 5 };
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).toUpperCase();
   const VIDEO_ASPECTS = { '16:9': 'VIDEO_ASPECT_RATIO_LANDSCAPE', '9:16': 'VIDEO_ASPECT_RATIO_PORTRAIT' };
 
   // Text-to-video model key for Veo 3.1 at 8 seconds.
@@ -231,6 +235,12 @@
     // Give a generated picture a name in Flow, so later prompts can use @name.
     async rename(workflowId, displayName) {
       const projectId = await this.projectId();
+      if ((await this.connect()).scheme === 'google') {
+        // flow.google.com: Flow's own rename (rpc mYWVGd, metadata.display_name).
+        const res = await call('rpc', ['mYWVGd', [[workflowId, null, null, [displayName], projectId], [['metadata.display_name']]]], 60000);
+        if (!res || !res.ok) throw new Error((res && res.errText) || "Flow didn't rename it.");
+        return;
+      }
       await this.post(`${API}/v1/flowWorkflows/${workflowId}`, async () => JSON.stringify({
         workflow: { name: workflowId, projectId, metadata: { displayName } },
         updateMask: 'metadata.displayName',
@@ -241,6 +251,7 @@
     // from resolveReferences(). Returns { name, url, thumb, workflowId }.
     async generateImage({ prompt, parts, imageInputs, model, aspect }) {
       const projectId = await this.projectId();
+      if ((await this.connect()).scheme === 'google') return this.generateImageRpc({ prompt, parts, imageInputs, model, aspect, projectId });
       const res = await this.post(`${API}/v1/projects/${projectId}/flowMedia:batchGenerateImages`, async () => {
         const ctx = {
           recaptchaContext: { applicationType: 'RECAPTCHA_APPLICATION_TYPE_WEB', token: await this.recaptcha('IMAGE_GENERATION') },
@@ -272,6 +283,34 @@
       // New Flow has no media redirect route: use the served URL it returned.
       if (this.isNewSite() && fife) return { name, workflowId, url: fife, thumb: fife };
       return { name, workflowId, url: name ? this.mediaUrl(name) : fife, thumb: name ? this.thumbUrl(name) : fife };
+    }
+
+    // flow.google.com: the same call Flow's prompt box makes (rpc ogiZ0b).
+    async generateImageRpc({ prompt, parts, imageInputs, model, aspect, projectId }) {
+      if (imageInputs && imageInputs.length) {
+        throw Object.assign(new Error("Reference pictures (@name / ticked) aren't supported on Flow's new site yet — remove them for now."), { final: true });
+      }
+      const text = parts && parts.length ? parts.map((p) => p.text || '').join('') : prompt;
+      const token = await this.recaptcha('IMAGE_GENERATION');
+      const ctx = [null, 22, null, null, null, projectId, null, null, null, null, [token, 1]];
+      const request = [null, null, null, seed(), NEW_IMAGE_ASPECTS[aspect] || 3, IMAGE_MODELS[model] || IMAGE_MODELS['nano-banana-2'],
+        null, ctx, [[[text]]], null, null, null, uuid(), uuid()];
+      const res = await call('rpc', ['ogiZ0b', [null, [request], 1, ctx, [uuid()]]], 300000);
+      if (!res || !res.ok) {
+        const msg = (res && res.errText) || 'No response from Flow.';
+        const unusual = /UNUSUAL_ACTIVITY/.test(msg);
+        const err = new Error(unusual
+          ? "Google flagged this as unusual activity (reCAPTCHA). Wait a minute, reload the Flow tab, then retry — and keep a pause between prompts."
+          : /429|RESOURCE_EXHAUSTED|quota/i.test(msg) ? 'Flow says you are out of credits or sending too fast — wait and retry.' : msg);
+        if (unusual) err.fatal = true;
+        if (res && res.aborted) err.stopped = true;
+        throw err;
+      }
+      const media = Array.isArray(res.data) && Array.isArray(res.data[0]) ? res.data[0] : [];
+      const first = media.find((m) => Array.isArray(m) && m[0]);
+      if (!first) throw Object.assign(new Error('Flow finished but returned no image (it may have been filtered).'), { final: true });
+      const url = findServedUrl(first);
+      return { name: first[0], workflowId: first[2] || null, url, thumb: url, newSite: true };
     }
 
     // One video: submit, then poll until Flow reports it done. Returns { url, name }.
@@ -329,7 +368,7 @@
   // The first served media URL in a Flow response object (fifeUrl, servingUri…).
   function findServedUrl(obj, depth = 0) {
     if (!obj || depth > 6) return null;
-    if (typeof obj === 'string') return /^https:\/\/[^\s]+$/.test(obj) && /googleusercontent|storage\.googleapis|gstatic|fife|=s\d|video|\.mp4/i.test(obj) ? obj : null;
+    if (typeof obj === 'string') return /^https:\/\/[^\s]+$/.test(obj) && /flow-content\.google|googleusercontent|storage\.googleapis|gstatic|fife|=s\d|video|\.mp4/i.test(obj) ? obj : null;
     if (typeof obj !== 'object') return null;
     for (const k of ['fifeUrl', 'servingUri', 'servingUrl', 'uri', 'url']) {
       if (typeof obj[k] === 'string' && /^https:\/\//.test(obj[k])) return obj[k];

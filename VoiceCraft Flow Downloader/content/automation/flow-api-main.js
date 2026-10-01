@@ -77,14 +77,22 @@
     return FALLBACK_SITE_KEY;
   }
 
+  // A reCAPTCHA token for `action`. flow.google.com poisons the public
+  // execute() (tokens from other callers get flagged), so use the genuine one
+  // the studio's tab preload captured before Flow's code ran
+  // (window.__vcRealExecute), called from a fresh task like Flow's own calls.
   async function recaptcha(action) {
     for (let i = 0; i < 60; i++) {
       const g = window.grecaptcha && window.grecaptcha.enterprise;
-      if (g && g.execute) {
+      const real = typeof window.__vcRealExecute === 'function' ? window.__vcRealExecute : null;
+      if (real || (g && g.execute)) {
         try {
-          await new Promise((r) => (g.ready ? g.ready(r) : r()));
-          const token = await g.execute(siteKey(), { action });
-          if (token) return { token };
+          if (g && g.ready) await new Promise((r) => g.ready(r));
+          const run = real || g.execute.bind(g);
+          const token = await new Promise((resolve, reject) => setTimeout(() => {
+            try { Promise.resolve(run(siteKey(), { action })).then(resolve, reject); } catch (e) { reject(e); }
+          }, 0));
+          if (token) return { token, genuine: !!real };
         } catch (e) { return { error: 'reCAPTCHA failed: ' + (e && e.message ? e.message : e) }; }
       }
       await new Promise((r) => setTimeout(r, 250));
@@ -127,11 +135,61 @@
   }
   const post = (url, body, token) => request(url, 'POST', body, token);
 
+  // ---- flow.google.com's own RPC channel (batchexecute) ----
+  // The new Flow does everything through /_/AiSandboxAngularFrontend/data/
+  // batchexecute with method ids (e.g. ogiZ0b = generate images). Same form
+  // Flow's page posts: f.req + the page's XSRF token ("at"), session id and
+  // build label from its config. Returns { ok, data } with the method's
+  // decoded result.
+  let rpcSeq = Math.floor(Math.random() * 9000) + 1000;
+  async function rpc(rpcid, payload) {
+    const w = window.WIZ_global_data || {};
+    const app = (w.eptZe || '/_/AiSandboxAngularFrontend/').replace(/\/$/, '');
+    rpcSeq += 100000;
+    const q = new URLSearchParams({ rpcids: rpcid, 'source-path': location.pathname, hl: 'en', _reqid: String(rpcSeq), rt: 'c' });
+    if (w.cfb2h) q.set('bl', w.cfb2h);
+    if (w.FdrFJe) q.set('f.sid', w.FdrFJe);
+    const body = 'f.req=' + encodeURIComponent(JSON.stringify([[[rpcid, JSON.stringify(payload), null, 'generic']]]))
+      + (w.SNlM0e ? '&at=' + encodeURIComponent(w.SNlM0e) : '') + '&';
+    const ac = new AbortController();
+    inflight = ac;
+    try {
+      const r = await fetch(`${app}/data/batchexecute?${q}`, {
+        method: 'POST', credentials: 'include', signal: ac.signal,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'X-Same-Domain': '1' },
+        body,
+      });
+      const text = await r.text();
+      if (!r.ok) return { ok: false, status: r.status, errText: text.slice(0, 600) };
+      // ")]}'" then length-prefixed JSON chunks; find this method's result.
+      for (const line of text.split('\n')) {
+        if (!line.startsWith('[[')) continue;
+        let arr;
+        try { arr = JSON.parse(line); } catch (_) { continue; }
+        for (const item of arr) {
+          if (item[0] === 'wrb.fr' && item[1] === rpcid) {
+            if (item[2] == null) return { ok: false, status: 200, errText: 'Flow returned an error for this request' + (item[5] ? ' (' + JSON.stringify(item[5]).slice(0, 200) + ')' : '') + '.' };
+            let data = null;
+            try { data = JSON.parse(item[2]); } catch (_) { data = item[2]; }
+            return { ok: true, status: 200, data };
+          }
+          if (item[0] === 'er') return { ok: false, status: 200, errText: 'Flow error: ' + JSON.stringify(item).slice(0, 300) };
+        }
+      }
+      return { ok: false, status: 200, errText: 'Flow sent no result for ' + rpcid + '.' };
+    } catch (e) {
+      return { ok: false, status: 0, aborted: e && e.name === 'AbortError', errText: e && e.message ? e.message : String(e) };
+    } finally {
+      if (inflight === ac) inflight = null;
+    }
+  }
+
   const methods = {
     session,
     recaptcha,
     post,
     request,
+    rpc,
     abort: () => { if (inflight) inflight.abort(); return true; },
     projectId: () => { const m = /\/project\/([a-f0-9-]+)/i.exec(location.pathname + location.href); return m ? m[1] : null; },
     ping: () => true,
