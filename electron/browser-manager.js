@@ -285,6 +285,15 @@ export class BrowserManager {
 
     // ---- Flow bridge (from the tab preload, not the host page) ----
     ipcMain.on('flow-host:download', (e, req) => this.flowDownload(e.sender, req));
+    // The Automator's page-side script, run in the page's own world when the
+    // page's CSP stops the extension adding it as a <script>. Only this file.
+    ipcMain.on('flow-host:inject-main', (e, { file } = {}) => {
+      if (file !== 'content/automation/flow-api-main.js' || !this.tabByWebContents(e.sender)) return;
+      try {
+        const src = fs.readFileSync(path.join(flowExtensionPath(), file), 'utf8');
+        e.sender.executeJavaScript(src, true).catch((err) => console.warn('[Browser] inject-main:', err.message));
+      } catch (err) { console.warn('[Browser] inject-main:', err.message); }
+    });
     ipcMain.on('flow-host:panel-state', (e, { open } = {}) => {
       const tab = this.tabByWebContents(e.sender);
       if (tab && tab.flowPanel !== (open || null)) { tab.flowPanel = open || null; this.notify(tab.id); }

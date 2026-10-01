@@ -1,26 +1,26 @@
 // content/automation/automator-engine.js
 //
-// VoiceCraft Automator — queues prompts and runs them through Google Flow's
-// own interface in the user's signed-in tab: type the prompt into Flow's
-// prompt box, press Generate, wait for the new results to appear on the
-// page, download them, move on. It does exactly what the user would do by
-// hand, so Flow's own settings (model, aspect ratio, outputs) and Google's
-// own checks all apply as normal.
+// VoiceCraft Automator — queues prompts and generates them in Google Flow
+// for the project open in this tab, then downloads the results. Generation
+// goes through content/automation/flow-api.js, which sends the same requests
+// Flow's own Generate button sends, from the Flow page, with the signed-in
+// session — so the account's credits and limits apply as normal.
 
 (function () {
   if (window.VCAutomatorEngine) return;
 
   const STORE_KEY = 'vc_automator_v2';
   const DEFAULT_SETTINGS = {
-    mode: 'image',          // default type for prompts without [IMAGE]/[VIDEO]
-    expected: 1,            // results to wait for per prompt (match Flow's output count)
-    delay: 4,               // seconds between prompts
-    imageTimeout: 180,      // seconds to wait for image results
-    videoTimeout: 600,      // seconds to wait for video results
-    settle: 5,              // seconds with no new result before accepting fewer than expected
-    retries: 1,             // extra attempts for a prompt that fails
+    mode: 'image',            // default type for prompts without [IMAGE]/[VIDEO]
+    expected: 1,              // outputs per prompt
+    model: 'nano-banana-2',   // image model: nano-banana-2 | nano-banana-pro | nano-banana-lite
+    aspect: '16:9',           // image: 16:9 | 4:3 | 1:1 | 3:4 | 9:16
+    videoQuality: 'fast',     // video: lite | fast | quality
+    videoRatio: '16:9',       // video: 16:9 | 9:16
+    delay: 4,                 // seconds between prompts
+    videoTimeout: 600,        // seconds to wait for a video
+    retries: 1,               // extra attempts for a prompt that fails
     autoDownload: true,
-    submit: 'button',       // button | enter | compat — see automator-adapter.js
     project: 'Flow Automator',
     batch: 'Batch 01',
   };
@@ -55,60 +55,10 @@
   // ---- page helpers ------------------------------------------------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  function deepQuery(selector, root = document, acc = []) {
-    root.querySelectorAll(selector).forEach((el) => acc.push(el));
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-    let node;
-    while ((node = walker.nextNode())) {
-      // Never look inside VoiceCraft's own panels.
-      if (node.shadowRoot && !/^(flow-media-downloader-host|fmd-automator-host)$/.test(node.id)) {
-        deepQuery(selector, node.shadowRoot, acc);
-      }
-    }
-    return acc;
-  }
-
-  // Every media URL currently on the page (images, videos, CSS backgrounds).
-  function pageMediaUrls() {
-    const urls = new Set();
-    deepQuery('img').forEach((el) => { const u = el.currentSrc || el.src; if (u) urls.add(u); });
-    deepQuery('video, video source').forEach((el) => { const u = el.currentSrc || el.src; if (u) urls.add(u); });
-    deepQuery('div, a, span, button').forEach((el) => {
-      const bg = el.style && el.style.backgroundImage;
-      const m = bg && /url\(['"]?([^'")]+)['"]?\)/i.exec(bg);
-      if (m) urls.add(m[1]);
-    });
-    return urls;
-  }
-
-  // New result media of `type` that weren't on the page before submitting.
-  function newResults(type, baseline) {
-    const found = [];
-    const els = deepQuery(type === 'video' ? 'video' : 'img');
-    for (const el of els) {
-      if (el.closest && el.closest('#flow-media-downloader-host, #fmd-automator-host')) continue;
-      if (window.FlowAdapter && window.FlowAdapter.shouldIgnore(el)) continue;
-      const url = el.currentSrc || el.src;
-      if (!url || baseline.has(url) || url.startsWith('data:')) continue;
-      if (type === 'image') {
-        const w = el.naturalWidth || el.clientWidth, h = el.naturalHeight || el.clientHeight;
-        if (!el.complete || w < 120 || h < 120) continue; // still loading, or an icon
-      }
-      const norm = window.MediaNormalizer ? window.MediaNormalizer.normalize(el) : null;
-      found.push({ url, element: el, mimeType: (norm && norm.mimeType) || '' });
-    }
-    return found;
-  }
-
-  function promptText(el) {
-    if (!el) return '';
-    return (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' ? el.value : el.textContent) || '';
-  }
-
   // ---- engine ------------------------------------------------------------
   class AutomatorEngine {
-    constructor(adapter) {
-      this.adapter = adapter;
+    constructor(api) {
+      this.api = api;
       this.settings = { ...DEFAULT_SETTINGS };
       this.jobs = [];
       this.state = 'idle';     // idle | running | pausing | paused
@@ -236,6 +186,7 @@
       if (this.state === 'idle') return;
       this.state = 'idle';
       if (this.abort) this.abort();
+      if (this.current) this.api.abort();
       if (this.current && this.current.status !== 'completed') { this.current.status = 'waiting'; this.current.error = null; }
       this.current = null;
       this.save();
@@ -276,62 +227,50 @@
       job.attempts = (job.attempts || 0) + 1;
       job.error = null;
       job.results = 0;
-      const set = (status) => { job.status = status; this.save(); this.emit(); };
+      const st = this.settings;
+      const set = (status, detail) => { job.status = status; job.detail = detail || ''; this.save(); this.emit(); };
+      const stopped = () => this.state === 'idle';
       try {
-        set('submitting');
-        // 1. Flow's prompt box must be on screen (an open Flow project).
-        let input = null;
-        for (let i = 0; i < 20 && !input; i++) {
-          input = this.adapter.findElement(this.adapter.selectors.promptInput);
-          if (!input) { if (!(await this.wait(500))) throw new Error('stopped'); }
-        }
-        if (!input) throw new Error("Couldn't find Flow's prompt box — open a Flow project first.");
-
-        // 2. Snapshot what's on the page, then type and submit the prompt.
-        const baseline = pageMediaUrls();
-        await this.adapter.enterPrompt(job.prompt);
-        const typed = promptText(this.adapter.findElement(this.adapter.selectors.promptInput));
-        if (!typed.includes(job.prompt.slice(0, Math.min(24, job.prompt.length)))) {
-          throw new Error("Flow's prompt box didn't accept the text.");
-        }
-        await this.adapter.clickGenerate(this.settings.submit);
-        set('generating');
-
-        // 3. Wait for new results of this prompt's type.
-        const limit = (job.type === 'video' ? this.settings.videoTimeout : this.settings.imageTimeout) * 1000;
-        const started = Date.now();
-        const results = new Map();
-        let lastNew = 0;
-        while (Date.now() - started < limit) {
-          if (!(await this.wait(1500))) throw new Error('stopped');
-          for (const r of newResults(job.type, baseline)) {
-            if (!results.has(r.url)) { results.set(r.url, r); lastNew = Date.now(); }
+        set('submitting', 'Connecting to Flow…');
+        await this.api.connect();
+        const want = Math.max(1, Math.min(4, +st.expected || 1));
+        const results = [];
+        for (let n = 1; n <= want; n++) {
+          if (stopped()) throw Object.assign(new Error('Stopped'), { stopped: true });
+          set('generating', want > 1 ? `${n} of ${want}` : '');
+          try {
+            const r = job.type === 'video'
+              ? await this.api.generateVideo(
+                { prompt: job.prompt, quality: st.videoQuality, ratio: st.videoRatio },
+                { timeoutSec: st.videoTimeout, shouldStop: stopped, onPoll: (s) => set('generating', `${want > 1 ? `${n} of ${want} · ` : ''}${s}s`) })
+              : await this.api.generateImage({ prompt: job.prompt, model: st.model, aspect: st.aspect });
+            results.push(r);
+            job.results = results.length;
+          } catch (e) {
+            // Keep what already succeeded; fail outright on stop/limits/blocks.
+            if (e.stopped || e.fatal || !results.length) throw e;
+            this.note(`${job.id}: output ${n} failed — ${e.message}`);
           }
-          job.results = results.size;
-          this.emit();
-          if (results.size >= this.settings.expected) break;
-          if (results.size > 0 && Date.now() - lastNew > this.settings.settle * 1000) break;
+          if (n < want && !stopped()) await this.wait(1500);
         }
-        if (!results.size) throw new Error(`No ${job.type} appeared within ${Math.round(limit / 1000)}s.`);
 
-        // 4. Download them into <folder>/<project>/<batch>/<id>.<ext>.
-        if (this.settings.autoDownload) {
+        if (st.autoDownload) {
           set('downloading');
-          let i = 0, ok = 0;
-          for (const r of results.values()) {
-            i++;
-            const status = await this.download(job, r, i, results.size);
+          let ok = 0;
+          for (let i = 0; i < results.length; i++) {
+            const status = await this.download(job, results[i], i + 1, results.length);
             if (status === 'downloaded') ok++;
           }
-          if (!ok) throw new Error('Results appeared but downloading them failed.');
+          if (!ok) throw new Error('Generated in Flow, but downloading failed — the results are in your Flow project.');
         }
         job.finishedAt = Date.now();
         set('completed');
-        this.note(`${job.id} done — ${results.size} ${job.type}${results.size === 1 ? '' : 's'}`);
+        this.note(`${job.id} done — ${results.length} ${job.type}${results.length === 1 ? '' : 's'}`);
       } catch (e) {
-        if (e && e.message === 'stopped') return; // Stop already reset the job
+        if (e && e.stopped) return; // Stop already put the job back in line
         const msg = (e && e.message) || String(e);
-        if (job.attempts <= this.settings.retries) {
+        // Retrying won't help a limit, a block, or a prompt Flow refuses.
+        if (!e.fatal && !e.final && job.attempts <= st.retries) {
           job.status = 'waiting';
           job.error = `Attempt ${job.attempts} failed: ${msg} — retrying`;
         } else {
@@ -340,6 +279,8 @@
         }
         this.save();
         this.note(`${job.id}: ${msg}`);
+        // Daily limits and blocks affect every prompt: stop rather than burn the queue.
+        if (e.fatal && this.state === 'running') { this.state = 'paused'; this.note('Paused — fix the problem above, then Resume.'); }
       }
     }
 
@@ -347,7 +288,7 @@
       const mediaId = 'vca_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       const stem = total > 1 ? `${job.id}_${index}` : job.id;
       const mediaItem = {
-        id: mediaId, url: r.url, type: job.type, mimeType: r.mimeType, title: stem,
+        id: mediaId, url: r.url, type: job.type, mimeType: job.type === 'video' ? 'video/mp4' : 'image/png', title: stem,
         isAutomated: true, project: this.settings.project, batch: this.settings.batch, jobId: stem,
       };
       return new Promise((resolve) => {

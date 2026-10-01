@@ -42,8 +42,7 @@
       "js": [
         "content/automation/host-bridge.js",
         "content/automation/event-bus.js",
-        "content/automation/flow-selectors.js",
-        "content/automation/automator-adapter.js",
+        "content/automation/flow-api.js",
         "content/automation/automator-engine.js",
         "content/detection/fingerprint.js",
         "content/detection/flow-adapter.js",
@@ -76,7 +75,8 @@
     {
       "resources": [
         "content/ui/styles.css",
-        "icons/*"
+        "icons/*",
+        "content/automation/flow-api-main.js"
       ],
       "matches": [
         "<all_urls>"

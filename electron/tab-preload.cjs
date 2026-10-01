@@ -21,6 +21,8 @@ window.addEventListener('message', async (e) => {
   } else if (d.type === 'exec-main-world') {
     const result = await ipcRenderer.invoke('flow-host:exec-main-world', d.payload || {});
     window.postMessage({ channel: TO_EXT, type: 'reply', replyTo: d.requestId, result }, '*');
+  } else if (d.type === 'inject-main') {
+    ipcRenderer.send('flow-host:inject-main', { file: String(d.file || '') });
   } else if (d.type === 'panel-state') {
     ipcRenderer.send('flow-host:panel-state', { open: d.open || null });
   } else if (d.type === 'hello') {

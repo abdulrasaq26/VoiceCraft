@@ -1,12 +1,12 @@
 // content/ui/automator-panel.js
-// VoiceCraft Automator panel: paste prompts, queue them, run them through
+// VoiceCraft Automator panel: paste prompts, queue them, generate them in
 // Flow, watch progress. Logic lives in content/automation/automator-engine.js.
 
 (function () {
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   const STATUS = {
-    waiting: ['Waiting', 'wait'], submitting: ['Typing prompt…', 'busy'], generating: ['Generating…', 'busy'],
+    waiting: ['Waiting', 'wait'], submitting: ['Starting…', 'busy'], generating: ['Generating…', 'busy'],
     downloading: ['Downloading…', 'busy'], completed: ['Done', 'ok'], error: ['Failed', 'bad'],
   };
 
@@ -83,6 +83,7 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
 .seg { display: grid; grid-auto-flow: column; gap: 0; border: 1px solid #2e2e36; border-radius: 7px; overflow: hidden; }
 .seg button { border: 0; background: #0d0d10; color: #9b9ba3; height: 28px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .seg button.on { background: #6366f1; color: #fff; }
+.grp { margin: 14px 0 2px; font-size: 10.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #6d6d78; }
 .note { margin-top: 12px; padding: 10px 11px; border-radius: 9px; background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.25); color: #c7c9ff; font-size: 12px; }
 .path { font-family: Consolas, monospace; font-size: 11px; color: #9b9ba3; word-break: break-all; margin-top: 6px; }
 .log { font-size: 12px; }
@@ -144,21 +145,29 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
     <div class="sec" data-sec="settings">
       <div class="f"><div><div class="f__l">Default type</div><div class="f__d">For prompts without [IMAGE] / [VIDEO]</div></div>
         <div class="seg" id="mode"><button data-v="image">Image</button><button data-v="video">Video</button></div></div>
-      <div class="f"><div><div class="f__l">Results per prompt</div><div class="f__d">Set this to the number of outputs selected in Flow</div></div>
+      <div class="f"><div><div class="f__l">Outputs per prompt</div><div class="f__d">Each output uses your Flow credits</div></div>
         <select data-k="expected"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
-      <div class="f"><div><div class="f__l">Pause between prompts</div><div class="f__d">Seconds</div></div><input type="number" min="0" max="600" step="1" data-k="delay"></div>
-      <div class="f"><div><div class="f__l">Image time limit</div><div class="f__d">Seconds to wait for image results</div></div><input type="number" min="20" max="1800" step="10" data-k="imageTimeout"></div>
-      <div class="f"><div><div class="f__l">Video time limit</div><div class="f__d">Seconds to wait for video results</div></div><input type="number" min="60" max="3600" step="30" data-k="videoTimeout"></div>
+      <div class="grp">Images</div>
+      <div class="f"><div><div class="f__l">Model</div></div>
+        <select data-k="model"><option value="nano-banana-2">Nano Banana 2</option><option value="nano-banana-pro">Nano Banana Pro</option><option value="nano-banana-lite">Nano Banana Lite</option></select></div>
+      <div class="f"><div><div class="f__l">Aspect ratio</div></div>
+        <select data-k="aspect"><option value="16:9">16:9 landscape</option><option value="4:3">4:3</option><option value="1:1">1:1 square</option><option value="3:4">3:4</option><option value="9:16">9:16 portrait</option></select></div>
+      <div class="grp">Videos (Veo 3.1, 8s)</div>
+      <div class="f"><div><div class="f__l">Quality</div></div>
+        <select data-k="videoQuality"><option value="lite">Lite</option><option value="fast">Fast</option><option value="quality">Quality</option></select></div>
+      <div class="f"><div><div class="f__l">Aspect ratio</div></div>
+        <select data-k="videoRatio"><option value="16:9">16:9 landscape</option><option value="9:16">9:16 portrait</option></select></div>
+      <div class="f"><div><div class="f__l">Video time limit</div><div class="f__d">Seconds to wait for each video</div></div><input type="number" min="60" max="3600" step="30" data-k="videoTimeout"></div>
+      <div class="grp">Run</div>
+      <div class="f"><div><div class="f__l">Pause between prompts</div><div class="f__d">Seconds — raise it if Google rate-limits you</div></div><input type="number" min="0" max="600" step="1" data-k="delay"></div>
       <div class="f"><div><div class="f__l">Retries</div><div class="f__d">Extra attempts for a prompt that fails</div></div>
         <select data-k="retries"><option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
-      <div class="f"><div><div class="f__l">Submit with</div><div class="f__d">Change only if prompts are typed but not generated</div></div>
-        <select data-k="submit"><option value="button">Generate button</option><option value="enter">Enter key</option><option value="compat">Compatibility mode</option></select></div>
       <div class="f"><div><div class="f__l">Download results</div><div class="f__d">Save each prompt's results automatically</div></div>
         <select data-k="autoDownload"><option value="true">On</option><option value="false">Off</option></select></div>
       <div class="f"><div><div class="f__l">Project folder</div></div><input type="text" data-k="project" maxlength="80"></div>
       <div class="f"><div><div class="f__l">Batch folder</div></div><input type="text" data-k="batch" maxlength="80"></div>
       <div class="path" id="path"></div>
-      <div class="note">Model, aspect ratio and number of outputs come from Flow's own settings — choose them in Flow before you start. The Automator types each prompt into Flow and presses Generate for you, in this tab.</div>
+      <div class="note">Open a Flow project and stay signed in. Results are added to the project on screen and use your Flow credits, like pressing Generate yourself. Daily limits and blocks from Google pause the queue.</div>
     </div>
     <div class="sec" data-sec="log"><div class="log" id="log"></div></div>
   </div>
@@ -167,7 +176,7 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
       this.$ = (id) => this.shadow.getElementById(id);
       this.bind();
       document.body.appendChild(this.container);
-      engine.onChange(() => this.render());
+      engine.onChange(() => { this.syncSettings(); this.render(); });
       engine.loaded.then(() => { this.syncSettings(); this.render(); });
     }
 
@@ -227,7 +236,7 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
         const k = el.dataset.k;
         let v = el.value;
         if (k === 'autoDownload') v = v === 'true';
-        else if (['expected', 'delay', 'imageTimeout', 'videoTimeout', 'retries'].includes(k)) v = Math.max(0, +v || 0);
+        else if (['expected', 'delay', 'videoTimeout', 'retries'].includes(k)) v = Math.max(0, +v || 0);
         else if (k === 'project' || k === 'batch') v = v.trim() || (k === 'project' ? 'Flow Automator' : 'Batch 01');
         e.setSettings({ [k]: v });
         this.syncSettings();
@@ -246,7 +255,7 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
         if (this.shadow.activeElement === el) return;
         el.value = String(s[el.dataset.k]);
       });
-      this.$('path').textContent = `Saves to: Downloads/Flow Media Downloader/${s.project}/${s.batch}/#001.png`;
+      this.$('path').textContent = `Saves to: Downloads/Flow Media Downloader/${s.project}/${s.batch}/#001${s.expected > 1 ? '_1' : ''}.png`;
     }
 
     render() {
@@ -282,7 +291,7 @@ textarea:focus, input:focus, select:focus { border-color: #6366f1; }
         list.innerHTML = e.jobs.map((j) => {
           const [label, cls] = STATUS[j.status] || STATUS.waiting;
           const isCur = e.current === j;
-          const extra = j.status === 'generating' && j.results ? ` · ${j.results} found` : '';
+          const extra = j.detail && (j.status === 'generating' || j.status === 'submitting') ? ` · ${j.detail}` : '';
           return `<div class="job${isCur ? ' cur' : ''}">
             <span class="dot ${cls}"></span>
             <div class="jt">

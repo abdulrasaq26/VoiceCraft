@@ -27,8 +27,8 @@
   const flowCrawler = new window.FlowCrawler(detector, tray);
   window.FlowCrawlerInstance = flowCrawler;
 
-  // VoiceCraft Automator: queue prompts and run them through Flow's own UI.
-  const automatorEngine = new window.VCAutomatorEngine(new window.FlowAutomatorAdapter());
+  // VoiceCraft Automator: queue prompts and generate them in Flow.
+  const automatorEngine = new window.VCAutomatorEngine(new window.VCFlowApi());
   const automatorPanel = new window.AutomatorPanel(automatorEngine);
   window.VCAutomator = automatorEngine;
   window.FlowAutomatorPanel = automatorPanel; // for the VoiceCraft toolbar's panel toggles
