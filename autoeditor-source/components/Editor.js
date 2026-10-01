@@ -2,12 +2,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Timeline from "./Timeline";
 import Splitter from "./Splitter";
+import CaptionPanel from "./CaptionPanel";
 import {
   TRANSITION_LIST, transitionOf,
   MIN_TRANSITION_DURATION, MAX_TRANSITION_DURATION,
 } from "../lib/transitions";
-import { CAPTION_STYLE_LIST, CAPTION_SIZES, captionFontPx, captionLineHeightDefault } from "../lib/captions";
-import { getActiveCaption, drawUnifiedCaption } from "../lib/captions/caption-renderer.js";
+import { drawCaptionFrame } from "../lib/captions/caption-renderer.js";
+import { retime } from "../lib/captions/word-aligner.js";
 
 function tc(t) {
   if (!isFinite(t) || t < 0) t = 0;
@@ -46,13 +47,12 @@ export default function Editor({
   clips, imageEls, audioUrl, duration, peaks, dims,
   aspect, setAspect, fps, setFps,
   renderQuality = "full", setRenderQuality, renderDims,
-  onRender, onRenderHyperframes, onCancel, busy, progress, outUrl, error, warnings,
+  onRender, onCancel, busy, progress, outUrl, error, warnings,
   onWebCodecsTest, onWebCodecsCancel, wcBusy, wcProgress, wcPhase, wcAvailable, serverAvailable, wcEnabled, setWcEnabled,
   replaceImage, removeImage, fillGap, deleteGap, resizeBoundary,
   transitionsByName, transitionDuration, setTransition, applyTransitionAll, applyTransitionMix, setTransitionDuration,
   fadeIn, setFadeIn, fadeOut, setFadeOut,
   motionByName, setMotion, applyMotionAll, applyMotionAlternate, motionAmount, setMotionAmount,
-  aiMotion = {}, aiOverlays = [],
   videoInfoByName = {}, trimByName = {}, setTrim, volumeByName = {}, setVolume,
   fitByName = {}, setFit, applyFitAll,
   trimEnd, setTrimEnd, exportDuration,
@@ -60,7 +60,9 @@ export default function Editor({
   captionCues, captionsOn, setCaptionsOn, captionStyle, setCaptionStyle,
   captionSize, setCaptionSize, captionLineHeight, setCaptionLineHeight,
   captionFontScale, setCaptionFontScale,
-  captionRaw, captionName, captionError, onCaptionFile, removeCaptions, lowerThirdConfig, generatingCaptions, genCapStatus, onGenerateCaptions,
+  captionName, captionError, onCaptionFile, removeCaptions, generatingCaptions, genCapStatus, onGenerateCaptions,
+  captionAnimation, setCaptionAnimation, captionOverrides, setCaptionOverrides,
+  captionOpts, setCaptionsTrack, onExportCaptions,
   initialTime = 0, onTimeChange,
 }) {
   const canvasRef = useRef(null);
@@ -121,6 +123,7 @@ export default function Editor({
   }, []);
   const resetTlH = useCallback(() => setLayout((l) => ({ ...l, tlH: LAYOUT_DEFAULT.tlH })), []);
   const resetSideW = useCallback(() => setLayout((l) => ({ ...l, sideW: LAYOUT_DEFAULT.sideW })), []);
+  const [selectedCaptionId, setSelectedCaptionId] = useState(null);
   const [mixMode, setMixMode] = useState(false); // Transitions panel in random-mix mode
   const [mixPicks, setMixPicks] = useState(() => new Set()); // ephemeral: chosen transitions for the random mix
   const toggleMix = useCallback((id) => {
@@ -221,92 +224,14 @@ export default function Editor({
     ctx.fillRect(0, 0, W, H);
     let activeVideo = null; // clip name whose video should be playing this frame
 
-    // ── GSAP-compatible easing functions ──────────────────────────────────
-    const EASING = {
-      "linear":       (t) => t,
-      "none":         (t) => t,
-      "power1.in":    (t) => t * t,
-      "power1.out":   (t) => t * (2 - t),
-      "power1.inOut": (t) => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
-      "power2.in":    (t) => t * t * t,
-      "power2.out":   (t) => { const u = 1 - t; return 1 - u*u*u; },
-      "power2.inOut": (t) => t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2,
-      "power3.in":    (t) => t * t * t * t,
-      "power3.out":   (t) => { const u = 1 - t; return 1 - u*u*u*u; },
-      "power3.inOut": (t) => t < 0.5 ? 8*t*t*t*t : 1-Math.pow(-2*t+2,4)/2,
-      "back.out":     (t) => { const c = 1.70158+1; return 1 + c*Math.pow(t-1,3) + 1.70158*Math.pow(t-1,2); },
-      "bounce.out":   (t) => {
-        const n1 = 7.5625, d1 = 2.75;
-        if (t < 1/d1) return n1*t*t;
-        if (t < 2/d1) { t -= 1.5/d1; return n1*t*t+0.75; }
-        if (t < 2.5/d1) { t -= 2.25/d1; return n1*t*t+0.9375; }
-        t -= 2.625/d1; return n1*t*t+0.984375;
-      },
-    };
-    const applyEasing = (easingName, t) => {
-      const fn = EASING[easingName] || EASING["linear"];
-      return fn(Math.max(0, Math.min(1, t)));
-    };
-
-    // Calculates AI Motion interpolation (keyframes) and falls back to Ken Burns if no AI.
-    // Returns { scale, x, y, opacity, rotation, filter } where filter is a CSS filter string.
+    // Ken Burns zoom for a clip at time tt.
     const clipStateAt = (ci, tt) => {
       const c = clips[ci];
-      if (!c || c.gap) return { scale: 1, x: 0, y: 0, opacity: 1, rotation: 0, filter: "none", effects: [] };
+      if (!c || c.gap) return { scale: 1 };
       const lp = Math.min(1, Math.max(0, (tt - c.start) / c.duration));
-
-      // 1. AI Keyframes
-      const ai = aiMotion && aiMotion[c.name];
-      let kfs = null;
-      if (ai && ai.keyframes) kfs = ai.keyframes;
-      else if (ai && ai.motion && ai.motion.keyframes) kfs = ai.motion.keyframes;
-
-      let state = { scale: 1, x: 0, y: 0, opacity: 1, rotation: 0 };
-
-      if (kfs && kfs.length > 0) {
-        const easingName = (ai && ai.easing) || "linear";
-        const useAbsolute = (kfs[0].time !== undefined && kfs[0].t === undefined);
-        const tVal = useAbsolute ? (tt - c.start) : lp;
-
-        let k1 = kfs[0], k2 = kfs[kfs.length - 1];
-        for (let i = 0; i < kfs.length - 1; i++) {
-          const t1 = useAbsolute ? kfs[i].time : kfs[i].t;
-          const t2 = useAbsolute ? kfs[i+1].time : kfs[i+1].t;
-          if (tVal >= t1 && tVal <= t2) { k1 = kfs[i]; k2 = kfs[i+1]; break; }
-        }
-        const tk1 = useAbsolute ? k1.time : k1.t;
-        const tk2 = useAbsolute ? k2.time : k2.t;
-        const segmentDur = tk2 - tk1;
-        const rawProg = segmentDur <= 0 ? 1 : Math.max(0, Math.min(1, (tVal - tk1) / segmentDur));
-        const prog = applyEasing(easingName, rawProg);
-
-        const getProp = (prop, def) => {
-          const v1 = (k1.properties && k1.properties[prop] !== undefined) ? k1.properties[prop] : (k1[prop] !== undefined ? k1[prop] : def);
-          const v2 = (k2.properties && k2.properties[prop] !== undefined) ? k2.properties[prop] : (k2[prop] !== undefined ? k2[prop] : v1);
-          return v1 + (v2 - v1) * prog;
-        };
-        state = {
-          scale: getProp("scale", 1), x: getProp("x", 0), y: getProp("y", 0),
-          opacity: getProp("opacity", 1), rotation: getProp("rotation", 0),
-        };
-      } else {
-        // 2. Fallback to basic Ken Burns
-        const m = (motionByName && motionByName[c.name]) || "none";
-        const scale = m === "zoomout" ? 1 + motionAmount * (1 - lp) : (m === "none" ? 1 : 1 + motionAmount * lp);
-        state = { scale, x: 0, y: 0, opacity: 1, rotation: 0 };
-      }
-
-      // 3. Build CSS filter string from AI effects
-      const effects = (ai && Array.isArray(ai.effects)) ? ai.effects : [];
-      const filterParts = [];
-      if (effects.includes("blur"))       filterParts.push("blur(4px)");
-      if (effects.includes("brightness")) filterParts.push("brightness(1.4)");
-      if (effects.includes("contrast"))   filterParts.push("contrast(1.3)");
-      if (effects.includes("saturation")) filterParts.push("saturate(1.8)");
-      if (effects.includes("hue-rotate")) filterParts.push("hue-rotate(30deg)");
-      const filter = filterParts.length > 0 ? filterParts.join(" ") : "none";
-
-      return { ...state, filter, effects };
+      const m = (motionByName && motionByName[c.name]) || "none";
+      const scale = m === "zoomout" ? 1 + motionAmount * (1 - lp) : (m === "none" ? 1 : 1 + motionAmount * lp);
+      return { scale };
     };
 
     // Start/keep a clip's offscreen <video> playing in sync with the playhead and
@@ -334,9 +259,7 @@ export default function Editor({
       let idx = clips.findIndex((c) => t >= c.start && t < c.start + c.duration);
       if (idx === -1) idx = clips.length - 1;
       const clip = clips[idx];
-      const aiClipConfig = aiMotion && aiMotion[clip.name];
-      const aiTransition = aiClipConfig && (typeof aiClipConfig.transition === "string" ? aiClipConfig.transition : null);
-      const type = idx > 0 ? (aiTransition || transitionsByName[clip.name] || "cut") : "cut";
+      const type = idx > 0 ? (transitionsByName[clip.name] || "cut") : "cut";
       const tdur = type === "cut" ? 0 : Math.min(transitionDuration, clip.duration);
 
       if (idx > 0 && tdur > 0 && t < clip.start + tdur) {
@@ -365,98 +288,9 @@ export default function Editor({
           const scale = fitScale * state.scale;
           const w = dw * scale, h = dh * scale;
 
-          ctx.save();
-          ctx.globalAlpha = state.opacity;
-          // Apply blur/brightness/saturation/contrast via ctx.filter (Canvas2D API)
-          if (state.filter && state.filter !== "none") ctx.filter = state.filter;
-          ctx.translate(W / 2 + state.x, H / 2 + state.y);
-          if (state.rotation) ctx.rotate((state.rotation * Math.PI) / 180);
-          ctx.drawImage(drawable, -w / 2, -h / 2, w, h);
-          ctx.filter = "none"; // reset after draw
-          ctx.restore();
-
-          // Grain effect — canvas noise overlay
-          if (state.effects && state.effects.includes("grain")) {
-            const imageData = ctx.createImageData(W, H);
-            const d = imageData.data;
-            for (let i = 0; i < d.length; i += 4) {
-              const noise = (Math.random() - 0.5) * 60;
-              d[i] = d[i+1] = d[i+2] = 128 + noise; d[i+3] = 30;
-            }
-            ctx.save(); ctx.globalAlpha = 1;
-            ctx.putImageData(imageData, 0, 0);
-            ctx.restore();
-          }
+          ctx.drawImage(drawable, W / 2 - w / 2, H / 2 - h / 2, w, h);
         }
       }
-    }
-
-
-    // AI Clip Effects Preview (post-draw overlaid effects: vignette, glow, shadow)
-    {
-      const ci = clips.findIndex(c => t >= c.start && t < c.start + c.duration);
-      if (ci >= 0) {
-        const state = clipStateAt(ci, t);
-        const effects = state.effects || [];
-        if (effects.includes("vignette")) {
-          const grad = ctx.createRadialGradient(W/2, H/2, H*0.3, W/2, H/2, H*0.8);
-          grad.addColorStop(0, "rgba(0,0,0,0)");
-          grad.addColorStop(1, "rgba(0,0,0,0.7)");
-          ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = grad;
-          ctx.fillRect(0, 0, W, H); ctx.restore();
-        }
-        if (effects.includes("glow")) {
-          ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = "#ffe4a0";
-          ctx.fillRect(0, 0, W, H); ctx.restore();
-        }
-        if (effects.includes("shadow")) {
-          // Cinematic letterbox shadow bars
-          ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = "rgba(0,0,0,0.5)";
-          const barH = H * 0.08;
-          ctx.fillRect(0, 0, W, barH);
-          ctx.fillRect(0, H - barH, W, barH);
-          ctx.restore();
-        }
-      }
-    }
-
-    // AI Overlays Preview
-    if (aiOverlays && aiOverlays.length > 0) {
-      aiOverlays.forEach(ol => {
-        if (t >= ol.start && t <= ol.start + ol.duration) {
-          const txt = ol.text || (ol.typography && ol.typography.text) || "";
-          const color = (ol.typography && ol.typography.color) || "#FFFFFF";
-          const position = (ol.typography && ol.typography.position) || ol.position || "center";
-          const background = (ol.typography && ol.typography.background) || ol.background || "none";
-          const fontSize = W * (ol.size === "sm" ? 0.03 : ol.size === "lg" ? 0.055 : ol.size === "xl" ? 0.07 : 0.045);
-          
-          ctx.save();
-          ctx.font = `bold ${fontSize}px sans-serif`;
-          ctx.textAlign = "center";
-          const textMetrics = ctx.measureText(txt);
-          const textW = textMetrics.width;
-          const textH = fontSize;
-          
-          const yPos = position === "top" ? H * 0.12 :
-                       position === "bottom" || position === "lower-third" ? H * 0.85 :
-                       H / 2;
-          
-          if (background === "pill") {
-            ctx.fillStyle = "rgba(0,0,0,0.6)";
-            ctx.beginPath();
-            ctx.roundRect(W/2 - textW/2 - 16, yPos - textH*0.6, textW + 32, textH * 1.4, 20);
-            ctx.fill();
-          } else if (background === "bar") {
-            ctx.fillStyle = "rgba(0,0,0,0.8)";
-            ctx.fillRect(0, yPos - textH * 0.8, W, textH * 1.6);
-          }
-          
-          ctx.fillStyle = color;
-          ctx.textBaseline = "middle";
-          ctx.fillText(txt, W / 2, yPos);
-          ctx.restore();
-        }
-      });
     }
 
     // Only the clip under the playhead plays; pause every other clip's video.
@@ -466,8 +300,7 @@ export default function Editor({
 
     // Captions burn in before the fades, so the fade dims them too.
     if (captionsOn && captionCues && captionCues.length) {
-      const activeCap = getActiveCaption(captionCues, t);
-      if (activeCap) drawUnifiedCaption(ctx, activeCap, t, W, H);
+      drawCaptionFrame(ctx, captionCues, t, W, H, captionOpts);
     }
 
     // Scene fades (opening / ending).
@@ -481,9 +314,8 @@ export default function Editor({
       ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
     }
   }, [clips, imageEls, transitionsByName, transitionDuration, motionByName, motionAmount,
-      aiMotion, aiOverlays,
       fadeIn, fadeOut, duration, exportDuration, playing, videoInfoByName, videoParams, volumeByName,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
+      captionsOn, captionCues, captionOpts]);
 
   useEffect(() => { drawRef.current = draw; }, [draw]);
   useEffect(() => { timeRef.current = time; }, [time]);
@@ -682,6 +514,9 @@ export default function Editor({
         <Timeline
           height={layout.tlH}
           playing={playing}
+          captions={captionCues} captionsOn={captionsOn}
+          selectedCaptionId={selectedCaptionId} onCaptionSelect={setSelectedCaptionId}
+          onCaptionRetime={(id, s0, e0) => setCaptionsTrack((tr) => tr.map((c) => (c.id === id ? retime(c, s0, e0) : c)))}
           clips={clips}
           imageEls={imageEls}
           duration={duration}
@@ -792,11 +627,6 @@ export default function Editor({
                   className="render"
                   onClick={wcAvailable ? onWebCodecsTest : onRender}
                 >Render MP4</button>
-                <button
-                  className="render"
-                  style={{ marginTop: 8, background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)", borderColor: "#6366f1" }}
-                  onClick={onRenderHyperframes}
-                >Render with HyperFrames (Experimental)</button>
               </>
             ) : (
               <div className="note">Rendering needs Chrome, Edge, or Safari 16.4+ (WebCodecs) in this browser.</div>
@@ -925,105 +755,22 @@ export default function Editor({
           </label>
         </div>
 
-        <div className="panel captions">
-          <h2 className="panel__h">Captions</h2>
-          {generatingCaptions ? (
-              <div className="cap-empty">
-                 <p style={{marginBottom: "8px", color: "var(--brand-main)"}}>Generating Captions...</p>
-                 <p style={{fontSize: "12px", color: "#888"}}>{genCapStatus || "Starting..."}</p>
-              </div>
-            ) : !(captionCues && captionCues.length) ? (
-              <div className="cap-empty" style={{display: "flex", flexDirection: "column", gap: "8px"}}>
-                <button type="button" className="cap-upload" onClick={onGenerateCaptions} style={{borderColor: "var(--brand-main)", color: "var(--brand-main)", marginBottom: "8px"}}><span className="cap-upload__i" style={{color: "var(--brand-main)"}}>✨</span> Auto-Generate from Audio</button>
-                <div style={{textAlign: "center", color: "#666", fontSize: "12px", margin: "4px 0"}}>OR</div>
-                <button type="button" className="cap-upload" onClick={() => capInputRef.current && capInputRef.current.click()}>
-                  <span className="cap-upload__i">⇧</span> Import SRT
-                </button>
-              </div>
-            ) : (
-            <>
-              <div className="cap-bar">
-                <button
-                  type="button"
-                  className={`cap-switch ${captionsOn ? "is-on" : ""}`}
-                  onClick={() => setCaptionsOn(!captionsOn)}
-                  aria-pressed={captionsOn}
-                >
-                  <span className="cap-switch__box" />
-                  {captionsOn ? "On" : "Off"}
-                </button>
-                <span className="cap-meta">
-                  <span className="cap-meta__name">{captionName || "captions"}</span>
-                  {captionCues.length} lines ·{" "}
-                  <button type="button" className="cap-replace" onClick={() => capInputRef.current && capInputRef.current.click()}>replace</button>
-                </span>
-              </div>
-
-              <div className="cap-body" aria-disabled={!captionsOn}>
-                <div className="mini-h">Style</div>
-                <div className="transitions__chips">
-                  {CAPTION_STYLE_LIST.map((st) => (
-                    <button
-                      key={st.id}
-                      type="button"
-                      className={`trchip ${captionStyle === st.id ? "is-on" : ""}`}
-                      onClick={() => setCaptionStyle(st.id)}
-                    >
-                      {st.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mini-h" style={{ marginTop: 12 }}>Size</div>
-                <div className="seg">
-                  {[["sm", "Small"], ["md", "Medium"], ["lg", "Large"]].map(([id, lbl]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={captionFontScale == null && captionSize === id ? "is-on" : ""}
-                      onClick={() => { setCaptionSize(id); setCaptionFontScale && setCaptionFontScale(null); }}
-                    >{lbl}</button>
-                  ))}
-                </div>
-
-                <div className="mini-h" style={{ marginTop: 12 }}>Font size (fine-tune)</div>
-                <label className="trdur">
-                  <input
-                    type="range" min={0.03} max={0.10} step={0.002}
-                    value={captionFontScale != null ? captionFontScale : (CAPTION_SIZES[captionSize] || CAPTION_SIZES.md)}
-                    onChange={(e) => setCaptionFontScale && setCaptionFontScale(+e.target.value)}
-                  />
-                  <span className="trdur__val">
-                    {Math.round((captionFontScale != null ? captionFontScale : (CAPTION_SIZES[captionSize] || CAPTION_SIZES.md)) * 1000) / 10}%
-                  </span>
-                </label>
-                {captionFontScale != null && (
-                  <button type="button" className="cap-replace" onClick={() => setCaptionFontScale && setCaptionFontScale(null)}>
-                    reset to preset
-                  </button>
-                )}
-
-                <div className="mini-h" style={{ marginTop: 12 }}>Line spacing (2-line captions)</div>
-                <label className="trdur">
-                  <input
-                    type="range" min={1.0} max={2.2} step={0.05}
-                    value={captionLineHeight != null ? captionLineHeight : captionLineHeightDefault(captionStyle)}
-                    onChange={(e) => setCaptionLineHeight && setCaptionLineHeight(+e.target.value)}
-                  />
-                  <span className="trdur__val">
-                    {(captionLineHeight != null ? captionLineHeight : captionLineHeightDefault(captionStyle)).toFixed(2)}×
-                  </span>
-                </label>
-                {captionLineHeight != null && (
-                  <button type="button" className="cap-replace" onClick={() => setCaptionLineHeight && setCaptionLineHeight(null)}>
-                    reset to default
-                  </button>
-                )}
-              </div>
-              {captionError && <div className="note note--bad">{captionError}</div>}
-            </>
-          )}
-        </div>
+        <CaptionPanel
+          captionCues={captionCues} captionsOn={captionsOn} setCaptionsOn={setCaptionsOn}
+          captionStyle={captionStyle} setCaptionStyle={setCaptionStyle}
+          captionAnimation={captionAnimation} setCaptionAnimation={setCaptionAnimation}
+          captionSize={captionSize} setCaptionSize={setCaptionSize}
+          captionFontScale={captionFontScale} setCaptionFontScale={setCaptionFontScale}
+          captionLineHeight={captionLineHeight} setCaptionLineHeight={setCaptionLineHeight}
+          captionOverrides={captionOverrides} setCaptionOverrides={setCaptionOverrides}
+          captionOpts={captionOpts} setCaptionsTrack={setCaptionsTrack}
+          removeCaptions={removeCaptions} onExportCaptions={onExportCaptions}
+          captionName={captionName} captionError={captionError}
+          generatingCaptions={generatingCaptions} genCapStatus={genCapStatus} onGenerateCaptions={onGenerateCaptions}
+          onPickFile={() => capInputRef.current && capInputRef.current.click()}
+          time={time} onSeek={seek}
+          selectedCaptionId={selectedCaptionId} setSelectedCaptionId={setSelectedCaptionId}
+        />
 
       </aside>
 

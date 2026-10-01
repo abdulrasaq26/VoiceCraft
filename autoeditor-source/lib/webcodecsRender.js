@@ -39,8 +39,7 @@ class ChunkedBuffer {
   }
 }
 
-import { captionAt, drawCaption, captionFontPx } from "./captions";
-import { getActiveCaption, drawUnifiedCaption } from "./captions/caption-renderer.js";
+import { drawCaptionFrame, ensureCaptionFont } from "./captions/caption-renderer.js";
 import { transitionOf } from "./transitions";
 import { createVideoSource } from "./videoDecodeSource";
 import { createVoiceSource } from "./voiceSource";
@@ -317,7 +316,7 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   };
   if (!webCodecsSupported()) throw new Error("WebCodecs isn't supported in this browser.");
   const { clips, fps = 30, transitions = [], transitionDuration = 0.4, motions = [], motionAmount = 0.08, audioFile = null,
-    cues = null, captionStyle = "classic", captionSize = "md", captionLineHeight = 0, captionFontScale = 1,
+    cues = null, captionOpts = {}, fadeIn = 0, fadeOut = 0,
     videosByName = {}, trims = [], speeds = [], volumes = [], bitrate = 8_000_000 } = spec;
   // The render profile decides container + codecs (H.264/AAC MP4, or VP9/Opus WebM
   // for browsers like Firefox) and caps the resolution to 1080p.
@@ -579,13 +578,10 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
   const canvas = new OffscreenCanvas(W, H);
   const ctx = canvas.getContext("2d", { alpha: false });
 
-  // Captions: precompute the font size and make sure the caption font is loaded
-  // (the main-thread OffscreenCanvas shares the document's fonts).
+  // Captions: make sure the chosen caption font is loaded (the main-thread
+  // OffscreenCanvas shares the document's fonts) before the first frame.
   const hasCaptions = !!(cues && cues.length);
-  const capFontPx = captionFontPx(H, captionSize, captionFontScale);
-  if (hasCaptions && typeof document !== "undefined" && document.fonts) {
-    try { await document.fonts.load(`700 ${capFontPx}px "CaptionFont"`); } catch (_) {}
-  }
+  if (hasCaptions) await ensureCaptionFont(captionOpts);
 
   // Output target — three modes:
   //   • iOS/WebKit: stream a FRAGMENTED (fMP4) file to a temp file in OPFS, so the MP4
@@ -818,10 +814,18 @@ export async function renderWebCodecs(spec, imagesByName, onProgress, shouldCanc
       safeClose(curFrame);
     }
 
-    // Captions drawn on top of the images.
-    if (hasCaptions) {
-      const activeCap = getActiveCaption(cues, t);
-      if (activeCap) drawUnifiedCaption(ctx, activeCap, t, W, H);
+    // Captions drawn on top of the images — the same renderer and options as
+    // the editor preview, so the file matches what was on screen.
+    if (hasCaptions) drawCaptionFrame(ctx, cues, t, W, H, captionOpts);
+
+    // Scene fades, after captions so they dim them too (same order as the preview).
+    if (fadeIn > 0 && t < fadeIn) {
+      ctx.globalAlpha = Math.max(0, 1 - t / fadeIn);
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+    }
+    if (fadeOut > 0 && t > total - fadeOut) {
+      ctx.globalAlpha = Math.min(1, (t - (total - fadeOut)) / fadeOut);
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
     }
 
     // Recover a reclaimed/closed encoder: swap in a fresh one and force this frame to be a

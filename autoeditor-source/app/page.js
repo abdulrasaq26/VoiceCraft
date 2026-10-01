@@ -7,18 +7,19 @@ import { resolveDimensions, capTo720 } from "../lib/dimensions";
 import { getAudioDuration } from "../lib/audio";
 import { getWaveformPeaks } from "../lib/waveform";
 import { renderVideo, cancelRender, getActiveRender, reconnectRender, probeBackend } from "../lib/serverRender";
-import { renderVideoHyperframes } from "../lib/hyperframesRenderer";
-import { validateAndMapMotionJSON } from "../lib/aiMotionParser";
 import { renderWebCodecs, webCodecsCanRender, pickRenderProfile, startKeepAwake } from "../lib/webcodecsRender";
 import { DEFAULT_TRANSITION_DURATION, mixTransitions } from "../lib/transitions";
 import { parseSRT } from "../lib/captions/srt-parser.js";
 import { generateCaptionsFlow } from "../lib/captions/caption-generator.js";
-import { getMegaPrompt } from "../lib/megaPrompt";
+import { normalizeStyleId } from "../lib/captions/caption-style-manager.js";
+import { normalizeAnimationId } from "../lib/captions/caption-animation-engine.js";
+import { ensureCaptionFont } from "../lib/captions/caption-renderer.js";
+import { downloadCaptions } from "../lib/captions/caption-exporter.js";
 import Dropzone from "../components/Dropzone";
 import Editor from "../components/Editor";
 import ProjectsHome from "../components/ProjectsHome";
 import StorageRing from "../components/StorageRing";
-import { DialogHost, showAlert, showPrompt } from "../components/Dialog";
+import { DialogHost, showAlert, showConfirm, showPrompt } from "../components/Dialog";
 import {
   requestPersist, storageEstimate, listProjects, getProject, saveProject,
   renameProject, deleteProject, getMedia, syncMedia, newId,
@@ -141,7 +142,9 @@ export default function Home() {
   const [genCapStatus, setGenCapStatus] = useState("");
   const [captionName, setCaptionName] = useState(null);
   const [captionsOn, setCaptionsOn] = useState(false);
-  const [captionStyle, setCaptionStyle] = useState("classic");
+  const [captionStyle, setCaptionStyle] = useState("clean");
+  const [captionAnimation, setCaptionAnimation] = useState("word-highlight");
+  const [captionOverrides, setCaptionOverrides] = useState({}); // per-property Customize edits
   const [captionSize, setCaptionSize] = useState("md");
   const [captionLineHeight, setCaptionLineHeight] = useState(null); // null = per-style default
   const [captionFontScale, setCaptionFontScale] = useState(null);   // null = use the size preset
@@ -154,22 +157,7 @@ export default function Home() {
   // A render that was already running when this tab loaded (e.g. reopened after
   // closing the browser mid-render). Shown as a banner and reconnected to.
   const [resume, setResume] = useState(null); // { busy, progress, url, error }
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
-  const [showAiModal, setShowAiModal] = useState(false);
-  const [aiMotionText, setAiMotionText] = useState("");
-  const [aiMotionResult, setAiMotionResult] = useState(null);
-  const [awsAccessKey, setAwsAccessKey] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("aws_access_key") || "" : ""));
-  const [awsSecretKey, setAwsSecretKey] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("aws_secret_key") || "" : ""));
-  const [awsStackName, setAwsStackName] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("aws_stack_name") || "" : ""));
-  const [awsRegion, setAwsRegion] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("aws_region") || "" : ""));
-  // Phase 5: lower-third config. null = disabled. Set by the lower-third toggle UI.
-  const [lowerThirdConfig, setLowerThirdConfig] = useState(null);
-
-  const saveAwsAccessKey = (val) => { setAwsAccessKey(val); if (typeof window !== "undefined") localStorage.setItem("aws_access_key", val.trim()); };
-  const saveAwsSecretKey = (val) => { setAwsSecretKey(val); if (typeof window !== "undefined") localStorage.setItem("aws_secret_key", val.trim()); };
-  const saveAwsStackName = (val) => { setAwsStackName(val); if (typeof window !== "undefined") localStorage.setItem("aws_stack_name", val.trim()); };
-  const saveAwsRegion = (val) => { setAwsRegion(val); if (typeof window !== "undefined") localStorage.setItem("aws_region", val.trim()); };
 
   // Projects: everything is stored client-side in IndexedDB (see lib/projectStore).
   const [view, setView] = useState("list");            // "list" (projects grid) | "editor"
@@ -185,8 +173,8 @@ export default function Home() {
 
   // Composition (undoable): slots + per-clip transition choices, snapshotted together.
   const [doc, commitDoc, { undo, redo, canUndo, canRedo, reset: resetDoc }] =
-    useHistory({ slots: [], transitionsByName: {}, aiMotion: {}, aiOverlays: [] });
-  const { slots, transitionsByName, aiMotion = {}, aiOverlays = [] } = doc;
+    useHistory({ slots: [], transitionsByName: {} });
+  const { slots, transitionsByName } = doc;
 
   const onAudio = useCallback(async (files, precalcDur = null) => {
     const file = files[0];
@@ -386,6 +374,12 @@ export default function Home() {
     checkTransfer();
   }, [onAudio, onCaptionFile, setView]);
   const captionCues = captionsTrack;
+  // Everything the caption renderer needs. The preview and the export both
+  // get this same object, so what's on screen is what's rendered.
+  const captionOpts = useMemo(() => ({
+    styleId: captionStyle, animationId: captionAnimation, size: captionSize,
+    fontScale: captionFontScale, lineHeight: captionLineHeight, overrides: captionOverrides,
+  }), [captionStyle, captionAnimation, captionSize, captionFontScale, captionLineHeight, captionOverrides]);
     const captionError = null;
 
   // On load, reconnect to a render that's still running on the server.
@@ -574,7 +568,8 @@ export default function Home() {
     setTransitionDuration(DEFAULT_TRANSITION_DURATION); setFadeIn(0.5); setFadeOut(0.6);
     setMotionByName({}); setMotionAmount(0.08); setTrimByName({}); setVolumeByName({}); setFitByName({});
     setTrimEnd(0);
-    setCaptionsTrack([]); setCaptionName(null); setCaptionsOn(false); setCaptionStyle("classic");
+    setCaptionsTrack([]); setCaptionName(null); setCaptionsOn(false); setCaptionStyle("clean");
+    setCaptionAnimation("word-highlight"); setCaptionOverrides({});
     setCaptionSize("md"); setCaptionLineHeight(null); setCaptionFontScale(null);
     setError(null); setOutUrl(null); setProgress(0);
     idRef.current = 0;
@@ -608,7 +603,7 @@ export default function Home() {
     v: 1,
     settings: { aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd },
     maps: { motionByName, trimByName, volumeByName, fitByName },
-    captions: { captionsTrack, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale },
+    captions: { captionsTrack, captionName, captionsOn, captionStyle, captionAnimation, captionOverrides, captionSize, captionLineHeight, captionFontScale },
     transitionsByName,
     slots: slots.map((s) => ({
       id: s.id, mediaId: s.mediaId || s.id, seconds: s.seconds, empty: !!s.empty,
@@ -621,7 +616,7 @@ export default function Home() {
     playhead: playheadRef.current,
   }), [aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd,
       motionByName, trimByName, volumeByName, fitByName,
-      captionsTrack, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionsTrack, captionName, captionsOn, captionStyle, captionAnimation, captionOverrides, captionSize, captionLineHeight, captionFontScale,
       transitionsByName, slots, audioFile, built]);
 
   const saveCurrent = useCallback(async () => {
@@ -650,8 +645,19 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [view, currentProject, loadingProject, slots, transitionsByName, aspect, fps, renderQuality, transitionDuration,
       fadeIn, fadeOut, motionByName, motionAmount, trimByName, volumeByName, fitByName, trimEnd,
-      captionsTrack, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionsTrack, captionName, captionsOn, captionStyle, captionAnimation, captionOverrides, captionSize, captionLineHeight, captionFontScale,
       audioFile, built]);
+
+  const removeCaptions = useCallback(async () => {
+    const ok = await showConfirm("Remove all captions from this project? This can't be undone.", { title: "Remove captions", okText: "Remove", danger: true });
+    if (!ok) return;
+    setCaptionsTrack([]); setCaptionName(null); setCaptionsOn(false);
+  }, []);
+
+  const exportCaptions = useCallback((format) => {
+    const base = (currentProject && currentProject.name) || "captions";
+    downloadCaptions(captionsTrack, format, base);
+  }, [captionsTrack, currentProject]);
 
     const handleGenerateCaptions = async () => {
     if (!audioFile) {
@@ -682,94 +688,6 @@ export default function Home() {
       setGenCapStatus("");
     }
   };
-
-  const handleValidateAiMotion = useCallback(() => {
-    const res = validateAndMapMotionJSON(aiMotionText, doc.slots);
-    setAiMotionResult(res);
-  }, [aiMotionText, doc.slots]);
-
-  const handleApplyAiMotion = useCallback(() => {
-    if (!aiMotionResult || !aiMotionResult.valid || !aiMotionResult.config) return;
-    commitDoc(d => {
-      // Merge with existing aiMotion state
-      const nextAi = { ...(d.aiMotion || {}) };
-      for (const [id, config] of Object.entries(aiMotionResult.config)) {
-        nextAi[id] = config;
-      }
-      return { 
-        ...d, 
-        aiMotion: nextAi,
-        aiOverlays: aiMotionResult.overlays || [],
-        // v3: persist project palette/style so compiler can use it at render time
-        aiProject: aiMotionResult.project || d.aiProject || null,
-      };
-    });
-    setShowAiModal(false);
-  }, [aiMotionResult, commitDoc]);
-
-  const handleClearAiMotion = useCallback(() => {
-    commitDoc(d => ({ ...d, aiMotion: {}, aiOverlays: [] }));
-  }, [commitDoc]);
-
-  const handleExportAiContext = useCallback(() => {
-    const context = {
-      project: {
-        duration: exportDuration,
-        aspectRatio: aspect,
-        fps: fps,
-        totalClips: clips.filter(c => !c.gap).length
-      },
-      textState: {
-        captionsEnabled: captionsOn,
-        captionStyle: captionStyle,
-        lowerThirdEnabled: !!lowerThirdConfig,
-        lowerThirdPreset: lowerThirdConfig?.preset || null
-      },
-      hyperframesManifest: {
-        version: "CompositionRuntime-v2",
-        supportedLayerTypes: ["visual", "text", "lower-third"],
-        supportedKeyframeProperties: ["scale", "x", "y", "rotation", "opacity"],
-        supportedEasing: ["linear", "none", "power1.inOut", "power2.inOut", "power3.inOut", "power3.in", "power3.out", "back.out"],
-        supportedEffects: ["blur", "brightness", "contrast", "saturation", "vignette", "glow", "shadow"],
-        supportedTransitions: ["cut", "fade", "crossfade", "wipe-left", "wipe-right", "push-left", "push-right", "blur-in", "zoom-through", "slide-up"],
-        typography: {
-          presets: ["word-reveal", "char-cascade", "blur-reveal", "slide-up", "typewriter", "pop", "bounce"],
-          sizes: ["sm", "md", "lg", "xl"],
-          positions: ["top", "center", "bottom"],
-          backgrounds: ["none", "pill", "bar", "gradient"]
-        },
-        lowerThirds: {
-          presets: ["modern", "cinematic", "news"],
-          dataFields: ["title", "subtitle"]
-        }
-      },
-      audioTranscriptSRT: captionsTrack.length > 0 ? captionsTrack.map(c => c.text).join(" ") : null, // Include the SRT if uploaded so AI doesn't need to ask for it separately
-      clips: clips.filter(c => !c.gap).map((c, index) => {
-        const s = doc.slots.find(slot => slot.id === c.name);
-        return {
-          order: index + 1,
-          clipId: c.name,
-          filename: s?.file?.name || s?.img?.fileName || null,
-          type: s?.img?.isVideo ? "video" : "image",
-          startSeconds: c.start,
-          durationSeconds: c.duration,
-          // Extra context helpers for the AI
-          isFirstClip: index === 0,
-          isLastClip: index === clips.filter(cl => !cl.gap).length - 1
-        };
-      })
-    };
-    
-    const blob = new Blob([JSON.stringify(context, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "timeline-context-for-ai.json";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [clips, doc.slots, exportDuration, aspect, fps, captionsOn, captionStyle, lowerThirdConfig, captionsTrack]);
 
   const openProject = useCallback(async (id) => {
     const rec = await getProject(id);
@@ -825,7 +743,11 @@ export default function Home() {
            setCaptionsTrack(cp.captionsTrack || []);
         }
         setCaptionName(cp.captionName ?? null);
-      setCaptionsOn(!!cp.captionsOn); setCaptionStyle(cp.captionStyle ?? "classic");
+      setCaptionsOn(!!cp.captionsOn); setCaptionStyle(normalizeStyleId(cp.captionStyle ?? "clean"));
+      // Projects from before the animation picker stored it on each caption.
+      setCaptionAnimation(normalizeAnimationId(cp.captionAnimation
+        ?? ((cp.captionsTrack && cp.captionsTrack[0] && cp.captionsTrack[0].animationId) || "none")));
+      setCaptionOverrides(cp.captionOverrides && typeof cp.captionOverrides === "object" ? cp.captionOverrides : {});
       setCaptionSize(cp.captionSize ?? "md"); setCaptionLineHeight(cp.captionLineHeight ?? null);
       setCaptionFontScale(cp.captionFontScale ?? null);
       idRef.current = d.idCounter || newSlots.length;
@@ -883,71 +805,6 @@ export default function Home() {
   const wcCancelRef = useRef(false);
   const onWebCodecsCancel = useCallback(() => { wcCancelRef.current = true; }, []);
 
-  const handleRenderHyperframes = useCallback(async () => {
-    cancelRef.current = false;
-    setBusy(true); setError(null); setOutUrl(null); setProgress(0);
-    try {
-      const exportClips = trimClips(clips, exportDuration);
-      
-      const opts = {
-        clips: exportClips,
-        imagesByName: {}, 
-        videosByName: videosByName,
-        audioFile: audioFile,
-        width: renderDims.width,
-        height: renderDims.height,
-        fps,
-        transitions: transitionsByName || {},
-        transitionDuration,
-        motions: motionByName || {},
-        motionAmount,
-        fadeIn,
-        fadeOut,
-        trims: trimByName || {},
-        volumes: volumeByName || {},
-        speeds: fitByName || {},
-        trimEnd: exportDuration,
-        captions: captionsOn && captionCues.length ? captionCues : [],
-        // Phase 5: kinetic typography preset for captions
-        captionStyle: captionStyle || "word-reveal",
-        captionSize: captionSize || "lg",
-        // Phase 5: lower-third (set by UI toggle — null means disabled)
-        lowerThird: lowerThirdConfig || null,
-        // AI Motion Override state
-        aiMotion: doc.aiMotion || {},
-        aiOverlays: doc.aiOverlays || [],
-        aiProject: doc.aiProject || null,
-        aws: {
-          accessKey: awsAccessKey,
-          secretKey: awsSecretKey,
-          stackName: awsStackName,
-          region: awsRegion
-        }
-      };
-      
-      // imagesByName mapping from slots
-      doc.slots.forEach(slot => {
-        if (!slot.empty && slot.img) {
-          opts.imagesByName[slot.id] = slot.file || slot.img; 
-        }
-      });
-      opts.onProgress = setProgress;
-      const blob = await renderVideoHyperframes(opts);
-      
-      if (blob) {
-        setOutUrl(URL.createObjectURL(blob));
-      } else {
-        // null means the download was already triggered directly via anchor tag
-        setOutUrl(null);
-      }
-    } catch (e) {
-      setError(e.message || String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, [clips, exportDuration, videoInfoByName, audioFile, renderDims, fps, transitionsByName, transitionDuration, fadeIn, fadeOut, trimByName, volumeByName, fitByName, captionsOn, captionCues, captionStyle, captionSize, lowerThirdConfig, doc.slots, awsAccessKey, awsSecretKey, awsStackName, awsRegion, motionByName, motionAmount]);
-
-
   const onRender = useCallback(async () => {
     cancelRef.current = false;
     setBusy(true); setError(null); setOutUrl(null); setProgress(0);
@@ -980,7 +837,12 @@ export default function Home() {
         clips: exportClips, imagesByName, videosByName, audioFile,
         width: renderDims.width, height: renderDims.height, fps,
         transitions, transitionDuration, motions, motionAmount, trims, volumes, speeds, fadeIn, fadeOut,
-        captions, captionStyle, captionSize, captionLineHeight, captionFontScale,
+        // The ffmpeg backend (only used where the browser can't encode video)
+        // burns static drawtext captions: map to its nearest look.
+        captions,
+        captionStyle: ["boxed", "typewriter", "modern", "lowerthird"].includes(captionStyle) ? "boxed"
+          : captionStyle === "yellow" ? "yellow" : "classic",
+        captionSize, captionLineHeight, captionFontScale,
         onProgress: setProgress,
       });
       const safeUrl = (blob && (blob instanceof Blob || blob instanceof File)) ? URL.createObjectURL(blob) : null;
@@ -1082,7 +944,7 @@ export default function Home() {
           transitions, transitionDuration, motions, motionAmount, audioFile,
           videosByName, trims, speeds, volumes,
           cues: captionsOn && captionCues.length ? captionCues : null,
-          captionStyle, captionSize, captionLineHeight, captionFontScale,
+          captionOpts, fadeIn, fadeOut,
         },
         imagesByName,
         (frac, phase) => { setWcProgress(frac); if (phase) setWcPhase(phase); },
@@ -1149,7 +1011,7 @@ export default function Home() {
     }
   }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, audioFile,
       videosByName, videoInfoByName, fitByName, trimByName, volumeByName, currentProject, flashDone, wcProfile,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
+      captionsOn, captionCues, captionOpts, fadeIn, fadeOut]);
 
   // Browser can't export video (no H.264 WebCodecs, no render backend) — block the
   // whole app; there's no point letting them create projects they can't render.
@@ -1239,10 +1101,6 @@ export default function Home() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M7 3v5h8V3M7 21v-7h10v7"/></svg>
             {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : "Save"}
           </button>
-          <button type="button" className="tbtn" onClick={() => setShowAiModal(true)} title="Import AI Motion">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></svg>
-            AI Motion
-          </button>
           <a
             className="ext-link"
             href="https://chromewebstore.google.com/detail/bcmmekkamenpjoogmegiffgemlgikbgf?utm_source=item-share-cb"
@@ -1254,9 +1112,6 @@ export default function Home() {
             <span className="ext-link__text">Get the Extension</span>
           </a>
           <StorageRing storage={storage} />
-          <button type="button" className="tbtn tbtn--icon" onClick={() => setShowSettingsModal(true)} title="Settings" aria-label="Settings">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
-          </button>
         </div>
       </header>
 
@@ -1302,98 +1157,6 @@ export default function Home() {
         </div>
       )}
 
-      {showAiModal && (
-        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ backgroundColor: "#1e1e1e", borderRadius: 12, padding: 24, width: "100%", maxWidth: 600, boxShadow: "0 10px 25px rgba(0,0,0,0.5)", border: "1px solid #333" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18 }}>AI Motion JSON</h2>
-              <button 
-                onClick={() => setShowAiModal(false)}
-                style={{ background: "transparent", border: "none", color: "#888", fontSize: 20, cursor: "pointer" }}
-              >×</button>
-            </div>
-            
-              <p style={{ color: "#aaa", fontSize: 13, marginBottom: 16 }}>Paste the Motion JSON generated by the external AI to apply structured movement to your timeline clips.</p>
-
-              <button 
-                onClick={() => {
-                  const validClips = doc.slots.filter(s => !s.empty).map((s, i) => ({
-                    index: i + 1,
-                    clipId: s.id,
-                    durationSeconds: s.seconds
-                  }));
-                  
-                  const text = getMegaPrompt(validClips, captionsTrack.map(c => c.text).join(" "));
-                  
-                  navigator.clipboard.writeText(text);
-                  alert("Mega-Prompt copied! This includes the System Prompt, Guidelines, exact clip IDs, and your audio transcript. Just paste it directly into ChatGPT!");
-                }}
-                style={{ background: "#2c3e50", color: "#ecf0f1", border: "1px solid #34495e", borderRadius: 6, padding: "8px 12px", fontSize: 12, cursor: "pointer", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}
-              >
-                <span>📋 Copy Mega-Prompt for AI (Schema + Timeline + Transcript)</span>
-              </button>
-
-              <textarea
-              value={aiMotionText}
-              onChange={e => { setAiMotionText(e.target.value); setAiMotionResult(null); }}
-              placeholder={`{\n  "schemaVersion": "motion-v1",\n  "clips": [...]\n}`}
-              style={{ width: "100%", height: 250, backgroundColor: "#111", color: "#fff", border: "1px solid #333", borderRadius: 6, padding: 12, fontFamily: "monospace", fontSize: 12, resize: "vertical", marginBottom: 16 }}
-            />
-
-            {aiMotionResult && (
-              <div style={{ backgroundColor: aiMotionResult.valid ? "rgba(39, 174, 96, 0.1)" : "rgba(192, 57, 43, 0.1)", border: `1px solid ${aiMotionResult.valid ? "#27ae60" : "#c0392b"}`, borderRadius: 6, padding: 12, marginBottom: 16 }}>
-                <h3 style={{ margin: "0 0 8px 0", fontSize: 14, color: aiMotionResult.valid ? "#2ecc71" : "#e74c3c" }}>
-                  {aiMotionResult.valid ? "✓ Validation Passed" : "✗ Validation Failed"}
-                </h3>
-                {aiMotionResult.errors.length > 0 && (
-                  <ul style={{ margin: 0, paddingLeft: 20, color: "#e74c3c", fontSize: 13 }}>
-                    {aiMotionResult.errors.map((err, i) => <li key={i}>{err}</li>)}
-                  </ul>
-                )}
-                {aiMotionResult.valid && (
-                  <ul style={{ margin: 0, paddingLeft: 20, color: "#aaa", fontSize: 13 }}>
-                    <li>{aiMotionResult.matched} clips matched to timeline.</li>
-                    {aiMotionResult.unknown.length > 0 && <li>{aiMotionResult.unknown.length} unknown clips ignored.</li>}
-                  </ul>
-                )}
-              </div>
-            )}
-
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
-              <div>
-                <button 
-                  onClick={handleClearAiMotion}
-                  style={{ background: "transparent", color: "#e74c3c", border: "1px solid #e74c3c", borderRadius: 6, padding: "8px 16px", cursor: "pointer", fontSize: 14, marginRight: 8 }}
-                >
-                  Clear AI Motion
-                </button>
-                <button 
-                  onClick={handleExportAiContext}
-                  style={{ background: "transparent", color: "#3498db", border: "1px solid #3498db", borderRadius: 6, padding: "8px 16px", cursor: "pointer", fontSize: 14 }}
-                  title="Download timeline info for the external AI"
-                >
-                  Download Timeline Context
-                </button>
-              </div>
-              <div>
-                <button 
-                  onClick={handleValidateAiMotion}
-                  style={{ background: "#333", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", cursor: "pointer", fontSize: 14, marginRight: 8 }}
-                >
-                  Validate
-                </button>
-                <button 
-                  onClick={handleApplyAiMotion}
-                  disabled={!aiMotionResult || !aiMotionResult.valid}
-                  style={{ background: (!aiMotionResult || !aiMotionResult.valid) ? "#555" : "#3498db", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontWeight: "bold", cursor: (!aiMotionResult || !aiMotionResult.valid) ? "not-allowed" : "pointer", fontSize: 14 }}
-                >
-                  Apply to Timeline
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {currentProject && loadingProject && (
         <div className="importing" role="status" aria-live="polite">
@@ -1502,7 +1265,7 @@ export default function Home() {
           onWebCodecsTest={onWebCodecsTest} onWebCodecsCancel={onWebCodecsCancel}
           wcBusy={wcBusy} wcProgress={wcProgress} wcPhase={wcPhase} wcAvailable={wcOk} serverAvailable={serverAvailable}
           wcEnabled={wcEnabled} setWcEnabled={setWcEnabled}
-          onRender={onRender} onRenderHyperframes={handleRenderHyperframes} onCancel={onCancel} busy={busy} progress={progress}
+          onRender={onRender} onCancel={onCancel} busy={busy} progress={progress}
           outUrl={outUrl} error={error} warnings={warnings}
           replaceImage={replaceImage} removeImage={removeImage} fillGap={fillGap} deleteGap={deleteGap}
           resizeBoundary={resizeBoundary}
@@ -1513,7 +1276,6 @@ export default function Home() {
           fadeIn={fadeIn} setFadeIn={setFadeIn}
           fadeOut={fadeOut} setFadeOut={setFadeOut}
           motionByName={motionByName} setMotion={setMotion}
-          aiMotion={aiMotion} aiOverlays={aiOverlays}
           applyMotionAll={applyMotionAll} applyMotionAlternate={applyMotionAlternate}
           motionAmount={motionAmount} setMotionAmount={setMotionAmount}
           videoInfoByName={videoInfoByName}
@@ -1527,92 +1289,16 @@ export default function Home() {
           captionSize={captionSize} setCaptionSize={setCaptionSize}
           captionLineHeight={captionLineHeight} setCaptionLineHeight={setCaptionLineHeight}
           captionFontScale={captionFontScale} setCaptionFontScale={setCaptionFontScale}
+          captionAnimation={captionAnimation} setCaptionAnimation={setCaptionAnimation}
+          captionOverrides={captionOverrides} setCaptionOverrides={setCaptionOverrides}
+          captionOpts={captionOpts} setCaptionsTrack={setCaptionsTrack}
+          removeCaptions={removeCaptions} onExportCaptions={exportCaptions}
           captionName={captionName} captionError={captionError} onCaptionFile={onCaptionFile}
           generatingCaptions={generatingCaptions} genCapStatus={genCapStatus} onGenerateCaptions={handleGenerateCaptions}
         />
       )}
       </div>
 
-      {showSettingsModal && (
-        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ backgroundColor: "#1e1e1e", borderRadius: 12, padding: 24, width: "100%", maxWidth: 500, boxShadow: "0 10px 25px rgba(0,0,0,0.5)", border: "1px solid #333" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
-                ⚙ VoiceCraft Settings
-              </h2>
-              <button 
-                onClick={() => setShowSettingsModal(false)}
-                style={{ background: "transparent", border: "none", color: "#888", fontSize: 20, cursor: "pointer" }}
-              >×</button>
-            </div>
-            <p style={{ color: "#aaa", fontSize: 13, marginBottom: 24 }}>Configure your VoiceCraft backend connection.</p>
-            
-            <div style={{ backgroundColor: "#111", border: "1px solid #333", borderRadius: 8, padding: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontWeight: "bold" }}>
-                <span>☁️</span> AWS Lambda Backend (HyperFrames)
-              </div>
-              <p style={{ color: "#888", fontSize: 12, marginBottom: 12, lineHeight: 1.4 }}>
-                Provide your AWS credentials to render compositions in the cloud using your own HyperFrames stack. Leave blank to use the local machine's default AWS profile.
-              </p>
-              
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>AWS Access Key ID</label>
-                  <input 
-                    type="text" 
-                    value={awsAccessKey}
-                    onChange={(e) => saveAwsAccessKey(e.target.value)}
-                    placeholder="AKIA..."
-                    style={{ width: "100%", background: "#222", border: "1px solid #444", borderRadius: 6, padding: "8px 10px", color: "#fff", fontSize: 13 }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>AWS Secret Access Key</label>
-                  <input 
-                    type="password" 
-                    value={awsSecretKey}
-                    onChange={(e) => saveAwsSecretKey(e.target.value)}
-                    placeholder="••••••••••••••••"
-                    style={{ width: "100%", background: "#222", border: "1px solid #444", borderRadius: 6, padding: "8px 10px", color: "#fff", fontSize: 13 }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>Stack Name</label>
-                  <input 
-                    type="text" 
-                    value={awsStackName}
-                    onChange={(e) => saveAwsStackName(e.target.value)}
-                    placeholder="hyperframes-autoeditor-dev"
-                    style={{ width: "100%", background: "#222", border: "1px solid #444", borderRadius: 6, padding: "8px 10px", color: "#fff", fontSize: 13 }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>Region</label>
-                  <input 
-                    type="text" 
-                    value={awsRegion}
-                    onChange={(e) => saveAwsRegion(e.target.value)}
-                    placeholder="us-east-1"
-                    style={{ width: "100%", background: "#222", border: "1px solid #444", borderRadius: 6, padding: "8px 10px", color: "#fff", fontSize: 13 }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 24 }}>
-              <button 
-                onClick={() => setShowSettingsModal(false)}
-                style={{ background: "#fbbf24", color: "#000", border: "none", borderRadius: 6, padding: "10px 20px", fontWeight: "bold", cursor: "pointer", fontSize: 14 }}
-              >
-                Save Settings
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
     </>
   );

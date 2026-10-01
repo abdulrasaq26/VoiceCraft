@@ -41,6 +41,7 @@ export default function Timeline({
   transitionsByName, motionByName, selectedName, onSelect,
   onSeek, onScrubStart, onScrubEnd, onOpen, onAdd, onDeleteGap, onResizeBoundary,
   trimEnd, onTrimChange, height, playing,
+  captions, captionsOn, selectedCaptionId, onCaptionSelect, onCaptionRetime,
 }) {
   const trackRef = useRef(null);
   const scrollRef = useRef(null);
@@ -194,6 +195,42 @@ export default function Timeline({
     window.addEventListener("pointerup", up);
   }, [trimAt]);
 
+  // ---- caption lane: drag a block's edges to retime it ----
+  const [capDrag, setCapDrag] = useState(null); // { id, start, end } while dragging
+  const capTimeAt = useCallback((clientX) => {
+    const el = trackRef.current;
+    if (!el || !duration) return 0;
+    const r = el.getBoundingClientRect();
+    return (Math.min(Math.max(clientX - r.left, 0), r.width) / r.width) * duration;
+  }, [duration]);
+  const onCapEdgeDown = useCallback((e, i, edge) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const c = captions[i];
+    const lo = i > 0 ? captions[i - 1].end : 0;
+    const hi = i < captions.length - 1 ? captions[i + 1].start : duration;
+    const calc = (x) => {
+      const t = capTimeAt(x);
+      return edge === "start"
+        ? { id: c.id, start: Math.max(lo, Math.min(t, c.end - 0.15)), end: c.end }
+        : { id: c.id, start: c.start, end: Math.min(hi, Math.max(t, c.start + 0.15)) };
+    };
+    setCapDrag(calc(e.clientX));
+    const move = (ev) => setCapDrag(calc(ev.clientX));
+    const up = (ev) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      const d = calc(ev.clientX);
+      setCapDrag(null);
+      if (onCaptionRetime && (Math.abs(d.start - c.start) > 0.001 || Math.abs(d.end - c.end) > 0.001)) {
+        onCaptionRetime(c.id, +d.start.toFixed(3), +d.end.toFixed(3));
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, [captions, duration, capTimeAt, onCaptionRetime]);
+  const hasCaps = !!(captions && captions.length);
+
   const MIN_CLIP = 0.3; // never let a clip collapse below this many seconds
   const [drag, setDrag] = useState(null); // { index, sec } during a right-edge resize
 
@@ -318,6 +355,7 @@ export default function Timeline({
         <div className="tl__gutter">
           <span className="tl__tag">V</span>
           <span className="tl__tag tl__tag--audio">A</span>
+          {hasCaps && <span className="tl__tag tl__tag--cap" title="Captions">C</span>}
         </div>
 
         <div className="tl__track" ref={trackRef}>
@@ -396,6 +434,29 @@ export default function Timeline({
           <div className="tl__lane tl__lane--audio tl__scrub" onPointerDown={onScrubDown}>
             <Waveform peaks={peaks} />
           </div>
+
+          {hasCaps && (
+            <div className={`tl__lane tl__lane--cap${captionsOn ? "" : " is-off"}`}>
+              {captions.map((c, i) => {
+                const d = capDrag && capDrag.id === c.id ? capDrag : c;
+                const active = time >= c.start && time < c.end;
+                return (
+                  <div
+                    key={c.id}
+                    className={`capblk${active ? " is-active" : ""}${selectedCaptionId === c.id ? " is-sel" : ""}`}
+                    style={{ left: pct(d.start), width: pct(d.end - d.start) }}
+                    title={`${c.text}
+${label(d.start)} → ${label(d.end)} — click to jump, drag edges to retime`}
+                    onPointerDown={(e) => { e.stopPropagation(); if (onCaptionSelect) onCaptionSelect(c.id); onSeek(c.start + 0.001); }}
+                  >
+                    <span className="capblk__txt">{c.text}</span>
+                    <span className="capblk__edge capblk__edge--l" onPointerDown={(e) => onCapEdgeDown(e, i, "start")} />
+                    <span className="capblk__edge capblk__edge--r" onPointerDown={(e) => onCapEdgeDown(e, i, "end")} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="tl__playhead" style={{ left: pct(time) }}>
             <span className="tl__playhead-grip" />
