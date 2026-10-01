@@ -113,7 +113,7 @@
   }
 
   class FlowApi {
-    constructor() { this.session = null; }
+    constructor() { this.session = null; this.thumbs = new Map(); }
 
     async connect(force = false) {
       if (this.session && !force) return this.session;
@@ -172,6 +172,7 @@
       return `${base}/api/trpc/media.getMediaUrlRedirect?name=${encodeURIComponent(name)}`;
     }
     thumbUrl(name) {
+      if (this.isNewSite()) return this.thumbs.get(name) || '';
       return this.mediaUrl(name) + '&mediaUrlType=MEDIA_URL_TYPE_THUMBNAIL';
     }
 
@@ -183,9 +184,7 @@
       const s = await this.connect();
       const projectId = await this.projectId();
       const input = encodeURIComponent(JSON.stringify({ json: { projectId } }));
-      if (s.scheme === 'google') {
-        throw new Error("Flow's new site doesn't offer the project's picture list the Automator used. Upload reference pictures with Upload…, or name results with #name and use @name in later prompts.");
-      }
+      if (s.scheme === 'google') return this.libraryRpc(projectId);
       const res = await call('request', [`${s.base}/api/trpc/flow.projectInitialData?input=${input}`, 'GET', null, null], 60000);
       if (!res || !res.ok) throw new Error("Couldn't read this Flow project's pictures" + (res && res.status ? ` (${res.status})` : '') + '.');
       const root = res.data && res.data.result && res.data.result.data && res.data.result.data.json && res.data.result.data.json.projectContents;
@@ -213,6 +212,44 @@
       return { projectId, named: named.filter((n) => !archived.has(n.mediaId)), pictures };
     }
 
+    // flow.google.com: the project's pictures and their names (rpc Zzl0ze).
+    // data[1]: named workflows ([3][0] name, [3][4] media id); data[2]: media
+    // ([0] id, [2] workflow, [5][5] thumbnail URL); data[5]: characters.
+    async libraryRpc(projectId) {
+      const res = await call('rpc', ['Zzl0ze', ['projects/' + projectId, null, null, null, [1]]], 60000);
+      if (!res || !res.ok) throw new Error("Couldn't read this Flow project's pictures. " + ((res && res.errText) || ''));
+      const d = res.data || [];
+      const nameOf = new Map();
+      const named = [];
+      for (const w of d[1] || []) {
+        const handle = w && w[3] && w[3][0], mediaId = w && w[3] && w[3][4];
+        if (handle && mediaId) { named.push({ handle, mediaId, workflowId: w[0] || null, createTime: '' }); nameOf.set(mediaId, handle); }
+      }
+      for (const c of d[5] || []) {
+        const handle = c && c[3] && c[3][1], mediaId = c && c[4];
+        if (handle && mediaId && !nameOf.has(mediaId)) { named.push({ handle, mediaId, workflowId: null, createTime: '' }); nameOf.set(mediaId, handle); }
+      }
+      const seen = new Map();
+      for (const m of d[2] || []) {
+        if (!m || !m[0]) continue;
+        const key = m[2] || m[0];
+        const cur = seen.get(key);
+        if (!cur || (m[3] === 'CAE' && cur[3] !== 'CAE')) seen.set(key, m);
+      }
+      const pictures = [];
+      for (const m of seen.values()) {
+        const info = m[5] || [];
+        const model = info[6] && info[6][1] && info[6][1][0] && info[6][1][0][0];
+        if (/^(abra_|veo_)/.test(String(model || ''))) continue; // videos
+        const thumb = info[5] || null;
+        if (thumb) this.thumbs.set(m[0], thumb);
+        const generated = !!(info[6] && info[6][2]);
+        pictures.push({ mediaId: m[0], uploaded: !generated, createTime: info[0] && info[0][0] ? String(info[0][0]) : '', handle: nameOf.get(m[0]) || null });
+      }
+      pictures.sort((a, b) => Number(b.createTime || 0) - Number(a.createTime || 0));
+      return { projectId, named, pictures };
+    }
+
     // Upload a picture from disk into the project. Returns its media id.
     async upload(file) {
       const projectId = await this.projectId();
@@ -222,6 +259,15 @@
         fr.onerror = () => reject(new Error("Couldn't read " + file.name));
         fr.readAsDataURL(file);
       });
+      if ((await this.connect()).scheme === 'google') {
+        // flow.google.com: Flow's own upload (rpc maseQ).
+        const token = await this.recaptcha('IMAGE_GENERATION');
+        const ctx = [null, 22, null, null, null, projectId, null, null, null, null, [token, 1]];
+        const res = await call('rpc', ['maseQ', [ctx, String(dataUrl).split(',')[1], file.type || 'image/png', 1, null, null, null, null, file.name || 'image.png', null, uuid(), uuid()]], 120000);
+        const id = res && res.ok && res.data && res.data[0] && res.data[0][0];
+        if (!id) throw new Error(`Flow didn't accept ${file.name}. ` + ((res && res.errText) || ''));
+        return id;
+      }
       const res = await this.post(`${API}/v1/flow/uploadImage`, async () => JSON.stringify({
         clientContext: { projectId, tool: 'PINHOLE' },
         fileName: file.name, imageBytes: String(dataUrl).split(',')[1],
@@ -287,13 +333,16 @@
 
     // flow.google.com: the same call Flow's prompt box makes (rpc ogiZ0b).
     async generateImageRpc({ prompt, parts, imageInputs, model, aspect, projectId }) {
-      if (imageInputs && imageInputs.length) {
-        throw Object.assign(new Error("Reference pictures (@name / ticked) aren't supported on Flow's new site yet — remove them for now."), { final: true });
-      }
-      const text = parts && parts.length ? parts.map((p) => p.text || '').join('') : prompt;
+      // References: the media ids, each as [id, null, null, null, 1]. The
+      // prompt text keeps the referenced names in place of the @handles.
+      const refIds = (imageInputs || []).map((x) => (x && (x.name || x.mediaId)) || x).filter(Boolean);
+      const refs = refIds.length ? refIds.map((id) => [id, null, null, null, 1]) : null;
+      const text = parts && parts.length
+        ? parts.map((p) => p.text || (p.reference && p.reference.media && p.reference.media.handle) || '').join('')
+        : prompt;
       const token = await this.recaptcha('IMAGE_GENERATION');
       const ctx = [null, 22, null, null, null, projectId, null, null, null, null, [token, 1]];
-      const request = [null, null, null, seed(), NEW_IMAGE_ASPECTS[aspect] || 3, IMAGE_MODELS[model] || IMAGE_MODELS['nano-banana-2'],
+      const request = [null, null, refs, seed(), NEW_IMAGE_ASPECTS[aspect] || 3, IMAGE_MODELS[model] || IMAGE_MODELS['nano-banana-2'],
         null, ctx, [[[text]]], null, null, null, uuid(), uuid()];
       const res = await call('rpc', ['ogiZ0b', [null, [request], 1, ctx, [uuid()]]], 300000);
       if (!res || !res.ok) {
