@@ -199,7 +199,7 @@ export class BrowserManager {
       const u = d.referrer || (d.webContents && !d.webContents.isDestroyed() ? d.webContents.getURL() : '') || '';
       return /^https:\/\/(flow\.google\.com|labs\.google)\//.test(u);
     };
-    ses.webRequest.onBeforeSendHeaders({ urls: ['https://*.googleapis.com/*', 'https://flow.google.com/*', 'https://labs.google/*', 'https://accounts.google.com/*'] }, (d, cb) => {
+    ses.webRequest.onBeforeSendHeaders({ urls: ['https://*.googleapis.com/*', 'https://*.clients6.google.com/*', 'https://flow.google.com/*', 'https://labs.google/*', 'https://accounts.google.com/*'] }, (d, cb) => {
       // Google sign-in pages: the Firefox identity, without Chromium's client hints.
       if (isSignin(d.url)) {
         const h = { ...d.requestHeaders, 'User-Agent': SIGNIN_UA };
@@ -212,13 +212,14 @@ export class BrowserManager {
           const u = new URL(d.url);
           const h = d.requestHeaders || {};
           const auth = h.Authorization || h.authorization || '';
-          const key = `${d.method} ${u.host}${u.pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')}`;
-          if (/googleapis\.com$/.test(u.host) || /\/api\//.test(u.pathname)) {
+          const rpc = u.searchParams.get('rpcids');
+          const key = `${d.method} ${u.host}${u.pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')}${rpc ? ' rpcids=' + rpc : ''}`;
+          if (/googleapis\.com$|clients6\.google\.com$/.test(u.host) || /\/api\/|\/data\/batchexecute|\/_\//.test(u.pathname)) {
             const c = this.flowCalls.get(key) || { n: 0 };
             this.flowCalls.set(key, { n: c.n + 1, at: Date.now(), auth: auth ? auth.split(' ')[0] : c.auth || '' });
             if (this.flowCalls.size > 300) this.flowCalls.delete(this.flowCalls.keys().next().value);
           }
-          if (auth && /googleapis\.com$/.test(u.host)) {
+          if (auth && /googleapis\.com$|clients6\.google\.com$/.test(u.host)) {
             this.flowAuth.set(partition, { authorization: auth, authUser: h['X-Goog-AuthUser'] || h['x-goog-authuser'] || null, at: Date.now() });
           }
         }

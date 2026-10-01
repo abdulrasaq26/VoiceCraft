@@ -17,7 +17,41 @@
 
   let apiBase = null; // e.g. "https://labs.google/fx" — where /api/auth/session answered
 
+  // ---- flow.google.com: Google's first-party request signing ----
+  // The new Flow has no session endpoint: its own code signs each API call
+  // with "SAPISIDHASH" values derived from the Google session cookies (the
+  // ones Google lets google.com pages read for exactly this), plus Flow's
+  // public API key from the page config. The Automator signs the same way.
+  const cookie = (n) => { const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + n.replace(/[.$?*|{}()[\]\\/+^]/g, '\\$&') + '=([^;]*)')); return m ? decodeURIComponent(m[1]) : null; };
+  async function sha1Hex(text) {
+    const d = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
+    return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  async function googleAuthHeader() {
+    const ts = Math.floor(Date.now() / 1000);
+    const origin = location.origin;
+    const parts = [];
+    const sap = cookie('SAPISID') || cookie('__Secure-3PAPISID');
+    if (sap) parts.push(`SAPISIDHASH ${ts}_${await sha1Hex(`${ts} ${sap} ${origin}`)}`);
+    const p1 = cookie('__Secure-1PAPISID');
+    if (p1) parts.push(`SAPISID1PHASH ${ts}_${await sha1Hex(`${ts} ${p1} ${origin}`)}`);
+    const p3 = cookie('__Secure-3PAPISID');
+    if (p3) parts.push(`SAPISID3PHASH ${ts}_${await sha1Hex(`${ts} ${p3} ${origin}`)}`);
+    return parts.join(' ');
+  }
+  function apiKey() {
+    const w = window.WIZ_global_data || {};
+    if (typeof w.K21R3e === 'string' && /^AIza/.test(w.K21R3e)) return w.K21R3e;
+    for (const v of Object.values(w)) if (typeof v === 'string' && /^AIza[0-9A-Za-z_-]{30,}$/.test(v)) return v;
+    return null;
+  }
+  const hasGoogleSession = () => !!(cookie('SAPISID') || cookie('__Secure-3PAPISID') || cookie('__Secure-1PAPISID'));
+
   async function session() {
+    // New Flow (Google's own app framework): sign like the page does.
+    if (window.WIZ_global_data && hasGoogleSession()) {
+      return { token: '@google', base: location.origin, apiKey: apiKey(), email: null, scheme: 'google' };
+    }
     const candidates = [location.origin + '/fx', location.origin, 'https://labs.google/fx'];
     if (apiBase) candidates.unshift(apiBase);
     for (const base of candidates) {
@@ -31,6 +65,7 @@
         }
       } catch (_) { /* try the next */ }
     }
+    if (window.WIZ_global_data) return { error: "You're not signed in to Google in this tab. Sign in to Flow, reload the project, then try again." };
     return { error: 'Not signed in to Flow (no session token). Open flow.google.com and sign in.' };
   }
 
@@ -65,8 +100,16 @@
     if (method !== 'GET') inflight = ac;
     try {
       const headers = {};
-      // A bare token (old Flow) or a whole header Flow itself used (new Flow).
-      if (token) headers.Authorization = /^[A-Za-z0-9]+HASH\s|^Bearer\s/.test(token) ? token : 'Bearer ' + token;
+      if (token === '@google') {
+        // New Flow: first-party signing, fresh for every call.
+        headers.Authorization = await googleAuthHeader();
+        headers['X-Goog-AuthUser'] = '0';
+        const key = apiKey();
+        if (key && /googleapis\.com\//.test(url) && !/[?&]key=/.test(url)) url += (url.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+      } else if (token) {
+        // A bare token (old Flow) or a whole header Flow itself used.
+        headers.Authorization = /^[A-Za-z0-9]+HASH\s|^Bearer\s/.test(token) ? token : 'Bearer ' + token;
+      }
       if (body != null) headers['Content-Type'] = 'text/plain;charset=UTF-8';
       const r = await fetch(url, {
         method, headers, credentials: 'include', signal: ac.signal,

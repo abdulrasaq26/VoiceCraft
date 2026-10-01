@@ -160,6 +160,9 @@
       throw new Error('Flow session expired — reload the Flow tab and sign in again.');
     }
 
+    // flow.google.com (Google's app framework) vs the older labs.google/fx site.
+    isNewSite() { return !!(this.session && this.session.scheme === 'google'); }
+
     mediaUrl(name) {
       const base = (this.session && this.session.base) || 'https://labs.google/fx';
       return `${base}/api/trpc/media.getMediaUrlRedirect?name=${encodeURIComponent(name)}`;
@@ -176,6 +179,9 @@
       const s = await this.connect();
       const projectId = await this.projectId();
       const input = encodeURIComponent(JSON.stringify({ json: { projectId } }));
+      if (s.scheme === 'google') {
+        throw new Error("Flow's new site doesn't offer the project's picture list the Automator used. Upload reference pictures with Upload…, or name results with #name and use @name in later prompts.");
+      }
       const res = await call('request', [`${s.base}/api/trpc/flow.projectInitialData?input=${input}`, 'GET', null, null], 60000);
       if (!res || !res.ok) throw new Error("Couldn't read this Flow project's pictures" + (res && res.status ? ` (${res.status})` : '') + '.');
       const root = res.data && res.data.result && res.data.result.data && res.data.result.data.json && res.data.result.data.json.projectContents;
@@ -263,6 +269,8 @@
         if (f && !fife) fife = f;
       }
       if (!name && !fife) throw new Error('Flow finished but returned no image (it may have been filtered).');
+      // New Flow has no media redirect route: use the served URL it returned.
+      if (this.isNewSite() && fife) return { name, workflowId, url: fife, thumb: fife };
       return { name, workflowId, url: name ? this.mediaUrl(name) : fife, thumb: name ? this.thumbUrl(name) : fife };
     }
 
@@ -305,13 +313,29 @@
         const m = st.data && st.data.media && st.data.media[0];
         const ms = m && m.mediaMetadata && m.mediaMetadata.mediaStatus;
         const status = ms && ms.mediaGenerationStatus;
-        if (/^MEDIA_GENERATION_STATUS_(COMPLETED?|SUCCESSFUL)$/.test(status || '')) return { name, url: this.mediaUrl(name), thumb: this.thumbUrl(name) };
+        if (/^MEDIA_GENERATION_STATUS_(COMPLETED?|SUCCESSFUL)$/.test(status || '')) {
+          const served = this.isNewSite() ? findServedUrl(m) : null;
+          if (served) return { name, url: served, thumb: served };
+          return { name, url: this.mediaUrl(name), thumb: this.thumbUrl(name) };
+        }
         if (status === 'MEDIA_GENERATION_STATUS_FAILED') {
           throw new Error('Flow rejected the video: ' + String(ms.failureReason || ms.errorMessage || 'no reason given').slice(0, 120));
         }
       }
       throw new Error(`Video wasn't ready after ${Math.round(timeoutSec / 60)} min.`);
     }
+  }
+
+  // The first served media URL in a Flow response object (fifeUrl, servingUri…).
+  function findServedUrl(obj, depth = 0) {
+    if (!obj || depth > 6) return null;
+    if (typeof obj === 'string') return /^https:\/\/[^\s]+$/.test(obj) && /googleusercontent|storage\.googleapis|gstatic|fife|=s\d|video|\.mp4/i.test(obj) ? obj : null;
+    if (typeof obj !== 'object') return null;
+    for (const k of ['fifeUrl', 'servingUri', 'servingUrl', 'uri', 'url']) {
+      if (typeof obj[k] === 'string' && /^https:\/\//.test(obj[k])) return obj[k];
+    }
+    for (const v of Object.values(obj)) { const u = findServedUrl(v, depth + 1); if (u) return u; }
+    return null;
   }
 
   // Split a prompt into text and @reference parts. `lookup(handle)` returns a
