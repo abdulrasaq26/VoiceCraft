@@ -17,6 +17,7 @@
     aspect: '16:9',           // image: 16:9 | 4:3 | 1:1 | 3:4 | 9:16
     videoQuality: 'fast',     // video: lite | fast | quality
     videoRatio: '16:9',       // video: 16:9 | 9:16
+    videoRefs: 'start',       // @pictures in a video prompt: start | startEnd | ingredients
     delay: 4,                 // seconds between prompts
     videoTimeout: 600,        // seconds to wait for a video
     retries: 1,               // extra attempts for a prompt that fails
@@ -26,6 +27,16 @@
     project: 'Flow Automator',
     batch: 'Batch 01',
   };
+
+  // A video job's request: the @pictures become its frames or ingredients
+  // (per the videoRefs setting); their @names leave the prompt text.
+  function videoRequest(job, parts, st) {
+    const mediaIds = job.videoRefs || [];
+    const prompt = parts && mediaIds.length
+      ? parts.filter((p) => p.text).map((p) => p.text).join(' ').replace(/\s{2,}/g, ' ').trim() || job.prompt
+      : job.prompt;
+    return { prompt, quality: st.videoQuality, ratio: st.videoRatio, kind: mediaIds.length ? (st.videoRefs || 'start') : 'text', mediaIds };
+  }
 
   // ---- prompt parsing -------------------------------------------------
   // Blocks separated by blank lines are prompts (multi-line prompts allowed);
@@ -346,10 +357,8 @@
 
         // @references → prompt parts + image inputs.
         let parts = null, imageInputs = [];
+        job.videoRefs = null;
         if (/(^|[\s(["'])@\S/.test(job.prompt)) {
-          if (job.type === 'video') {
-            throw Object.assign(new Error('@references work for images only — remove them from this video prompt.'), { final: true });
-          }
           if (!this.libraryAt || Date.now() - this.libraryAt > 60000) await this.loadLibrary();
           let r = window.VCResolveReferences(job.prompt, (h) => this.lookup(h));
           if (r.missing.length) { await this.loadLibrary(); r = window.VCResolveReferences(job.prompt, (h) => this.lookup(h)); }
@@ -358,6 +367,7 @@
           }
           parts = r.parts;
           imageInputs = window.VCToImageInputs(r.refs);
+          if (job.type === 'video') job.videoRefs = r.refs;
         }
         if (!imageInputs.length && job.type === 'image' && (st.refs || []).length) {
           imageInputs = window.VCToImageInputs(st.refs.map((x) => x.mediaId));
@@ -368,7 +378,7 @@
           try {
             const r = job.type === 'video'
               ? await this.api.generateVideo(
-                { prompt: job.prompt, quality: st.videoQuality, ratio: st.videoRatio },
+                videoRequest(job, parts, st),
                 { timeoutSec: st.videoTimeout, shouldStop: stopped, onPoll: (s) => set('generating', `${want > 1 ? `${n} of ${want} · ` : ''}${s}s`) })
               : await this.api.generateImage({ prompt: job.prompt, parts, imageInputs, model: st.model, aspect: st.aspect });
             results.push(r);

@@ -32,6 +32,20 @@
     return 'veo_3_1_t2v' + portrait; // quality
   }
 
+  // flow.google.com's Veo 3.1 (8s) model keys, by kind of video:
+  // text | start (start frame) | startEnd (start + end frames) | ingredients.
+  function newVideoModelKey(kind, quality, ratio) {
+    const p = ratio === '9:16' ? '_portrait' : '';
+    const side = p || '_landscape';
+    if (quality === 'lite') {
+      return { start: 'veo_3_1_i2v_lite', startEnd: 'veo_3_1_interpolation_lite', ingredients: 'veo_3_1_r2v_lite' }[kind] || 'veo_3_1_t2v_lite';
+    }
+    if (quality === 'fast') {
+      return { start: 'veo_3_1_i2v_s_fast' + p, startEnd: 'veo_3_1_i2v_s_fast' + p + '_fl', ingredients: 'veo_3_1_r2v_fast' + side }[kind] || 'veo_3_1_t2v_fast' + p;
+    }
+    return { start: 'veo_3_1_i2v_s' + p, startEnd: 'veo_3_1_i2v_s' + p + '_fl', ingredients: 'veo_3_1_r2v' + side }[kind] || 'veo_3_1_t2v' + p;
+  }
+
   const sessionId = () => ';' + Date.now() + Math.random().toString(36).slice(2);
   const batchId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
   const seed = () => Math.floor(Math.random() * 1e9);
@@ -362,9 +376,87 @@
       return { name: first[0], workflowId: first[2] || null, url, thumb: url, newSite: true };
     }
 
+    // flow.google.com: submit a video the way Flow's prompt box does, then
+    // poll it (rpc jwpduf) and fetch its address (rpc as29s).
+    //   kind text        → YhhmEf
+    //   kind start       → eb1hJf  (mediaIds[0] is the first frame)
+    //   kind startEnd    → nprQif  (mediaIds[0] first, mediaIds[1] last frame)
+    //   kind ingredients → MZZa6b  (mediaIds are the references)
+    async generateVideoRpc({ prompt, quality, ratio, kind = 'text', mediaIds = [], projectId }, { onPoll, timeoutSec = 600, shouldStop } = {}) {
+      if (kind === 'startEnd' && mediaIds.length < 2) kind = 'start';
+      if (kind !== 'text' && !mediaIds.length) kind = 'text';
+      const token = await this.recaptcha('VIDEO_GENERATION');
+      const ctx = [null, 22, null, null, null, projectId, null, null, null, null, [token, 1]];
+      const model = newVideoModelKey(kind, quality, ratio);
+      const aspect = ratio === '9:16' ? 1 : 2;
+      const text = [null, null, [[[prompt]]]];
+      const ids = [null, null, null, null, uuid(), uuid()];
+      const frame = (id) => [null, id, null, null, null, [null, null, 1, 1]];
+      const rpcid = { text: 'YhhmEf', start: 'eb1hJf', startEnd: 'nprQif', ingredients: 'MZZa6b' }[kind];
+      const req = kind === 'start' ? [text, model, aspect, null, frame(mediaIds[0]), ids]
+        : kind === 'startEnd' ? [text, model, aspect, null, frame(mediaIds[0]), frame(mediaIds[1]), ids]
+        : kind === 'ingredients' ? [text, mediaIds.map((id) => [null, id]), model, aspect, null, ids]
+        : [text, model, aspect, null, ids];
+      const res = await call('rpc', [rpcid, [[req], ctx, [uuid(), 2]]], 120000);
+      if (!res || !res.ok) {
+        const msg = (res && res.errText) || 'No response from Flow.';
+        const unusual = /UNUSUAL_ACTIVITY/.test(msg);
+        const err = new Error(unusual
+          ? "Google flagged this as unusual activity (reCAPTCHA). Wait a minute, reload the Flow tab, then retry — and keep a pause between prompts."
+          : /429|RESOURCE_EXHAUSTED|quota/i.test(msg) ? 'Flow says you are out of credits or sending too fast — wait and retry.' : msg);
+        if (unusual) err.fatal = true;
+        if (res && res.aborted) err.stopped = true;
+        throw err;
+      }
+      const d = res.data || [];
+      const media = d[3] && d[3][0];
+      const name = media && media[0];
+      const workflowId = (media && media[2]) || (d[2] && d[2][0] && d[2][0][0]) || null;
+      if (!name) throw new Error('Flow accepted the request but returned no video id.');
+
+      const started = Date.now();
+      let failures = 0;
+      while (Date.now() - started < timeoutSec * 1000) {
+        await sleep(5000);
+        if (shouldStop && shouldStop()) { const e = new Error('Stopped'); e.stopped = true; throw e; }
+        if (onPoll) onPoll(Math.round((Date.now() - started) / 1000));
+        const st = await call('rpc', ['jwpduf', [null, null, [[name]]]], 60000);
+        if (!st || !st.ok) {
+          if ((st && st.aborted) || ++failures >= 5) throw new Error("Couldn't check the video's progress. " + ((st && st.errText) || ''));
+          continue;
+        }
+        failures = 0;
+        const m = st.data && st.data[2] && st.data[2][0];
+        const info = m && m[5] && m[5][8];
+        const status = info ? info[0] : null;
+        const errInfo = info && Array.isArray(info[1]) ? String(info[1][1] || '') : '';
+        if (status === 4 || /ERROR/.test(errInfo)) {
+          const why = errInfo.replace(/^PUBLIC_ERROR_/, '').replace(/_/g, ' ').trim().toLowerCase()
+            || (info && info[2] && info[2][0] ? String(info[2][0]).replace(/_/g, ' ').toLowerCase() : '') || 'content policy';
+          throw Object.assign(new Error('Flow rejected the video: ' + why.slice(0, 120)), { final: true });
+        }
+        if (status === 3) {
+          const got = await call('rpc', ['as29s', [name]], 60000);
+          const json = JSON.stringify((got && got.data) || null);
+          const fix = (u) => u && u.replace(/\\u0026/g, '&');
+          const video = json.match(/https:\/\/flow-content\.google\/video\/[^\s"'\\\]]+/);
+          const thumb = json.match(/https:\/\/flow-content\.google\/image\/[^\s"'\\\]]+/);
+          if (!video) throw new Error('The video is ready in Flow, but Flow sent no address for it.');
+          return { name, workflowId, url: fix(video[0]), thumb: thumb ? fix(thumb[0]) : null, newSite: true };
+        }
+      }
+      throw new Error(`Video wasn't ready after ${Math.round(timeoutSec / 60)} min.`);
+    }
+
     // One video: submit, then poll until Flow reports it done. Returns { url, name }.
-    async generateVideo({ prompt, quality, ratio }, { onPoll, timeoutSec = 600, shouldStop } = {}) {
+    async generateVideo({ prompt, quality, ratio, kind, mediaIds }, { onPoll, timeoutSec = 600, shouldStop } = {}) {
       const projectId = await this.projectId();
+      if ((await this.connect()).scheme === 'google') {
+        return this.generateVideoRpc({ prompt, quality, ratio, kind, mediaIds, projectId }, { onPoll, timeoutSec, shouldStop });
+      }
+      if (mediaIds && mediaIds.length) {
+        throw Object.assign(new Error('@pictures in video prompts work on the new Flow (flow.google.com) only — remove them from this prompt.'), { final: true });
+      }
       const res = await this.post(`${API}/v1/video:batchAsyncGenerateVideoText`, async () => JSON.stringify({
         mediaGenerationContext: { batchId: batchId(), audioFailurePreference: 'BLOCK_SILENCED_VIDEOS' },
         clientContext: {

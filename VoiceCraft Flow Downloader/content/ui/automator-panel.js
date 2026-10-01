@@ -205,6 +205,8 @@ textarea:focus, input:focus, select:focus { border-color: var(--vc-primary); }
         <select data-k="videoQuality"><option value="lite">Lite</option><option value="fast">Fast</option><option value="quality">Quality</option></select></div>
       <div class="f"><div><div class="f__l">Aspect ratio</div></div>
         <select data-k="videoRatio"><option value="16:9">16:9 landscape</option><option value="9:16">9:16 portrait</option></select></div>
+      <div class="f"><div><div class="f__l">@pictures in video prompts</div><div class="f__d">New Flow only — "@00-01 the pear rolls off the table" animates picture 00-01</div></div>
+        <select data-k="videoRefs"><option value="start">Start frame (first @)</option><option value="startEnd">Start + end frame (first two @)</option><option value="ingredients">Ingredients (all @)</option></select></div>
       <div class="f"><div><div class="f__l">Video time limit</div><div class="f__d">Seconds to wait for each video</div></div><input type="number" min="60" max="3600" step="30" data-k="videoTimeout"></div>
       <div class="grp">Run</div>
       <div class="f"><div><div class="f__l">Pause between prompts</div><div class="f__d">Seconds — raise it if Google rate-limits you</div></div><input type="number" min="0" max="600" step="1" data-k="delay"></div>
