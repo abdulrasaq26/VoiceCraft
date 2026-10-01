@@ -13,7 +13,7 @@ const GROUPS = [
 // live: new assets appear as they're produced. "Add" puts one into this edit;
 // images and videos named like 2-33 land at 2:33 on the timeline.
 export default function ProjectAssets({ assets: all, inTimeline, onAdd, onRemove, assetUrl, projectName }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false); // closed until clicked
   // Finished renders have their own panel.
   const assets = useMemo(() => all.filter((a) => a.source !== "render"), [all]);
   const [busy, setBusy] = useState(null);
@@ -31,13 +31,14 @@ export default function ProjectAssets({ assets: all, inTimeline, onAdd, onRemove
   };
 
   return (
-    <div className="panel passets">
+    <div className={`panel passets${open ? " is-open" : ""}`}>
       <div className="passets__head">
         <button type="button" className="passets__toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <svg className="passets__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
           <span className="panel__h" style={{ margin: 0 }}>Project assets</span>
           <span className="passets__n">{assets.length}</span>
         </button>
-        {fresh.length > 0 && (
+        {open && fresh.length > 0 && (
           <button type="button" className="cap-act" disabled={!!busy} onClick={() => add(fresh, "all")}>
             {busy === "all" ? "Adding…" : `Add ${fresh.length} new`}
           </button>
